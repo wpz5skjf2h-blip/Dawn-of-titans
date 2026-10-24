@@ -581,7 +581,8 @@ function buildTerrain(st) {
 		const sx = f.c ? f.r * 2 : f.x1 - f.x0;
 		const sz = f.c ? f.r * 2 : f.z1 - f.z0;
 		if (f.t === FT.Deep || f.t === FT.Shallow) {
-			const m = new THREE.Mesh(new THREE.PlaneGeometry(sx, sz).rotateX(-Math.PI / 2), f.t === FT.Deep ? water : shallow);
+			const geo = f.c ? new THREE.CircleGeometry(f.r, 48) : new THREE.PlaneGeometry(sx, sz); // round lakes and marshes
+			const m = new THREE.Mesh(geo.rotateX(-Math.PI / 2), f.t === FT.Deep ? water : shallow);
 			m.position.set(cx, f.t === FT.Deep ? -0.05 : 0.02, -cz);
 			m.renderOrder = 1;
 			view.terrainGroup.add(m);

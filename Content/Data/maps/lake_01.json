@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  // Mirror Lake: the battlefield of a lake land. Deep water in the middle splits the field; a ford runs
+  // across the lake and marshes guard the flanks. The layout is ours.
+  "id": "map.lake_01",
+  "name": "Mirror Lake",
+  "width": 240,
+  "depth": 160,
+  "cellSize": 2,
+  "deploy": {
+    "attacker": { "min": [12, 8], "max": [228, 40] },
+    "defender": { "min": [12, 120], "max": [228, 152] }
+  },
+  "features": [
+    { "type": "DeepWater",    "circle": { "x": 120, "z": 80, "r": 30 } },
+    { "type": "ShallowWater", "rect": { "x0": 114, "z0": 48, "x1": 126, "z1": 112 } },
+    { "type": "ShallowWater", "circle": { "x": 48,  "z": 96, "r": 11 } },
+    { "type": "ShallowWater", "circle": { "x": 192, "z": 64, "r": 11 } },
+
+    { "type": "Hill",   "circle": { "x": 40,  "z": 46,  "r": 14 }, "height": 4 },
+    { "type": "Hill",   "circle": { "x": 200, "z": 116, "r": 14 }, "height": 4 },
+
+    { "type": "Forest", "circle": { "x": 206, "z": 30,  "r": 10 } },
+    { "type": "Forest", "circle": { "x": 34,  "z": 128, "r": 10 } },
+
+    { "type": "Rock",   "circle": { "x": 78,  "z": 80,  "r": 3 } },
+    { "type": "Rock",   "circle": { "x": 162, "z": 80,  "r": 3 } }
+  ]
+}

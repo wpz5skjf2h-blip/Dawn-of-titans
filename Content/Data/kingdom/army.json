@@ -1921,6 +1921,22 @@
   "recoveryFromLevel": 10,
   "recoverySecPerLevel": 120
  },
+ "ascension": {
+  "shards": [
+   5,
+   25,
+   50,
+   100
+  ],
+  "food": [
+   180000,
+   820000,
+   2300000,
+   4800000
+  ],
+  "levels": 10,
+  "relicSlots": 1
+ },
  "fusion": {
   "castle": 7,
   "foodPerStar": 2000,

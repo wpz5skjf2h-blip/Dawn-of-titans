@@ -222,11 +222,14 @@ void ADoTBattleView::BuildTerrain()
 		const double Sz = F.circle ? F.radius.ToDouble() * 2.0 : F.max.z.ToDouble() - F.min.z.ToDouble();
 		switch (F.type)
 		{
+		// Round water (lakes, marshes) is a flat cylinder; its top sits just under a ford plane.
 		case dot::FeatureType::DeepWater:
-			Add(MakePart(PlaneMesh, FLinearColor(0.05f, 0.15f, 0.45f), SceneRoot, DoTCoords::SimToWorldD(Cx, Cz, 0.04), FVector(Sz, Sx, 1.0), true));
+			Add(MakePart(F.circle ? CylinderMesh : PlaneMesh, FLinearColor(0.05f, 0.15f, 0.45f), SceneRoot, DoTCoords::SimToWorldD(Cx, Cz, F.circle ? 0.0 : 0.04),
+				FVector(Sz, Sx, F.circle ? 0.08 : 1.0), true));
 			break;
 		case dot::FeatureType::ShallowWater:
-			Add(MakePart(PlaneMesh, FLinearColor(0.20f, 0.42f, 0.60f), SceneRoot, DoTCoords::SimToWorldD(Cx, Cz, 0.06), FVector(Sz, Sx, 1.0), true));
+			Add(MakePart(F.circle ? CylinderMesh : PlaneMesh, FLinearColor(0.20f, 0.42f, 0.60f), SceneRoot, DoTCoords::SimToWorldD(Cx, Cz, F.circle ? 0.02 : 0.06),
+				FVector(Sz, Sx, F.circle ? 0.08 : 1.0), true));
 			break;
 		case dot::FeatureType::Road:
 			Add(MakePart(PlaneMesh, FLinearColor(0.55f, 0.45f, 0.30f), SceneRoot, DoTCoords::SimToWorldD(Cx, Cz, 0.08), FVector(Sz, Sx, 1.0), true));

@@ -33,6 +33,8 @@ struct TitanSetup
 	std::string titanId;
 	int level = 1;
 	int stars = 1;
+	/** Ascended titans (kingdom) may be ten levels above the usual cap of 10 + 10 per star. */
+	bool ascended = false;
 	int abilityLevels[2] = {1, 1};
 	/** Bonuses from equipped relics, in percent of the titan's own stats. */
 	int hpPct = 0;

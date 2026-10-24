@@ -837,7 +837,11 @@ int64_t ToTime(double Seconds)
 void WriteCheck(Out& O, const dot::kingdom::Check& Ck)
 {
 	O.Raw("{").Key("err").Int(static_cast<int>(Ck.error)).Comma().Key("cost").Raw("[");
-	O.Int(Ck.cost[0]).Comma().Int(Ck.cost[1]).Comma().Int(Ck.cost[2]).Raw("]").Comma();
+	for (size_t I = 0; I < Ck.cost.size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Ck.cost[I]);
+	}
+	O.Raw("]").Comma();
 	O.Key("t").Int(Ck.timeSec).Comma().Key("c").Int(Ck.castle).Comma().Key("e").Int(Ck.expansion).Comma();
 	O.Key("g").Int(Ck.gemsForMissing).Comma().Key("m").Raw("[").Int(Ck.missing.building).Comma().Int(Ck.missing.level).Comma();
 	O.Int(Ck.missing.count).Raw("]}");
@@ -942,7 +946,13 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("extraSlots").Int(Km->ExtraLandSlots()).Comma().Key("stonesNext").Int(Km->StonesNextAt()).Comma();
 	O.Key("hash").Str(dot::HashToHex(Km->Hash())).Comma();
 	O.Key("res").Raw("[").Int(Km->Amount(Res::Gold)).Comma().Int(Km->Amount(Res::Food)).Comma().Int(Km->Amount(Res::Gems)).Comma();
-	O.Int(Km->Amount(Res::Stones)).Raw("]").Comma();
+	O.Int(Km->Amount(Res::Stones)).Comma().Int(Km->Amount(Res::Shards)).Comma().Int(Km->Amount(Res::Vp)).Raw("]").Comma();
+	// Season of victory points: its bounds, the league the VP reach now, how the last one ended.
+	const SeasonResult& Last = Km->LastSeason();
+	O.Key("season").Raw("{").Key("no").Int(Km->Season()).Comma().Key("start").Int(Km->SeasonStart(Km->Season())).Comma();
+	O.Key("end").Int(Km->SeasonStart(Km->Season() + 1)).Comma().Key("league").Int(Km->League(Km->Amount(Res::Vp))).Comma();
+	O.Key("last").Raw("{").Key("no").Int(Last.season).Comma().Key("vp").Int(Last.vp).Comma().Key("league").Int(Last.league).Comma();
+	O.Key("gems").Int(Last.gems).Comma().Key("stones").Int(Last.stones).Raw("}}").Comma();
 	O.Key("cap").Raw("[").Int(Km->Capacity(Res::Gold)).Comma().Int(Km->Capacity(Res::Food)).Comma().Int(0).Comma();
 	O.Int(Km->Capacity(Res::Stones)).Raw("]").Comma();
 	O.Key("prot").Raw("[").Int(Km->Protected(Res::Gold)).Comma().Int(Km->Protected(Res::Food)).Raw("]").Comma();
@@ -991,7 +1001,8 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		bFirst = false;
 		O.Raw("{").Key("id").Int(L.id).Comma().Key("type").Int(L.type).Comma().Key("lv").Int(L.level).Comma().Key("titan").Int(L.titanId).Comma();
-		O.Key("st").Int(Km->UncollectedLand(L)).Comma().Key("cap").Int(Km->LandStoreCap(L)).Comma().Key("rate").Int(Km->LandRate(L)).Raw("}");
+		O.Key("st").Int(Km->UncollectedLand(L)).Comma().Key("cap").Int(Km->LandStoreCap(L)).Comma().Key("rate").Int(Km->LandRate(L)).Comma();
+		O.Key("fill").Int(Km->LandFillHours(L)).Raw("}");
 	}
 	O.Raw("],").Key("world").Raw("[");
 	bFirst = true;
@@ -1002,7 +1013,8 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 			O.Comma();
 		}
 		bFirst = false;
-		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Raw("}");
+		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma();
+		O.Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->VictoryVp(W.level)).Raw("}");
 	}
 	O.Raw("],").Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
@@ -1051,7 +1063,10 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(bFirst ? "" : ",");
 		bFirst = false;
 		O.Raw("{").Key("id").Int(T.id).Comma().Key("def").Int(T.def).Comma().Key("lv").Int(T.level).Comma().Key("xp").Int(T.xp).Comma();
-		O.Key("next").Int(Km->XpToNext(T.level)).Comma().Key("max").Int(C.titans[static_cast<size_t>(T.def)].MaxLevel()).Comma();
+		O.Key("next").Int(Km->XpToNext(T.level)).Comma().Key("max").Int(Km->TitanMaxLevel(T)).Comma().Key("asc").Int(T.ascended ? 1 : 0).Comma();
+		O.Key("ack");
+		WriteCheck(O, Km->CheckAscend(T.id));
+		O.Comma();
 		O.Key("rec").Int(T.recoverUntil).Comma().Key("skip").Int(Km->TitanSkipCost(T.id)).Comma().Key("slots").Int(Km->RelicSlots(T)).Comma();
 		O.Key("relics").Raw("[");
 		for (size_t K = 0; K < T.relics.size(); ++K)
@@ -1220,6 +1235,8 @@ EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int 
 	const dot::kingdom::Error E = K() ? K()->FinishAttack(WorldId, Capture != 0, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
 	Out O(G().Text);
 	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("gold").Int(R.res[0]).Comma().Key("food").Int(R.res[1]).Comma();
+	O.Key("shards").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Shards))]).Comma();
+	O.Key("vp").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Vp))]).Comma();
 	O.Key("land").Int(R.landId).Comma().Key("lost").Int(R.squadsLost).Comma().Key("back").Int(R.squadsBack).Comma();
 	O.Key("titan").Int(R.titanId).Comma().Key("xp").Int(R.titanXp).Comma().Key("levels").Int(R.titanLevels).Comma();
 	O.Key("broken").Int(R.relicsBroken).Raw("}");
@@ -1358,5 +1375,10 @@ EMSCRIPTEN_KEEPALIVE const char* dk_fuse_check(int Target, const char* Sacrifice
 EMSCRIPTEN_KEEPALIVE int dk_skip_titan(int Id)
 {
 	return K() ? static_cast<int>(K()->SkipRecovery(Id)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_ascend(int Id, int UseGems)
+{
+	return K() ? static_cast<int>(K()->Ascend(Id, UseGems != 0)) : -1;
 }
 }

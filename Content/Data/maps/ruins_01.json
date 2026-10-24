@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  // Fallen City: the battlefield of a ruins land. Broken walls give archers cover (ranged damage taken
+  // there is reduced), collapsed towers block the way. The layout is ours.
+  "id": "map.ruins_01",
+  "name": "Fallen City",
+  "width": 240,
+  "depth": 160,
+  "cellSize": 2,
+  "deploy": {
+    "attacker": { "min": [12, 8], "max": [228, 40] },
+    "defender": { "min": [12, 120], "max": [228, 152] }
+  },
+  "features": [
+    { "type": "Road",   "rect": { "x0": 112, "z0": 0, "x1": 128, "z1": 160 } },
+
+    { "type": "Ruins",  "rect": { "x0": 104, "z0": 72,  "x1": 136, "z1": 88 } },
+    { "type": "Ruins",  "rect": { "x0": 58,  "z0": 58,  "x1": 84,  "z1": 72 } },
+    { "type": "Ruins",  "rect": { "x0": 156, "z0": 88,  "x1": 182, "z1": 102 } },
+    { "type": "Ruins",  "rect": { "x0": 40,  "z0": 108, "x1": 58,  "z1": 120 } },
+    { "type": "Ruins",  "rect": { "x0": 182, "z0": 38,  "x1": 200, "z1": 50 } },
+    { "type": "Ruins",  "rect": { "x0": 88,  "z0": 98,  "x1": 104, "z1": 110 } },
+    { "type": "Ruins",  "rect": { "x0": 136, "z0": 48,  "x1": 152, "z1": 60 } },
+
+    { "type": "Rock",   "circle": { "x": 84,  "z": 88,  "r": 4 } },
+    { "type": "Rock",   "circle": { "x": 156, "z": 72,  "r": 4 } },
+    { "type": "Rock",   "circle": { "x": 100, "z": 118, "r": 3 } },
+    { "type": "Rock",   "circle": { "x": 140, "z": 42,  "r": 3 } },
+
+    { "type": "Hill",   "circle": { "x": 60,  "z": 36,  "r": 14 }, "height": 4 },
+    { "type": "Hill",   "circle": { "x": 180, "z": 124, "r": 14 }, "height": 4 },
+
+    { "type": "Forest", "circle": { "x": 28,  "z": 72,  "r": 10 } },
+    { "type": "Forest", "circle": { "x": 212, "z": 90,  "r": 10 } }
+  ]
+}

@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/dot_runner.dir/runner.cpp.o -o dot_runner  libdotsim.a libdotkingdom.a libdotsim.a 

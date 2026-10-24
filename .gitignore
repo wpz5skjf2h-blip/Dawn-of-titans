@@ -19,6 +19,7 @@ Plugins/*/Intermediate/
 
 # Standalone simulation tools
 /build*/
+SimTools/build*/
 __pycache__/
 
 # Web demo build output (Web/build.sh + Web/bundle.py) and toolchain

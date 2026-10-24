@@ -1,8 +1,0 @@
-dot_tests 2 3.91733
-dot_kingdom_tests 3 0.00221759
-dot_runner_sandbox 3 0.117386
-dot_runner_titan_duel 3 0.0092404
-dot_runner_cavalry 3 0.0146561
-dot_runner_raise_dead 3 0.254924
-dot_runner_chains_and_fire 1 0.42844
----

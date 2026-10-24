@@ -285,6 +285,7 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res .fill { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: 0.55; }
 .res small { font-weight: 500; color: var(--dim); font-size: 11px; }
 .res.gold { color: var(--valor); } .res.food { color: #b6e07a; } .res.gems { color: #7fe0e6; } .res.stones { color: #c9a6ff; } .res.builders { color: var(--parch); }
+.res.vp { color: #ffcf4a; } .res.shards { color: #9fe3ff; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
 #kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
@@ -327,11 +328,13 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .shopCard.off { opacity: 0.55; }
 .shopCard .why { font-size: 11px; color: #ffb4a6; }
 .cmp { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: 14px; align-items: baseline; }
-.cmp .k { color: var(--dim); } .cmp .v { font-variant-numeric: tabular-nums; text-align: right; } .cmp .n { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.cmp .k { color: var(--dim); } .cmp .k.on { color: var(--valor); font-weight: 700; } .cmp .v { font-variant-numeric: tabular-nums; text-align: right; } .cmp .n { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
 .landCard { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); }
 .landCard .ico { width: 56px; height: 56px; border-radius: 12px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 22px; }
 .landCard .ico.gold { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); color: #2a1a05; }
 .landCard .ico.food { background: radial-gradient(circle at 40% 35%, #c8ec8c, #4f7a24); color: #16220a; }
+.landCard .ico.vp { background: radial-gradient(circle at 40% 35%, #9fd48a, #2f5d3a); color: #10200f; }
+.landCard .ico.shards { background: radial-gradient(circle at 40% 35%, #b9c6d8, #44506a); color: #0f1522; }
 .landCard .info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .landCard .info b { font-size: 15px; }
 .landCard .info span { font-size: 12px; color: var(--dim); }
@@ -410,6 +413,8 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .ico.land { display: grid; place-items: center; }
 .ico.land.gold { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); }
 .ico.land.food { background: radial-gradient(circle at 40% 35%, #c8ec8c, #4f7a24); }
+.ico.land.vp { background: radial-gradient(circle at 40% 35%, #9fd48a, #2f5d3a); }
+.ico.land.shards { background: radial-gradient(circle at 40% 35%, #b9c6d8, #44506a); }
 .ico.land .lvb { position: absolute; right: -5px; bottom: -5px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; display: grid; place-items: center;
   font: 700 12px/1 var(--font-ui); font-style: normal; color: var(--parch); background: #1b232b; border: 1px solid var(--bronze); }
 .gi.mini { width: 18px; height: 18px; vertical-align: -4px; margin-right: 5px; flex: 0 0 auto; }
@@ -480,6 +485,8 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
       <div class="res food" id="rFood" title="Еда"></div>
       <div class="res gems" id="rGems" title="Самоцветы"></div>
       <button class="res stones" id="rStones" title="Камни портала"></button>
+      <button class="res vp" id="rVp" title="Очки победы"></button>
+      <div class="res shards" id="rShards" title="Осколки" hidden></div>
       <div class="res builders" id="rBuilders" title="Строители"></div>
     </header>
     <div id="kToasts" aria-live="polite"></div>

@@ -1,7 +1,7 @@
 'use strict';
 // Game icons: hand-drawn SVG glyphs (48 x 48, ink outline) shared by the kingdom screen and the battle HUD.
 // The tile behind a glyph (colour by category) comes from CSS (.ico ...), so the same glyph works on any background.
-// Names: troop.<id>, building.<id>, spell.<id>, relic.<atk|hp|armor>[.broken], class.<Class>, altar.<id>, land.<gold|food>, ui.<name>.
+// Names: troop.<id>, building.<id>, spell.<id>, relic.<atk|hp|armor>[.broken], class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins>, ui.<name>.
 
 const DotIcons = (() => {
 	const INK = '#26180c';
@@ -48,6 +48,19 @@ const DotIcons = (() => {
 	const CLOUD = (fill) => p('M11 23C5 23 5 14 11.5 13.5C12.5 7 21 4.5 25 10C28.5 5.5 37 7 36.5 13.5C43 13.5 43 23 36.5 23Z', fill);
 	const ISLAND = p('M5 24C5 20 43 20 43 24C43 28 36 30 33 35C30 41 26 45 24 45C21 45 18 41 15 35C12 30 5 28 5 24Z', '#9c7048') +
 		line('M15 31L19 35M30 32L27 37', '#6b4a2e', 1.3) + p('M5 24C5 19.5 43 19.5 43 24C43 27 5 27 5 24Z', '#7fc95a');
+	/** Five-point star (victory points). */
+	const STAR = (x, y, rr, fill) => {
+		let d = '';
+		for (let i = 0; i < 10; i++) {
+			const a = -Math.PI / 2 + (i * Math.PI) / 5;
+			const q = i % 2 ? rr * 0.45 : rr;
+			d += (i ? 'L' : 'M') + (x + Math.cos(a) * q).toFixed(1) + ' ' + (y + Math.sin(a) * q).toFixed(1);
+		}
+		return p(d + 'Z', fill, 'stroke-width="1.4"');
+	};
+	const PINE = (x, y, s) => r(x - 1.2 * s, y - 3 * s, 2.4 * s, 3.4 * s, 0.6, K.woodD, 'stroke-width="1.2"') +
+		p('M' + (x - 6 * s) + ' ' + (y - 2.5 * s) + 'L' + x + ' ' + (y - 17 * s) + 'L' + (x + 6 * s) + ' ' + (y - 2.5 * s) + 'Z', '#3f8f45') +
+		hi('M' + (x - 1.5 * s) + ' ' + (y - 12 * s) + 'L' + (x - 3.5 * s) + ' ' + (y - 6 * s));
 	const snowflake = () => {
 		let d = '';
 		for (let k = 0; k < 6; k++) {
@@ -209,6 +222,13 @@ const DotIcons = (() => {
 		'land.gold': ISLAND + COIN(19, 15) + COIN(29, 13) + spark(37, 6, 3.2, K.white),
 		'land.food': ISLAND + stick('M17 22V10M24 22V7M31 22V10', '#9a7a3e', 1.3) +
 			'<ellipse cx="17" cy="9" rx="2.4" ry="4" fill="' + K.gold + '"/><ellipse cx="24" cy="6" rx="2.4" ry="4" fill="' + K.gold + '"/><ellipse cx="31" cy="9" rx="2.4" ry="4" fill="' + K.gold + '"/>',
+		'land.forest': ISLAND + PINE(14, 24, 0.9) + PINE(31, 24, 1) + PINE(23, 25, 1.15) + STAR(39, 8, 5.5, K.gold),
+		'land.lake': ISLAND + '<ellipse cx="22" cy="23.4" rx="12.5" ry="2.5" fill="#4fa7e8" stroke-width="1.4"/>' +
+			hi('M15 23.2H21') + stick('M36 23V14M38.5 23V16', '#6f8f3a', 1.1) + STAR(13, 11, 6, K.gold),
+		'land.mountain': ISLAND + p('M8 24L21 5L34 24Z', '#9a958a') + p('M16.5 11.5L21 5L25.5 11.5L23 10.3L21 12.5L19 10.3Z', K.white, 'stroke-width="1.3"') +
+			p('M26 24L33 13L40 24Z', '#7f7a6e') + STAR(39, 7, 5, K.gold),
+		'land.ruins': ISLAND + r(10, 9, 5, 15, 1, K.stone) + r(9, 7, 7, 3, 1, K.stoneD) + r(31, 14, 5, 10, 1, K.stone) +
+			p('M31 14L33 12L36 14Z', K.stone, 'stroke-width="1.2"') + p('M24 4L28.5 12L24 22L19.5 12Z', '#8fd8ff') + hi('M22 11L24 6.5') + spark(39, 6, 2.8, K.white),
 		'ui.attack': rot(40, SWORD) + rot(-40, SWORD),
 		'ui.army': HELMET,
 		'ui.build': rot(-30, HAMMER),
