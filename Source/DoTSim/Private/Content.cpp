@@ -354,6 +354,38 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 				T.trample = true;
 				T.trampleDamage = V->GetFix("damage", fx::Int(30));
 			}
+			if (const JsonValue* V = S->Find("firebomb"))
+			{
+				T.firebomb = true;
+				T.splashRadius = V->GetFix("splashRadius", fx::Int(3));
+				T.splashEdgeMult = V->GetFix("edgeMult", fx::Pct(50));
+				T.fireRadius = V->GetFix("fireRadius", fx::Milli(2500));
+				T.fireDps = V->GetFix("fireDps", fx::Int(8));
+				T.fireTicks = SecToTicks(V->GetDouble("fireDuration", 4.0));
+				T.fireFriendlyMult = V->GetFix("friendlyMult", fx::Pct(50));
+			}
+			if (const JsonValue* V = S->Find("chains"))
+			{
+				T.chains = true;
+				T.chainRange = V->GetFix("range", fx::Int(18));
+				T.chainIntervalTicks = SecToTicks(V->GetDouble("interval", 2.5));
+				T.chainMinAlive = V->GetInt("minAlive", 3);
+				T.chainMoveSlow = V->GetFix("moveSlow", fx::Pct(8));
+				T.chainAttackSlow = V->GetFix("attackSlow", fx::Pct(5));
+				T.chainTicks = SecToTicks(V->GetDouble("duration", 10.0));
+				T.chainBindAt = V->GetInt("bindAt", 5);
+				T.chainBindTicks = SecToTicks(V->GetDouble("bindDuration", 2.5));
+				T.chainImmuneTicks = SecToTicks(V->GetDouble("immunity", 12.0));
+			}
+			if (const JsonValue* V = S->Find("sanctuary"))
+			{
+				T.support = true;
+				T.auraRadius = V->GetFix("radius", fx::Int(8));
+				T.auraHealPctPerSec = V->GetFix("healPctPerSec", fx::Milli(15));
+				T.auraMoralePerSec = V->GetFix("moralePerSec", fx::Int(3));
+				T.auraArmor = V->GetFix("armor", fx::Pct(10));
+				T.keepAway = V->GetFix("keepAway", fx::Int(8));
+			}
 		}
 		if (const JsonValue* F = J.Find("formations"))
 		{

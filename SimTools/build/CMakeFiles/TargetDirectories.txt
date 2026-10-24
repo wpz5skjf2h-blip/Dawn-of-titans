@@ -1,0 +1,9 @@
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dotsim.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dotkingdom.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dot_runner.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dot_tests.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dot_harness.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/dot_kingdom_tests.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/test.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/edit_cache.dir
+/home/claude/dawn-of-titans/SimTools/build/CMakeFiles/rebuild_cache.dir

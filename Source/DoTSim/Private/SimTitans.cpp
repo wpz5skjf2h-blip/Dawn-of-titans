@@ -527,6 +527,7 @@ void BattleSimulation::TitanApplyAttackHit(Titan& T, int Index)
 				HitSoldier(N, R.stompCoef, S.pos - T.pos, R.stompKnockH, R.stompKnockV);
 			}
 		}
+		ClearChains(T);
 		Emit(SimEventType::TitanStomp, T.side, T.id, 0, T.pos);
 	}
 	else if (T.state == TitanState::Grabbing)

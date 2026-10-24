@@ -79,7 +79,8 @@ const char* EventName(dot::SimEventType T)
 {
 	static const char* const Names[] = {"SoldierDied", "TitanAttack", "TitanSmash", "TitanStomp", "TitanGrab", "TitanThrowImpact", "TitanFootstep",
 		"TitanChargeStart", "TitanStaggered", "TitanDied", "AbilityCast", "AbilityImpact", "SpellCast", "SpellImpact", "ClashStarted", "ClashExchange",
-		"ClashEnded", "SquadRouted", "SquadRallied", "SquadLeftField", "SquadDestroyed", "ChargeImpact", "StarEarned", "BattleStarted", "BattleEnded", "DeadRaised"};
+		"ClashEnded", "SquadRouted", "SquadRallied", "SquadLeftField", "SquadDestroyed", "ChargeImpact", "StarEarned", "BattleStarted", "BattleEnded", "DeadRaised",
+		"FirebombImpact", "ChainThrown", "TitanBound"};
 	const int I = static_cast<int>(T);
 	return I >= 0 && I < static_cast<int>(dot::SimEventType::Count) ? Names[I] : "?";
 }

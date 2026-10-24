@@ -680,6 +680,7 @@ EMSCRIPTEN_KEEPALIVE const char* dot_frame()
 		O.Key("dead").Int(T.dead ? 1 : 0).Comma().Key("fall").Num(Yaw(T.fallDir), 3).Comma();
 		O.Key("ls").Int(T.leapStart).Comma().Key("le").Int(T.leapEnd).Comma().Key("la").Int(T.leapAbility).Comma().Key("stg").Int(T.staggerUntil).Comma();
 		O.Key("ar").Raw("[").Int(T.abilityReadyTick[0]).Comma().Int(T.abilityReadyTick[1]).Raw("]").Comma();
+		O.Key("ch").Int(Sim.TitanChains(T)).Comma().Key("bd").Int(T.boundUntil).Comma();
 		O.Key("au").Int(T.autoControl ? 1 : 0).Comma().Key("o").Int(static_cast<int>(T.order)).Comma().Key("cast").Int(T.castingAbility);
 		if (T.side == dot::Side::Attacker && T.order != dot::OrderType::None)
 		{
@@ -742,6 +743,17 @@ EMSCRIPTEN_KEEPALIVE const char* dot_frame()
 		}
 		bFirst = false;
 		O.Raw("[").Int(Z.ability).Comma().Fx(Z.center.x).Comma().Fx(Z.center.z).Comma().Fx(Z.radius).Comma().Int(static_cast<int>(Z.side)).Raw("]");
+	}
+	O.Raw("],").Key("fp").Raw("[");
+	bFirst = true;
+	for (const dot::FirePatch& F : Sim.FirePatches())
+	{
+		if (!bFirst)
+		{
+			O.Comma();
+		}
+		bFirst = false;
+		O.Raw("[").Fx(F.center.x).Comma().Fx(F.center.z).Comma().Fx(F.radius).Comma().Int(F.endTick).Raw("]");
 	}
 	const dot::ClashState& Cl = Sim.Clash();
 	O.Raw("],").Key("cl").Raw("{").Key("on").Int(Cl.active ? 1 : 0).Comma().Key("ex").Int(Cl.exchange).Comma();

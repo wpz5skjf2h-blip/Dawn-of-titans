@@ -233,6 +233,96 @@ Fix64 BattleSimulation::SquadMoveSpeed(const Squad& Sq) const
 	return Speed;
 }
 
+void BattleSimulation::UpdateSupportMovement(Squad& Sq)
+{
+	const TroopDef& TD = TroopOf(Sq);
+	Sq.autoTarget = 0;
+	if (Tick >= Sq.retargetTick)
+	{
+		Sq.retargetTick = Tick + 15;
+		// Step back from the nearest enemy that comes within keepAway.
+		bool bThreat = false;
+		FixVec2 ThreatPos;
+		Fix64 ThreatDist;
+		for (const Squad& E : SquadsList)
+		{
+			if (E.side == Sq.side || !E.Active() || E.Routing() || TroopOf(E).support || !IsSquadVisibleTo(Sq.side, E.id - 1))
+			{
+				continue;
+			}
+			const Fix64 D = fx::Dist(E.centroid, Sq.centroid) - E.radius - Sq.radius;
+			if (D <= TD.keepAway && (!bThreat || D < ThreatDist))
+			{
+				bThreat = true;
+				ThreatPos = E.centroid;
+				ThreatDist = D;
+			}
+		}
+		for (const Titan& T : TitansList)
+		{
+			if (T.side == Sq.side || !T.Alive())
+			{
+				continue;
+			}
+			const Fix64 D = fx::Dist(T.pos, Sq.centroid) - T.radius - Sq.radius;
+			if (D <= TD.keepAway && (!bThreat || D < ThreatDist))
+			{
+				bThreat = true;
+				ThreatPos = T.pos;
+				ThreatDist = D;
+			}
+		}
+		FixVec2 Goal = Sq.anchor;
+		if (bThreat)
+		{
+			FixVec2 Away = (Sq.centroid - ThreatPos).Normalized();
+			if (Away.IsZero())
+			{
+				Away = -Sq.facing;
+			}
+			Goal = Nav.ClampToWorld(Sq.leader + Away * (TD.keepAway + fx::Int(4)), fx::Int(4));
+			Sq.anchor = Goal;
+		}
+		else if (Sq.autoControl || Sides[SideIndex(Sq.side)].aiProfile >= 0)
+		{
+			// Follow the nearest friendly fighting squad, a few meters behind it.
+			const Squad* Ally = nullptr;
+			Fix64 AllyDist;
+			for (const Squad& A : SquadsList)
+			{
+				if (A.side != Sq.side || &A == &Sq || !A.Active() || A.Routing() || A.summoned || TroopOf(A).support)
+				{
+					continue;
+				}
+				const Fix64 D = fx::Dist(A.centroid, Sq.centroid);
+				if (!Ally || D < AllyDist)
+				{
+					Ally = &A;
+					AllyDist = D;
+				}
+			}
+			if (Ally)
+			{
+				const FixVec2 Back = (OwnEdgePoint(Sq.side, Ally->centroid) - Ally->centroid).Normalized();
+				Goal = Nav.ClampToWorld(Ally->centroid + Back * (Ally->radius + Sq.radius + fx::Int(3)), fx::Int(4));
+				Sq.anchor = Goal;
+			}
+		}
+		if (fx::Dist(Goal, Sq.leader) > fx::Int(2))
+		{
+			SetSquadPathTo(Sq, Goal);
+		}
+		else
+		{
+			Sq.path.clear();
+		}
+	}
+	if (!Sq.path.empty() && MoveLeaderAlongPath(Sq, SquadMoveSpeed(Sq)))
+	{
+		Sq.path.clear();
+	}
+}
+
 int32_t BattleSimulation::ResolveSquadTarget(const Squad& Sq) const
 {
 	if (Sq.order == OrderType::Attack)
@@ -283,8 +373,22 @@ void BattleSimulation::UpdateSquadMovement(Squad& Sq)
 		return;
 	}
 
+	// Support troops never chase: an attack order just cancels, and they keep their own distance (UpdateSupportMovement).
+	if (TD.support && Sq.order == OrderType::Attack)
+	{
+		Sq.order = OrderType::None;
+		Sq.orderTarget = 0;
+		Sq.attackAfterPath = false;
+		Sq.path.clear();
+	}
+	if (TD.support && Sq.order == OrderType::None && Sq.stance != Stance::Hold)
+	{
+		UpdateSupportMovement(Sq);
+		return;
+	}
+
 	// Melee lock: the leader follows the fight.
-	if (Sq.InMelee() && !TD.ranged && Sq.order != OrderType::CycleWithdraw)
+	if (Sq.InMelee() && !TD.ranged && !TD.support && Sq.order != OrderType::CycleWithdraw)
 	{
 		Sq.leader = Sq.leader + (Sq.centroid - Sq.leader) * fx::Pct(10);
 		const bool bCycles = TD.IsCavalry() && (Sq.stance == Stance::Skirmish || Sq.autoControl || Sides[SideIndex(Sq.side)].aiProfile >= 0);

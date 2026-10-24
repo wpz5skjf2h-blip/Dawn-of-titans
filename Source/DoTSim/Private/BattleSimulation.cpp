@@ -68,6 +68,7 @@ bool BattleSimulation::Init(const BattleSetup& Setup, std::string& Error)
 	Impacts.clear();
 	Bodies.clear();
 	Summons.clear();
+	Fires.clear();
 	Events.clear();
 	Hashes.clear();
 	Scheduled.clear();
@@ -352,6 +353,9 @@ void BattleSimulation::Step(const std::vector<BattleCommand>& Commands)
 		UpdateEngagement();
 		UpdateSoldierAttacks();
 		UpdateProjectiles();
+		UpdateFirePatches();
+		UpdateChains();
+		UpdateSanctuaries();
 		UpdateZonesAndImpacts();
 		SpawnSummons();
 		UpdateSoldierStatus();

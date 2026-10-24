@@ -1,0 +1,178 @@
+Start testing: Oct 24 22:04 UTC
+----------------------------------------------------------
+1/7 Testing: dot_tests
+1/7 Test: dot_tests
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_tests"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_tests" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+[ RUN  ] Fix64
+[  OK  ] Fix64
+[ RUN  ] RandomAndHash
+[  OK  ] RandomAndHash
+[ RUN  ] Json
+[  OK  ] Json
+[ RUN  ] Content
+[  OK  ] Content
+[ RUN  ] NavGrid
+[  OK  ] NavGrid
+[ RUN  ] Determinism
+[  OK  ] Determinism
+[ RUN  ] Invariants
+[  OK  ] Invariants
+[ RUN  ] Counters
+  spearmen vs outriders: 10/10 wins
+  outriders vs archers: 10/10 wins
+[  OK  ] Counters
+[ RUN  ] CommandsAndReplay
+  replay: 14 commands, 5617 bytes, 3 stars
+[  OK  ] CommandsAndReplay
+[ RUN  ] ClashGrades
+  clash: 5 exchanges, 5 perfect; result 3 stars
+[  OK  ] ClashGrades
+[ RUN  ] Surrender
+[  OK  ] Surrender
+[ RUN  ] NoTitanStars
+[  OK  ] NoTitanStars
+[ RUN  ] SpellChargesRelicsMorale
+[  OK  ] SpellChargesRelicsMorale
+[ RUN  ] RaiseDead
+[  OK  ] RaiseDead
+[ RUN  ] TitanAbilities
+  titan.minotaur: 2 + 1 casts
+  titan.cyclops: 4 + 2 casts
+  titan.perun: 2 + 1 casts
+  titan.atlas: 3 + 3 casts
+  titan.ymir: 7 + 4 casts
+  titan.surtr: 3 + 2 casts
+  titan.hecate: 2 + 1 casts
+  titan.artemis: 3 + 2 casts
+[  OK  ] TitanAbilities
+[ RUN  ] NewTroops
+[  OK  ] NewTroops
+
+1741 checks, 0 failures
+<end of output>
+Test time =   7.83 sec
+----------------------------------------------------------
+Test Passed.
+"dot_tests" end time: Oct 24 22:04 UTC
+"dot_tests" time elapsed: 00:00:07
+----------------------------------------------------------
+
+2/7 Testing: dot_kingdom_tests
+2/7 Test: dot_kingdom_tests
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_kingdom_tests"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_kingdom_tests" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+[  OK  ] ContentMatchesOriginal
+[  OK  ] NewGameAndProduction
+[  OK  ] UpgradesBuildersAndRequirements
+[  OK  ] BuildLimitsAndPlacement
+[  OK  ] StonesAttacksAndLands
+[  OK  ] SaveLoadDeterminism
+[  OK  ] PortalUpgradeMidway
+[  OK  ] ArmyContent
+[  OK  ] TrainingQueue
+[  OK  ] TroopResearch
+[  OK  ] CasualtiesTitansRelicsFusion
+[  OK  ] ArmySaveAndMigration
+[  OK  ] SpellsRelicsLandTitans
+
+232 checks, 0 failures
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"dot_kingdom_tests" end time: Oct 24 22:04 UTC
+"dot_kingdom_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/7 Testing: dot_runner_sandbox
+3/7 Test: dot_runner_sandbox
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_runner" "--scenario" "scenarios/m0_sandbox.json" "--attacker-ai" "veteran" "--quiet"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_runner_sandbox" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+DEFEAT stars=0 hash=057f83f8f8e5ab24
+<end of output>
+Test time =   0.35 sec
+----------------------------------------------------------
+Test Passed.
+"dot_runner_sandbox" end time: Oct 24 22:04 UTC
+"dot_runner_sandbox" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/7 Testing: dot_runner_titan_duel
+4/7 Test: dot_runner_titan_duel
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_runner" "--scenario" "scenarios/m0_titan_duel.json" "--quiet"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_runner_titan_duel" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+VICTORY stars=3 hash=025141b7216cb7cf
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"dot_runner_titan_duel" end time: Oct 24 22:04 UTC
+"dot_runner_titan_duel" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/7 Testing: dot_runner_cavalry
+5/7 Test: dot_runner_cavalry
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_runner" "--scenario" "scenarios/m0_cavalry_test.json" "--quiet"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_runner_cavalry" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+VICTORY stars=3 hash=43e8e1c68b88d4b1
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"dot_runner_cavalry" end time: Oct 24 22:04 UTC
+"dot_runner_cavalry" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/7 Testing: dot_runner_raise_dead
+6/7 Test: dot_runner_raise_dead
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_runner" "--scenario" "scenarios/m1_raise_dead.json" "--attacker-ai" "veteran" "--determinism" "3" "--quiet"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_runner_raise_dead" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+20261024 92495edc934e04cc 3 1631
+20261025 3c17f17ccd00a743 3 1463
+20261026 d819cbea7223063a 3 1547
+<end of output>
+Test time =   0.76 sec
+----------------------------------------------------------
+Test Passed.
+"dot_runner_raise_dead" end time: Oct 24 22:04 UTC
+"dot_runner_raise_dead" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/7 Testing: dot_runner_chains_and_fire
+7/7 Test: dot_runner_chains_and_fire
+Command: "/home/claude/dawn-of-titans/SimTools/build/dot_runner" "--scenario" "scenarios/m1_chains_and_fire.json" "--attacker-ai" "veteran" "--determinism" "3" "--quiet"
+Directory: /home/claude/dawn-of-titans/SimTools/build
+"dot_runner_chains_and_fire" start time: Oct 24 22:04 UTC
+Output:
+----------------------------------------------------------
+20261024 c734546e9750c333 3 1787
+20261025 4ea1582969bfcdd9 3 1507
+20261026 0812a001ee665c3a 3 1635
+<end of output>
+Test time =   0.43 sec
+----------------------------------------------------------
+Test Passed.
+"dot_runner_chains_and_fire" end time: Oct 24 22:04 UTC
+"dot_runner_chains_and_fire" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 24 22:04 UTC

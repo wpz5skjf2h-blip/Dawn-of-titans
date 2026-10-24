@@ -325,6 +325,9 @@ void ADoTHUD::CollectToasts()
 		case dot::SimEventType::TitanDied:
 			ShowToast(bOwn ? FString(TEXT("Your titan has fallen!")) : FString(TEXT("The enemy titan falls!")), bOwn ? GEnemy : GGold);
 			break;
+		case dot::SimEventType::TitanBound:
+			ShowToast(bOwn ? FString(TEXT("Your titan is BOUND in chains!")) : FString(TEXT("Chainbreakers bound the enemy titan! Strike now!")), bOwn ? GEnemy : GGold);
+			break;
 		case dot::SimEventType::SquadRouted:
 		{
 			const int Index = Sim->SquadIndexFromId(E.a);

@@ -22,8 +22,11 @@ const RES = ['gold', 'food', 'gems', 'stones'];
 const RES_OF = { gold: 'золота', food: 'еды', gems: 'самоцветов', stones: 'камней портала' };
 const AI_RU = { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' };
 const TROOP_RU = { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
-	'troop.outriders': 'всадники', 'troop.knights': 'рыцари' };
+	'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.grenadiers': 'гренадеры', 'troop.chainbreakers': 'цепеломы',
+	'troop.priests': 'боевые жрецы' };
 const CAVALRY = new Set(['troop.outriders', 'troop.knights']);
+/** Troops that deploy behind the melee line. */
+const BACK_ROW = new Set(['troop.archers', 'troop.grenadiers', 'troop.priests']);
 const CATS = [['resources', 'Ресурсы'], ['troops', 'Войска'], ['spells', 'Заклинания'], ['other', 'Прочее']];
 
 // Shared state of the kingdom screen.
@@ -2772,7 +2775,7 @@ function landScenario(w, prep) {
 	att.squads = prep.squads.map((t) => {
 		const tr = K.army.troops[t];
 		const lvl = tr.levels[K.st.army.lv[t] - 1];
-		const ranged = tr.id === 'troop.archers';
+		const ranged = BACK_ROW.has(tr.id);
 		const pos = ranged ? [xs[back++ % xs.length], 18 - 6 * Math.floor((back - 1) / xs.length)] : [xs[front++ % xs.length], 34 - 6 * Math.floor((front - 1) / xs.length)];
 		return { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
 	});
@@ -2881,6 +2884,12 @@ const TROOP_NOTE = {
 	'troop.militia': 'сильно против лучников, слабо против копейщиков',
 	'troop.spearmen': 'сильны против ополчения и зверей',
 	'troop.archers': 'бьют издалека, в ближнем бою слабы',
+	'troop.swordsmen': 'щиты держат стрелы, сильны против лучников и копейщиков',
+	'troop.grenadiers': 'огненные горшки бьют по площади и поджигают землю; рассыпной строй их ослабляет',
+	'troop.outriders': 'быстрые, охотятся на стрелков и жрецов, но гибнут на копьях',
+	'troop.priests': 'не сражаются: лечат, ободряют и укрепляют броню отрядов рядом',
+	'troop.chainbreakers': 'гарпуны замедляют титана, пять цепей сковывают его',
+	'troop.knights': 'тяжёлый таранный удар и топот по лёгкой пехоте',
 };
 /** Icon tile: a glyph from icons.js on a tile coloured by `tile` (troop, spell, relic r1..r5, bld <category>, titan, altar). */
 const icoHtml = (name, tile) => '<div class="ico ' + tile + '">' + DotIcons.svg(name) + '</div>';

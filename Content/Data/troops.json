@@ -100,6 +100,51 @@
         { "name": "Barrow Lords", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
         { "name": "Deathless", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
+    },
+    // Master prompt 4.9, troops 7, 9 and 10 (Ballista Crew comes later). In the original, grenadiers were an envoy-council troop.
+    {
+      "id": "troop.grenadiers", "name": "Grenadiers", "short": "GRN", "class": "Ranged", "move": "Infantry", "counterRow": "grenadiers",
+      "squadSize": 12, "hp": 100, "armor": 0.05, "atk": 40, "attackInterval": 3.5, "range": 22, "minRange": 4, "moveSpeed": 3.2,
+      "collisionRadius": 0.4, "spacing": 1.5, "critChance": 0.05, "critDamage": 1.5,
+      "ranged": { "projectileSpeed": 16, "accuracyNear": 0.70, "accuracyFar": 0.45, "accuracyNearRange": 10, "accuracyVsTitan": 0.90 },
+      "specials": { "firebomb": { "splashRadius": 3, "edgeMult": 0.5, "fireRadius": 2.5, "fireDps": 8, "fireDuration": 4, "friendlyMult": 0.5 } },
+      "formations": ["Line", "Column", "Loose"], "defaultStance": "Skirmish",
+      "tiers": [
+        { "name": "Firebrands", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Grenadiers", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Alchemists", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Pyromancers", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Sunfire Grenadiers", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    {
+      "id": "troop.chainbreakers", "name": "Chainbreakers", "short": "CHN", "class": "Light", "move": "Infantry", "counterRow": "chainbreakers",
+      "squadSize": 12, "hp": 150, "armor": 0.15, "atk": 10, "attackInterval": 1.4, "range": 1.5, "moveSpeed": 3.4,
+      "collisionRadius": 0.4, "spacing": 1.5, "critChance": 0.05, "critDamage": 1.5,
+      "specials": { "chains": { "range": 18, "interval": 2.5, "minAlive": 3, "moveSlow": 0.08, "attackSlow": 0.05, "duration": 10,
+        "bindAt": 5, "bindDuration": 2.5, "immunity": 12 } },
+      "formations": ["Line", "Column", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Ropers", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Chainbreakers", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Harpooners", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Colossus Binders", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Godchainers", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    {
+      "id": "troop.priests", "name": "War Priests", "short": "PRI", "class": "Support", "move": "Infantry", "counterRow": "priests",
+      "squadSize": 8, "hp": 110, "armor": 0.05, "atk": 1, "attackInterval": 2.0, "range": 1.5, "moveSpeed": 3.2,
+      "collisionRadius": 0.4, "spacing": 1.6, "critChance": 0.0, "critDamage": 1.0,
+      "specials": { "sanctuary": { "radius": 8, "healPctPerSec": 0.015, "moralePerSec": 3, "armor": 0.10, "keepAway": 8 } },
+      "formations": ["Line", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Acolytes", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "War Priests", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Hierophants", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Oracles", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Aether Saints", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
     }
   ]
 }

@@ -322,6 +322,13 @@ void TestTrainingQueue()
 	KD_CHECK(K.ArmyCount(Mil) == 3 && K.ArmyTotal() == 4 && K.ArmyCapacity() == 10 && K.BattleSlots() == 3);
 	KD_CHECK(K.QueueCapacity() == 6 && K.SurvivalPct() == 100 && K.MaxTroopLevel() == 1);
 	KD_CHECK(K.CheckTrain(Troop("troop.spearmen")).error == Error::Locked); // Spearmen from Castle 3 (estimate)
+	KD_CHECK(Content().troops.size() == 9);
+	for (const char* Id : {"troop.swordsmen", "troop.grenadiers", "troop.outriders", "troop.priests", "troop.chainbreakers", "troop.knights"})
+	{
+		const int T = Troop(Id);
+		KD_CHECK(T >= 0 && Content().troops[static_cast<size_t>(T)].unlockCastle > 3);
+		KD_CHECK(T >= 0 && K.CheckTrain(T).error == Error::Locked);
+	}
 	const int64_t Food = K.Amount(Res::Food);
 	for (int I = 0; I < 6; ++I)
 	{

@@ -9,6 +9,6 @@
     "titans": "titans.json",
     "ai": "ai_profiles.json",
     "maps": ["maps/highvale_01.json"],
-    "scenarios": ["scenarios/m0_sandbox.json", "scenarios/m0_titan_duel.json", "scenarios/m0_cavalry_test.json", "scenarios/m1_raise_dead.json"]
+    "scenarios": ["scenarios/m0_sandbox.json", "scenarios/m0_titan_duel.json", "scenarios/m0_cavalry_test.json", "scenarios/m1_raise_dead.json", "scenarios/m1_chains_and_fire.json"]
   }
 }

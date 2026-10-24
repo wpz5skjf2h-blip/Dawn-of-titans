@@ -151,8 +151,11 @@ void TestJson()
 void TestContent()
 {
 	const SimContent& C = Content();
-	DOT_CHECK(C.troops.size() == 7);
+	DOT_CHECK(C.troops.size() == 10);
 	DOT_CHECK(C.FindTroop("troop.skeleton") == 6);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.grenadiers"))].firebomb);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.chainbreakers"))].chains);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.priests"))].support);
 	DOT_CHECK(C.titans.size() == 10);
 	DOT_CHECK(C.FindAbility("spell.meteor_strike") >= 0);
 	const TroopDef& Spear = C.troops[static_cast<size_t>(C.FindTroop("troop.spearmen"))];
@@ -686,6 +689,106 @@ void TestRaiseDead()
 	DOT_CHECK(A.HashLog() == B.HashLog());
 }
 
+SquadSetup MakeSquad(const char* Troop, int X, int Z, bool bFacingNorth, Stance St)
+{
+	SquadSetup Q;
+	Q.troopId = Troop;
+	Q.position = FixVec2(fx::Int(X), fx::Int(Z));
+	Q.facing = FixVec2(Fix64::Zero(), bFacingNorth ? Fix64::One() : -Fix64::One());
+	Q.stance = St;
+	Q.stanceSet = true;
+	return Q;
+}
+
+int CountEvents(const std::vector<SimEvent>& Ev, SimEventType Type)
+{
+	return static_cast<int>(std::count_if(Ev.begin(), Ev.end(), [Type](const SimEvent& E) { return E.type == Type; }));
+}
+
+void TestNewTroops()
+{
+	std::string Error;
+	// Grenadiers: firebombs burst in a splash and leave burning ground.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[1].aiProfile.clear();
+		S.sides[0].squads = {MakeSquad("troop.grenadiers", 120, 60, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 78, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		std::vector<SimEvent> Ev;
+		bool bFire = false;
+		for (int I = 0; I < 15 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Sim.DrainEvents(Ev);
+			bFire = bFire || !Sim.FirePatches().empty();
+		}
+		DOT_CHECK(CountEvents(Ev, SimEventType::FirebombImpact) >= 12);
+		DOT_CHECK(bFire);
+		DOT_CHECK(Sim.Squads()[1].aliveCount < Sim.Squads()[1].startCount - 4);
+	}
+	// Chainbreakers: two squads bind a titan with five chains; the chains then break and the titan is immune for a while.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].aiProfile.clear();
+		S.sides[1].titan.position = FixVec2(fx::Int(120), fx::Int(100));
+		S.sides[0].squads = {MakeSquad("troop.chainbreakers", 112, 90, true, Stance::Hold), MakeSquad("troop.chainbreakers", 128, 90, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 140, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		std::vector<SimEvent> Ev;
+		int MaxChains = 0;
+		int32_t BoundTick = -1;
+		for (int I = 0; I < 12 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Sim.DrainEvents(Ev);
+			MaxChains = std::max(MaxChains, Sim.TitanChains(Sim.Titans()[0]));
+			if (BoundTick < 0 && CountEvents(Ev, SimEventType::TitanBound) > 0)
+			{
+				BoundTick = Sim.CurrentTick();
+				const Titan& T = Sim.Titans()[0];
+				DOT_CHECK(T.state == TitanState::Staggered);
+				DOT_CHECK(T.boundUntil > Sim.CurrentTick());
+				DOT_CHECK(Sim.TitanChains(T) == 0);
+			}
+		}
+		DOT_CHECK(MaxChains == 4);
+		DOT_CHECK(BoundTick > 0);
+		DOT_CHECK(CountEvents(Ev, SimEventType::TitanBound) == 1); // immune for 12 s after the bind
+		DOT_CHECK(Sim.Titans()[0].chainImmuneUntil > Sim.CurrentTick());
+	}
+	// War Priests: never attack; their sanctuary armors and heals allies nearby.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.militia", 120, 70, true, Stance::Aggressive), MakeSquad("troop.priests", 120, 62, true, Stance::Aggressive)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 90, false, Stance::Aggressive)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		bool bWarded = false;
+		for (int I = 0; I < 30 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			bWarded = bWarded || Sim.SquadStat(Sim.Squads()[0], StatType::ArmorAdd) >= fx::Pct(10);
+		}
+		DOT_CHECK(bWarded);
+		for (const int32_t M : Sim.Squads()[1].members)
+		{
+			DOT_CHECK(Sim.Soldiers()[static_cast<size_t>(M)].lastAttackTick < 0);
+		}
+		DOT_CHECK(Sim.Squads()[1].aliveCount > 0);
+	}
+}
+
 void TestTitanAbilities()
 {
 	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
@@ -754,7 +857,8 @@ int main()
 	const NamedTest Tests[] = {{"Fix64", TestFix64}, {"RandomAndHash", TestRandomAndHash}, {"Json", TestJson}, {"Content", TestContent},
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
 		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
-		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities}};
+		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities},
+		{"NewTroops", TestNewTroops}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

@@ -65,3 +65,4 @@ add_test(NAME dot_runner_sandbox COMMAND dot_runner --scenario scenarios/m0_sand
 add_test(NAME dot_runner_titan_duel COMMAND dot_runner --scenario scenarios/m0_titan_duel.json --quiet)
 add_test(NAME dot_runner_cavalry COMMAND dot_runner --scenario scenarios/m0_cavalry_test.json --quiet)
 add_test(NAME dot_runner_raise_dead COMMAND dot_runner --scenario scenarios/m1_raise_dead.json --attacker-ai veteran --determinism 3 --quiet)
+add_test(NAME dot_runner_chains_and_fire COMMAND dot_runner --scenario scenarios/m1_chains_and_fire.json --attacker-ai veteran --determinism 3 --quiet)

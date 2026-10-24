@@ -17,7 +17,7 @@ enum class SoldierState : uint8_t { Idle, Moving, Fighting, Airborne, KnockedDow
 enum class MoraleState : uint8_t { Steady, Shaken, Wavering, Routing };
 enum class OrderType : uint8_t { None, Move, Attack, Retreat, CycleWithdraw, Skirmish };
 enum class TitanState : uint8_t { Idle, Moving, Attacking, Stomping, Grabbing, Casting, Leaping, Clashing, Staggered, Dead };
-enum class ProjectileKind : uint8_t { Arrow, Bolt, ThrownSoldier, TitanBolt };
+enum class ProjectileKind : uint8_t { Arrow, Bolt, ThrownSoldier, TitanBolt, Firebomb };
 
 struct StatusEffect
 {
@@ -121,6 +121,7 @@ struct Squad
 	/** Raised from the fallen mid-battle: fearless, not part of the army, crumbles at expireTick. */
 	bool summoned = false;
 	int32_t expireTick = -1;
+	int32_t chainReadyTick = 0;
 	// AI bookkeeping
 	int32_t aiNextTick = 0;
 	int32_t aiTarget = 0;
@@ -216,6 +217,9 @@ struct Titan
 	Fix64 killRageThisSecond;
 	int32_t killRageSecond = -1;
 	Fix64 hpLostAccumPct;
+	// Chainbreakers' harpoons: Bound (rooted and staggered) at the troop's bindAt chains, then immune for a while.
+	int32_t boundUntil = -1;
+	int32_t chainImmuneUntil = -1;
 
 	bool Alive() const { return !dead; }
 };
@@ -264,6 +268,17 @@ struct PendingImpact
 	int32_t impactTick = 0;
 	int level = 1;
 	bool active = true;
+};
+
+/** Burning ground left by a Grenadier firebomb. */
+struct FirePatch
+{
+	Side side = Side::Attacker;
+	FixVec2 center;
+	Fix64 radius;
+	Fix64 dps;
+	Fix64 friendlyMult;
+	int32_t endTick = 0;
 };
 
 struct PendingSummon
@@ -352,6 +367,9 @@ public:
 	const std::vector<Projectile>& Projectiles() const { return ProjectilesList; }
 	const std::vector<Zone>& Zones() const { return ZonesList; }
 	const std::vector<PendingImpact>& PendingImpacts() const { return Impacts; }
+	const std::vector<FirePatch>& FirePatches() const { return Fires; }
+	/** Chains on a titan right now (Chainbreakers). */
+	int TitanChains(const Titan& T) const;
 	const ClashState& Clash() const { return ClashData; }
 	const SideState& GetSide(Side S) const { return Sides[SideIndex(S)]; }
 	const BattleResult& Result() const { return ResultData; }
@@ -432,6 +450,12 @@ private:
 	void UpdateSoldierStatus();
 	void CleanupDead();
 	void ExpireStatuses();
+	void ExplodeFirebomb(const Projectile& P);
+	void UpdateFirePatches();
+	void UpdateChains();
+	void ClearChains(Titan& T);
+	void UpdateSanctuaries();
+	void UpdateSupportMovement(Squad& Sq);
 
 	// SimTitans.cpp
 	void UpdateTitans();
@@ -498,6 +522,7 @@ private:
 	std::vector<PendingImpact> Impacts;
 	std::vector<FallenBody> Bodies;
 	std::vector<PendingSummon> Summons;
+	std::vector<FirePatch> Fires;
 	ClashState ClashData;
 	SideState Sides[2];
 	bool Objectives[3] = {false, false, false};

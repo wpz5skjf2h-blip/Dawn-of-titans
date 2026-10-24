@@ -74,6 +74,17 @@ const DotIcons = (() => {
 			p('M11 21C11 11 17 6 24 6C31 6 37 11 37 21V38C37 41 35 43 32 43H16C13 43 11 41 11 38Z', K.steel) +
 			r(14, 20, 20, 4, 2, INK) + line('M24 7V19M24 25V42', K.steelD, 1.4) +
 			c(18, 30, 1.2, INK) + c(18, 34.5, 1.2, INK) + c(30, 30, 1.2, INK) + c(30, 34.5, 1.2, INK) + hi('M15 14C17 10 20 8.5 23 8'),
+		// A clay firepot with a burning fuse.
+		'troop.grenadiers': c(22, 31, 13, K.brown) + r(16, 15, 12, 6, 2, K.brownD) + line('M12 27C16 24 28 24 32 27', K.brownD, 1.6) +
+			stick('M22 15C24 10 28 9 31 8', K.cream, 1.6) + p('M33 1C39 5 40 12 35 14C30 15 28 10 31 7C32 9 34 9 33 1Z', K.fire) +
+			p('M33.5 6.5C36 9 36 12 34 12.5C32 12.5 32 10 33.5 6.5Z', K.fireY, 'stroke="none"') + hi('M13 29C13 25 16 22 19 21'),
+		// Two iron chain links and a barbed harpoon head.
+		'troop.chainbreakers': stick('M6 42L30 18', K.wood, 3) + p('M27 13L40 8L35 21L32 18L28 22L26 16Z', K.steel) +
+			'<g fill="none">' + line('M27 37a5 7 -45 1 1 9 -9a5 7 -45 1 1 -9 9Z', INK, 5.4) + line('M27 37a5 7 -45 1 1 9 -9a5 7 -45 1 1 -9 9Z', K.iron, 3) +
+			line('M35 45a5 7 45 1 1 9 -9a5 7 45 1 1 -9 9Z', INK, 5.4) + line('M35 45a5 7 45 1 1 9 -9a5 7 45 1 1 -9 9Z', K.iron, 3) + '</g>',
+		// A priest's staff crowned with a golden sun.
+		'troop.priests': stick('M24 46V20', K.wood, 3.4) + RAYS + c(24, 13, 8, K.gold) + c(24, 13, 4, K.fireY) + hi('M19 10C20 8 22 7 24 7') +
+			p('M15 30C19 27 29 27 33 30L31 33C27 31 21 31 17 33Z', K.cream),
 
 		// --- Buildings ----------------------------------------------------------------------------
 		'building.castle': r(4, 18, 11, 25, 1, K.stone) + p('M3 19L9.5 6L16 19Z', K.blue) + r(33, 18, 11, 25, 1, K.stone) + p('M32 19L38.5 6L45 19Z', K.blue) +

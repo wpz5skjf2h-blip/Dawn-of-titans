@@ -78,6 +78,32 @@ struct TroopDef
 	int chargeKnockdownTicks = 0;
 	bool trample = false;
 	Fix64 trampleDamage;
+	// Grenadiers: shots burst in a splash and leave a burning patch.
+	bool firebomb = false;
+	Fix64 splashRadius;
+	Fix64 splashEdgeMult = fx::Pct(50);
+	Fix64 fireRadius;
+	Fix64 fireDps;
+	int fireTicks = 0;
+	Fix64 fireFriendlyMult = fx::Pct(50);
+	// Chainbreakers: harpoon chains slow an enemy titan and bind it at bindAt chains.
+	bool chains = false;
+	Fix64 chainRange;
+	int chainIntervalTicks = 75;
+	int chainMinAlive = 3;
+	Fix64 chainMoveSlow;
+	Fix64 chainAttackSlow;
+	int chainTicks = 300;
+	int chainBindAt = 5;
+	int chainBindTicks = 75;
+	int chainImmuneTicks = 360;
+	// War Priests: never attack; heal, steady and armor nearby allies.
+	bool support = false;
+	Fix64 auraRadius;
+	Fix64 auraHealPctPerSec;
+	Fix64 auraMoralePerSec;
+	Fix64 auraArmor;
+	Fix64 keepAway;
 	uint32_t formationMask = 0;
 	Stance defaultStance = Stance::Aggressive;
 	std::vector<TroopTierDef> tiers;

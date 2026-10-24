@@ -1,0 +1,2 @@
+/usr/bin/ar qc libdotkingdom.a "CMakeFiles/dotkingdom.dir/home/claude/dawn-of-titans/Source/DoTKingdom/Private/Kingdom.cpp.o" "CMakeFiles/dotkingdom.dir/home/claude/dawn-of-titans/Source/DoTKingdom/Private/KingdomContent.cpp.o"
+/usr/bin/ranlib libdotkingdom.a
