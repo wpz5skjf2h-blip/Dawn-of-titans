@@ -22,8 +22,11 @@ const RES = ['gold', 'food', 'gems', 'stones'];
 const RES_OF = { gold: 'золота', food: 'еды', gems: 'самоцветов', stones: 'камней портала' };
 const AI_RU = { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' };
 const TROOP_RU = { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
-	'troop.outriders': 'всадники', 'troop.knights': 'рыцари' };
+	'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.grenadiers': 'гренадеры', 'troop.chainbreakers': 'цепеломы',
+	'troop.priests': 'боевые жрецы' };
 const CAVALRY = new Set(['troop.outriders', 'troop.knights']);
+/** Troops that deploy behind the melee line. */
+const BACK_ROW = new Set(['troop.archers', 'troop.grenadiers', 'troop.priests']);
 const CATS = [['resources', 'Ресурсы'], ['troops', 'Войска'], ['spells', 'Заклинания'], ['other', 'Прочее']];
 
 // Shared state of the kingdom screen.
@@ -2772,7 +2775,7 @@ function landScenario(w, prep) {
 	att.squads = prep.squads.map((t) => {
 		const tr = K.army.troops[t];
 		const lvl = tr.levels[K.st.army.lv[t] - 1];
-		const ranged = tr.id === 'troop.archers';
+		const ranged = BACK_ROW.has(tr.id);
 		const pos = ranged ? [xs[back++ % xs.length], 18 - 6 * Math.floor((back - 1) / xs.length)] : [xs[front++ % xs.length], 34 - 6 * Math.floor((front - 1) / xs.length)];
 		return { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
 	});
@@ -2828,7 +2831,7 @@ function survivorsFromBattle(count) {
 		const st = K.app.sim.staticInfo();
 		const fr = K.app.sim.frame();
 		st.squads.forEach((q, i) => {
-			if (q.side === 0) out.push(Math.round((100 * (fr.sq[i] ? fr.sq[i].a : 0)) / Math.max(1, q.start)));
+			if (q.side === 0 && !q.sum) out.push(Math.round((100 * (fr.sq[i] ? fr.sq[i].a : 0)) / Math.max(1, q.start)));
 		});
 	} catch (e) {
 		console.warn('Battle survivors unavailable:', e);
@@ -2881,6 +2884,12 @@ const TROOP_NOTE = {
 	'troop.militia': 'сильно против лучников, слабо против копейщиков',
 	'troop.spearmen': 'сильны против ополчения и зверей',
 	'troop.archers': 'бьют издалека, в ближнем бою слабы',
+	'troop.swordsmen': 'щиты держат стрелы, сильны против лучников и копейщиков',
+	'troop.grenadiers': 'огненные горшки бьют по площади и поджигают землю; рассыпной строй их ослабляет',
+	'troop.outriders': 'быстрые, охотятся на стрелков и жрецов, но гибнут на копьях',
+	'troop.priests': 'не сражаются: лечат, ободряют и укрепляют броню отрядов рядом',
+	'troop.chainbreakers': 'гарпуны замедляют титана, пять цепей сковывают его',
+	'troop.knights': 'тяжёлый таранный удар и топот по лёгкой пехоте',
 };
 /** Icon tile: a glyph from icons.js on a tile coloured by `tile` (troop, spell, relic r1..r5, bld <category>, titan, altar). */
 const icoHtml = (name, tile) => '<div class="ico ' + tile + '">' + DotIcons.svg(name) + '</div>';
@@ -2908,6 +2917,7 @@ function landIcon(resource, lv) {
 /** Sheet heading with an icon tile in front. */
 const sheetTitle = (icon, text) => '<h2 id="kSheetTitle" class="ti">' + icon + '<span>' + text + '</span></h2>';
 const starsHtml = (n) => '<span class="stars" aria-label="' + n + ' из 4">' + '★'.repeat(n) + '<i>' + '★'.repeat(4 - n) + '</i></span>';
+const titanAbil = (id) => (K.app && K.app.titanAbilities ? K.app.titanAbilities(id) : []);
 function titanName(t) { return K.army.titans[t.def].name; }
 function titanTotalXp(t) {
 	let x = t.xp;
@@ -3049,8 +3059,16 @@ function openTitans() {
 			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
 				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
+				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
 				'<span class="meta" data-live="tr' + t.id + '"></span><div class="row">' + act + '</div></div>';
 		});
+		// The rest of the roster, greyed out: the original showed every titan you could still summon.
+		const locked = K.army.titans.map((d, i) => ({ d, i })).filter((x) => !st.titans.some((t) => t.def === x.i))
+			.sort((x, y) => x.d.stars - y.d.stars).map(({ d, i }) =>
+				'<div class="titanCard locked"><div class="head">' + titanIcon({ def: i }) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
+				'<span class="meta">' + esc(d.classRu) + ' · ещё не призван</span>' +
+				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
+				'<div class="row"><button class="btn" data-act="relics">Призвать на алтаре</button></div></div>');
 		let head = '';
 		if (fz) {
 			const pv = fusionPreview(fz.target, fz.picks);
@@ -3062,7 +3080,9 @@ function openTitans() {
 		const html = sheetTitle(buildingIconById('hall_of_titans'), 'Зал титанов') +
 			'<p class="fine">Титанов: ' + st.titans.length + ' из ' + st.tcap + '. Редкость от одной до четырёх звёзд задаёт предел уровня: 20, 30, 40 и 50, как в оригинале версии 1.8. ' +
 			'Опыт титаны получают в боях; после боя титаны выше 10-го уровня отдыхают. ' + (canFuse ? 'Слияние за еду переносит силу ненужных титанов в выбранного, как в оригинале.' : 'Слияние откроется на Замке ' + st.fuseCastle + '.') + '</p>' +
-			head + '<div class="shopGrid">' + cards.join('') + '</div><div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
+			head + '<div class="shopGrid">' + cards.join('') + '</div>' +
+			(locked.length && !fz ? '<h3>Ещё не призваны</h3><p class="fine">Новых титанов дают алтари Храма реликвий: бесплатный раз в сутки, серебряный и золотой за самоцветы. Попробовать любого титана можно в меню боя, раздел «Ваш титан».</p><div class="shopGrid">' + locked.join('') + '</div>' : '') +
+			'<div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
 		return {
 			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length).join(), st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
 			live(el) { for (const t of K.st.titans) liveTitan(el, t); },
@@ -3183,8 +3203,10 @@ function openTitanRelics(id) {
 		const free = st.relics.filter((r) => r.on !== t.id).sort((a, b) => b.r - a.r || b.dur - a.dur);
 		const full = t.relics.length >= t.slots;
 		const nextSlot = K.army.relics.slotLevels.find((l) => l > t.lv);
+		const abil = K.app && K.app.titanAbilities ? K.app.titanAbilities(d.id) : [];
 		const html = sheetTitle(titanIcon(t), esc(d.name) + ' ' + starsHtml(d.stars)) +
 			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. Бонус реликвий: урон +' + t.bonus[0] + '%, здоровье +' + t.bonus[1] + '%, броня +' + t.bonus[2] + '%.</p>' +
+			(abil.length ? '<p>Способности в бою: <b>' + abil.map(esc).join('</b>, <b>') + '</b>.</p>' : '') +
 			'<h3>Реликвии: ' + t.relics.length + ' из ' + t.slots + '</h3>' +
 			(worn.length ? worn.map((r) => relicRow(r, '<button class="btn" data-act="unequip" data-id="' + r.id + '">Снять</button>')).join('') : '<p class="fine">Ничего не надето.</p>') +
 			'<p class="fine">Как в оригинале, сначала у титана один слот, новые открываются с уровнем' + (nextSlot ? ' (следующий на ' + nextSlot + '-м)' : '') + '. Реликвии изнашиваются в боях; сломанная не действует, пока её не починят.</p>' +

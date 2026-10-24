@@ -60,7 +60,7 @@ bool ParseRarity(const std::string& S, Rarity& Out)
 
 bool ParseEffectType(const std::string& S, EffectType& Out)
 {
-	static const char* const Names[] = {"Damage", "Heal", "Knockback", "Stun", "StatMod", "Burn", "Morale"};
+	static const char* const Names[] = {"Damage", "Heal", "Knockback", "Stun", "StatMod", "Burn", "Morale", "RaiseDead"};
 	return ParseEnumName(S, Names, Out);
 }
 
@@ -84,7 +84,7 @@ bool ParseDelivery(const std::string& S, Delivery& Out)
 
 bool ParseHeuristic(const std::string& S, AiHeuristic& Out)
 {
-	static const char* const Names[] = {"MaxUnitsInArea", "MaxUnitsInLine", "MaxUnitsInCone", "SelfDefense", "AlliesInCombat", "AlliesDamaged"};
+	static const char* const Names[] = {"MaxUnitsInArea", "MaxUnitsInLine", "MaxUnitsInCone", "SelfDefense", "AlliesInCombat", "AlliesDamaged", "Corpses"};
 	return ParseEnumName(S, Names, Out);
 }
 
@@ -354,6 +354,38 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 				T.trample = true;
 				T.trampleDamage = V->GetFix("damage", fx::Int(30));
 			}
+			if (const JsonValue* V = S->Find("firebomb"))
+			{
+				T.firebomb = true;
+				T.splashRadius = V->GetFix("splashRadius", fx::Int(3));
+				T.splashEdgeMult = V->GetFix("edgeMult", fx::Pct(50));
+				T.fireRadius = V->GetFix("fireRadius", fx::Milli(2500));
+				T.fireDps = V->GetFix("fireDps", fx::Int(8));
+				T.fireTicks = SecToTicks(V->GetDouble("fireDuration", 4.0));
+				T.fireFriendlyMult = V->GetFix("friendlyMult", fx::Pct(50));
+			}
+			if (const JsonValue* V = S->Find("chains"))
+			{
+				T.chains = true;
+				T.chainRange = V->GetFix("range", fx::Int(18));
+				T.chainIntervalTicks = SecToTicks(V->GetDouble("interval", 2.5));
+				T.chainMinAlive = V->GetInt("minAlive", 3);
+				T.chainMoveSlow = V->GetFix("moveSlow", fx::Pct(8));
+				T.chainAttackSlow = V->GetFix("attackSlow", fx::Pct(5));
+				T.chainTicks = SecToTicks(V->GetDouble("duration", 10.0));
+				T.chainBindAt = V->GetInt("bindAt", 5);
+				T.chainBindTicks = SecToTicks(V->GetDouble("bindDuration", 2.5));
+				T.chainImmuneTicks = SecToTicks(V->GetDouble("immunity", 12.0));
+			}
+			if (const JsonValue* V = S->Find("sanctuary"))
+			{
+				T.support = true;
+				T.auraRadius = V->GetFix("radius", fx::Int(8));
+				T.auraHealPctPerSec = V->GetFix("healPctPerSec", fx::Milli(15));
+				T.auraMoralePerSec = V->GetFix("moralePerSec", fx::Int(3));
+				T.auraArmor = V->GetFix("armor", fx::Pct(10));
+				T.keepAway = V->GetFix("keepAway", fx::Int(8));
+			}
 		}
 		if (const JsonValue* F = J.Find("formations"))
 		{
@@ -617,6 +649,18 @@ bool LoadAbilities(const JsonValue& Root, SimContent& C, std::string& Error)
 				D.vertical = E.GetFix("vertical");
 				D.hits = E.GetInt("hits", 1);
 				D.poiseDamage = E.GetFix("poiseDamage");
+				if (D.type == EffectType::RaiseDead)
+				{
+					D.summonTroop = C.FindTroop(E.GetString("troop"));
+					if (D.summonTroop < 0)
+					{
+						Error = "ability '" + A.id + "': unknown troop to raise";
+						return false;
+					}
+					D.summonMax = E.GetInt("max", 12);
+					D.summonMaxPerLevel = E.GetInt("maxPerLevel", 0);
+					D.corpseAgeTicks = SecToTicks(E.GetDouble("corpseAge", 15.0));
+				}
 				A.effects.push_back(D);
 			}
 		}

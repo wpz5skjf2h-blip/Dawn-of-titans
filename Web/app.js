@@ -14,7 +14,8 @@ const CMD = { Move: 0, Path: 1, Attack: 2, Charge: 3, Halt: 4, Retreat: 5, SetFo
 	ClashInput: 11, DeployMove: 12, AutoDeploy: 13, StartBattle: 14, Surrender: 15 };
 const EV = { SoldierDied: 0, TitanAttack: 1, TitanSmash: 2, TitanStomp: 3, TitanGrab: 4, TitanThrowImpact: 5, TitanFootstep: 6, TitanChargeStart: 7,
 	TitanStaggered: 8, TitanDied: 9, AbilityCast: 10, AbilityImpact: 11, SpellCast: 12, SpellImpact: 13, ClashStarted: 14, ClashExchange: 15,
-	ClashEnded: 16, SquadRouted: 17, SquadRallied: 18, SquadLeftField: 19, SquadDestroyed: 20, ChargeImpact: 21, StarEarned: 22, BattleStarted: 23, BattleEnded: 24 };
+	ClashEnded: 16, SquadRouted: 17, SquadRallied: 18, SquadLeftField: 19, SquadDestroyed: 20, ChargeImpact: 21, StarEarned: 22, BattleStarted: 23, BattleEnded: 24, DeadRaised: 25,
+	FirebombImpact: 26, ChainThrown: 27, TitanBound: 28 };
 const PH = { Deploy: 0, Countdown: 1, Battle: 2, Finished: 3 };
 const SS = { Idle: 0, Moving: 1, Fighting: 2, Airborne: 3, Down: 4, Dead: 5, Left: 6 };
 const TS = { Idle: 0, Moving: 1, Attacking: 2, Stomping: 3, Grabbing: 4, Casting: 5, Leaping: 6, Clashing: 7, Staggered: 8, Dead: 9 };
@@ -29,22 +30,42 @@ const SOLDIER_SCALE = 1.25;
 
 const RU = {
 	troop: { 'troop.militia': 'Ополчение', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копейщики', 'troop.archers': 'Лучники',
-		'troop.outriders': 'Всадники', 'troop.knights': 'Рыцари' },
+		'troop.outriders': 'Всадники', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренадеры',
+		'troop.chainbreakers': 'Цепеломы', 'troop.priests': 'Боевые жрецы' },
 	troopShort: { 'troop.militia': 'Ополч.', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копья', 'troop.archers': 'Лучники',
-		'troop.outriders': 'Конница', 'troop.knights': 'Рыцари' },
+		'troop.outriders': 'Конница', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренад.',
+		'troop.chainbreakers': 'Цепи', 'troop.priests': 'Жрецы' },
 	troopOf: { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
-		'troop.outriders': 'всадники', 'troop.knights': 'рыцари' },
+		'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.skeleton': 'скелеты', 'troop.grenadiers': 'гренадеры',
+		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы' },
 	titan: { 'titan.thor': 'Тор', 'titan.talos': 'Талос', 'titan.minotaur': 'Минотавр', 'titan.cyclops': 'Циклоп', 'titan.perun': 'Перун',
 		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида' },
 	abil: { 'ability.talos.molten_ichor': 'Ихор', 'ability.talos.bronze_bulwark': 'Оплот', 'ability.thor.hammer_throw': 'Молот',
 		'ability.thor.thunderclap': 'Гром', 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Барабаны', 'spell.healing_spring': 'Источник',
 		'spell.fireball': 'Огн. шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
-		'spell.terror': 'Ужас', 'spell.acid_cloud': 'Кислота' },
+		'spell.terror': 'Ужас', 'spell.acid_cloud': 'Кислота', 'spell.raise_dead': 'Мертвецы',
+		'ability.minotaur.labyrinth_rush': 'Рывок', 'ability.minotaur.blood_frenzy': 'Бешенство',
+		'ability.cyclops.forge_gaze': 'Взор', 'ability.cyclops.anvil_quake': 'Наковальня',
+		'ability.perun.oak_splitter': 'Перуница', 'ability.perun.storm_herald': 'Гроза',
+		'ability.atlas.falling_sky': 'Небосвод', 'ability.atlas.weight_of_heavens': 'Тяжесть',
+		'ability.ymir.frost_breath': 'Стужа', 'ability.ymir.glacier_hide': 'Ледник',
+		'ability.surtr.muspell_blade': 'Клинок', 'ability.surtr.world_fire': 'Пожар',
+		'ability.hecate.crossroads_hex': 'Порча', 'ability.hecate.underworld_torches': 'Факелы',
+		'ability.artemis.silver_volley': 'Залп', 'ability.artemis.moonshot': 'Луна' },
 	abilFull: { 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Боевые барабаны', 'spell.healing_spring': 'Целебный источник',
 		'spell.fireball': 'Огненный шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
 		'spell.terror': 'Ужас', 'spell.acid_cloud': 'Кислотное облако',
 		'ability.talos.molten_ichor': 'Расплавленный ихор', 'ability.talos.bronze_bulwark': 'Бронзовый оплот',
-		'ability.thor.hammer_throw': 'Бросок молота', 'ability.thor.thunderclap': 'Раскат грома' },
+		'ability.thor.hammer_throw': 'Бросок молота', 'ability.thor.thunderclap': 'Раскат грома',
+		'spell.raise_dead': 'Поднять мёртвых',
+		'ability.minotaur.labyrinth_rush': 'Рывок по лабиринту', 'ability.minotaur.blood_frenzy': 'Кровавое бешенство',
+		'ability.cyclops.forge_gaze': 'Взор горна', 'ability.cyclops.anvil_quake': 'Удар о наковальню',
+		'ability.perun.oak_splitter': 'Раскол дуба', 'ability.perun.storm_herald': 'Вестник грозы',
+		'ability.atlas.falling_sky': 'Падающий небосвод', 'ability.atlas.weight_of_heavens': 'Тяжесть небес',
+		'ability.ymir.frost_breath': 'Ледяное дыхание', 'ability.ymir.glacier_hide': 'Шкура ледника',
+		'ability.surtr.muspell_blade': 'Клинок Муспелля', 'ability.surtr.world_fire': 'Мировой пожар',
+		'ability.hecate.crossroads_hex': 'Порча перекрёстка', 'ability.hecate.underworld_torches': 'Факелы преисподней',
+		'ability.artemis.silver_volley': 'Серебряный залп', 'ability.artemis.moonshot': 'Лунная стрела' },
 	ai: { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' },
 	formation: ['Линия', 'Колонна', 'Клин', 'Каре', 'Рассыпной'],
 	stance: ['Натиск', 'Стоять', 'Застрельщики'],
@@ -55,7 +76,10 @@ const SCENARIOS = [
 	{ path: 'scenarios/m0_sandbox.json', name: 'Битва у брода', note: 'Тор и шесть отрядов против Талоса и его войска' },
 	{ path: 'scenarios/m0_titan_duel.json', name: 'Дуэль титанов', note: 'Сразу в бой: тренировка схватки титанов' },
 	{ path: 'scenarios/m0_cavalry_test.json', name: 'Копья против конницы', note: 'Удержите строй копейщиков против всадников' },
+	{ path: 'scenarios/m1_raise_dead.json', name: 'Факелы Гекаты', note: 'Геката и «Поднять мёртвых» против огненного войска Сурта' },
+	{ path: 'scenarios/m1_chains_and_fire.json', name: 'Цепи и огонь', note: 'Цепеломы, гренадеры и боевые жрецы против Атланта' },
 ];
+const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
 const QUALITY = [['auto', 'Авто'], ['high', 'Высокое'], ['low', 'Экономное']];
 const SIDE_COLOR = [new THREE.Color(0x3d7bf2), new THREE.Color(0xd9442f)];
@@ -77,6 +101,7 @@ const settings = {
 	scenario: clamp(store.get('scenario', 0) | 0, 0, SCENARIOS.length - 1),
 	ai: AIS.includes(store.get('ai', 'veteran')) ? store.get('ai', 'veteran') : 'veteran',
 	quality: store.get('quality', 'auto'),
+	titan: typeof store.get('titan', '') === 'string' ? store.get('titan', '') : '',
 	sound: store.get('sound', true) !== false,
 	follow: false,
 };
@@ -332,6 +357,11 @@ const C_WOOD = 0x6b4a2b;
 const C_HORSE = 0x6e4a2f;
 const C_HORSE_GREY = 0xb9b3a8;
 const C_LEATHER = 0x5a3d24;
+const C_BONE = 0xe6dcc2;
+const C_RUST = 0x8a5a3a;
+const C_IRON = 0x4a4f57;
+const C_ROBE = 0xeee6d2;
+const C_GOLD = 0xd9b45a;
 const lowCyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
 const lowSph = new THREE.SphereGeometry(0.5, 8, 6);
 const lowCone = new THREE.ConeGeometry(0.5, 1, 8);
@@ -376,6 +406,41 @@ function troopModel(id) {
 		body.push(part(lowCyl, W, 0, 2.05 * s, 0.15, 0.48 * s, 0.85 * s, 0.48 * s));
 		gear.push(part(lowSph, knight ? C_STEEL : C_SKIN, 0, 2.62 * s, 0.15, 0.36 * s, 0.4 * s, 0.36 * s));
 		gear.push(part(GEO.box, knight ? C_STEEL : C_WOOD, 0.36, 2.1 * s, -0.9, 0.06, 0.06, 2.6, rad(-6), 0, 0));
+	} else if (id === 'troop.grenadiers') {
+		// A leather apron, a satchel of clay firepots and one lit pot in the throwing hand.
+		body.push(part(lowCyl, W, 0, 0.62, 0, 0.6, 1.24, 0.6));
+		infantryHead(false);
+		gear.push(part(lowCyl, C_LEATHER, 0, 1.68, 0, 0.44, 0.14, 0.44));
+		gear.push(part(GEO.box, C_LEATHER, 0, 0.75, -0.3, 0.5, 0.8, 0.06));
+		gear.push(part(GEO.box, C_LEATHER, -0.36, 0.9, 0.12, 0.2, 0.4, 0.36));
+		gear.push(part(lowSph, C_RUST, 0.4, 1.55, -0.1, 0.3, 0.3, 0.3));
+		gear.push(part(lowCone, 0xffa040, 0.4, 1.78, -0.1, 0.12, 0.22, 0.12));
+	} else if (id === 'troop.chainbreakers') {
+		// Stocky harpooners: an iron collar, a coil of chain and a barbed harpoon.
+		body.push(part(GEO.box, W, 0, 0.9, 0, 0.66, 0.8, 0.46));
+		body.push(part(GEO.box, G, 0, 0.32, 0, 0.5, 0.64, 0.34));
+		infantryHead(true);
+		gear.push(part(lowCyl, C_IRON, -0.38, 0.95, 0.05, 0.42, 0.22, 0.42, 0, 0, rad(90)));
+		gear.push(part(lowCyl, C_IRON, 0, 1.28, 0, 0.62, 0.1, 0.5));
+		gear.push(part(GEO.box, C_WOOD, 0.38, 1.25, -0.3, 0.07, 0.07, 1.8, rad(-25), 0, 0));
+		gear.push(part(lowCone, C_IRON, 0.38, 1.7, -1.12, 0.16, 0.36, 0.16, rad(-115), 0, 0));
+	} else if (id === 'troop.priests') {
+		// Long pale robes with the house colour as a stole, a tall staff with a golden sun.
+		gear.push(part(lowCone, C_ROBE, 0, 0.72, 0, 0.86, 1.44, 0.86));
+		body.push(part(GEO.box, W, 0, 1.0, -0.2, 0.16, 0.9, 0.06));
+		gear.push(part(lowSph, C_SKIN, 0, 1.5, 0, 0.34, 0.36, 0.34));
+		gear.push(part(lowCone, C_ROBE, 0, 1.72, 0.04, 0.46, 0.46, 0.46));
+		gear.push(part(GEO.box, C_WOOD, 0.38, 1.25, -0.1, 0.06, 2.4, 0.06));
+		gear.push(part(lowSph, C_GOLD, 0.38, 2.5, -0.1, 0.3, 0.3, 0.3));
+	} else if (id === 'troop.skeleton') {
+		// Raised dead: a tattered tabard in the caster's colour over bare bones, a rusty blade.
+		body.push(part(GEO.box, W, 0, 0.95, 0, 0.5, 0.55, 0.22));
+		gear.push(part(GEO.box, C_BONE, 0, 1.0, 0, 0.42, 0.62, 0.3));
+		for (const lx of [-0.13, 0.13]) gear.push(part(GEO.box, C_BONE, lx, 0.35, 0, 0.09, 0.7, 0.09));
+		for (const ax of [-0.3, 0.3]) gear.push(part(GEO.box, C_BONE, ax, 0.95, -0.05, 0.07, 0.6, 0.07, rad(-15), 0, 0));
+		gear.push(part(lowSph, C_BONE, 0, 1.48, 0, 0.32, 0.36, 0.34));
+		gear.push(part(GEO.box, 0x2a2018, 0, 1.5, -0.25, 0.26, 0.08, 0.04));
+		gear.push(part(GEO.box, C_RUST, 0.36, 1.0, -0.3, 0.06, 0.06, 1.0, rad(-35), 0, 0));
 	} else {
 		body.push(part(lowCyl, W, 0, 0.62, 0, 0.6, 1.24, 0.6));
 		infantryHead(false);
@@ -626,31 +691,64 @@ function buildUnits(st, soldiers) {
 		view.soldierGroup[i] = gi;
 		view.soldierInst[i] = counts[gi].n++;
 	}
-	const tints = { 'troop.militia': 1.15, 'troop.swordsmen': 0.85, 'troop.spearmen': 1.0, 'troop.archers': 1.3, 'troop.outriders': 0.95, 'troop.knights': 0.7 };
-	view.groups = counts.map((g) => {
-		const id = st.troops[g.troop].id;
-		const model = troopModel(id);
-		const color = SIDE_COLOR[g.side].clone().multiplyScalar(tints[id] || 1);
-		const body = new THREE.InstancedMesh(model.body, lambert(color, { vertexColors: true }), g.n);
-		const gear = new THREE.InstancedMesh(model.gear, lambert(0xffffff, { vertexColors: true }), g.n);
-		for (const m of [body, gear]) {
-			m.userData.ownGeo = true;
-			m.castShadow = true;
-			m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-			m.frustumCulled = false;
-			view.units.add(m);
-		}
-		return { body, gear, cav: st.troops[g.troop].cav === 1 };
-	});
+	view.groups = counts.map((g) => makeTroopGroup(st, g.side, g.troop, g.n));
 	// Selection rings, one per squad.
-	view.rings = st.squads.map((sq) => {
-		const m = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: SIDE_COLOR[sq.side].clone().lerp(new THREE.Color(0xffffff), 0.35), transparent: true, opacity: 0.9, depthWrite: false }));
-		m.visible = false;
-		m.renderOrder = 3;
-		view.units.add(m);
-		return m;
-	});
+	view.rings = st.squads.map(makeRing);
 	view.titans = st.titans.map((t) => buildTitan(t));
+}
+
+const TROOP_TINT = { 'troop.militia': 1.15, 'troop.swordsmen': 0.85, 'troop.spearmen': 1.0, 'troop.archers': 1.3, 'troop.outriders': 0.95, 'troop.knights': 0.7, 'troop.skeleton': 0.55,
+	'troop.grenadiers': 1.1, 'troop.chainbreakers': 0.8, 'troop.priests': 1.25 };
+function makeTroopGroup(st, side, troop, n) {
+	const id = st.troops[troop].id;
+	const model = troopModel(id);
+	const color = SIDE_COLOR[side].clone().multiplyScalar(TROOP_TINT[id] || 1);
+	const body = new THREE.InstancedMesh(model.body, lambert(color, { vertexColors: true }), n);
+	const gear = new THREE.InstancedMesh(model.gear, lambert(0xffffff, { vertexColors: true }), n);
+	for (const m of [body, gear]) {
+		m.userData.ownGeo = true;
+		m.castShadow = true;
+		m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+		m.frustumCulled = false;
+		view.units.add(m);
+	}
+	return { body, gear, cav: st.troops[troop].cav === 1 };
+}
+function makeRing(sq) {
+	const m = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: SIDE_COLOR[sq.side].clone().lerp(new THREE.Color(0xffffff), 0.35), transparent: true, opacity: 0.9, depthWrite: false }));
+	m.visible = false;
+	m.renderOrder = 3;
+	view.units.add(m);
+	return m;
+}
+
+/** Raise Dead adds squads mid-battle: fetch their static info and give their soldiers meshes and rings. */
+function growUnits() {
+	const n = game.curS.length / 8;
+	if (!view.soldierGroup || n <= view.soldierGroup.length) return;
+	const st = game.st;
+	const fresh = game.sim.staticInfo().squads;
+	for (let i = st.squads.length; i < fresh.length; i++) st.squads.push(fresh[i]);
+	const from = view.soldierGroup.length;
+	const group = new Int16Array(n);
+	const inst = new Int16Array(n);
+	group.set(view.soldierGroup);
+	inst.set(view.soldierInst);
+	const bySquad = new Map();
+	for (let i = from; i < n; i++) {
+		const q = game.curS[i * 8 + 7];
+		if (!bySquad.has(q)) bySquad.set(q, []);
+		bySquad.get(q).push(i);
+	}
+	for (const [q, list] of bySquad) {
+		const sq = st.squads[q];
+		const gi = view.groups.length;
+		view.groups.push(makeTroopGroup(st, sq.side, sq.troop, list.length));
+		list.forEach((s, k) => { group[s] = gi; inst[s] = k; });
+	}
+	view.soldierGroup = group;
+	view.soldierInst = inst;
+	for (let i = view.rings.length; i < st.squads.length; i++) view.rings.push(makeRing(st.squads[i]));
 }
 
 // Look of each titan: colours and what it carries (the kingdom roster shares two body types for now).
@@ -778,6 +876,9 @@ const MAT = {
 	teleFill: new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0.18, depthWrite: false }),
 	heal: new THREE.MeshBasicMaterial({ color: 0x5fd38d, transparent: true, opacity: 0.28, depthWrite: false }),
 	ichor: new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.3, depthWrite: false }),
+	firePot: new THREE.MeshBasicMaterial({ color: 0xffa040 }),
+	burn: new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 0.4, depthWrite: false }),
+	chain: new THREE.MeshStandardMaterial({ color: 0x8d949e, metalness: 0.7, roughness: 0.4 }),
 	reticle: new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.85, depthWrite: false }),
 	reticleFill: new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.14, depthWrite: false }),
 };
@@ -793,7 +894,21 @@ const FX = {
 	stagger: { geo: GEO.sphere, color: 0xffe066 },
 	order: { geo: GEO.ring, color: 0x9cc0ff, flat: true },
 	attack: { geo: GEO.ring, color: 0xff8f7a, flat: true },
+	necro: { geo: GEO.ring, color: 0x9dff8a, flat: true },
+	necroCol: { geo: GEO.cyl, color: 0x7dffb0, column: true },
+	frost: { geo: GEO.cyl, color: 0xa8eaff, column: true },
+	flame: { geo: GEO.cyl, color: 0xff8a3a, column: true },
+	moon: { geo: GEO.cyl, color: 0xf2ffd0, column: true },
 };
+/** Colour of a titan ability's impact column by its element. */
+function abilityTint(A) {
+	if (!A) return 'bolt';
+	if (/ymir|atlas\.weight/.test(A.id)) return 'frost';
+	if (/surtr|cyclops|talos\.molten/.test(A.id)) return 'flame';
+	if (/hecate/.test(A.id)) return 'necroCol';
+	if (/artemis/.test(A.id)) return 'moon';
+	return 'bolt';
+}
 function spawnFx(kind, x, z, y, dur, s0, s1, h) {
 	if (effects.length > 120) return;
 	effects.push({ kind, x, z, y: y || 0, t0: now(), dur, s0, s1, h: h || 1 });
@@ -842,7 +957,7 @@ const tmpM = new THREE.Matrix4();
 const ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
 
 function updateSoldiers(rt, alpha) {
-	const a = game.prevS;
+	const prev = game.prevS;
 	const b = game.curS;
 	if (!b || !view.soldierGroup) return;
 	const st = game.st;
@@ -851,6 +966,8 @@ function updateSoldiers(rt, alpha) {
 	const scale = SOLDIER_SCALE;
 	for (let i = 0; i < n; i++) {
 		const o = i * 8;
+		// A soldier raised this tick has no previous snapshot yet.
+		const a = o + 8 <= prev.length ? prev : b;
 		const g = view.groups[view.soldierGroup[i]];
 		const inst = view.soldierInst[i];
 		const state = b[o + 4];
@@ -929,7 +1046,9 @@ function updateTitans(rt, alpha) {
 		v.ring.visible = true;
 		if (T.s === TS.Leaping && T.le > T.ls) {
 			const k = clamp((rt - T.ls) / (T.le - T.ls), 0, 1);
-			y += Math.sin(k * Math.PI) * 9;
+			// A rush (line-shaped leap) stays low; a leap arcs high.
+			const LA = game.st.abil[T.la];
+			y += Math.sin(k * Math.PI) * (LA && LA.shape === SHAPE.Line ? 1.2 : 9);
 		}
 		v.root.position.set(x, y, -z);
 		v.root.rotation.set(0, -yaw, 0);
@@ -996,7 +1115,8 @@ function updateProjectiles(rt) {
 		const k = clamp((rt - t0) / span, 0, 1);
 		const dist = Math.hypot(tx - fx, tz - fz);
 		const thrown = kind === 2;
-		const apex = thrown ? 12 : 1 + dist * 0.12;
+		const pot = kind === 4;
+		const apex = thrown ? 12 : pot ? 2 + dist * 0.3 : 1 + dist * 0.12;
 		const x = lerp(fx, tx, k);
 		const z = lerp(fz, tz, k);
 		const y = lerp(h0, h1 + 0.5, k) + 4 * apex * k * (1 - k);
@@ -1005,6 +1125,10 @@ function updateProjectiles(rt) {
 			m.position.set(x, y, -z);
 			m.scale.set(0.7, 1.8, 0.7);
 			m.rotation.set(rt * 0.4, rt * 0.3, 0);
+		} else if (pot) {
+			const m = take('firePot', () => new THREE.Mesh(GEO.sphere, MAT.firePot));
+			m.position.set(x, y, -z);
+			m.scale.setScalar(0.55);
 		} else if (kind === 3) {
 			const m = take('bolt', () => new THREE.Mesh(GEO.sphere, MAT.bolt));
 			m.position.set(x, y, -z);
@@ -1052,6 +1176,32 @@ function updateProjectiles(rt) {
 			m.position.set(px + (1 - k) * 25, g + (1 - k) * 70 + 1, -pz);
 			m.scale.setScalar(3.2);
 		}
+	}
+	for (const fp of fr.fp || []) {
+		const [x, z, r, end] = fp;
+		const m = take('burn', () => new THREE.Mesh(GEO.disc, MAT.burn));
+		const fade = clamp((end - rt) / 20, 0.2, 1);
+		m.position.set(x, game.sim.height(x, z) + 0.45, -z);
+		m.scale.setScalar(r * fade * (0.92 + 0.08 * Math.sin(rt * 1.7 + x)));
+	}
+	// Harpoon chains: a taut line from the throwing squad to the titan, briefly.
+	const tNow = now();
+	for (let i = game.chains.length - 1; i >= 0; i--) {
+		const c = game.chains[i];
+		const sq = fr.sq[c.squad];
+		const ti = c.titan;
+		if (tNow - c.t0 > 1.4 || !sq || !sq.act || !game.curT || ti * 4 + 1 >= game.curT.length) { game.chains.splice(i, 1); continue; }
+		const sx = sq.c[0];
+		const sz = sq.c[1];
+		const tx = game.curT[ti * 4];
+		const tz = game.curT[ti * 4 + 1];
+		const vis = view.titans[ti];
+		const a = tmpP.set(sx, game.sim.height(sx, sz) + 1.4, -sz);
+		const b = tmpS.set(tx, game.sim.height(tx, tz) + (vis ? vis.H * 0.35 : 6), -tz);
+		const m = take('chain', () => new THREE.Mesh(GEO.box, MAT.chain));
+		m.position.copy(a).add(b).multiplyScalar(0.5);
+		m.scale.set(0.16, 0.16, a.distanceTo(b));
+		m.lookAt(b);
 	}
 	for (const zo of fr.zo) {
 		const [ab, x, z, r] = zo;
@@ -1139,6 +1289,7 @@ const game = {
 	sim: null, st: null, fr: null, prevS: null, curS: null, prevT: null, curT: null,
 	acc: 0, speed: 1, paused: false, selected: -1, targeting: 0, allAuto: false, simMs: 0, fps: 60,
 	finishedAt: 0, resultsShown: false, lastPhase: -1, verify: null,
+	chains: [],
 	// What this battle is for: { kind: 'training' } or { kind: 'land', ... } from the kingdom.
 	context: { kind: 'training' },
 };
@@ -1164,12 +1315,27 @@ function unitAlive(id) {
 	return !!s && !!s.act;
 }
 
+/** Training battles can swap the player's titan for any titan of the roster; the scenario keeps its level and stars. */
+function trainingPath(path) {
+	if (!settings.titan) return path;
+	try {
+		const files = app.contentFiles();
+		const sc = JSON.parse(files[path].replace(/^\s*\/\/.*$/gm, ''));
+		if (sc.sides.attacker.titan.id === settings.titan) return path;
+		sc.sides.attacker.titan.id = settings.titan;
+		const custom = 'scenarios/_training_titan.json';
+		game.sim.addFile(custom, JSON.stringify(sc));
+		return custom;
+	} catch (e) {
+		return path;
+	}
+}
 function startBattle(asReplay, override) {
 	const sim = game.sim;
 	if (override) game.context = override.context;
 	else if (!asReplay) game.context = { kind: 'training' };
 	const sc = SCENARIOS[settings.scenario];
-	const path = override ? override.path : sc.path;
+	const path = override ? override.path : asReplay ? '' : trainingPath(sc.path);
 	const ai = override ? override.ai : settings.ai;
 	const ok = asReplay ? sim.replay() : sim.start(path, ai, '');
 	if (!ok) { toast(sim.error(), 'bad'); return false; }
@@ -1187,8 +1353,9 @@ function startBattle(asReplay, override) {
 	game.verify = null;
 	game.lastPhase = -1;
 	if (!asReplay) game.allAuto = false;
-	game.loaded = { scenario: settings.scenario, ai: settings.ai };
+	if (!asReplay) game.loaded = { scenario: settings.scenario, ai: settings.ai, titan: override ? '' : settings.titan };
 	effects.length = 0;
+	game.chains.length = 0;
 	input.draw = null;
 	closeRadial();
 	buildTerrain(game.st);
@@ -1228,6 +1395,7 @@ function stepSim(dt) {
 		const ms = (performance.now() - t0) / steps;
 		game.simMs = game.simMs ? game.simMs * 0.9 + ms * 0.1 : ms;
 		game.fr = game.sim.frame();
+		growUnits();
 		handleEvents(game.fr.ev);
 	}
 }
@@ -1648,7 +1816,7 @@ window.addEventListener('keydown', (e) => {
 	keys.add(e.code);
 	const fr = game.fr;
 	const st = game.st;
-	const own = st.squads.filter((s) => s.side === 0);
+	const own = st.squads.filter((s) => s.side === 0 && !s.sum);
 	const digit = /^Digit([1-6])$/.exec(e.code);
 	if (digit) { const s = own[+digit[1] - 1]; if (s && unitAlive(s.id)) cardTap(s.id); return; }
 	switch (e.code) {
@@ -1905,7 +2073,8 @@ function drawOverlay(rt) {
 		ov.stroke();
 		ov.fillStyle = '#efe7d6';
 		ov.textAlign = 'left';
-		ov.fillText((RU.titan[t.def] || t.name) + '  ур. ' + t.lvl, bx, by - 6);
+		const chains = T.ch || 0;
+		ov.fillText((RU.titan[t.def] || t.name) + '  ур. ' + t.lvl + (chains ? '  ⛓' + chains : ''), bx, by - 6);
 		ov.fillStyle = 'rgba(255, 255, 255, 0.15)';
 		ov.fillRect(bx, by + 2, w, 6);
 		ov.fillStyle = t.side === 0 ? '#5fd38d' : '#e5533d';
@@ -2168,7 +2337,15 @@ function handleEvents(events) {
 		case EV.TitanThrowImpact: spawnFx('dust', x, z, 0, 0.6, 2, 9); shakeAt(x, z, 0.3); soundAt(x, z, 'thud'); break;
 		case EV.TitanChargeStart: if (!own) toast('Вражеский титан идёт на таран!', 'bad'); break;
 		case EV.AbilityCast: if (titanVis) titanVis.cast = t; if (!own && st.abil[value]) toast('Враг: ' + abilFull(st.abil[value]), 'bad'); break;
-		case EV.AbilityImpact: spawnFx('bolt', x, z, 0, 0.45, 2.5, 6, 30); spawnFx('shock', x, z, 0, 0.5, 2, 16); shakeAt(x, z, 0.45); soundAt(x, z, 'boom'); break;
+		case EV.AbilityImpact: {
+			const tint = abilityTint(st.abil[b]);
+			spawnFx(tint === 'bolt' ? 'bolt' : tint, x, z, 0, 0.45, 2.5, 6, 30); spawnFx('shock', x, z, 0, 0.5, 2, 16); shakeAt(x, z, 0.45); soundAt(x, z, 'boom');
+			break;
+		}
+		case EV.DeadRaised:
+			spawnFx('necro', x, z, 0, 0.9, 2, 14); spawnFx('necroCol', x, z, 0, 1.1, 2, 7, 18); soundAt(x, z, 'thud');
+			toast(own ? 'Мёртвые восстали: ' + b + ' скелетов бьются за вас' : 'Враг поднял мёртвых: ' + b + ' скелетов', own ? 'own' : 'bad');
+			break;
 		case EV.SpellCast: spawnFx('heal', x, z, 0, 0.6, 1, 10, 8); if (!own && st.abil[a]) toast('Враг применяет: ' + abilFull(st.abil[a]), 'bad'); break;
 		case EV.SpellImpact: spawnFx('fire', x, z, 2, 0.7, 3, 13); spawnFx('dust', x, z, 0, 0.9, 2, 16); shakeAt(x, z, 0.75); soundAt(x, z, 'boom'); break;
 		case EV.ClashStarted:
@@ -2192,6 +2369,18 @@ function handleEvents(events) {
 			toast(own ? 'Ваш титан пал!' : 'Вражеский титан повержен!', own ? 'bad' : 'gold');
 			break;
 		case EV.ChargeImpact: spawnFx('dust', x, z, 0, 0.5, 1, 6); break;
+		case EV.FirebombImpact: spawnFx('fire', x, z, 0.6, 0.45, 1, 4.5); spawnFx('dust', x, z, 0, 0.5, 1, 5); soundAt(x, z, 'thud'); break;
+		case EV.ChainThrown:
+			game.chains.push({ squad: a - 1, titan: b - TITAN_BASE, t0: t });
+			soundAt(x, z, 'clang');
+			break;
+		case EV.TitanBound: {
+			const vis = view.titans[a - TITAN_BASE];
+			spawnFx('stagger', x, z, (vis ? vis.H : 18) + 2, 1.4, 2, 5);
+			spawnFx('shock', x, z, 0, 0.6, 3, 14);
+			toast(own ? 'Ваш титан скован цепями!' : 'Цепеломы сковали вражеского титана! Бейте всем, что есть!', own ? 'bad' : 'gold');
+			break;
+		}
 		case EV.SquadRouted: {
 			const sq = st.squads[a - 1];
 			if (sq) { const nm = RU.troopOf[st.troops[sq.troop].id] || ''; toast(own ? 'Ваши ' + nm + ' бегут!' : 'Враг бежит: ' + nm, own ? 'bad' : 'own'); }
@@ -2266,6 +2455,16 @@ function buildMenu() {
 		b.addEventListener('click', () => { settings.ai = id; store.set('ai', id); buildMenu(); });
 		ao.appendChild(b);
 	});
+	const to = $('titanOpts');
+	to.innerHTML = '';
+	[''].concat(TITANS).forEach((id) => {
+		const b = document.createElement('button');
+		b.textContent = id ? RU.titan[id] || id : 'По сценарию';
+		if (id) b.title = app.titanAbilities(id).join(', ');
+		if (id === settings.titan) b.className = 'on';
+		b.addEventListener('click', () => { settings.titan = id; store.set('titan', id); buildMenu(); });
+		to.appendChild(b);
+	});
 	const qo = $('qualityOpts');
 	qo.innerHTML = '';
 	QUALITY.forEach(([id, label]) => {
@@ -2275,7 +2474,7 @@ function buildMenu() {
 		b.addEventListener('click', () => { settings.quality = id; store.set('quality', id); applyQuality(); buildMenu(); });
 		qo.appendChild(b);
 	});
-	const changed = game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai);
+	const changed = game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai || game.loaded.titan !== settings.titan);
 	$('btnClose').textContent = changed ? 'Начать этот бой' : game.firstMenu ? 'Играть' : 'Продолжить';
 	setClass($('btnClose'), 'primary', changed || game.firstMenu);
 	const landBattle = game.context.kind === 'land' && !(game.fr && game.fr.phase === PH.Finished);
@@ -2283,6 +2482,8 @@ function buildMenu() {
 	$('btnToKingdom').hidden = !app.kingdomReady || landBattle;
 	$('scenarioOpts').hidden = landBattle;
 	$('aiOpts').hidden = landBattle;
+	$('titanOpts').hidden = landBattle;
+	$('titanOpts').previousElementSibling.hidden = landBattle;
 	$('scenarioOpts').previousElementSibling.hidden = landBattle;
 	$('aiOpts').previousElementSibling.hidden = landBattle;
 	setClass($('tglAuto'), 'on', game.allAuto);
@@ -2303,7 +2504,7 @@ function closeMenu() {
 	$('menu').hidden = true;
 	game.paused = !!game.pausedBeforeMenu;
 	game.firstMenu = false;
-	if (game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai)) startBattle(false);
+	if (game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai || game.loaded.titan !== settings.titan)) startBattle(false);
 }
 
 $('btnMenu').addEventListener('click', openMenu);
@@ -2388,6 +2589,15 @@ Object.defineProperties(app, Object.getOwnPropertyDescriptors({
 	get viewH() { return viewH; },
 	get ovScale() { return ovScale; },
 	contentFiles: () => JSON.parse($('content-data').textContent),
+	/** Russian names of a titan's two abilities, read from Content/Data/titans.json (whole-line comments stripped). */
+	titanAbilities(id) {
+		try {
+			const t = JSON.parse(app.contentFiles()['titans.json'].replace(/^\s*\/\/.*$/gm, '')).titans.find((x) => x.id === id);
+			return t ? t.abilities.map((a) => RU.abilFull[a] || a) : [];
+		} catch (e) {
+			return [];
+		}
+	},
 	/** Starts a battle for a kingdom land; path is a scenario file already added to the simulation. */
 	startLandBattle(path, ai, context) {
 		setMode('battle');

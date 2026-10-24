@@ -10,6 +10,9 @@ namespace
 {
 const Fix64 kCos45 = Fix64::FromRaw(3037000500LL); // 0.70710678
 const Fix64 kCos60 = Fix64::Half();
+// Status sources that are not abilities.
+constexpr int32_t kChainSource = -2;
+constexpr int32_t kSanctuarySource = -3;
 } // namespace
 
 // --- Engagement -----------------------------------------------------------------
@@ -188,6 +191,10 @@ void BattleSimulation::UpdateSoldierAttacks()
 			--S.attackCooldown;
 			continue;
 		}
+		if (TroopOf(SquadsList[static_cast<size_t>(S.squad)]).support)
+		{
+			continue;
+		}
 		SoldierAttack(static_cast<int>(I));
 	}
 }
@@ -349,7 +356,7 @@ void BattleSimulation::FireRanged(int Index, Squad& Sq, int32_t TargetUnit)
 	Chance = fx::Clamp(Chance, fx::Pct(5), fx::Pct(98));
 
 	Projectile P;
-	P.kind = ProjectileKind::Arrow;
+	P.kind = TD.firebomb ? ProjectileKind::Firebomb : ProjectileKind::Arrow;
 	P.side = Sq.side;
 	P.from = S.pos;
 	P.fromHeight = fx::Milli(1600) + Nav.HeightAt(S.pos);
@@ -433,6 +440,12 @@ void BattleSimulation::UpdateProjectiles()
 			Emit(SimEventType::TitanThrowImpact, P.side, T.id, 0, P.to);
 			continue;
 		}
+		if (P.kind == ProjectileKind::Firebomb && P.targetTitan < 0 && P.sourceSquad >= 0)
+		{
+			// A firebomb bursts where it lands, hit or miss.
+			ExplodeFirebomb(P);
+			continue;
+		}
 		if (!P.hit || P.sourceSquad < 0)
 		{
 			continue;
@@ -477,6 +490,195 @@ void BattleSimulation::UpdateProjectiles()
 	}
 	ProjectilesList.erase(std::remove_if(ProjectilesList.begin(), ProjectilesList.end(), [](const Projectile& P) { return !P.active; }),
 		ProjectilesList.end());
+}
+
+void BattleSimulation::ExplodeFirebomb(const Projectile& P)
+{
+	const RulesDef& R = ContentRef.rules;
+	const Squad& Source = SquadsList[static_cast<size_t>(P.sourceSquad)];
+	const TroopDef& TD = TroopOf(Source);
+	Soldier Shooter;
+	Shooter.pos = P.from;
+	Shooter.side = P.side;
+	QuerySoldiers(P.to, TD.splashRadius, QueryScratch);
+	const std::vector<int32_t> Hit = QueryScratch;
+	for (const int32_t N : Hit)
+	{
+		const Soldier& V = SoldiersList[static_cast<size_t>(N)];
+		if (!V.Alive() || V.side == P.side)
+		{
+			continue;
+		}
+		const Squad& VSq = SquadsList[static_cast<size_t>(V.squad)];
+		// Full damage at the centre, edgeMult at the rim.
+		Fix64 Mult = fx::Lerp(Fix64::One(), TD.splashEdgeMult, fx::Clamp01(fx::Dist(V.pos, P.to) / fx::Max(TD.splashRadius, Fix64::One())));
+		if (VSq.formation == Formation::Loose)
+		{
+			Mult = Mult * R.looseAreaDamageMult;
+		}
+		DamageSoldier(N, ComputeTroopDamage(Source, Shooter, V, VSq, true, Mult), P.side, -1);
+	}
+	if (TD.fireTicks > 0 && TD.fireDps > Fix64::Zero())
+	{
+		FirePatch F;
+		F.side = P.side;
+		F.center = P.to;
+		F.radius = TD.fireRadius;
+		F.dps = TD.fireDps;
+		F.friendlyMult = TD.fireFriendlyMult;
+		F.endTick = Tick + TD.fireTicks;
+		Fires.push_back(F);
+	}
+	Emit(SimEventType::FirebombImpact, P.side, Source.id, 0, P.to);
+}
+
+void BattleSimulation::UpdateFirePatches()
+{
+	constexpr int32_t kPulse = kTicksPerSecond / 3;
+	if (Fires.empty())
+	{
+		return;
+	}
+	if (Tick % kPulse == 0)
+	{
+		for (const FirePatch& F : Fires)
+		{
+			QuerySoldiers(F.center, F.radius, QueryScratch);
+			const std::vector<int32_t> Inside = QueryScratch;
+			for (const int32_t N : Inside)
+			{
+				const Soldier& S = SoldiersList[static_cast<size_t>(N)];
+				if (!S.Alive() || S.state == SoldierState::Airborne)
+				{
+					continue;
+				}
+				const Fix64 Mult = S.side == F.side ? F.friendlyMult : Fix64::One();
+				DamageSoldier(N, F.dps * Mult / 3, Opponent(S.side), -1);
+			}
+		}
+	}
+	Fires.erase(std::remove_if(Fires.begin(), Fires.end(), [this](const FirePatch& F) { return F.endTick <= Tick; }), Fires.end());
+}
+
+int BattleSimulation::TitanChains(const Titan& T) const
+{
+	int N = 0;
+	for (const StatusEffect& E : T.statuses)
+	{
+		N += E.sourceAbility == kChainSource && E.stat == StatType::MoveSpeedPct && E.endTick > Tick ? 1 : 0;
+	}
+	return N;
+}
+
+void BattleSimulation::ClearChains(Titan& T)
+{
+	T.statuses.erase(std::remove_if(T.statuses.begin(), T.statuses.end(), [](const StatusEffect& E) { return E.sourceAbility == kChainSource; }),
+		T.statuses.end());
+}
+
+void BattleSimulation::UpdateChains()
+{
+	const RulesDef& R = ContentRef.rules;
+	for (Squad& Sq : SquadsList)
+	{
+		if (!Sq.Active() || Sq.Routing() || Sq.summoned || Tick < Sq.chainReadyTick)
+		{
+			continue;
+		}
+		const TroopDef& TD = TroopOf(Sq);
+		if (!TD.chains || Sq.aliveCount < TD.chainMinAlive)
+		{
+			continue;
+		}
+		int Best = -1;
+		Fix64 BestDist;
+		for (size_t I = 0; I < TitansList.size(); ++I)
+		{
+			const Titan& T = TitansList[I];
+			if (T.side == Sq.side || !T.Alive() || T.clashIndex >= 0 || T.state == TitanState::Leaping || Tick < T.chainImmuneUntil)
+			{
+				continue;
+			}
+			const Fix64 D = fx::Dist(T.pos, Sq.centroid) - T.radius;
+			if (D <= TD.chainRange && (Best < 0 || D < BestDist))
+			{
+				Best = static_cast<int>(I);
+				BestDist = D;
+			}
+		}
+		if (Best < 0)
+		{
+			continue;
+		}
+		Titan& T = TitansList[static_cast<size_t>(Best)];
+		Sq.chainReadyTick = Tick + TD.chainIntervalTicks;
+		StatusEffect Slow;
+		Slow.stat = StatType::MoveSpeedPct;
+		Slow.magnitude = -TD.chainMoveSlow;
+		Slow.endTick = Tick + TD.chainTicks;
+		Slow.sourceAbility = kChainSource;
+		T.statuses.push_back(Slow);
+		Slow.stat = StatType::AttackSpeedPct;
+		Slow.magnitude = -TD.chainAttackSlow;
+		T.statuses.push_back(Slow);
+		const int Chains = TitanChains(T);
+		Emit(SimEventType::ChainThrown, Sq.side, Sq.id, T.id, T.pos, Chains);
+		if (Chains >= TD.chainBindAt)
+		{
+			// Bound: rooted and staggered, then every chain breaks and the titan shrugs off new ones for a while.
+			ClearChains(T);
+			T.boundUntil = Tick + TD.chainBindTicks;
+			T.stunUntil = std::max(T.stunUntil, T.boundUntil);
+			T.staggerUntil = std::max(T.staggerUntil, T.boundUntil);
+			T.staggerTakenMult = R.staggerDamageTakenPct;
+			T.state = TitanState::Staggered;
+			T.castingAbility = -1;
+			T.chainImmuneUntil = T.boundUntil + TD.chainImmuneTicks;
+			Emit(SimEventType::TitanBound, T.side, T.id, Sq.id, T.pos);
+		}
+	}
+}
+
+void BattleSimulation::UpdateSanctuaries()
+{
+	if (Tick % kTicksPerSecond != 0)
+	{
+		return;
+	}
+	for (const Squad& P : SquadsList)
+	{
+		if (!P.Active() || P.Routing() || !TroopOf(P).support)
+		{
+			continue;
+		}
+		const TroopDef& TD = TroopOf(P);
+		for (Squad& A : SquadsList)
+		{
+			if (A.side != P.side || !A.Active() || A.summoned || fx::Dist(A.centroid, P.centroid) > TD.auraRadius + A.radius)
+			{
+				continue;
+			}
+			// Several priest squads do not stack: the armor status is refreshed, healing is applied per priest squad.
+			for (const int32_t M : A.members)
+			{
+				Soldier& S = SoldiersList[static_cast<size_t>(M)];
+				if (S.Alive())
+				{
+					S.hp = fx::Min(S.maxHp, S.hp + S.maxHp * TD.auraHealPctPerSec);
+					S.burnTicks = 0;
+				}
+			}
+			ChangeMorale(A, TD.auraMoralePerSec);
+			A.statuses.erase(std::remove_if(A.statuses.begin(), A.statuses.end(), [](const StatusEffect& E) { return E.sourceAbility == kSanctuarySource; }),
+				A.statuses.end());
+			StatusEffect Ward;
+			Ward.stat = StatType::ArmorAdd;
+			Ward.magnitude = TD.auraArmor;
+			Ward.endTick = Tick + kTicksPerSecond + 5;
+			Ward.sourceAbility = kSanctuarySource;
+			A.statuses.push_back(Ward);
+		}
+	}
 }
 
 // --- Damage ----------------------------------------------------------------------
@@ -616,7 +818,14 @@ void BattleSimulation::KillSoldier(int Index, int AttackerTitan)
 	Squad& Sq = SquadsList[static_cast<size_t>(S.squad)];
 	Sq.aliveCount = std::max(0, Sq.aliveCount - 1);
 	ChangeMorale(Sq, -(R.moraleLossPerPctLost * 100 / fx::Int(std::max(1, Sq.startCount))));
-	Sides[SideIndex(S.side)].destroyedPower += Sq.powerPerSoldier;
+	if (Sq.summoned)
+	{
+		S.raised = true; // a fallen skeleton stays down
+	}
+	else
+	{
+		Sides[SideIndex(S.side)].destroyedPower += Sq.powerPerSoldier;
+	}
 	Emit(SimEventType::SoldierDied, S.side, Index, AttackerTitan, S.pos);
 	if (AttackerTitan >= 0)
 	{
@@ -639,6 +848,10 @@ void BattleSimulation::KillSoldier(int Index, int AttackerTitan)
 
 void BattleSimulation::ChangeMorale(Squad& Sq, Fix64 Delta)
 {
+	if (Sq.summoned)
+	{
+		return; // the raised dead know no fear
+	}
 	Sq.morale = fx::Clamp(Sq.morale + Delta, Fix64::Zero(), fx::Int(100));
 }
 

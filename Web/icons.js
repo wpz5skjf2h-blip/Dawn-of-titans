@@ -74,6 +74,17 @@ const DotIcons = (() => {
 			p('M11 21C11 11 17 6 24 6C31 6 37 11 37 21V38C37 41 35 43 32 43H16C13 43 11 41 11 38Z', K.steel) +
 			r(14, 20, 20, 4, 2, INK) + line('M24 7V19M24 25V42', K.steelD, 1.4) +
 			c(18, 30, 1.2, INK) + c(18, 34.5, 1.2, INK) + c(30, 30, 1.2, INK) + c(30, 34.5, 1.2, INK) + hi('M15 14C17 10 20 8.5 23 8'),
+		// A clay firepot with a burning fuse.
+		'troop.grenadiers': c(22, 31, 13, K.brown) + r(16, 15, 12, 6, 2, K.brownD) + line('M12 27C16 24 28 24 32 27', K.brownD, 1.6) +
+			stick('M22 15C24 10 28 9 31 8', K.cream, 1.6) + p('M33 1C39 5 40 12 35 14C30 15 28 10 31 7C32 9 34 9 33 1Z', K.fire) +
+			p('M33.5 6.5C36 9 36 12 34 12.5C32 12.5 32 10 33.5 6.5Z', K.fireY, 'stroke="none"') + hi('M13 29C13 25 16 22 19 21'),
+		// Two iron chain links and a barbed harpoon head.
+		'troop.chainbreakers': stick('M6 42L30 18', K.wood, 3) + p('M27 13L40 8L35 21L32 18L28 22L26 16Z', K.steel) +
+			'<g fill="none">' + line('M27 37a5 7 -45 1 1 9 -9a5 7 -45 1 1 -9 9Z', INK, 5.4) + line('M27 37a5 7 -45 1 1 9 -9a5 7 -45 1 1 -9 9Z', K.iron, 3) +
+			line('M35 45a5 7 45 1 1 9 -9a5 7 45 1 1 -9 9Z', INK, 5.4) + line('M35 45a5 7 45 1 1 9 -9a5 7 45 1 1 -9 9Z', K.iron, 3) + '</g>',
+		// A priest's staff crowned with a golden sun.
+		'troop.priests': stick('M24 46V20', K.wood, 3.4) + RAYS + c(24, 13, 8, K.gold) + c(24, 13, 4, K.fireY) + hi('M19 10C20 8 22 7 24 7') +
+			p('M15 30C19 27 29 27 33 30L31 33C27 31 21 31 17 33Z', K.cream),
 
 		// --- Buildings ----------------------------------------------------------------------------
 		'building.castle': r(4, 18, 11, 25, 1, K.stone) + p('M3 19L9.5 6L16 19Z', K.blue) + r(33, 18, 11, 25, 1, K.stone) + p('M32 19L38.5 6L45 19Z', K.blue) +
@@ -157,6 +168,10 @@ const DotIcons = (() => {
 		'spell.acid_cloud': drop(14, 29, 1, '#8fdc4f') + drop(24, 30, 1.3, '#8fdc4f') + drop(33.5, 29, 1, '#8fdc4f') +
 			p('M10 26C3.5 26 3.5 16 10.5 15.5C11.5 8 21 5.5 25.5 11.5C29.5 6.5 39 8 38.5 15.5C45 15.5 45 26 38.5 26Z', '#8fdc4f') +
 			c(19, 18, 2.2, '#d8ffb0', 'stroke="none"') + c(29, 15, 1.6, '#d8ffb0', 'stroke="none"') + c(33, 20, 1.2, '#d8ffb0', 'stroke="none"'),
+		'spell.raise_dead': p('M3 45C7 37 15 35 24 35C33 35 41 37 45 45Z', '#6b5a44') +
+			p('M19.5 36V25.5L15.5 21.5C14 20 16 17.8 17.6 19.3L19.5 21.2V15.5C19.5 13.5 22.5 13.5 22.5 15.5V22L23.3 12C23.5 10 26.5 10.2 26.3 12.2L25.8 22.2L28.3 14.8C29 12.9 31.8 13.8 31.2 15.7L28.8 24.5L31.6 20.6C32.8 19 35.1 20.6 34 22.3L29.5 30C28.5 32 28 34 28 36Z', K.bone) +
+			line('M22.5 22V26.5M25.8 22.2V26.5M28.8 24.5V27', INK, 1.1) +
+			c(11, 20, 2, '#9dff8a', 'stroke="none"') + c(38, 8, 1.6, '#9dff8a', 'stroke="none"') + spark(10, 8, 2.8, '#9dff8a') + spark(40, 27, 2.4, '#9dff8a'),
 		'spell.meteor_strike': p('M18 25C24 15 34 9 45 4C40 11 40 15 42 18C36 18 33 22 31 27Z', K.fire) +
 			p('M23 24C28 17 35 12 41 9C38 14 38 16 39 18C35 18 32 21 30 25Z', K.fireY, 'stroke="none"') +
 			p('M8 30L12 22L21 19L29 23L31 32L26 40L16 42L9 38Z', '#8a7a6a') + c(16, 30, 2.6, '#6b5e52', 'stroke-width="1"') +

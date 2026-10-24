@@ -347,7 +347,7 @@ total = sum(len(b["levels"]) for b in BUILDINGS)
 print(f"{len(BUILDINGS)} buildings, {total} levels, {known} fully from the wiki -> {OUT.relative_to(ROOT)}")
 
 # --- Army and titans (army.json) ----------------------------------------------------------
-# Troops of the original's human line: Militia, Archers, Spearmen (emissary troops come with the councils).
+# Troops of the original's human line: Militia, Archers, Spearmen; then the rest of the battle roster (below).
 # Wiki: Militia L1..7 food per unit 135, 215, 540, 910, 1595, 2400, 2640 and upgrade 3500, 9800, 12500, 18000,
 # 46400, 72800, 111500; train time 1 m (1 m 20 s at L10); Spearmen L1 145 food, upgrade 6600, train 5 m;
 # Archers L1 200 food, upgrade 8800. Other levels follow the Militia progression (estimate).
@@ -382,6 +382,15 @@ TROOPS = [
     troop("troop.militia", "Ополчение", 1, {1: 60, 8: 60, 10: 80}, 135, 3500, True),
     troop("troop.archers", "Лучники", 1, {1: E(180)}, 200, 8800, False),
     troop("troop.spearmen", "Копейщики", 3, {1: 300}, 145, 6600, False),
+    # Beyond the original's three human troops: the rest of the battle roster (master prompt 4.9). The original gave other
+    # peoples' troops through envoy councils (grenadiers among them); here the Barracks train them, opening with the Castle.
+    # Costs and times are ours, scaled from the master prompt's training table against the Militia.
+    troop("troop.swordsmen", "Мечники", 4, {1: E(120)}, 230, 9000, False),
+    troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 12000, False),
+    troop("troop.outriders", "Всадники", 6, {1: E(150)}, 330, 11000, False),
+    troop("troop.priests", "Боевые жрецы", 8, {1: E(200)}, 280, 10000, False),
+    troop("troop.chainbreakers", "Цепеломы", 9, {1: E(200)}, 320, 12000, False),
+    troop("troop.knights", "Рыцари", 11, {1: E(240)}, 480, 16000, False),
 ]
 # Titans: the original sorts them by rarity R1-R4 (stars) and class; max level 10 + 10 x stars (wiki, version 1.8).
 # The names are ours (mythology); the original roster has its own characters.
@@ -412,7 +421,7 @@ ARMY = {
     ],
     # The original's spells (wiki: Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud, Raise Dead).
     # The Spell Forge crafts them into stock (queue and capacity by level, wiki) and each cast uses one.
-    # Which Forge level opens each spell, craft prices and times are estimates. Raise Dead comes later.
+    # Which Forge level opens each spell, craft prices and times are estimates.
     "spells": [
         {"id": "spell.fireball", "name": "Огненный шар", "forge": 1, "craftGold": 1500, "craftSec": 600},
         {"id": "spell.shield", "name": "Щит", "forge": 1, "craftGold": 1200, "craftSec": 480},
@@ -421,6 +430,7 @@ ARMY = {
         {"id": "spell.rage", "name": "Ярость", "forge": 4, "craftGold": 1600, "craftSec": 600},
         {"id": "spell.terror", "name": "Ужас", "forge": 5, "craftGold": 2000, "craftSec": 720},
         {"id": "spell.acid_cloud", "name": "Кислотное облако", "forge": 6, "craftGold": 2400, "craftSec": 900},
+        {"id": "spell.raise_dead", "name": "Поднять мёртвых", "forge": 7, "craftGold": 2800, "craftSec": 1080},
     ],
     # Arcane Tower research: one spell level at a time per research slot (slots and level cap by tower level, wiki).
     # Price and time for level L -> L + 1: base x growth^(L - 1) (estimate). Craft price grows 15% per spell level.

@@ -78,6 +78,32 @@ struct TroopDef
 	int chargeKnockdownTicks = 0;
 	bool trample = false;
 	Fix64 trampleDamage;
+	// Grenadiers: shots burst in a splash and leave a burning patch.
+	bool firebomb = false;
+	Fix64 splashRadius;
+	Fix64 splashEdgeMult = fx::Pct(50);
+	Fix64 fireRadius;
+	Fix64 fireDps;
+	int fireTicks = 0;
+	Fix64 fireFriendlyMult = fx::Pct(50);
+	// Chainbreakers: harpoon chains slow an enemy titan and bind it at bindAt chains.
+	bool chains = false;
+	Fix64 chainRange;
+	int chainIntervalTicks = 75;
+	int chainMinAlive = 3;
+	Fix64 chainMoveSlow;
+	Fix64 chainAttackSlow;
+	int chainTicks = 300;
+	int chainBindAt = 5;
+	int chainBindTicks = 75;
+	int chainImmuneTicks = 360;
+	// War Priests: never attack; heal, steady and armor nearby allies.
+	bool support = false;
+	Fix64 auraRadius;
+	Fix64 auraHealPctPerSec;
+	Fix64 auraMoralePerSec;
+	Fix64 auraArmor;
+	Fix64 keepAway;
 	uint32_t formationMask = 0;
 	Stance defaultStance = Stance::Aggressive;
 	std::vector<TroopTierDef> tiers;
@@ -156,7 +182,7 @@ struct TitanDef
 	Fix64 chainLightningCoef;
 };
 
-enum class EffectType : uint8_t { Damage, Heal, Knockback, Stun, StatMod, Burn, Morale };
+enum class EffectType : uint8_t { Damage, Heal, Knockback, Stun, StatMod, Burn, Morale, RaiseDead };
 enum class StatType : uint8_t { MoveSpeedPct, AttackSpeedPct, DamageTakenPct, ArmorAdd, Count };
 constexpr int kStatTypeCount = static_cast<int>(StatType::Count);
 
@@ -183,11 +209,16 @@ struct EffectDef
 	Fix64 vertical;
 	int hits = 1;
 	Fix64 poiseDamage;
+	// RaiseDead: fallen soldiers in the area rise as a squad of this troop for durationTicks.
+	int summonTroop = -1;
+	int summonMax = 0;
+	int summonMaxPerLevel = 0;
+	int corpseAgeTicks = 0;
 };
 
 enum class TargetShape : uint8_t { Self, Circle, Cone, Line };
 enum class Delivery : uint8_t { Instant, Projectile, Leap, Zone, Delayed };
-enum class AiHeuristic : uint8_t { MaxUnitsInArea, MaxUnitsInLine, MaxUnitsInCone, SelfDefense, AlliesInCombat, AlliesDamaged };
+enum class AiHeuristic : uint8_t { MaxUnitsInArea, MaxUnitsInLine, MaxUnitsInCone, SelfDefense, AlliesInCombat, AlliesDamaged, Corpses };
 
 struct AbilityDef
 {

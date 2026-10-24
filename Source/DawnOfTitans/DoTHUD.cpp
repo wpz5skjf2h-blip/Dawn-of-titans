@@ -233,7 +233,7 @@ void ADoTHUD::UpdateLayout(const dot::BattleSimulation* Sim, double Now)
 	{
 		for (const dot::Squad& Sq : Sim->Squads())
 		{
-			OwnSquads += Sq.side == dot::Side::Attacker ? 1 : 0;
+			OwnSquads += (Sq.side == dot::Side::Attacker && !Sq.summoned) ? 1 : 0;
 		}
 		Spells = static_cast<int32>(Sim->GetSide(dot::Side::Attacker).spells.size());
 	}
@@ -324,6 +324,9 @@ void ADoTHUD::CollectToasts()
 			break;
 		case dot::SimEventType::TitanDied:
 			ShowToast(bOwn ? FString(TEXT("Your titan has fallen!")) : FString(TEXT("The enemy titan falls!")), bOwn ? GEnemy : GGold);
+			break;
+		case dot::SimEventType::TitanBound:
+			ShowToast(bOwn ? FString(TEXT("Your titan is BOUND in chains!")) : FString(TEXT("Chainbreakers bound the enemy titan! Strike now!")), bOwn ? GEnemy : GGold);
 			break;
 		case dot::SimEventType::SquadRouted:
 		{
@@ -630,7 +633,7 @@ void ADoTHUD::DrawSquadCards()
 	X += 78.f * S;
 	for (const dot::Squad& Sq : Sim->Squads())
 	{
-		if (Sq.side != dot::Side::Attacker)
+		if (Sq.side != dot::Side::Attacker || Sq.summoned)
 		{
 			continue;
 		}

@@ -328,6 +328,10 @@ void ADoTBattleView::BuildUnits()
 		else if (TD.id == "troop.archers") { Mesh = ConeMesh; Scale = FVector(0.8, 0.8, 1.8); Tint = 1.35f; }
 		else if (TD.id == "troop.outriders") { Mesh = CubeMesh; Scale = FVector(2.4, 0.8, 1.6); Tint = 0.7f; }
 		else if (TD.id == "troop.knights") { Mesh = CubeMesh; Scale = FVector(2.6, 1.1, 2.0); Tint = 0.5f; }
+		else if (TD.id == "troop.skeleton") { Scale = FVector(0.5, 0.5, 1.7); Tint = 0.45f; }
+		else if (TD.id == "troop.grenadiers") { Scale = FVector(0.65, 0.65, 1.7); Tint = 1.25f; }
+		else if (TD.id == "troop.chainbreakers") { Mesh = CubeMesh; Scale = FVector(0.7, 0.9, 1.7); Tint = 0.65f; }
+		else if (TD.id == "troop.priests") { Mesh = ConeMesh; Scale = FVector(0.9, 0.9, 2.0); Tint = 1.5f; }
 		int32* Found = GroupIndex.Find(Key);
 		int32 Group = Found ? *Found : INDEX_NONE;
 		if (Group == INDEX_NONE)
@@ -392,8 +396,48 @@ void ADoTBattleView::BuildUnits()
 	}
 }
 
+void ADoTBattleView::RegisterNewSoldiers()
+{
+	const dot::BattleSimulation* Sim = Manager->GetSim();
+	const int32 Known = SoldierIsmIndex.Num();
+	const int32 Total = static_cast<int32>(Sim->Soldiers().size());
+	if (Total <= Known)
+	{
+		return;
+	}
+	SoldierIsmIndex.SetNum(Total);
+	SoldierInstance.SetNum(Total);
+	SoldierScale.SetNum(Total);
+	for (int32 I = Known; I < Total; ++I)
+	{
+		SoldierIsmIndex[I] = INDEX_NONE;
+		SoldierInstance[I] = INDEX_NONE;
+		SoldierScale[I] = FVector(0.5, 0.5, 1.7);
+	}
+	// One instanced mesh per raised squad, bone-pale with a hint of the caster's colour.
+	for (const dot::Squad& Sq : Sim->Squads())
+	{
+		if (Sq.members.empty() || Sq.members.front() < Known)
+		{
+			continue;
+		}
+		const FLinearColor Tint = SideColor(Sq.side);
+		const FLinearColor Bone(0.85f, 0.82f, 0.72f);
+		SoldierIsms.Add(MakeIsm(CylinderMesh, FMath::Lerp(Bone, Tint, 0.3f), true, false));
+		IsmTransforms.AddDefaulted();
+		const int32 Group = SoldierIsms.Num() - 1;
+		for (const int32 M : Sq.members)
+		{
+			SoldierIsmIndex[M] = Group;
+			SoldierInstance[M] = IsmTransforms[Group].Num();
+			IsmTransforms[Group].Add(HiddenTransform());
+		}
+	}
+}
+
 void ADoTBattleView::UpdateSoldiers()
 {
+	RegisterNewSoldiers();
 	const dot::BattleSimulation* Sim = Manager->GetSim();
 	const auto& Soldiers = Sim->Soldiers();
 	const double RenderTick = Manager->GetRenderTick();
@@ -582,7 +626,8 @@ void ADoTBattleView::UpdateProjectilesAndZones()
 		const double T = FMath::Clamp((RenderTick - P.fireTick) / Span, 0.0, 1.0);
 		const double Dist = (P.to - P.from).Length().ToDouble();
 		const bool bThrown = P.kind == dot::ProjectileKind::ThrownSoldier;
-		const double Apex = bThrown ? 12.0 : 1.0 + Dist * 0.12;
+		const bool bFirebomb = P.kind == dot::ProjectileKind::Firebomb;
+		const double Apex = bThrown ? 12.0 : bFirebomb ? 2.0 + Dist * 0.3 : 1.0 + Dist * 0.12;
 		const double X = FMath::Lerp(P.from.x.ToDouble(), P.to.x.ToDouble(), T);
 		const double Z = FMath::Lerp(P.from.z.ToDouble(), P.to.z.ToDouble(), T);
 		const double H0 = P.fromHeight.ToDouble();
@@ -595,6 +640,10 @@ void ADoTBattleView::UpdateProjectilesAndZones()
 		if (bThrown)
 		{
 			Boulders.Add(FTransform(FRotator(static_cast<float>(RenderTick * 20.0), Yaw, 0.f), Loc, FVector(1.6)));
+		}
+		else if (bFirebomb)
+		{
+			Boulders.Add(FTransform(FRotator(static_cast<float>(RenderTick * 30.0), Yaw, 0.f), Loc, FVector(0.5)));
 		}
 		else
 		{
@@ -650,6 +699,12 @@ void ADoTBattleView::UpdateProjectilesAndZones()
 		const double Pulse = 1.0 + 0.05 * FMath::Sin(RenderTick * 0.4);
 		const double D = Z.radius.ToDouble() * 2.0 * Pulse;
 		Zones.Add(FTransform(FRotator::ZeroRotator, DoTCoords::SimToWorld(Z.center, Grid.HeightAt(Z.center).ToDouble() + 0.12), FVector(D, D, 0.03)));
+	}
+	// Grenadier fire patches share the zone discs.
+	for (const dot::FirePatch& F : Sim->FirePatches())
+	{
+		const double D = F.radius.ToDouble() * 2.0;
+		Zones.Add(FTransform(FRotator::ZeroRotator, DoTCoords::SimToWorld(F.center, Grid.HeightAt(F.center).ToDouble() + 0.1), FVector(D, D, 0.03)));
 	}
 	SetInstances(ArrowIsm, Arrows);
 	SetInstances(BoulderIsm, Boulders);
@@ -772,6 +827,13 @@ void ADoTBattleView::HandleEvents()
 			break;
 		case dot::SimEventType::ChargeImpact:
 			SpawnFx(Fx_Dust, Where, 0.5f, 1.f, 6.f);
+			break;
+		case dot::SimEventType::FirebombImpact:
+			SpawnFx(Fx_Dust, Where, 0.5f, 1.f, 5.f);
+			break;
+		case dot::SimEventType::TitanBound:
+			SpawnFx(Fx_Stagger, Where + FVector(0.0, 0.0, 2000.0), 1.4f, 2.f, 5.f);
+			SpawnFx(Fx_Shock, Where, 0.6f, 3.f, 14.f);
 			break;
 		default: break;
 		}

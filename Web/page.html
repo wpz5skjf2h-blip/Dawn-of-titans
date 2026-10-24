@@ -377,6 +377,8 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .stars i { font-style: normal; color: rgba(239, 231, 214, 0.2); }
 .titanCard { border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); padding: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .titanCard.on { border-color: var(--bronze); background: rgba(210, 162, 90, 0.12); }
+.titanCard.locked { opacity: 0.62; border-style: dashed; }
+.titanCard.locked .ico { filter: grayscale(1); }
 .titanCard .head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
 .titanCard .head b { font-family: var(--font-display); font-size: 17px; }
 .titanCard .meta { font-size: 12px; color: var(--dim); }
@@ -559,6 +561,8 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
       </dl>
       <h3>Сражение</h3>
       <div class="opts" id="scenarioOpts"></div>
+      <h3>Ваш титан</h3>
+      <div class="seg" id="titanOpts"></div>
       <h3>Противник</h3>
       <div class="seg" id="aiOpts"></div>
       <h3>Графика</h3>

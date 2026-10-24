@@ -322,6 +322,13 @@ void TestTrainingQueue()
 	KD_CHECK(K.ArmyCount(Mil) == 3 && K.ArmyTotal() == 4 && K.ArmyCapacity() == 10 && K.BattleSlots() == 3);
 	KD_CHECK(K.QueueCapacity() == 6 && K.SurvivalPct() == 100 && K.MaxTroopLevel() == 1);
 	KD_CHECK(K.CheckTrain(Troop("troop.spearmen")).error == Error::Locked); // Spearmen from Castle 3 (estimate)
+	KD_CHECK(Content().troops.size() == 9);
+	for (const char* Id : {"troop.swordsmen", "troop.grenadiers", "troop.outriders", "troop.priests", "troop.chainbreakers", "troop.knights"})
+	{
+		const int T = Troop(Id);
+		KD_CHECK(T >= 0 && Content().troops[static_cast<size_t>(T)].unlockCastle > 3);
+		KD_CHECK(T >= 0 && K.CheckTrain(T).error == Error::Locked);
+	}
 	const int64_t Food = K.Amount(Res::Food);
 	for (int I = 0; I < 6; ++I)
 	{
@@ -487,7 +494,7 @@ void TestSpellsRelicsLandTitans()
 	const BuildingDef& Forge = Ct.buildings[static_cast<size_t>(Def("spell_forge"))];
 	KD_CHECK(Forge.unlockCastle == 5 && Forge.levels[0].queue == 2 && Forge.levels[0].capacity == 10 && Forge.levels[0].castle == 5);
 	KD_CHECK(Forge.levels[8].queue == 10 && Forge.levels[8].capacity == 65 && Forge.levels[8].castle == 21);
-	KD_CHECK(Ct.spells.size() == 7 && SpellIx("spell.fireball") >= 0 && SpellIx("spell.acid_cloud") >= 0);
+	KD_CHECK(Ct.spells.size() == 8 && SpellIx("spell.fireball") >= 0 && SpellIx("spell.acid_cloud") >= 0 && SpellIx("spell.raise_dead") >= 0);
 
 	Kingdom K(Content());
 	K.NewGame(T0, 31);

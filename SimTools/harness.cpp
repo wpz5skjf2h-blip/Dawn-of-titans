@@ -57,6 +57,15 @@ int main(int Argc, char** Argv)
 	int AttackerWins = 0;
 	int64_t TotalTicks = 0;
 	int Timeouts = 0;
+	// Raised-only troops (skeletons) are never part of an army.
+	std::vector<std::string> Trainable;
+	for (const dot::TroopDef& T : Content.troops)
+	{
+		if (T.id != "troop.skeleton")
+		{
+			Trainable.push_back(T.id);
+		}
+	}
 	for (int B = 0; B < Battles; ++B)
 	{
 		dot::BattleSetup S = Base;
@@ -72,7 +81,7 @@ int main(int Argc, char** Argv)
 			SS.titan.stars = SS.titan.titanId == "titan.thor" ? 4 : 3;
 			for (dot::SquadSetup& Q : SS.squads)
 			{
-				Q.troopId = Content.troops[static_cast<size_t>(Picker.RangeInt(0, static_cast<int>(Content.troops.size()) - 1))].id;
+				Q.troopId = Trainable[static_cast<size_t>(Picker.RangeInt(0, static_cast<int>(Trainable.size()) - 1))];
 				Q.tier = 2;
 				Q.count = 0;
 				Q.stanceSet = false;

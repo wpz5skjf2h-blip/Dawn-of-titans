@@ -82,7 +82,16 @@ void BattleSimulation::UpdateTitan(Titan& T, int Index)
 			T.pos = T.leapTo;
 			T.state = TitanState::Idle;
 			const int Level = TitanDefOf(T).abilities[1] == T.leapAbility ? T.abilityLevel[1] : T.abilityLevel[0];
-			ApplyEffects(T.leapAbility, T.side, Index, T.pos, T.pos, T.facing, Level, false);
+			if (ContentRef.abilities[static_cast<size_t>(T.leapAbility)].shape == TargetShape::Line)
+			{
+				// A rush: everything along the path from the start of the leap is hit.
+				FixVec2 Dir = (T.leapTo - T.leapFrom).Normalized();
+				ApplyEffects(T.leapAbility, T.side, Index, T.leapFrom, T.pos, Dir.IsZero() ? T.facing : Dir, Level, false);
+			}
+			else
+			{
+				ApplyEffects(T.leapAbility, T.side, Index, T.pos, T.pos, T.facing, Level, false);
+			}
 			Emit(SimEventType::AbilityImpact, T.side, T.id, T.leapAbility, T.pos);
 		}
 		return;
@@ -518,6 +527,7 @@ void BattleSimulation::TitanApplyAttackHit(Titan& T, int Index)
 				HitSoldier(N, R.stompCoef, S.pos - T.pos, R.stompKnockH, R.stompKnockV);
 			}
 		}
+		ClearChains(T);
 		Emit(SimEventType::TitanStomp, T.side, T.id, 0, T.pos);
 	}
 	else if (T.state == TitanState::Grabbing)
@@ -1179,7 +1189,7 @@ bool BattleSimulation::StartAbility(Titan& T, int Index, int AbilitySlot, FixVec
 		Dir = T.facing;
 	}
 	const Fix64 Len = Dir.Length();
-	if (A.shape != TargetShape::Self && A.range > Fix64::Zero() && Len > A.range && (A.shape == TargetShape::Circle))
+	if (A.shape != TargetShape::Self && A.range > Fix64::Zero() && Len > A.range && (A.shape == TargetShape::Circle || A.delivery == Delivery::Leap))
 	{
 		Point = T.pos + Dir / Len * A.range;
 	}
@@ -1445,11 +1455,32 @@ void BattleSimulation::ApplyEffects(int AbilityIdx, Side S, int CasterTitan, Fix
 		// A returning projectile applies one hit on each pass (out and back).
 		const int Repeat = A.returns ? 1 : std::max(1, E.hits);
 
+		if (E.type == EffectType::RaiseDead)
+		{
+			// Bodies rise after the effects resolve (SpawnSummons), so no squad is added mid-iteration.
+			PendingSummon Req;
+			Req.side = S;
+			Req.troop = E.summonTroop;
+			Req.tier = 1 + (std::max(1, Level) - 1) / 4;
+			Req.center = A.shape == TargetShape::Self ? Origin : Point;
+			Req.radius = A.radius;
+			Req.maxCount = E.summonMax + E.summonMaxPerLevel * (std::max(1, Level) - 1);
+			Req.corpseAgeTicks = E.corpseAgeTicks;
+			Req.lifetimeTicks = E.durationTicks;
+			Summons.push_back(Req);
+			continue;
+		}
+
 		if (E.affectsMask & affects::Self)
 		{
 			if (Caster && E.type == EffectType::StatMod)
 			{
 				AddTitanStatus(TitansList[static_cast<size_t>(CasterTitan)], E, AbilityIdx, LevelMult);
+			}
+			else if (Caster && E.type == EffectType::Heal)
+			{
+				Titan& Self = TitansList[static_cast<size_t>(CasterTitan)];
+				Self.hp = fx::Min(Self.maxHp, Self.hp + (E.flat + E.pctMaxHp * Self.maxHp) * LevelMult);
 			}
 		}
 
@@ -1635,5 +1666,132 @@ void BattleSimulation::UpdateZonesAndImpacts()
 		}
 	}
 	ZonesList.erase(std::remove_if(ZonesList.begin(), ZonesList.end(), [](const Zone& Z) { return !Z.active; }), ZonesList.end());
+}
+
+int BattleSimulation::CountRaisableCorpses(FixVec2 Center, Fix64 Radius, int32_t MaxAgeTicks) const
+{
+	int Count = 0;
+	const Fix64 RadiusSq = Radius * Radius;
+	for (const Soldier& Sol : SoldiersList)
+	{
+		if (Sol.state == SoldierState::Dead && !Sol.raised && Tick - Sol.deathTick <= MaxAgeTicks && fx::DistSq(Sol.pos, Center) <= RadiusSq)
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+void BattleSimulation::SpawnSummons()
+{
+	if (Summons.empty())
+	{
+		return;
+	}
+	std::vector<PendingSummon> Requests;
+	Requests.swap(Summons);
+	for (const PendingSummon& Req : Requests)
+	{
+		if (Req.troop < 0 || Req.maxCount <= 0 || SquadsList.size() + 1 >= static_cast<size_t>(kTitanIdBase))
+		{
+			continue;
+		}
+		// The nearest fresh bodies of either side rise (ties by soldier index keep it deterministic).
+		std::vector<std::pair<Fix64, int32_t>> Corpses;
+		const Fix64 RadiusSq = Req.radius * Req.radius;
+		for (size_t I = 0; I < SoldiersList.size(); ++I)
+		{
+			const Soldier& Sol = SoldiersList[I];
+			if (Sol.state != SoldierState::Dead || Sol.raised || Tick - Sol.deathTick > Req.corpseAgeTicks)
+			{
+				continue;
+			}
+			const Fix64 D = fx::DistSq(Sol.pos, Req.center);
+			if (D <= RadiusSq)
+			{
+				Corpses.emplace_back(D, static_cast<int32_t>(I));
+			}
+		}
+		if (Corpses.empty())
+		{
+			continue;
+		}
+		std::sort(Corpses.begin(), Corpses.end(), [](const std::pair<Fix64, int32_t>& A, const std::pair<Fix64, int32_t>& B) {
+			return A.first < B.first || (A.first == B.first && A.second < B.second);
+		});
+		if (static_cast<int>(Corpses.size()) > Req.maxCount)
+		{
+			Corpses.resize(static_cast<size_t>(Req.maxCount));
+		}
+
+		const int SquadIndex = static_cast<int>(SquadsList.size());
+		Squad Sq;
+		Sq.id = SquadIndex + 1;
+		Sq.side = Req.side;
+		InitSquadStats(Sq, Req.troop, Req.tier);
+		const TroopDef& TD = ContentRef.troops[static_cast<size_t>(Req.troop)];
+		Sq.formation = TD.AllowsFormation(Formation::Loose) ? Formation::Loose : Formation::Line;
+		Sq.stance = Stance::Aggressive;
+		Sq.summoned = true;
+		Sq.autoControl = true;
+		Sq.expireTick = Tick + std::max(1, Req.lifetimeTicks);
+		Sq.startCount = static_cast<int32_t>(Corpses.size());
+		Sq.aliveCount = Sq.startCount;
+		Sq.facing = FixVec2(Fix64::Zero(), Req.side == Side::Attacker ? Fix64::One() : -Fix64::One());
+		FixVec2 Sum;
+		for (size_t K = 0; K < Corpses.size(); ++K)
+		{
+			Soldier& Body = SoldiersList[static_cast<size_t>(Corpses[K].second)];
+			Body.raised = true;
+			Soldier Sol;
+			Sol.squad = SquadIndex;
+			Sol.side = Req.side;
+			Sol.hp = Sq.hp;
+			Sol.maxHp = Sq.hp;
+			Sol.slot = static_cast<int32_t>(K);
+			Sol.pos = Nav.NearestWalkable(TD.move, Body.pos, 4);
+			Sol.facing = Sq.facing;
+			Sol.raised = true;
+			Sol.attackCooldown = Random.RangeInt(0, std::max(1, Sq.interval / 2));
+			Sum += Sol.pos;
+			Sq.members.push_back(static_cast<int32_t>(SoldiersList.size()));
+			SoldiersList.push_back(Sol);
+		}
+		Sq.leader = Nav.NearestWalkable(TD.move, Sum / fx::Int(static_cast<int64_t>(Corpses.size())));
+		Sq.anchor = Sq.leader;
+		Sq.aiNextTick = Tick;
+		SquadsList.push_back(Sq);
+		RefreshSquadGeometry(SquadsList.back());
+		Emit(SimEventType::DeadRaised, Req.side, Sq.id, Sq.startCount, SquadsList.back().centroid);
+	}
+}
+
+void BattleSimulation::ExpireSummons()
+{
+	for (Squad& Sq : SquadsList)
+	{
+		if (!Sq.summoned || Sq.destroyed || Tick < Sq.expireTick)
+		{
+			continue;
+		}
+		// The spell fades: the raised crumble where they stand (not a loss for anyone).
+		for (const int32_t M : Sq.members)
+		{
+			Soldier& Sol = SoldiersList[static_cast<size_t>(M)];
+			if (Sol.Alive())
+			{
+				Sol.state = SoldierState::Dead;
+				Sol.hp = Fix64::Zero();
+				Sol.deathTick = Tick;
+				Sol.vel = FixVec2();
+				Sol.targetSoldier = -1;
+				Sol.targetTitan = -1;
+				Sol.raised = true;
+			}
+		}
+		Sq.aliveCount = 0;
+		Sq.engagedSquads.clear();
+		Sq.fightingTitan = false;
+	}
 }
 } // namespace dot

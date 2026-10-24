@@ -157,6 +157,14 @@ enum class SimEventType : uint8_t
 	StarEarned,
 	BattleStarted,
 	BattleEnded,
+	/** a = new squad id, b = soldiers raised. */
+	DeadRaised,
+	/** Grenadier firebomb burst: a = source squad id. */
+	FirebombImpact,
+	/** Chainbreakers harpoon a titan: a = squad id, b = titan id, value = chains now on it. */
+	ChainThrown,
+	/** A titan is Bound by chains: a = titan id. */
+	TitanBound,
 	Count
 };
 

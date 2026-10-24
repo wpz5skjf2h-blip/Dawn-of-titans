@@ -30,55 +30,55 @@
             "passives": { "chainLightning": { "every": 3, "targets": 4, "coef": 0.6 } }
     },
     // Kingdom roster (the original's titans come in rarities R1-R4 = Common, Rare, Epic, Legendary here).
-    // Abilities are shared from the framework until each titan gets its own.
+    // Each titan has two abilities of its own (abilities.json); names and numbers are ours.
     {
       "id": "titan.minotaur", "name": "Minotaur", "title": "of the Labyrinth", "lineage": "Olympians",
       "class": "Ravager", "rarity": "Common", "size": "Large",
       "variance": { "hp": 0.95, "atk": 1.0, "poise": 1.0 },
-      "abilities": ["ability.thor.thunderclap", "ability.talos.bronze_bulwark"]
+      "abilities": ["ability.minotaur.labyrinth_rush", "ability.minotaur.blood_frenzy"]
     },
     {
       "id": "titan.cyclops", "name": "Cyclops", "title": "the Forge-Eye", "lineage": "Olympians",
       "class": "Warden", "rarity": "Common", "size": "Colossal",
       "variance": { "hp": 1.0, "atk": 0.95, "poise": 1.05 },
-      "abilities": ["ability.talos.bronze_bulwark", "ability.thor.thunderclap"]
+      "abilities": ["ability.cyclops.forge_gaze", "ability.cyclops.anvil_quake"]
     },
     {
       "id": "titan.perun", "name": "Perun", "title": "the Storm Oak", "lineage": "Slavs",
       "class": "Ravager", "rarity": "Rare", "size": "Large",
       "variance": { "hp": 1.0, "atk": 1.03, "poise": 1.0 },
-      "abilities": ["ability.thor.hammer_throw", "ability.thor.thunderclap"],
+      "abilities": ["ability.perun.oak_splitter", "ability.perun.storm_herald"],
       "passives": { "chainLightning": { "every": 4, "targets": 3, "coef": 0.5 } }
     },
     {
       "id": "titan.atlas", "name": "Atlas", "title": "the Sky-Bearer", "lineage": "Titans",
       "class": "Warden", "rarity": "Rare", "size": "Colossal",
       "variance": { "hp": 1.05, "atk": 0.95, "poise": 1.1 },
-      "abilities": ["ability.talos.bronze_bulwark", "ability.talos.molten_ichor"]
+      "abilities": ["ability.atlas.falling_sky", "ability.atlas.weight_of_heavens"]
     },
     {
       "id": "titan.ymir", "name": "Ymir", "title": "the Frost Father", "lineage": "Jotnar",
       "class": "Juggernaut", "rarity": "Rare", "size": "Colossal",
       "variance": { "hp": 1.04, "atk": 1.0, "poise": 1.05 },
-      "abilities": ["ability.talos.bronze_bulwark", "ability.thor.thunderclap"]
+      "abilities": ["ability.ymir.frost_breath", "ability.ymir.glacier_hide"]
     },
     {
       "id": "titan.surtr", "name": "Surtr", "title": "the Black Flame", "lineage": "Jotnar",
       "class": "Ravager", "rarity": "Epic", "size": "Large",
       "variance": { "hp": 1.0, "atk": 1.06, "poise": 1.0 },
-      "abilities": ["ability.talos.molten_ichor", "ability.thor.thunderclap"]
+      "abilities": ["ability.surtr.muspell_blade", "ability.surtr.world_fire"]
     },
     {
       "id": "titan.hecate", "name": "Hecate", "title": "of the Crossroads", "lineage": "Titans",
       "class": "Mystic", "rarity": "Epic", "size": "Medium",
       "variance": { "hp": 1.0, "atk": 1.04, "poise": 1.0 },
-      "abilities": ["ability.talos.molten_ichor", "ability.thor.thunderclap"]
+      "abilities": ["ability.hecate.crossroads_hex", "ability.hecate.underworld_torches"]
     },
     {
       "id": "titan.artemis", "name": "Artemis", "title": "the Huntress", "lineage": "Olympians",
       "class": "Hunter", "rarity": "Epic", "size": "Medium",
       "variance": { "hp": 1.0, "atk": 1.04, "poise": 1.0 },
-      "abilities": ["ability.thor.hammer_throw", "ability.thor.thunderclap"]
+      "abilities": ["ability.artemis.silver_volley", "ability.artemis.moonshot"]
     }
   ]
 }

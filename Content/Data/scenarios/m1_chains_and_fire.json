@@ -1,0 +1,36 @@
+{
+  "name": "M1 Chains and Fire: new troops against a giant",
+  "map": "map.highvale_01",
+  "seed": 20261024,
+  "timerSec": 180,
+  "skipDeploy": false,
+  "sides": {
+    "attacker": {
+      "name": "House of Highvale",
+      "ai": "",
+      "titan": { "id": "titan.perun", "level": 20, "stars": 2, "abilityLevels": [1, 1], "pos": [120, 22], "facingDeg": 0 },
+      "spells": ["spell.war_drums", "spell.healing_spring"],
+      "squads": [
+        { "troop": "troop.chainbreakers", "tier": 2, "pos": [104, 34], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.chainbreakers", "tier": 2, "pos": [136, 34], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.swordsmen",     "tier": 2, "pos": [120, 36], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.grenadiers",    "tier": 2, "pos": [108, 18], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.grenadiers",    "tier": 2, "pos": [132, 18], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.priests",       "tier": 2, "pos": [120, 26], "facingDeg": 0, "formation": "Line" }
+      ]
+    },
+    "defender": {
+      "name": "The Bronze Hollow",
+      "ai": "veteran",
+      "titan": { "id": "titan.atlas", "level": 16, "stars": 2, "abilityLevels": [1, 1], "pos": [120, 134], "facingDeg": 180 },
+      "spells": ["spell.meteor_strike"],
+      "squads": [
+        { "troop": "troop.militia",   "tier": 2, "pos": [100, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [140, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [120, 126], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [120, 142], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.outriders", "tier": 2, "pos": [200, 134], "facingDeg": 180, "formation": "Wedge" }
+      ]
+    }
+  }
+}

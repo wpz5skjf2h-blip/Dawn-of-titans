@@ -150,6 +150,194 @@
         { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.2, "duration": 1.5, "affects": ["EnemyTroops"] }
       ],
       "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10 }
+    },
+    // Raise Dead, the original's eighth spell: fresh bodies of either side in the circle rise as skeletons
+    // that fight for the caster until the spell fades. Count, duration and radius are ours.
+    {
+      "id": "spell.raise_dead", "name": "Raise Dead", "spell": true,
+      "valor": 5, "cooldown": 25,
+      "shape": "Circle", "radius": 9, "delivery": "Instant",
+      "effects": [
+        { "type": "RaiseDead", "troop": "troop.skeleton", "max": 12, "maxPerLevel": 1, "duration": 25, "corpseAge": 17 }
+      ],
+      "ai": { "heuristic": "Corpses", "minTargets": 6 }
+    },
+
+    // --- Kingdom roster: two abilities of its own for every titan (names and numbers are ours) ---
+    {
+      "id": "ability.minotaur.labyrinth_rush", "name": "Labyrinth Rush",
+      "rage": 45, "cooldown": 12, "castTime": 0.3,
+      "shape": "Line", "range": 22, "width": 6, "delivery": "Leap", "leapTime": 0.7,
+      "effects": [
+        { "type": "Damage", "coef": 2.0, "poiseDamage": 35, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 0.8, "affects": ["EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 8, "vertical": 5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 6, "preferTitan": true }
+    },
+    {
+      "id": "ability.minotaur.blood_frenzy", "name": "Blood Frenzy",
+      "rage": 40, "cooldown": 18, "castTime": 0.3,
+      "shape": "Self", "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.50, "duration": 7, "affects": ["Self"] },
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": 0.10, "duration": 6, "affects": ["Self"] },
+        { "type": "Heal", "pctMaxHp": 0.06, "affects": ["Self"] }
+      ],
+      "ai": { "heuristic": "SelfDefense", "hpBelow": 0.85, "minTargets": 1 }
+    },
+    {
+      "id": "ability.cyclops.forge_gaze", "name": "Forge Gaze",
+      "rage": 45, "cooldown": 10, "castTime": 0.7,
+      "shape": "Line", "range": 28, "width": 3.5, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.3, "poiseDamage": 15, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Burn", "flat": 14, "duration": 4, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.cyclops.anvil_quake", "name": "Anvil Quake",
+      "rage": 55, "cooldown": 16, "castTime": 0.5,
+      "shape": "Circle", "range": 1, "radius": 11, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.6, "poiseDamage": 30, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 1.5, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 3, "vertical": 2, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "ability.perun.oak_splitter", "name": "Oak-Splitter",
+      "rage": 50, "cooldown": 12, "castTime": 0.5,
+      "shape": "Circle", "range": 26, "radius": 5, "delivery": "Delayed", "delay": 0.5,
+      "effects": [
+        { "type": "Damage", "coef": 1.0, "hits": 3, "poiseDamage": 10, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 0.7, "affects": ["EnemyTroops", "EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.perun.storm_herald", "name": "Storm Herald",
+      "rage": 40, "cooldown": 20, "castTime": 0.4,
+      "shape": "Circle", "range": 1, "radius": 14, "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.25, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": 0.15, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.20, "duration": 8, "affects": ["Self"] },
+        { "type": "Damage", "coef": 0.5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10 }
+    },
+    {
+      "id": "ability.atlas.falling_sky", "name": "Falling Sky",
+      "rage": 60, "cooldown": 15, "castTime": 0.4,
+      "shape": "Circle", "range": 24, "radius": 10, "delivery": "Leap", "leapTime": 1.0,
+      "effects": [
+        { "type": "Damage", "coef": 2.2, "poiseDamage": 45, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 8, "vertical": 9, "affects": ["EnemyTroops"] },
+        { "type": "Stun", "duration": 1.0, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "ability.atlas.weight_of_heavens", "name": "Weight of the Heavens",
+      "rage": 45, "cooldown": 16, "castTime": 0.6,
+      "shape": "Circle", "range": 20, "radius": 9, "delivery": "Zone", "zoneDuration": 6, "zonePulse": 1,
+      "effects": [
+        { "type": "Damage", "coef": 0.25, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.45, "duration": 1.5, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": -0.25, "duration": 1.5, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "ability.ymir.frost_breath", "name": "Frost Breath",
+      "rage": 45, "cooldown": 12, "castTime": 0.6,
+      "shape": "Cone", "range": 13, "coneAngleDeg": 80, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.1, "poiseDamage": 15, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 0.8, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.5, "duration": 5, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": -0.3, "duration": 5, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.3, "duration": 4, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInCone", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.ymir.glacier_hide", "name": "Glacier Hide",
+      "rage": 40, "cooldown": 18, "castTime": 0.3,
+      "shape": "Self", "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.35, "duration": 6, "affects": ["Self"] },
+        { "type": "StatMod", "stat": "ArmorAdd", "magnitude": 0.10, "duration": 6, "affects": ["Self"] },
+        { "type": "Heal", "pctMaxHp": 0.04, "affects": ["Self"] }
+      ],
+      "ai": { "heuristic": "SelfDefense", "hpBelow": 0.7, "minTargets": 1 }
+    },
+    {
+      "id": "ability.surtr.muspell_blade", "name": "Muspell Blade",
+      "rage": 50, "cooldown": 11, "castTime": 0.5,
+      "shape": "Cone", "range": 12, "coneAngleDeg": 170, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.8, "poiseDamage": 25, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Burn", "flat": 18, "duration": 5, "affects": ["EnemyTroops"] },
+        { "type": "Knockback", "horizontal": 5, "vertical": 4, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInCone", "minTargets": 9, "preferTitan": true }
+    },
+    {
+      "id": "ability.surtr.world_fire", "name": "World-Fire",
+      "rage": 55, "cooldown": 18, "castTime": 0.6,
+      "shape": "Circle", "range": 20, "radius": 8, "delivery": "Zone", "zoneDuration": 6, "zonePulse": 1,
+      "effects": [
+        { "type": "Damage", "flat": 60, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "coef": 0.35, "affects": ["EnemyTitans"] },
+        { "type": "Burn", "flat": 12, "duration": 2, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10 }
+    },
+    {
+      "id": "ability.hecate.crossroads_hex", "name": "Crossroads Hex",
+      "rage": 45, "cooldown": 14, "castTime": 0.6,
+      "shape": "Circle", "range": 30, "radius": 9, "delivery": "Delayed", "delay": 0.5,
+      "effects": [
+        { "type": "Damage", "coef": 1.1, "poiseDamage": 20, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Morale", "flat": 35, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": 0.30, "duration": 7, "affects": ["EnemyTroops", "EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "ability.hecate.underworld_torches", "name": "Underworld Torches",
+      "rage": 50, "cooldown": 20, "castTime": 0.8,
+      "shape": "Circle", "range": 25, "radius": 9, "delivery": "Instant",
+      "effects": [
+        { "type": "RaiseDead", "troop": "troop.skeleton", "max": 14, "maxPerLevel": 1, "duration": 22, "corpseAge": 17 }
+      ],
+      "ai": { "heuristic": "Corpses", "minTargets": 5 }
+    },
+    {
+      "id": "ability.artemis.silver_volley", "name": "Silver Volley",
+      "rage": 45, "cooldown": 10, "castTime": 0.6,
+      "shape": "Circle", "range": 42, "radius": 6, "delivery": "Delayed", "delay": 0.7,
+      "effects": [
+        { "type": "Damage", "coef": 0.55, "hits": 3, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "coef": 0.8, "affects": ["EnemyTitans"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.25, "duration": 3, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 8 }
+    },
+    {
+      "id": "ability.artemis.moonshot", "name": "Moonshot",
+      "rage": 55, "cooldown": 14, "castTime": 0.8,
+      "shape": "Line", "range": 48, "width": 2.5, "delivery": "Projectile", "projectileSpeed": 60,
+      "effects": [
+        { "type": "Damage", "coef": 3.0, "poiseDamage": 35, "affects": ["EnemyTitans"] },
+        { "type": "Damage", "coef": 1.2, "affects": ["EnemyTroops"] },
+        { "type": "Knockback", "horizontal": 4, "vertical": 3, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 8, "preferTitan": true }
     }
   ]
 }
