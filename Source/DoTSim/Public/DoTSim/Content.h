@@ -156,7 +156,7 @@ struct TitanDef
 	Fix64 chainLightningCoef;
 };
 
-enum class EffectType : uint8_t { Damage, Heal, Knockback, Stun, StatMod, Burn, Morale };
+enum class EffectType : uint8_t { Damage, Heal, Knockback, Stun, StatMod, Burn, Morale, RaiseDead };
 enum class StatType : uint8_t { MoveSpeedPct, AttackSpeedPct, DamageTakenPct, ArmorAdd, Count };
 constexpr int kStatTypeCount = static_cast<int>(StatType::Count);
 
@@ -183,11 +183,16 @@ struct EffectDef
 	Fix64 vertical;
 	int hits = 1;
 	Fix64 poiseDamage;
+	// RaiseDead: fallen soldiers in the area rise as a squad of this troop for durationTicks.
+	int summonTroop = -1;
+	int summonMax = 0;
+	int summonMaxPerLevel = 0;
+	int corpseAgeTicks = 0;
 };
 
 enum class TargetShape : uint8_t { Self, Circle, Cone, Line };
 enum class Delivery : uint8_t { Instant, Projectile, Leap, Zone, Delayed };
-enum class AiHeuristic : uint8_t { MaxUnitsInArea, MaxUnitsInLine, MaxUnitsInCone, SelfDefense, AlliesInCombat, AlliesDamaged };
+enum class AiHeuristic : uint8_t { MaxUnitsInArea, MaxUnitsInLine, MaxUnitsInCone, SelfDefense, AlliesInCombat, AlliesDamaged, Corpses };
 
 struct AbilityDef
 {

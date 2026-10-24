@@ -157,6 +157,8 @@ enum class SimEventType : uint8_t
 	StarEarned,
 	BattleStarted,
 	BattleEnded,
+	/** a = new squad id, b = soldiers raised. */
+	DeadRaised,
 	Count
 };
 

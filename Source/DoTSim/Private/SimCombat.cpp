@@ -616,7 +616,14 @@ void BattleSimulation::KillSoldier(int Index, int AttackerTitan)
 	Squad& Sq = SquadsList[static_cast<size_t>(S.squad)];
 	Sq.aliveCount = std::max(0, Sq.aliveCount - 1);
 	ChangeMorale(Sq, -(R.moraleLossPerPctLost * 100 / fx::Int(std::max(1, Sq.startCount))));
-	Sides[SideIndex(S.side)].destroyedPower += Sq.powerPerSoldier;
+	if (Sq.summoned)
+	{
+		S.raised = true; // a fallen skeleton stays down
+	}
+	else
+	{
+		Sides[SideIndex(S.side)].destroyedPower += Sq.powerPerSoldier;
+	}
 	Emit(SimEventType::SoldierDied, S.side, Index, AttackerTitan, S.pos);
 	if (AttackerTitan >= 0)
 	{
@@ -639,6 +646,10 @@ void BattleSimulation::KillSoldier(int Index, int AttackerTitan)
 
 void BattleSimulation::ChangeMorale(Squad& Sq, Fix64 Delta)
 {
+	if (Sq.summoned)
+	{
+		return; // the raised dead know no fear
+	}
 	Sq.morale = fx::Clamp(Sq.morale + Delta, Fix64::Zero(), fx::Int(100));
 }
 

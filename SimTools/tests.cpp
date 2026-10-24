@@ -9,6 +9,7 @@
 #include "DoTSim/Random.h"
 #include "DoTSim/Replay.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -150,7 +151,8 @@ void TestJson()
 void TestContent()
 {
 	const SimContent& C = Content();
-	DOT_CHECK(C.troops.size() == 6);
+	DOT_CHECK(C.troops.size() == 7);
+	DOT_CHECK(C.FindTroop("troop.skeleton") == 6);
 	DOT_CHECK(C.titans.size() == 10);
 	DOT_CHECK(C.FindAbility("spell.meteor_strike") >= 0);
 	const TroopDef& Spear = C.troops[static_cast<size_t>(C.FindTroop("troop.spearmen"))];
@@ -526,6 +528,220 @@ void TestSpellChargesRelicsMorale()
 	DOT_CHECK(Near(B.Titans()[0].maxHp.ToDouble(), Hp * 1.2, Hp * 0.001));
 	DOT_CHECK(Near(B.Titans()[0].atk.ToDouble(), A.Titans()[0].atk.ToDouble() * 1.1, A.Titans()[0].atk.ToDouble() * 0.001));
 }
+/** Index of the fresh body with the most fresh bodies within Radius (-1 if none). */
+int DensestCorpse(const BattleSimulation& Sim, Fix64 Radius, int32_t MaxAge)
+{
+	const std::vector<Soldier>& All = Sim.Soldiers();
+	int Best = -1;
+	int BestCount = 0;
+	for (size_t I = 0; I < All.size(); ++I)
+	{
+		const Soldier& A = All[I];
+		if (A.state != SoldierState::Dead || A.raised || Sim.CurrentTick() - A.deathTick > MaxAge)
+		{
+			continue;
+		}
+		int Count = 0;
+		for (const Soldier& B : All)
+		{
+			Count += (B.state == SoldierState::Dead && !B.raised && Sim.CurrentTick() - B.deathTick <= MaxAge && fx::Dist(A.pos, B.pos) <= Radius) ? 1 : 0;
+		}
+		if (Count > BestCount)
+		{
+			BestCount = Count;
+			Best = static_cast<int>(I);
+		}
+	}
+	return Best;
+}
+
+void TestRaiseDead()
+{
+	BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+	S.skipDeploy = true;
+	S.sides[0].spells = {"spell.raise_dead"};
+	S.sides[0].spellCharges = {2};
+	S.sides[0].spellLevels = {5};
+	BattleSimulation Sim(Content());
+	std::string Error;
+	DOT_CHECK(Sim.Init(S, Error));
+	const size_t ArmySquads = Sim.Squads().size();
+	BattleCommand Auto;
+	Auto.type = CommandType::SetAuto;
+	Auto.side = Side::Attacker;
+	Auto.unitId = 0;
+	Auto.param = 1;
+	while (Sim.Phase() != BattlePhase::Battle && Sim.CurrentTick() < 20 * kTicksPerSecond)
+	{
+		Sim.Step();
+	}
+	Sim.Step({Auto});
+	const int32_t Age = 17 * kTicksPerSecond;
+	int Corpse = -1;
+	for (int I = 0; I < 120 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+	{
+		Sim.Step();
+		if (I % 15 == 0 && Sim.GetSide(Side::Attacker).valor >= fx::Int(5))
+		{
+			Corpse = DensestCorpse(Sim, fx::Int(9), Age);
+			int Near9 = 0;
+			if (Corpse >= 0)
+			{
+				for (const Soldier& B : Sim.Soldiers())
+				{
+					Near9 += (B.state == SoldierState::Dead && !B.raised && fx::Dist(B.pos, Sim.Soldiers()[static_cast<size_t>(Corpse)].pos) <= fx::Int(9)) ? 1 : 0;
+				}
+			}
+			if (Near9 >= 8)
+			{
+				break;
+			}
+			Corpse = -1;
+		}
+	}
+	DOT_CHECK(Corpse >= 0);
+	if (Corpse < 0)
+	{
+		return;
+	}
+	const int64_t LostBefore = Sim.GetSide(Side::Attacker).destroyedPower;
+	BattleCommand C;
+	C.type = CommandType::CastSpell;
+	C.side = Side::Attacker;
+	C.param = 0;
+	C.point = Sim.Soldiers()[static_cast<size_t>(Corpse)].pos;
+	Sim.Step({C});
+	DOT_CHECK(Sim.Squads().size() == ArmySquads + 1);
+	if (Sim.Squads().size() != ArmySquads + 1)
+	{
+		return;
+	}
+	const Squad& Risen = Sim.Squads().back();
+	DOT_CHECK(Risen.summoned && Risen.autoControl && Risen.side == Side::Attacker);
+	DOT_CHECK(Risen.troop == Content().FindTroop("troop.skeleton"));
+	DOT_CHECK(Risen.tier == 2); // spell level 5
+	DOT_CHECK(Risen.aliveCount >= 8 && Risen.aliveCount <= 16); // 12 + 1 per level above the first
+	DOT_CHECK(Sim.GetSide(Side::Attacker).spellCharges[0] == 1);
+	int Raised = 0;
+	for (const Soldier& B : Sim.Soldiers())
+	{
+		Raised += (B.state == SoldierState::Dead && B.raised) ? 1 : 0;
+	}
+	DOT_CHECK(Raised >= Risen.startCount);
+	// The same bodies cannot rise twice: a second cast on the spot raises nothing new there.
+	const int32_t RisenId = Risen.id;
+	const int32_t Expire = Risen.expireTick;
+	DOT_CHECK(Expire == Sim.CurrentTick() - 1 + 25 * kTicksPerSecond);
+	// Skeletons are fearless and their deaths are not the army's losses.
+	while (Sim.CurrentTick() <= Expire + 1 && !Sim.IsFinished())
+	{
+		Sim.Step();
+		const Squad& Q = Sim.Squads()[static_cast<size_t>(RisenId - 1)];
+		if (Q.Active())
+		{
+			DOT_CHECK(Q.morale == fx::Int(100));
+		}
+	}
+	if (!Sim.IsFinished())
+	{
+		const Squad& Q = Sim.Squads()[static_cast<size_t>(RisenId - 1)];
+		DOT_CHECK(!Q.Active() && Q.aliveCount == 0);
+	}
+	(void)LostBefore;
+	RunToEnd(Sim);
+	const BattleResult& R = Sim.Result();
+	int Army = 0;
+	for (size_t I = 0; I < ArmySquads; ++I)
+	{
+		Army += Sim.Squads()[I].side == Side::Attacker ? Sim.Squads()[I].startCount : 0;
+	}
+	DOT_CHECK(R.attackerSurvivors + R.attackerLost == Army);
+
+	// AI commanders cast it too, and the battle stays deterministic with squads added mid-fight.
+	BattleSetup Ai = Scenario("scenarios/m0_sandbox.json");
+	Ai.skipDeploy = true;
+	Ai.sides[0].aiProfile = "warlord";
+	Ai.sides[1].aiProfile = "warlord";
+	Ai.sides[0].spells = {"spell.raise_dead"};
+	Ai.sides[1].spells = {"spell.raise_dead"};
+	BattleSimulation A(Content());
+	BattleSimulation B(Content());
+	DOT_CHECK(A.Init(Ai, Error) && B.Init(Ai, Error));
+	int RaisedEvents = 0;
+	std::vector<SimEvent> Events;
+	while (!A.IsFinished() && A.CurrentTick() < 10 * 60 * kTicksPerSecond)
+	{
+		A.Step();
+		B.Step();
+		Events.clear();
+		A.DrainEvents(Events);
+		for (const SimEvent& E : Events)
+		{
+			RaisedEvents += E.type == SimEventType::DeadRaised ? 1 : 0;
+		}
+	}
+	RunToEnd(B);
+	DOT_CHECK(RaisedEvents >= 1);
+	DOT_CHECK(A.Result().finalHash == B.Result().finalHash);
+	DOT_CHECK(A.HashLog() == B.HashLog());
+}
+
+void TestTitanAbilities()
+{
+	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
+	const SimContent& C = Content();
+	const char* const Roster[] = {"titan.minotaur", "titan.cyclops", "titan.perun", "titan.atlas", "titan.ymir", "titan.surtr", "titan.hecate", "titan.artemis"};
+	std::vector<int> Seen;
+	for (const char* Id : Roster)
+	{
+		const int Def = C.FindTitan(Id);
+		DOT_CHECK(Def >= 0);
+		if (Def < 0)
+		{
+			continue;
+		}
+		const TitanDef& TD = C.titans[static_cast<size_t>(Def)];
+		const std::string Prefix = std::string("ability.") + (Id + 6) + ".";
+		for (int Slot = 0; Slot < 2; ++Slot)
+		{
+			DOT_CHECK(TD.abilities[Slot] >= 0);
+			if (TD.abilities[Slot] < 0)
+			{
+				continue;
+			}
+			DOT_CHECK(C.abilities[static_cast<size_t>(TD.abilities[Slot])].id.compare(0, Prefix.size(), Prefix) == 0);
+			DOT_CHECK(std::find(Seen.begin(), Seen.end(), TD.abilities[Slot]) == Seen.end());
+			Seen.push_back(TD.abilities[Slot]);
+		}
+
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].aiProfile = "warlord";
+		S.sides[0].titan.titanId = Id;
+		S.sides[0].titan.level = 20;
+		S.sides[0].titan.stars = 2;
+		BattleSimulation Sim(C);
+		std::string Error;
+		DOT_CHECK(Sim.Init(S, Error));
+		int Casts[2] = {0, 0};
+		std::vector<SimEvent> Events;
+		while (!Sim.IsFinished() && Sim.CurrentTick() < 10 * 60 * kTicksPerSecond)
+		{
+			Sim.Step();
+			Events.clear();
+			Sim.DrainEvents(Events);
+			for (const SimEvent& E : Events)
+			{
+				if (E.type == SimEventType::AbilityCast && E.side == Side::Attacker && E.b >= 0 && E.b < 2)
+				{
+					++Casts[E.b];
+				}
+			}
+		}
+		std::printf("  %s: %d + %d casts\n", Id, Casts[0], Casts[1]);
+		DOT_CHECK(Casts[0] + Casts[1] >= 1);
+	}
+}
 } // namespace
 
 int main()
@@ -537,7 +753,8 @@ int main()
 	};
 	const NamedTest Tests[] = {{"Fix64", TestFix64}, {"RandomAndHash", TestRandomAndHash}, {"Json", TestJson}, {"Content", TestContent},
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
-		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale}};
+		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
+		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

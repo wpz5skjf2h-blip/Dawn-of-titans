@@ -412,7 +412,7 @@ ARMY = {
     ],
     # The original's spells (wiki: Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud, Raise Dead).
     # The Spell Forge crafts them into stock (queue and capacity by level, wiki) and each cast uses one.
-    # Which Forge level opens each spell, craft prices and times are estimates. Raise Dead comes later.
+    # Which Forge level opens each spell, craft prices and times are estimates.
     "spells": [
         {"id": "spell.fireball", "name": "Огненный шар", "forge": 1, "craftGold": 1500, "craftSec": 600},
         {"id": "spell.shield", "name": "Щит", "forge": 1, "craftGold": 1200, "craftSec": 480},
@@ -421,6 +421,7 @@ ARMY = {
         {"id": "spell.rage", "name": "Ярость", "forge": 4, "craftGold": 1600, "craftSec": 600},
         {"id": "spell.terror", "name": "Ужас", "forge": 5, "craftGold": 2000, "craftSec": 720},
         {"id": "spell.acid_cloud", "name": "Кислотное облако", "forge": 6, "craftGold": 2400, "craftSec": 900},
+        {"id": "spell.raise_dead", "name": "Поднять мёртвых", "forge": 7, "craftGold": 2800, "craftSec": 1080},
     ],
     # Arcane Tower research: one spell level at a time per research slot (slots and level cap by tower level, wiki).
     # Price and time for level L -> L + 1: base x growth^(L - 1) (estimate). Craft price grows 15% per spell level.

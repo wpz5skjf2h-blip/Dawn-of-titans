@@ -328,6 +328,7 @@ void ADoTBattleView::BuildUnits()
 		else if (TD.id == "troop.archers") { Mesh = ConeMesh; Scale = FVector(0.8, 0.8, 1.8); Tint = 1.35f; }
 		else if (TD.id == "troop.outriders") { Mesh = CubeMesh; Scale = FVector(2.4, 0.8, 1.6); Tint = 0.7f; }
 		else if (TD.id == "troop.knights") { Mesh = CubeMesh; Scale = FVector(2.6, 1.1, 2.0); Tint = 0.5f; }
+		else if (TD.id == "troop.skeleton") { Scale = FVector(0.5, 0.5, 1.7); Tint = 0.45f; }
 		int32* Found = GroupIndex.Find(Key);
 		int32 Group = Found ? *Found : INDEX_NONE;
 		if (Group == INDEX_NONE)
@@ -392,8 +393,48 @@ void ADoTBattleView::BuildUnits()
 	}
 }
 
+void ADoTBattleView::RegisterNewSoldiers()
+{
+	const dot::BattleSimulation* Sim = Manager->GetSim();
+	const int32 Known = SoldierIsmIndex.Num();
+	const int32 Total = static_cast<int32>(Sim->Soldiers().size());
+	if (Total <= Known)
+	{
+		return;
+	}
+	SoldierIsmIndex.SetNum(Total);
+	SoldierInstance.SetNum(Total);
+	SoldierScale.SetNum(Total);
+	for (int32 I = Known; I < Total; ++I)
+	{
+		SoldierIsmIndex[I] = INDEX_NONE;
+		SoldierInstance[I] = INDEX_NONE;
+		SoldierScale[I] = FVector(0.5, 0.5, 1.7);
+	}
+	// One instanced mesh per raised squad, bone-pale with a hint of the caster's colour.
+	for (const dot::Squad& Sq : Sim->Squads())
+	{
+		if (Sq.members.empty() || Sq.members.front() < Known)
+		{
+			continue;
+		}
+		const FLinearColor Tint = SideColor(Sq.side);
+		const FLinearColor Bone(0.85f, 0.82f, 0.72f);
+		SoldierIsms.Add(MakeIsm(CylinderMesh, FMath::Lerp(Bone, Tint, 0.3f), true, false));
+		IsmTransforms.AddDefaulted();
+		const int32 Group = SoldierIsms.Num() - 1;
+		for (const int32 M : Sq.members)
+		{
+			SoldierIsmIndex[M] = Group;
+			SoldierInstance[M] = IsmTransforms[Group].Num();
+			IsmTransforms[Group].Add(HiddenTransform());
+		}
+	}
+}
+
 void ADoTBattleView::UpdateSoldiers()
 {
+	RegisterNewSoldiers();
 	const dot::BattleSimulation* Sim = Manager->GetSim();
 	const auto& Soldiers = Sim->Soldiers();
 	const double RenderTick = Manager->GetRenderTick();

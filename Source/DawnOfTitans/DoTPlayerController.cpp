@@ -159,6 +159,10 @@ int32 ADoTPlayerController::PickUnit(const FVector& World, bool bEnemy) const
 		return Sim->Titans()[static_cast<size_t>(Titan)].id;
 	}
 	const int Squad = Sim->FindSquadAt(Side, P, dot::fx::Int(5));
+	if (Squad >= 0 && !bEnemy && Sim->Squads()[static_cast<size_t>(Squad)].summoned)
+	{
+		return -1; // raised skeletons cannot be given orders
+	}
 	if (Squad >= 0 && (!bEnemy || Sim->IsSquadVisibleTo(dot::Side::Attacker, Squad)))
 	{
 		return Sim->Squads()[static_cast<size_t>(Squad)].id;
@@ -787,7 +791,7 @@ void ADoTPlayerController::UpdateKeyboard(float DeltaTime)
 	std::vector<int32> OwnSquads;
 	for (const dot::Squad& Sq : Sim->Squads())
 	{
-		if (Sq.side == dot::Side::Attacker)
+		if (Sq.side == dot::Side::Attacker && !Sq.summoned)
 		{
 			OwnSquads.push_back(Sq.id);
 		}

@@ -60,7 +60,7 @@ bool ParseRarity(const std::string& S, Rarity& Out)
 
 bool ParseEffectType(const std::string& S, EffectType& Out)
 {
-	static const char* const Names[] = {"Damage", "Heal", "Knockback", "Stun", "StatMod", "Burn", "Morale"};
+	static const char* const Names[] = {"Damage", "Heal", "Knockback", "Stun", "StatMod", "Burn", "Morale", "RaiseDead"};
 	return ParseEnumName(S, Names, Out);
 }
 
@@ -84,7 +84,7 @@ bool ParseDelivery(const std::string& S, Delivery& Out)
 
 bool ParseHeuristic(const std::string& S, AiHeuristic& Out)
 {
-	static const char* const Names[] = {"MaxUnitsInArea", "MaxUnitsInLine", "MaxUnitsInCone", "SelfDefense", "AlliesInCombat", "AlliesDamaged"};
+	static const char* const Names[] = {"MaxUnitsInArea", "MaxUnitsInLine", "MaxUnitsInCone", "SelfDefense", "AlliesInCombat", "AlliesDamaged", "Corpses"};
 	return ParseEnumName(S, Names, Out);
 }
 
@@ -617,6 +617,18 @@ bool LoadAbilities(const JsonValue& Root, SimContent& C, std::string& Error)
 				D.vertical = E.GetFix("vertical");
 				D.hits = E.GetInt("hits", 1);
 				D.poiseDamage = E.GetFix("poiseDamage");
+				if (D.type == EffectType::RaiseDead)
+				{
+					D.summonTroop = C.FindTroop(E.GetString("troop"));
+					if (D.summonTroop < 0)
+					{
+						Error = "ability '" + A.id + "': unknown troop to raise";
+						return false;
+					}
+					D.summonMax = E.GetInt("max", 12);
+					D.summonMaxPerLevel = E.GetInt("maxPerLevel", 0);
+					D.corpseAgeTicks = SecToTicks(E.GetDouble("corpseAge", 15.0));
+				}
 				A.effects.push_back(D);
 			}
 		}

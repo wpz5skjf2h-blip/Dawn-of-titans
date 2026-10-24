@@ -67,6 +67,7 @@ bool BattleSimulation::Init(const BattleSetup& Setup, std::string& Error)
 	ZonesList.clear();
 	Impacts.clear();
 	Bodies.clear();
+	Summons.clear();
 	Events.clear();
 	Hashes.clear();
 	Scheduled.clear();
@@ -205,20 +206,9 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		Squad Sq;
 		Sq.id = static_cast<int32_t>(SquadsList.size()) + 1;
 		Sq.side = S;
-		Sq.troop = TroopIndex;
-		Sq.tier = std::max(1, std::min(static_cast<int>(TD.tiers.size()), Q.tier));
-		const TroopTierDef& Tier = TD.tiers[static_cast<size_t>(Sq.tier - 1)];
-		Sq.hp = TD.hp * Tier.hpMult;
-		Sq.atk = TD.atk * Tier.atkMult;
-		Sq.armor = TD.armor + Tier.armorAdd;
-		Sq.range = TD.range;
-		Sq.speed = TD.moveSpeed;
-		Sq.spacing = TD.spacing;
-		Sq.interval = TD.attackIntervalTicks;
+		InitSquadStats(Sq, TroopIndex, Q.tier);
 		Sq.formation = TD.AllowsFormation(Q.formation) ? Q.formation : Formation::Line;
 		Sq.stance = Q.stanceSet ? Q.stance : TD.defaultStance;
-		Sq.morale = fx::Int(100);
-		Sq.powerPerSoldier = ComputePower(Sq.hp, Sq.armor, Sq.atk, Sq.interval, 1);
 		const int Count = Q.count > 0 ? Q.count : TD.squadSize;
 		Sq.startCount = Count;
 		Sq.aliveCount = Count;
@@ -239,6 +229,23 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		PlaceSquadAt(SquadsList.back(), Q.position, Q.facing.IsZero() ? FixVec2(Fix64::Zero(), Fix64::One()) : Q.facing.Normalized());
 	}
 	return true;
+}
+
+void BattleSimulation::InitSquadStats(Squad& Sq, int TroopIndex, int Tier) const
+{
+	const TroopDef& TD = ContentRef.troops[static_cast<size_t>(TroopIndex)];
+	Sq.troop = TroopIndex;
+	Sq.tier = std::max(1, std::min(static_cast<int>(TD.tiers.size()), Tier));
+	const TroopTierDef& TierDef = TD.tiers[static_cast<size_t>(Sq.tier - 1)];
+	Sq.hp = TD.hp * TierDef.hpMult;
+	Sq.atk = TD.atk * TierDef.atkMult;
+	Sq.armor = TD.armor + TierDef.armorAdd;
+	Sq.range = TD.range;
+	Sq.speed = TD.moveSpeed;
+	Sq.spacing = TD.spacing;
+	Sq.interval = TD.attackIntervalTicks;
+	Sq.morale = fx::Int(100);
+	Sq.powerPerSoldier = ComputePower(Sq.hp, Sq.armor, Sq.atk, Sq.interval, 1);
 }
 
 void BattleSimulation::PlaceSquadAt(Squad& Sq, FixVec2 Position, FixVec2 Facing)
@@ -346,8 +353,10 @@ void BattleSimulation::Step(const std::vector<BattleCommand>& Commands)
 		UpdateSoldierAttacks();
 		UpdateProjectiles();
 		UpdateZonesAndImpacts();
+		SpawnSummons();
 		UpdateSoldierStatus();
 		UpdateMorale();
+		ExpireSummons();
 		CleanupDead();
 		UpdateFallenBodies();
 		if (Tick % 15 == 0)
@@ -575,7 +584,7 @@ void BattleSimulation::ApplyCommand(const BattleCommand& Cmd)
 	{
 		for (size_t I = 0; I < SquadsList.size(); ++I)
 		{
-			if (SquadsList[I].side == Cmd.side && SquadsList[I].Active() && !SquadsList[I].Routing())
+			if (SquadsList[I].side == Cmd.side && SquadsList[I].Active() && !SquadsList[I].Routing() && !SquadsList[I].summoned)
 			{
 				Targets.push_back(static_cast<int>(I));
 			}
@@ -584,7 +593,9 @@ void BattleSimulation::ApplyCommand(const BattleCommand& Cmd)
 	else
 	{
 		const int Index = SquadIndexFromId(Cmd.unitId);
-		if (Index < 0 || SquadsList[static_cast<size_t>(Index)].side != Cmd.side || !SquadsList[static_cast<size_t>(Index)].Active())
+		// The raised dead obey the spell, not the commander.
+		if (Index < 0 || SquadsList[static_cast<size_t>(Index)].side != Cmd.side || !SquadsList[static_cast<size_t>(Index)].Active() ||
+			SquadsList[static_cast<size_t>(Index)].summoned)
 		{
 			++Rejected;
 			return;
@@ -794,7 +805,8 @@ void BattleSimulation::UpdateObjectives()
 	bool bAttackerAlive = false;
 	for (const Squad& Sq : SquadsList)
 	{
-		if (Sq.Active())
+		// Raised skeletons fight on but do not hold the field for their side.
+		if (Sq.Active() && !Sq.summoned)
 		{
 			if (Sq.side == Side::Defender)
 			{
@@ -853,6 +865,10 @@ void BattleSimulation::FinishBattle(bool bSurrender)
 	R.attackerSurvivors = R.attackerLost = R.defenderSurvivors = R.defenderLost = 0;
 	for (const Soldier& S : SoldiersList)
 	{
+		if (SquadsList[static_cast<size_t>(S.squad)].summoned)
+		{
+			continue;
+		}
 		const bool bAttacker = S.side == Side::Attacker;
 		if (S.state == SoldierState::Dead)
 		{

@@ -487,7 +487,7 @@ void TestSpellsRelicsLandTitans()
 	const BuildingDef& Forge = Ct.buildings[static_cast<size_t>(Def("spell_forge"))];
 	KD_CHECK(Forge.unlockCastle == 5 && Forge.levels[0].queue == 2 && Forge.levels[0].capacity == 10 && Forge.levels[0].castle == 5);
 	KD_CHECK(Forge.levels[8].queue == 10 && Forge.levels[8].capacity == 65 && Forge.levels[8].castle == 21);
-	KD_CHECK(Ct.spells.size() == 7 && SpellIx("spell.fireball") >= 0 && SpellIx("spell.acid_cloud") >= 0);
+	KD_CHECK(Ct.spells.size() == 8 && SpellIx("spell.fireball") >= 0 && SpellIx("spell.acid_cloud") >= 0 && SpellIx("spell.raise_dead") >= 0);
 
 	Kingdom K(Content());
 	K.NewGame(T0, 31);

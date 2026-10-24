@@ -66,6 +66,8 @@ private:
 	void RebuildAll();
 	void BuildTerrain();
 	void BuildUnits();
+	/** Raise Dead appends squads mid-battle: give their soldiers instances. */
+	void RegisterNewSoldiers();
 	void ClearDynamic();
 	void UpdateSoldiers();
 	void UpdateTitans(float DeltaSeconds);

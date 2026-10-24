@@ -357,7 +357,11 @@ void BattleSimulation::AiDecideTitan(Side S, const AiProfileDef& Profile)
 		}
 		int BestValue = 0;
 		FixVec2 BestPoint;
-		if (A.ai == AiHeuristic::SelfDefense)
+		if (A.ai == AiHeuristic::Corpses)
+		{
+			BestValue = BestCorpsePoint(A, T.pos, A.range + A.radius, BestPoint);
+		}
+		else if (A.ai == AiHeuristic::SelfDefense)
 		{
 			bool bThreat = false;
 			for (const Titan& O : TitansList)
@@ -400,7 +404,8 @@ void BattleSimulation::AiDecideTitan(Side S, const AiProfileDef& Profile)
 					continue;
 				}
 				const FixVec2 Dir = (P - T.pos) / D;
-				const FixVec2 Point = A.shape == TargetShape::Circle ? P : T.pos + Dir * A.range;
+				// Circles are cast at the target but no farther than the ability's range (as StartAbility clamps).
+				const FixVec2 Point = A.shape != TargetShape::Circle ? T.pos + Dir * A.range : (A.range > Fix64::Zero() && D > A.range ? T.pos + Dir * A.range : P);
 				int Value = CountEnemyInAbilityShape(S, A, T.pos, Point, Dir);
 				for (const Titan& O : TitansList)
 				{
@@ -446,6 +451,39 @@ void BattleSimulation::AiDecideTitan(Side S, const AiProfileDef& Profile)
 			}
 		}
 	}
+}
+
+int BattleSimulation::BestCorpsePoint(const AbilityDef& A, FixVec2 From, Fix64 MaxReach, FixVec2& OutPoint) const
+{
+	int32_t MaxAge = 0;
+	for (const EffectDef& E : A.effects)
+	{
+		if (E.type == EffectType::RaiseDead)
+		{
+			MaxAge = std::max(MaxAge, E.corpseAgeTicks);
+		}
+	}
+	// Try every fourth fresh body as a centre: cheap and good enough to find the thickest pile.
+	int Best = 0;
+	int Seen = 0;
+	for (const Soldier& Sol : SoldiersList)
+	{
+		if (Sol.state != SoldierState::Dead || Sol.raised || Tick - Sol.deathTick > MaxAge)
+		{
+			continue;
+		}
+		if ((Seen++ & 3) != 0 || (MaxReach > Fix64::Zero() && fx::Dist(Sol.pos, From) > MaxReach))
+		{
+			continue;
+		}
+		const int Count = CountRaisableCorpses(Sol.pos, A.radius, MaxAge);
+		if (Count > Best)
+		{
+			Best = Count;
+			OutPoint = Sol.pos;
+		}
+	}
+	return Best;
 }
 
 void BattleSimulation::AiDecideSpells(Side S, const AiProfileDef& Profile)
@@ -522,6 +560,14 @@ void BattleSimulation::AiDecideSpells(Side S, const AiProfileDef& Profile)
 				}
 			}
 			if (BestValue < (Profile.spellSkill >= 2 ? 2 : 3))
+			{
+				continue;
+			}
+		}
+		else if (A.ai == AiHeuristic::Corpses)
+		{
+			BestValue = BestCorpsePoint(A, FixVec2(), Fix64::Zero(), BestPoint);
+			if (BestValue < A.aiMinTargets)
 			{
 				continue;
 			}

@@ -838,6 +838,13 @@
    "forge": 6,
    "craftGold": 2400,
    "craftSec": 900
+  },
+  {
+   "id": "spell.raise_dead",
+   "name": "Поднять мёртвых",
+   "forge": 7,
+   "craftGold": 2800,
+   "craftSec": 1080
   }
  ],
  "spellResearch": {

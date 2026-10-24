@@ -2828,7 +2828,7 @@ function survivorsFromBattle(count) {
 		const st = K.app.sim.staticInfo();
 		const fr = K.app.sim.frame();
 		st.squads.forEach((q, i) => {
-			if (q.side === 0) out.push(Math.round((100 * (fr.sq[i] ? fr.sq[i].a : 0)) / Math.max(1, q.start)));
+			if (q.side === 0 && !q.sum) out.push(Math.round((100 * (fr.sq[i] ? fr.sq[i].a : 0)) / Math.max(1, q.start)));
 		});
 	} catch (e) {
 		console.warn('Battle survivors unavailable:', e);
@@ -3183,8 +3183,10 @@ function openTitanRelics(id) {
 		const free = st.relics.filter((r) => r.on !== t.id).sort((a, b) => b.r - a.r || b.dur - a.dur);
 		const full = t.relics.length >= t.slots;
 		const nextSlot = K.army.relics.slotLevels.find((l) => l > t.lv);
+		const abil = K.app && K.app.titanAbilities ? K.app.titanAbilities(d.id) : [];
 		const html = sheetTitle(titanIcon(t), esc(d.name) + ' ' + starsHtml(d.stars)) +
 			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. Бонус реликвий: урон +' + t.bonus[0] + '%, здоровье +' + t.bonus[1] + '%, броня +' + t.bonus[2] + '%.</p>' +
+			(abil.length ? '<p>Способности в бою: <b>' + abil.map(esc).join('</b>, <b>') + '</b>.</p>' : '') +
 			'<h3>Реликвии: ' + t.relics.length + ' из ' + t.slots + '</h3>' +
 			(worn.length ? worn.map((r) => relicRow(r, '<button class="btn" data-act="unequip" data-id="' + r.id + '">Снять</button>')).join('') : '<p class="fine">Ничего не надето.</p>') +
 			'<p class="fine">Как в оригинале, сначала у титана один слот, новые открываются с уровнем' + (nextSlot ? ' (следующий на ' + nextSlot + '-м)' : '') + '. Реликвии изнашиваются в боях; сломанная не действует, пока её не починят.</p>' +

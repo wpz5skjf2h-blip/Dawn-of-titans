@@ -441,6 +441,10 @@ EMSCRIPTEN_KEEPALIVE int dot_pick(double X, double Z, int bEnemy, double SquadRa
 		return Sim.Titans()[static_cast<size_t>(Titan)].id;
 	}
 	const int Squad = Sim.FindSquadAt(Side, P, dot::Fix64::FromDouble(SquadRadius));
+	if (Squad >= 0 && !bEnemy && Sim.Squads()[static_cast<size_t>(Squad)].summoned)
+	{
+		return -1; // raised skeletons cannot be given orders
+	}
 	if (Squad >= 0 && (!bEnemy || Sim.IsSquadVisibleTo(dot::Side::Attacker, Squad)))
 	{
 		return Sim.Squads()[static_cast<size_t>(Squad)].id;
@@ -550,7 +554,8 @@ EMSCRIPTEN_KEEPALIVE const char* dot_static()
 			O.Comma();
 		}
 		O.Raw("{").Key("id").Int(Sq.id).Comma().Key("side").Int(static_cast<int>(Sq.side)).Comma().Key("troop").Int(Sq.troop).Comma();
-		O.Key("tier").Int(Sq.tier).Comma().Key("start").Int(Sq.startCount).Comma().Key("range").Fx(Sq.range).Raw("}");
+		O.Key("tier").Int(Sq.tier).Comma().Key("start").Int(Sq.startCount).Comma().Key("range").Fx(Sq.range).Comma();
+		O.Key("sum").Int(Sq.summoned ? 1 : 0).Raw("}");
 	}
 	O.Raw("],").Key("titans").Raw("[");
 	for (size_t I = 0; I < Sim.Titans().size(); ++I)
@@ -673,7 +678,7 @@ EMSCRIPTEN_KEEPALIVE const char* dot_frame()
 		}
 		O.Raw("{").Key("hp").Fx(T.hp, 0).Comma().Key("rage").Fx(T.rage, 1).Comma().Key("s").Int(static_cast<int>(T.state)).Comma();
 		O.Key("dead").Int(T.dead ? 1 : 0).Comma().Key("fall").Num(Yaw(T.fallDir), 3).Comma();
-		O.Key("ls").Int(T.leapStart).Comma().Key("le").Int(T.leapEnd).Comma().Key("stg").Int(T.staggerUntil).Comma();
+		O.Key("ls").Int(T.leapStart).Comma().Key("le").Int(T.leapEnd).Comma().Key("la").Int(T.leapAbility).Comma().Key("stg").Int(T.staggerUntil).Comma();
 		O.Key("ar").Raw("[").Int(T.abilityReadyTick[0]).Comma().Int(T.abilityReadyTick[1]).Raw("]").Comma();
 		O.Key("au").Int(T.autoControl ? 1 : 0).Comma().Key("o").Int(static_cast<int>(T.order)).Comma().Key("cast").Int(T.castingAbility);
 		if (T.side == dot::Side::Attacker && T.order != dot::OrderType::None)

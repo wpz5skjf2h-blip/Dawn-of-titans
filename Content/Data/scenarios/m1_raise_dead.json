@@ -1,0 +1,35 @@
+{
+  "name": "M1: Hecate's torches at Highvale Ford",
+  "map": "map.highvale_01",
+  "seed": 20261024,
+  "timerSec": 180,
+  "skipDeploy": false,
+  "sides": {
+    "attacker": {
+      "name": "House of Highvale",
+      "ai": "",
+      "titan": { "id": "titan.hecate", "level": 30, "stars": 3, "abilityLevels": [1, 1], "pos": [120, 24], "facingDeg": 0 },
+      "spells": ["spell.raise_dead", "spell.fireball", "spell.rage"],
+      "squads": [
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [96, 32],  "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [120, 34], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [144, 32], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [104, 18], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [136, 18], "facingDeg": 0, "formation": "Line" }
+      ]
+    },
+    "defender": {
+      "name": "Surtr's Fire-Host",
+      "ai": "veteran",
+      "titan": { "id": "titan.surtr", "level": 18, "stars": 2, "abilityLevels": [1, 1], "pos": [120, 134], "facingDeg": 180 },
+      "spells": ["spell.raise_dead", "spell.lightning"],
+      "squads": [
+        { "troop": "troop.militia",   "tier": 2, "pos": [100, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [140, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [120, 126], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [120, 142], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.swordsmen", "tier": 2, "pos": [80, 132],  "facingDeg": 180, "formation": "Line" }
+      ]
+    }
+  }
+}

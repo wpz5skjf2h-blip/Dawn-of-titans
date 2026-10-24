@@ -53,6 +53,8 @@ struct Soldier
 	int32_t lastTrampledTick = -100000;
 	int32_t attackers = 0;
 	bool chargeArmed = false;
+	/** The body was raised by Raise Dead (or was itself a raised soldier) and cannot rise again. */
+	bool raised = false;
 
 	bool Alive() const { return state != SoldierState::Dead && state != SoldierState::Left; }
 	bool CanAct() const { return Alive() && state != SoldierState::Airborne && state != SoldierState::KnockedDown && stunTicks <= 0; }
@@ -116,6 +118,9 @@ struct Squad
 	bool destroyed = false;
 	bool leftField = false;
 	bool hidden = false;
+	/** Raised from the fallen mid-battle: fearless, not part of the army, crumbles at expireTick. */
+	bool summoned = false;
+	int32_t expireTick = -1;
 	// AI bookkeeping
 	int32_t aiNextTick = 0;
 	int32_t aiTarget = 0;
@@ -261,6 +266,18 @@ struct PendingImpact
 	bool active = true;
 };
 
+struct PendingSummon
+{
+	Side side = Side::Attacker;
+	int32_t troop = -1;
+	int tier = 1;
+	FixVec2 center;
+	Fix64 radius;
+	int maxCount = 0;
+	int32_t corpseAgeTicks = 0;
+	int32_t lifetimeTicks = 0;
+};
+
 struct ClashState
 {
 	bool active = false;
@@ -373,6 +390,7 @@ private:
 	void RecordHashIfNeeded();
 	void UpdateVisibility();
 	void PlaceSquadAt(Squad& Sq, FixVec2 Position, FixVec2 Facing);
+	void InitSquadStats(Squad& Sq, int TroopIndex, int Tier) const;
 	void AutoDeploySide(Side S);
 	bool CanControl(Side S) const;
 
@@ -442,6 +460,9 @@ private:
 	void ApplyEffects(int AbilityIdx, Side S, int CasterTitan, FixVec2 Origin, FixVec2 Point, FixVec2 Dir, int Level, bool bPulse);
 	bool InShape(const AbilityDef& A, FixVec2 Origin, FixVec2 Point, FixVec2 Dir, FixVec2 P, Fix64 Extra) const;
 	void UpdateZonesAndImpacts();
+	void SpawnSummons();
+	void ExpireSummons();
+	int CountRaisableCorpses(FixVec2 Center, Fix64 Radius, int32_t MaxAgeTicks) const;
 	void AddSquadStatus(Squad& Sq, const EffectDef& E, int AbilityIdx, Fix64 LevelMult);
 	void AddTitanStatus(Titan& T, const EffectDef& E, int AbilityIdx, Fix64 LevelMult);
 	Fix64 TitanEffectiveArmor(const Titan& T, bool bRanged) const;
@@ -455,6 +476,7 @@ private:
 	void AiDecideSpells(Side S, const AiProfileDef& Profile);
 	void Schedule(const BattleCommand& Cmd, int DelayTicks);
 	int CountEnemySoldiersNear(Side S, FixVec2 P, Fix64 Radius) const;
+	int BestCorpsePoint(const AbilityDef& A, FixVec2 From, Fix64 MaxReach, FixVec2& OutPoint) const;
 	int CountEnemyInAbilityShape(Side S, const AbilityDef& A, FixVec2 Origin, FixVec2 Point, FixVec2 Dir) const;
 	Fix64 TargetScore(const Squad& Sq, int32_t TargetUnit, const AiProfileDef* Profile) const;
 
@@ -475,6 +497,7 @@ private:
 	std::vector<Zone> ZonesList;
 	std::vector<PendingImpact> Impacts;
 	std::vector<FallenBody> Bodies;
+	std::vector<PendingSummon> Summons;
 	ClashState ClashData;
 	SideState Sides[2];
 	bool Objectives[3] = {false, false, false};

@@ -85,6 +85,21 @@
         { "name": "Paladins", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
         { "name": "Titan Knights", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
+    },
+    // Raised by Raise Dead (and Hecate's torches) from the fallen of either side; never trained.
+    // The tier grows with the spell level (1 + (level - 1) / 4). Numbers are ours.
+    {
+      "id": "troop.skeleton", "name": "Skeletons", "short": "SKL", "class": "Light", "move": "Infantry", "counterRow": "militia",
+      "squadSize": 12, "hp": 85, "armor": 0.05, "atk": 13, "attackInterval": 1.3, "range": 1.5, "moveSpeed": 3.6,
+      "collisionRadius": 0.4, "spacing": 1.4, "knockbackMult": 1.2, "critChance": 0.05, "critDamage": 1.5,
+      "formations": ["Line", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Risen", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Bone Warriors", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Grave Guard", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Barrow Lords", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Deathless", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
     }
   ]
 }
