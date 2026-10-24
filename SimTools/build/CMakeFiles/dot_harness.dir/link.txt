@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/dot_harness.dir/harness.cpp.o -o dot_harness  libdotsim.a libdotkingdom.a libdotsim.a 

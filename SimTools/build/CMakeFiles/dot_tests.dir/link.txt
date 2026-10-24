@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/dot_tests.dir/tests.cpp.o -o dot_tests  libdotsim.a libdotkingdom.a libdotsim.a 
