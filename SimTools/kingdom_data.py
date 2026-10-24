@@ -410,6 +410,9 @@ ARMY = {
     # recovery after a battle for titans above level 10.
     "titanXp": {"next": [30 * lv * lv + 70 * lv for lv in range(1, 60)], "battle": [60, 90, 120, 160, 200, 250, 300, 360, 420],
                 "starsPct": [30, 100, 120, 150], "recoveryFromLevel": 10, "recoverySecPerLevel": 120},
+    # Ascension (wiki, Ascension): only a max-level titan; shards and food by rarity R1..R4; ten more levels,
+    # better health and damage (from the levels) and a new relic slot. The new skill slot is not modelled yet.
+    "ascension": {"shards": [5, 25, 50, 100], "food": [180000, 820000, 2300000, 4800000], "levels": 10, "relicSlots": 1},
     # Fusion unlocks at Castle 7 and costs food (wiki); XP and the food amount are estimates.
     "fusion": {"castle": 7, "foodPerStar": 2000, "xpPerStarSq": 150, "keepXpPct": 50},
     # Relic Temple: a free relic every day (wiki); altars for 1 000 and 4 000 gems (wiki); R4 only from altars (wiki).

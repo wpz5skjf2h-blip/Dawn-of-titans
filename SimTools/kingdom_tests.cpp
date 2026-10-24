@@ -1,6 +1,7 @@
 // SimTools/kingdom_tests.cpp
 // Tests for the kingdom economy (Source/DoTKingdom): content numbers from the original game,
-// timers, production, limits, requirements, portal stones, lands, army, titans and save/load determinism.
+// timers, production, limits, requirements, portal stones, lands (ruins and victory-point lands too), seasons,
+// army, titans (ascension too) and save/load determinism.
 #include "ToolCommon.h"
 
 #include "DoTKingdom/Kingdom.h"
@@ -192,7 +193,11 @@ void TestStonesAttacksAndLands()
 	KD_CHECK(K.FinishAttack(Target.id, true, 3) == Error::NoAttack); // capture flag must match
 	Reward R;
 	KD_CHECK(K.FinishAttack(Target.id, false, 3, &R) == Error::None);
-	KD_CHECK(R.res[0] > 0 && R.res[1] > 0);
+	// A land rewards raiders with what it produces (wiki 1.8), and every victory brings VP.
+	const Res Kind = Content().landTypes[static_cast<size_t>(Target.type)].resource;
+	const Res Other = Kind == Res::Gold ? Res::Food : Res::Gold;
+	KD_CHECK(R.res[static_cast<size_t>(ResIndex(Kind))] > 0 && R.res[static_cast<size_t>(ResIndex(Other))] == 0);
+	KD_CHECK(R.res[static_cast<size_t>(ResIndex(Res::Vp))] == Content().victoryVp[static_cast<size_t>(Target.level - 1)]);
 	KD_CHECK(static_cast<int>(K.World().size()) == Content().worldSize);
 	K.Advance(T0 + 420);
 	KD_CHECK(K.Amount(Res::Stones) == 16); // one stone every 7 minutes
@@ -565,6 +570,186 @@ void TestSpellsRelicsLandTitans()
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved);
 }
+int LandTypeIx(const char* Id)
+{
+	const KingdomContent& C = Content();
+	for (size_t I = 0; I < C.landTypes.size(); ++I)
+	{
+		if (C.landTypes[I].id == Id)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+int64_t ResOf(const Reward& R, Res Kind) { return R.res[static_cast<size_t>(ResIndex(Kind))]; }
+
+void TestRuinsAndVictoryPointLands()
+{
+	const KingdomContent& Ct = Content();
+	// Wiki: lands are gold, farm, ruins (shards) and victory-point lands (forest, lake, mountain);
+	// VP lands fill up in 4 hours; captured ruins make one shard per 24 hours (version 1.8).
+	KD_CHECK(LandTypeIx("ruins") >= 0 && LandTypeIx("forest") >= 0 && LandTypeIx("lake") >= 0 && LandTypeIx("mountain") >= 0);
+	const LandTypeDef& Ruins = Ct.landTypes[static_cast<size_t>(LandTypeIx("ruins"))];
+	KD_CHECK(Ruins.resource == Res::Shards && Ruins.periodHours == 24 && Ruins.produce[0] == 1 && Ruins.produce[8] == 1);
+	for (const char* Id : {"forest", "lake", "mountain"})
+	{
+		const LandTypeDef& T = Ct.landTypes[static_cast<size_t>(LandTypeIx(Id))];
+		KD_CHECK(T.resource == Res::Vp && T.fillHours.size() == 1 && T.fillHours[0] == 4);
+	}
+	// A new kingdom (Castle 1) sees only gold and farm lands; the others come with the Castle.
+	Kingdom K(Content());
+	K.NewGame(T0, 41);
+	for (const WorldLand& W : K.World())
+	{
+		KD_CHECK(Ct.landTypes[static_cast<size_t>(W.type)].castle <= 1);
+	}
+	std::string Save = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6");
+	Save = Replace(Save, "\"world\":[",
+		"\"world\":[{\"id\":700,\"type\":\"ruins\",\"level\":2},{\"id\":701,\"type\":\"forest\",\"level\":3},"
+		"{\"id\":702,\"type\":\"gold_land\",\"level\":1},{\"id\":703,\"type\":\"ruins\",\"level\":4},");
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	// A raid on ruins brings shards (at least one for any victory) and VP for the win.
+	Reward R;
+	KD_CHECK(L.StartAttack(700, false) == Error::None);
+	KD_CHECK(L.FinishAttack(700, false, 1, &R) == Error::None);
+	KD_CHECK(ResOf(R, Res::Shards) == 1 && L.Amount(Res::Shards) == 1);
+	KD_CHECK(ResOf(R, Res::Vp) == Ct.victoryVp[1] / 2 && ResOf(R, Res::Gold) == 0 && ResOf(R, Res::Food) == 0);
+	// Capturing a forest: it makes VP by the hour and is full in 4 hours.
+	KD_CHECK(L.StartAttack(701, true) == Error::None);
+	KD_CHECK(L.FinishAttack(701, true, 3, &R) == Error::None && R.landId != 0);
+	const int32_t Forest = R.landId;
+	KD_CHECK(ResOf(R, Res::Vp) == Ct.victoryVp[2]);
+	KD_CHECK(L.LandRate(*L.FindLand(Forest)) == 7 && L.LandStoreCap(*L.FindLand(Forest)) == 28);
+	L.Advance(L.Now() + Hour);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Forest)) == 7);
+	L.Advance(L.Now() + 10 * Hour);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Forest)) == 28);
+	const int64_t Vp = L.Amount(Res::Vp);
+	int64_t Got = 0;
+	KD_CHECK(L.CollectLand(Forest, &Got) == Error::None && Got == 28 && L.Amount(Res::Vp) == Vp + 28);
+	KD_CHECK(L.ProductionPerHour(Res::Vp) == 7);
+	// Captured ruins: one shard a day, three at most (estimate); a titan guard speeds them up by 1% a level.
+	KD_CHECK(L.StartAttack(703, true) == Error::None);
+	KD_CHECK(L.FinishAttack(703, true, 2, &R) == Error::None && R.landId != 0);
+	const int32_t Ruin = R.landId;
+	KD_CHECK(L.LandRate(*L.FindLand(Ruin)) == 1 && L.LandStoreCap(*L.FindLand(Ruin)) == 3);
+	L.Advance(L.Now() + 24 * Hour - 1);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Ruin)) == 0);
+	L.Advance(L.Now() + 1);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Ruin)) == 1);
+	KD_CHECK(L.CollectLand(Ruin) == Error::None && L.Amount(Res::Shards) == 2);
+	const int32_t Perun = L.Titans()[0].id; // level 5: a shard every 24 h / 1.05
+	KD_CHECK(L.AssignTitan(Ruin, Perun) == Error::None);
+	L.Advance(L.Now() + 23 * Hour);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Ruin)) == 1);
+	L.Advance(L.Now() + 30 * 24 * Hour);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(Ruin)) == 3);
+	// Shards and VP survive a save round trip.
+	const std::string Saved = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved);
+}
+
+void TestSeasons()
+{
+	const KingdomContent& Ct = Content();
+	KD_CHECK(Ct.seasonSec == 7 * 86400 && Ct.leagues.size() == 6 && Ct.leagues[1].vp == 400);
+	Kingdom K(Content());
+	K.NewGame(T0, 43);
+	const int64_t Season = K.Season();
+	KD_CHECK(Season == K.SeasonOf(T0) && K.SeasonStart(Season) <= T0 && T0 < K.SeasonStart(Season + 1));
+	KD_CHECK(K.League(99) == -1 && K.League(100) == 0 && K.League(450) == 1 && K.League(1000000) == 5);
+	// 450 VP reach the Silver league: at the end of the season VP returns to zero and the league pays.
+	std::string Error;
+	Kingdom L(Content());
+	KD_CHECK(L.Load(Replace(K.Save(), "\"shards\":0,\"vp\":0", "\"shards\":0,\"vp\":450"), Error));
+	KD_CHECK(L.Amount(Res::Vp) == 450);
+	for (int I = 0; I < 4; ++I)
+	{
+		L.StartAttack(L.World()[0].id, false);
+		L.FinishAttack(L.World()[0].id, false, 0); // lost battles: 12 stones spent, no VP
+	}
+	const int64_t End = L.SeasonStart(Season + 1);
+	L.Advance(End - 1);
+	KD_CHECK(L.Amount(Res::Vp) == 450 && L.LastSeason().season == -1);
+	const int64_t Gems = L.Amount(Res::Gems);
+	const int64_t Stones = L.Amount(Res::Stones);
+	L.Advance(End);
+	KD_CHECK(L.Amount(Res::Vp) == 0 && L.Season() == Season + 1);
+	const SeasonResult& Last = L.LastSeason();
+	KD_CHECK(Last.season == Season && Last.vp == 450 && Last.league == 1 && Last.gems == Ct.leagues[1].gems);
+	KD_CHECK(L.Amount(Res::Gems) == Gems + Ct.leagues[1].gems);
+	KD_CHECK(Last.stones == std::min(Ct.leagues[1].stones, L.Capacity(Res::Stones) - Stones) && L.Amount(Res::Stones) == Stones + Last.stones);
+	// Weeks away: every season is closed in turn, empty ones leave the last result alone.
+	L.Advance(End + 3 * Ct.seasonSec + 5);
+	KD_CHECK(L.Season() == Season + 4 && L.LastSeason().season == Season);
+	const std::string Saved = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved && M.LastSeason().league == 1);
+	// A version 3 save (before seasons, shards and VP) starts in the current season with nothing to pay.
+	std::string V3 = Replace(K.Save(), "\"formatVersion\":4", "\"formatVersion\":3");
+	const size_t S0 = V3.find("\"season\":");
+	const size_t S1 = V3.find("\"resources\":");
+	KD_CHECK(S0 != std::string::npos && S1 > S0);
+	V3.erase(S0, S1 - S0);
+	V3 = Replace(V3, ",\"shards\":0,\"vp\":0", "");
+	Kingdom O(Content());
+	KD_CHECK(O.Load(V3, Error) && O.Season() == Season && O.LastSeason().season == -1 && O.Amount(Res::Vp) == 0);
+	KD_CHECK(O.Save().find("\"formatVersion\":4") != std::string::npos && O.Hash() == K.Hash());
+}
+
+void TestAscension()
+{
+	const KingdomContent& Ct = Content();
+	// Wiki (Ascension): R1 needs 5 shards and 180 000 food ... R4 100 shards and 4 800 000; ten more levels.
+	KD_CHECK(Ct.ascendShards[0] == 5 && Ct.ascendShards[3] == 100 && Ct.ascendFood[0] == 180000 && Ct.ascendFood[3] == 4800000);
+	KD_CHECK(Ct.ascendLevels == 10 && Ct.ascendRelicSlots == 1);
+	Kingdom K(Content());
+	K.NewGame(T0, 47);
+	std::string Save = Replace(K.Save(), "\"def\":\"titan.talos\",\"level\":5", "\"def\":\"titan.talos\",\"level\":20");
+	std::string Error;
+	Kingdom L(Content());
+	KD_CHECK(L.Load(Save, Error));
+	const int32_t Perun = L.Titans()[0].id;
+	const int32_t Talos = L.Titans()[1].id;
+	KD_CHECK(L.FindTitan(Talos)->level == 20 && L.TitanMaxLevel(*L.FindTitan(Talos)) == 20);
+	KD_CHECK(L.CheckAscend(Perun).error == Error::NotMaxLevel); // only a max-level titan ascends
+	Check Ck = L.CheckAscend(Talos);
+	KD_CHECK(Ck.error == Error::NotEnough && Ck.gemsForMissing == -1); // shards cannot be bought
+	KD_CHECK(Ck.cost[static_cast<size_t>(ResIndex(Res::Shards))] == 5 && Ck.cost[static_cast<size_t>(ResIndex(Res::Food))] == 180000);
+	KD_CHECK(L.Ascend(Talos, true) == Error::NotEnough);
+	// At the cap a battle's XP is lost.
+	L.StartAttack(L.World()[0].id, false, {}, Talos);
+	L.FinishAttack(L.World()[0].id, false, 3);
+	KD_CHECK(L.FindTitan(Talos)->xp == 0 && L.FindTitan(Talos)->level == 20);
+	const int Slots = L.RelicSlots(*L.FindTitan(Talos));
+	// With the shards in hand the missing food can be bought with gems.
+	Save = Replace(L.Save(), "\"shards\":0", "\"shards\":7");
+	Save = Replace(Save, "\"gems\":500", "\"gems\":5000");
+	Kingdom A(Content());
+	KD_CHECK(A.Load(Save, Error));
+	Ck = A.CheckAscend(Talos);
+	KD_CHECK(Ck.error == Error::NotEnough && Ck.gemsForMissing > 0);
+	KD_CHECK(A.Ascend(Talos, false) == Error::NotEnough);
+	const int64_t Gems = A.Amount(Res::Gems);
+	KD_CHECK(A.Ascend(Talos, true) == Error::None);
+	KD_CHECK(A.Amount(Res::Shards) == 2 && A.Amount(Res::Gems) == Gems - Ck.gemsForMissing && A.Amount(Res::Food) == 0);
+	const kingdom::TitanState& T = *A.FindTitan(Talos);
+	KD_CHECK(T.ascended && A.TitanMaxLevel(T) == 30 && A.RelicSlots(T) == Slots + 1);
+	KD_CHECK(A.CheckAscend(Talos).error == Error::MaxLevel);
+	// Past the old cap XP counts again.
+	A.Advance(A.Now() + 24 * Hour);
+	A.StartAttack(A.World()[0].id, false, {}, Talos);
+	A.FinishAttack(A.World()[0].id, false, 3);
+	KD_CHECK(A.FindTitan(Talos)->xp > 0);
+	const std::string Saved = A.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Saved, Error) && M.Hash() == A.Hash() && M.Save() == Saved && M.FindTitan(Talos)->ascended);
+}
 } // namespace
 
 int main()
@@ -587,6 +772,9 @@ int main()
 		{"CasualtiesTitansRelicsFusion", TestCasualtiesTitansRelicsFusion},
 		{"ArmySaveAndMigration", TestArmySaveAndMigration},
 		{"SpellsRelicsLandTitans", TestSpellsRelicsLandTitans},
+		{"RuinsAndVictoryPointLands", TestRuinsAndVictoryPointLands},
+		{"Seasons", TestSeasons},
+		{"Ascension", TestAscension},
 	};
 	for (const auto& T : Tests)
 	{

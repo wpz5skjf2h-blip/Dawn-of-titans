@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  // Darkwood: the battlefield of a forest land. Thick woods on both flanks hide squads; a road and a hill
+  // in the clearing are the open ground. The layout is ours (the original's land battlefields are not described).
+  "id": "map.forest_01",
+  "name": "Darkwood",
+  "width": 240,
+  "depth": 160,
+  "cellSize": 2,
+  "deploy": {
+    "attacker": { "min": [12, 8], "max": [228, 40] },
+    "defender": { "min": [12, 120], "max": [228, 152] }
+  },
+  "features": [
+    { "type": "Road",   "rect": { "x0": 112, "z0": 0, "x1": 128, "z1": 160 } },
+
+    { "type": "Forest", "circle": { "x": 45,  "z": 82,  "r": 22 } },
+    { "type": "Forest", "circle": { "x": 195, "z": 78,  "r": 22 } },
+    { "type": "Forest", "circle": { "x": 86,  "z": 50,  "r": 13 } },
+    { "type": "Forest", "circle": { "x": 154, "z": 110, "r": 13 } },
+    { "type": "Forest", "circle": { "x": 62,  "z": 130, "r": 10 } },
+    { "type": "Forest", "circle": { "x": 180, "z": 30,  "r": 10 } },
+    { "type": "Forest", "circle": { "x": 150, "z": 58,  "r": 8 } },
+    { "type": "Forest", "circle": { "x": 92,  "z": 104, "r": 8 } },
+
+    { "type": "Hill",   "circle": { "x": 120, "z": 80,  "r": 16 }, "height": 4 },
+
+    { "type": "Rock",   "circle": { "x": 102, "z": 92,  "r": 3 } },
+    { "type": "Rock",   "circle": { "x": 138, "z": 68,  "r": 3 } }
+  ]
+}

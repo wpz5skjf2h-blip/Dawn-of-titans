@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  // The Pass: the battlefield of a mountain land. High ground and cliffs on both sides leave a pass
+  // in the middle with a road and a knoll. The layout is ours.
+  "id": "map.mountain_01",
+  "name": "The Pass",
+  "width": 240,
+  "depth": 160,
+  "cellSize": 2,
+  "deploy": {
+    "attacker": { "min": [12, 8], "max": [228, 40] },
+    "defender": { "min": [12, 120], "max": [228, 152] }
+  },
+  "features": [
+    { "type": "Road",   "rect": { "x0": 112, "z0": 0, "x1": 128, "z1": 160 } },
+
+    { "type": "Hill",   "circle": { "x": 36,  "z": 80, "r": 34 }, "height": 10 },
+    { "type": "Hill",   "circle": { "x": 204, "z": 80, "r": 34 }, "height": 10 },
+    { "type": "Hill",   "circle": { "x": 120, "z": 82, "r": 12 }, "height": 5 },
+
+    { "type": "Rock",   "circle": { "x": 26,  "z": 80,  "r": 8 } },
+    { "type": "Rock",   "circle": { "x": 214, "z": 80,  "r": 8 } },
+    { "type": "Rock",   "circle": { "x": 56,  "z": 62,  "r": 5 } },
+    { "type": "Rock",   "circle": { "x": 184, "z": 98,  "r": 5 } },
+    { "type": "Rock",   "circle": { "x": 50,  "z": 104, "r": 4 } },
+    { "type": "Rock",   "circle": { "x": 190, "z": 56,  "r": 4 } },
+    { "type": "Rock",   "circle": { "x": 96,  "z": 70,  "r": 3 } },
+    { "type": "Rock",   "circle": { "x": 144, "z": 92,  "r": 3 } },
+
+    { "type": "Forest", "circle": { "x": 152, "z": 30,  "r": 9 } },
+    { "type": "Forest", "circle": { "x": 88,  "z": 130, "r": 9 } }
+  ]
+}

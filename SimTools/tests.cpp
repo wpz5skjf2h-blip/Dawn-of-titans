@@ -530,6 +530,53 @@ void TestSpellChargesRelicsMorale()
 	const double Hp = A.Titans()[0].maxHp.ToDouble();
 	DOT_CHECK(Near(B.Titans()[0].maxHp.ToDouble(), Hp * 1.2, Hp * 0.001));
 	DOT_CHECK(Near(B.Titans()[0].atk.ToDouble(), A.Titans()[0].atk.ToDouble() * 1.1, A.Titans()[0].atk.ToDouble() * 0.001));
+
+	// Ascension (kingdom): an ascended titan may stand ten levels above the cap of 10 + 10 per star.
+	BattleSetup High = Plain;
+	High.sides[1].titan.level = 45; // Talos with three stars: cap 40
+	BattleSetup Ascended = High;
+	Ascended.sides[1].titan.ascended = true;
+	BattleSimulation H(Content());
+	BattleSimulation G(Content());
+	DOT_CHECK(H.Init(High, Error) && G.Init(Ascended, Error));
+	DOT_CHECK(H.Titans()[1].level == 40 && G.Titans()[1].level == 45 && G.Titans()[1].maxHp > H.Titans()[1].maxHp);
+	// The flag travels with the setup in replays; plain titans write nothing new.
+	JsonWriter W;
+	WriteBattleSetup(W, Ascended);
+	JsonValue J;
+	BattleSetup Back;
+	DOT_CHECK(ParseJson(W.Result(), J, Error) && ParseBattleSetup(J, Back, Error) && Back.sides[1].titan.ascended && !Back.sides[0].titan.ascended);
+	JsonWriter WP;
+	WriteBattleSetup(WP, Plain);
+	DOT_CHECK(WP.Result().find("ascended") == std::string::npos);
+}
+
+/** The battlefields of forest, lake, mountain and ruins lands: they load and AI battles on them finish the same way twice. */
+void TestLandMaps()
+{
+	for (const char* Id : {"map.forest_01", "map.lake_01", "map.mountain_01", "map.ruins_01"})
+	{
+		DOT_CHECK(Content().FindMap(Id) >= 0);
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.mapId = Id;
+		S.sides[0].aiProfile = "veteran";
+		S.skipDeploy = true;
+		BattleSimulation A(Content());
+		BattleSimulation B(Content());
+		std::string Error;
+		DOT_CHECK(A.Init(S, Error) && B.Init(S, Error));
+		RunToEnd(A);
+		RunToEnd(B);
+		DOT_CHECK(A.IsFinished() && A.Result().finalHash == B.Result().finalHash);
+		std::printf("  %s: %s, %d star(s), %d s\n", Id, A.Result().outcome == BattleOutcome::Victory ? "attacker wins" : "defender holds", A.Result().stars,
+			A.Result().durationTicks / kTicksPerSecond);
+	}
+	// The lake's ford crosses deep water: walkable for squads, unlike the lake around it.
+	const MapDef& Lake = Content().maps[static_cast<size_t>(Content().FindMap("map.lake_01"))];
+	NavGrid Nav;
+	Nav.Build(Lake);
+	DOT_CHECK(Nav.WalkableAt(MoveClass::Infantry, FixVec2(fx::Int(120), fx::Int(80))));
+	DOT_CHECK(!Nav.WalkableAt(MoveClass::Infantry, FixVec2(fx::Int(100), fx::Int(80))));
 }
 /** Index of the fresh body with the most fresh bodies within Radius (-1 if none). */
 int DensestCorpse(const BattleSimulation& Sim, Fix64 Radius, int32_t MaxAge)
@@ -858,7 +905,7 @@ int main()
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
 		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
 		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities},
-		{"NewTroops", TestNewTroops}};
+		{"NewTroops", TestNewTroops}, {"LandMaps", TestLandMaps}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

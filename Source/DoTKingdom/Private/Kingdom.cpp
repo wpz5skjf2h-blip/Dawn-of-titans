@@ -46,6 +46,25 @@ int64_t Interpolate(const std::vector<std::pair<int64_t, int64_t>>& Points, int6
 	return Span > 0 ? B.second + CeilDiv((X - B.first) * (B.second - A.second), Span) : B.second;
 }
 
+int64_t FloorDiv(int64_t A, int64_t B)
+{
+	return A >= 0 ? A / B : -((-A + B - 1) / B);
+}
+
+/** Gold and Food can be bought with gems; gems, stones, shards and VP cannot. */
+bool OnlyBuyableMissing(const ResArray& Missing)
+{
+	for (int I = 0; I < kResCount; ++I)
+	{
+		const Res R = static_cast<Res>(I);
+		if (R != Res::Gold && R != Res::Food && Missing[static_cast<size_t>(I)] > 0)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 uint64_t Mix(uint64_t Seed, uint64_t Counter)
 {
 	uint64_t Data[2] = {Seed, Counter};
@@ -58,7 +77,7 @@ const char* ToString(Error E)
 	static const char* const Names[] = {"none", "bad_id", "max_level", "castle_too_low", "need_requirement", "need_expansion", "locked",
 		"limit_reached", "no_builder", "not_enough", "bad_placement", "busy", "not_busy", "nothing", "storage_full", "need_stones",
 		"no_land_slot", "no_attack", "queue_full", "researching", "too_many_squads", "no_troops", "titan_recovering", "not_ready",
-		"roster_full"};
+		"roster_full", "not_max_level"};
 	const int I = static_cast<int>(E);
 	return I >= 0 && I < static_cast<int>(Error::Count) ? Names[I] : "?";
 }
@@ -80,6 +99,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	WorldCounter = 0;
 	Pending = 0;
 	PendingIsCapture = false;
+	SeasonNo = SeasonOf(Now);
+	Last = SeasonResult();
 	for (const StartBuilding& S : C.startBuildings)
 	{
 		Building B;
@@ -231,7 +252,7 @@ int Kingdom::LandCapacity() const
 
 int64_t Kingdom::Capacity(Res R) const
 {
-	if (R == Res::Gems)
+	if (R == Res::Gems || R == Res::Shards || R == Res::Vp)
 	{
 		return kUnlimited;
 	}
@@ -286,19 +307,48 @@ int64_t Kingdom::ProducerCap(const Building& B) const
 	return L ? L->store : 0;
 }
 
-int64_t Kingdom::LandRate(const Land& L) const
+/** Production per period in hundredths of a unit: the titan bonus is a percentage. */
+int64_t Kingdom::LandRateNum(const Land& L) const
 {
 	const LandTypeDef& T = C.landTypes[static_cast<size_t>(L.type)];
-	const int64_t Base = T.produce.empty() ? 0 : T.produce[static_cast<size_t>(std::min<int>(L.level, static_cast<int>(T.produce.size())) - 1)];
+	const int64_t Base = T.produce[static_cast<size_t>(std::min<int>(L.level, static_cast<int>(T.produce.size())) - 1)];
 	// A titan on the land adds 1% per titan level (the original's rule; stars do not matter).
 	const TitanState* Guard = L.titanId ? FindTitan(L.titanId) : nullptr;
-	return Guard ? Base * (100 + Guard->level * C.landTitanPctPerLevel) / 100 : Base;
+	return Base * (100 + (Guard ? Guard->level * C.landTitanPctPerLevel : 0));
+}
+
+int64_t Kingdom::LandPeriodSec(const Land& L) const
+{
+	return C.landTypes[static_cast<size_t>(L.type)].periodHours * kSecondsPerHour;
+}
+
+int64_t Kingdom::LandRate(const Land& L) const
+{
+	return LandRateNum(L) / 100;
+}
+
+int64_t Kingdom::LandFillHours(const Land& L) const
+{
+	const LandTypeDef& T = C.landTypes[static_cast<size_t>(L.type)];
+	const std::vector<int64_t>& Fill = T.fillHours.empty() ? C.landFillHours : T.fillHours;
+	return Fill[static_cast<size_t>(std::min<int>(L.level, static_cast<int>(Fill.size())) - 1)];
 }
 
 int64_t Kingdom::LandStoreCap(const Land& L) const
 {
-	const size_t I = static_cast<size_t>(std::min<int>(L.level, static_cast<int>(C.landFillHours.size())) - 1);
-	return LandRate(L) * C.landFillHours[I];
+	return LandRateNum(L) * LandFillHours(L) / (100 * C.landTypes[static_cast<size_t>(L.type)].periodHours);
+}
+
+int64_t Kingdom::RaidLoot(const WorldLand& W) const
+{
+	const LandTypeDef& T = C.landTypes[static_cast<size_t>(W.type)];
+	const std::vector<int64_t>& Loot = T.raidLoot.empty() ? C.raidLoot : T.raidLoot;
+	return Loot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(Loot.size())) - 1)];
+}
+
+int64_t Kingdom::VictoryVp(int LandLevel) const
+{
+	return C.victoryVp.empty() ? 0 : C.victoryVp[static_cast<size_t>(std::max(1, std::min<int>(LandLevel, static_cast<int>(C.victoryVp.size()))) - 1)];
 }
 
 int64_t Kingdom::ProductionPerHour(Res R) const
@@ -313,9 +363,10 @@ int64_t Kingdom::ProductionPerHour(Res R) const
 	}
 	for (const Land& L : LandList)
 	{
-		if (C.landTypes[static_cast<size_t>(L.type)].resource == R)
+		const LandTypeDef& T = C.landTypes[static_cast<size_t>(L.type)];
+		if (T.resource == R)
 		{
-			Total += LandRate(L);
+			Total += LandRate(L) / T.periodHours;
 		}
 	}
 	return Total;
@@ -403,8 +454,8 @@ Check Kingdom::CheckLevel(int Def, const LevelDef& L, bool bNew, bool bNeedsBuil
 	if (bMissing)
 	{
 		Out.error = Error::NotEnough;
-		// Gems themselves cannot be bought with gems.
-		Out.gemsForMissing = Missing[static_cast<size_t>(ResIndex(Res::Gems))] > 0 ? -1 : GemsForResources(Missing);
+		// Gems themselves (and shards) cannot be bought with gems.
+		Out.gemsForMissing = OnlyBuyableMissing(Missing) ? GemsForResources(Missing) : -1;
 	}
 	return Out;
 }
@@ -532,13 +583,14 @@ void Kingdom::Settle(Building& B, int64_t At) const
 
 void Kingdom::SettleLand(Land& L, int64_t At) const
 {
-	const int64_t Rate = LandRate(L);
-	if (Rate > 0 && At > L.lastAt)
+	const int64_t Num = LandRateNum(L);
+	const int64_t Den = LandPeriodSec(L) * 100;
+	if (Num > 0 && At > L.lastAt)
 	{
 		const int64_t Cap = LandStoreCap(L);
-		const int64_t Gained = Rate * (At - L.lastAt) + L.carry;
-		L.stored = std::min(Cap, L.stored + Gained / kSecondsPerHour);
-		L.carry = L.stored >= Cap ? 0 : Gained % kSecondsPerHour;
+		const int64_t Gained = Num * (At - L.lastAt) + L.carry;
+		L.stored = std::min(Cap, L.stored + Gained / Den);
+		L.carry = L.stored >= Cap ? 0 : Gained % Den;
 	}
 	L.lastAt = std::max(L.lastAt, At);
 }
@@ -623,15 +675,21 @@ void Kingdom::Advance(int64_t Now)
 		const int64_t TB = NextB ? NextB->finishAt : InfT;
 		const int64_t TR = bResearch ? ResearchUntil : InfT;
 		const int64_t TS = Lab >= 0 ? SpellLabs[static_cast<size_t>(Lab)].until : InfT;
-		if (TB == InfT && TR == InfT && TS == InfT)
+		// The end of a season is an event too: its league reward may add portal stones.
+		const int64_t TN = SeasonOf(Now) > SeasonNo ? std::max(Time, SeasonStart(SeasonNo + 1)) : InfT;
+		if (TB == InfT && TR == InfT && TS == InfT && TN == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(TB, std::min(TR, TS));
+		const int64_t At = std::min(std::min(TB, TR), std::min(TS, TN));
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
-		if (TR == At)
+		if (TN == At)
+		{
+			RollSeason(At);
+		}
+		else if (TR == At)
 		{
 			TroopLevels[static_cast<size_t>(Research)] = std::min(TroopLevels[static_cast<size_t>(Research)] + 1, C.troops[static_cast<size_t>(Research)].MaxLevel());
 			Research = -1;
@@ -669,7 +727,7 @@ bool Kingdom::Pay(const ResArray& Cost, bool UseGems)
 	const size_t Gem = static_cast<size_t>(ResIndex(Res::Gems));
 	if (bMissing)
 	{
-		if (!UseGems || Missing[Gem] > 0)
+		if (!UseGems || !OnlyBuyableMissing(Missing))
 		{
 			return false;
 		}
@@ -988,15 +1046,84 @@ Error Kingdom::AbandonLand(int32_t Id)
 	return Error::BadId;
 }
 
+// --- Seasons ------------------------------------------------------------------------------------
+
+int64_t Kingdom::SeasonOf(int64_t T) const
+{
+	return FloorDiv(T - C.seasonEpoch, C.seasonSec);
+}
+
+int64_t Kingdom::SeasonStart(int64_t Season) const
+{
+	return C.seasonEpoch + Season * C.seasonSec;
+}
+
+int Kingdom::League(int64_t Vp) const
+{
+	int Best = -1;
+	for (size_t I = 0; I < C.leagues.size(); ++I)
+	{
+		Best = Vp >= C.leagues[I].vp ? static_cast<int>(I) : Best;
+	}
+	return Best;
+}
+
+void Kingdom::RollSeason(int64_t At)
+{
+	(void)At; // stones were regenerated up to At by the caller
+	int64_t& Vp = Res_[static_cast<size_t>(ResIndex(Res::Vp))];
+	if (Vp > 0)
+	{
+		Last = SeasonResult();
+		Last.season = SeasonNo;
+		Last.vp = Vp;
+		Last.league = League(Vp);
+		if (Last.league >= 0)
+		{
+			const LeagueDef& L = C.leagues[static_cast<size_t>(Last.league)];
+			Res_[static_cast<size_t>(ResIndex(Res::Gems))] += L.gems;
+			const int64_t Before = Amount(Res::Stones);
+			AddResource(Res::Stones, L.stones);
+			Last.gems = L.gems;
+			Last.stones = Amount(Res::Stones) - Before;
+		}
+	}
+	// Everyone's VP returns to zero for the new season (wiki, Leagues).
+	Vp = 0;
+	++SeasonNo;
+}
+
 WorldLand Kingdom::MakeWorldLand()
 {
 	const uint64_t H = Mix(Seed, WorldCounter++);
 	WorldLand W;
 	W.id = NextId++;
-	W.type = static_cast<int>(H % static_cast<uint64_t>(C.landTypes.size()));
+	// Land types by weight among those the Castle has opened (ruins and VP lands come later).
+	const int Castle = CastleLevel();
+	int64_t Total = 0;
+	for (const LandTypeDef& T : C.landTypes)
+	{
+		Total += T.castle <= Castle ? T.weight : 0;
+	}
+	W.type = 0;
+	int64_t Pick = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
+	for (size_t I = 0; I < C.landTypes.size() && Total > 0; ++I)
+	{
+		const LandTypeDef& T = C.landTypes[I];
+		if (T.castle > Castle || T.weight <= 0)
+		{
+			continue;
+		}
+		if (Pick < T.weight)
+		{
+			W.type = static_cast<int>(I);
+			break;
+		}
+		Pick -= T.weight;
+	}
 	// Land levels follow the Castle: a band of three levels that rises with it.
 	const int MaxLevel = static_cast<int>(C.raidLoot.size());
-	const int Lo = std::max(1, std::min(MaxLevel, (CastleLevel() + 1) / 3));
+	const int Lo = std::max(1, std::min(MaxLevel, (Castle + 1) / 3));
 	const int Hi = std::max(Lo, std::min(MaxLevel, Lo + 2));
 	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
 	return W;
@@ -1198,6 +1325,8 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	if (Stars > 0)
 	{
 		const WorldLand W = WorldList[Index];
+		const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
+		const auto Scaled = [Pct](int64_t Base) { return Base > 0 ? std::max<int64_t>(1, Base * Pct / 100) : 0; };
 		if (Capture)
 		{
 			Land L;
@@ -1210,16 +1339,16 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 		}
 		else
 		{
-			const int64_t Base = C.raidLoot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(C.raidLoot.size())) - 1)];
-			const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
-			const int64_t Loot = Base * Pct / 100;
-			for (const Res Kind : {Res::Gold, Res::Food})
-			{
-				const int64_t Before = Amount(Kind);
-				AddResource(Kind, Loot);
-				R.res[static_cast<size_t>(ResIndex(Kind))] = Amount(Kind) - Before;
-			}
+			// A land rewards raiders with what it produces (the original since version 1.8).
+			const Res Kind = C.landTypes[static_cast<size_t>(W.type)].resource;
+			const int64_t Before = Amount(Kind);
+			AddResource(Kind, Scaled(RaidLoot(W)));
+			R.res[static_cast<size_t>(ResIndex(Kind))] += Amount(Kind) - Before;
 		}
+		// Every victory brings victory points as well (the original's rule; the amounts are ours).
+		const int64_t Vp = Scaled(VictoryVp(W.level));
+		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
 		// A beaten land leaves the map; a new one appears.
 		WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Index));
 		FillWorld();
@@ -1636,9 +1765,14 @@ int64_t Kingdom::TitanTotalXp(const TitanState& T) const
 	return Total;
 }
 
+int Kingdom::TitanMaxLevel(const TitanState& T) const
+{
+	return C.titans[static_cast<size_t>(T.def)].MaxLevel() + (T.ascended ? C.ascendLevels : 0);
+}
+
 void Kingdom::AddTitanXp(TitanState& T, int64_t Xp, int* OutLevels)
 {
-	const int Max = C.titans[static_cast<size_t>(T.def)].MaxLevel();
+	const int Max = TitanMaxLevel(T);
 	T.xp += std::max<int64_t>(0, Xp);
 	while (T.level < Max && T.xp >= XpToNext(T.level))
 	{
@@ -1684,6 +1818,71 @@ Error Kingdom::SkipRecovery(int32_t TitanId)
 		return Error::None;
 	}
 	return Error::BadId;
+}
+
+Check Kingdom::CheckAscend(int32_t TitanId) const
+{
+	Check Out;
+	const TitanState* T = FindTitan(TitanId);
+	if (!T)
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const size_t Rarity = static_cast<size_t>(std::max(1, std::min(4, C.titans[static_cast<size_t>(T->def)].stars)) - 1);
+	Out.cost[static_cast<size_t>(ResIndex(Res::Shards))] = C.ascendShards[Rarity];
+	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = C.ascendFood[Rarity];
+	if (T->ascended)
+	{
+		Out.error = Error::MaxLevel;
+		return Out;
+	}
+	// Only a titan at its level cap can ascend (wiki).
+	if (T->level < TitanMaxLevel(*T))
+	{
+		Out.error = Error::NotMaxLevel;
+		return Out;
+	}
+	if (TitanId == PendingTitanId)
+	{
+		Out.error = Error::Busy;
+		return Out;
+	}
+	ResArray Missing{};
+	bool bMissing = false;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		Missing[static_cast<size_t>(I)] = std::max<int64_t>(0, Out.cost[static_cast<size_t>(I)] - Res_[static_cast<size_t>(I)]);
+		bMissing = bMissing || Missing[static_cast<size_t>(I)] > 0;
+	}
+	if (bMissing)
+	{
+		Out.error = Error::NotEnough;
+		Out.gemsForMissing = OnlyBuyableMissing(Missing) ? GemsForResources(Missing) : -1;
+	}
+	return Out;
+}
+
+Error Kingdom::Ascend(int32_t TitanId, bool UseGems)
+{
+	const Check Ck = CheckAscend(TitanId);
+	if (Ck.error != Error::None && !(Ck.error == Error::NotEnough && UseGems))
+	{
+		return Ck.error;
+	}
+	if (!Pay(Ck.cost, UseGems))
+	{
+		return Error::NotEnough;
+	}
+	for (TitanState& T : TitanList)
+	{
+		if (T.id == TitanId)
+		{
+			T.ascended = true;
+			T.xp = 0;
+		}
+	}
+	return Error::None;
 }
 
 Check Kingdom::CheckAltar(int Altar) const
@@ -1843,7 +2042,7 @@ Check Kingdom::CheckFusion(int32_t Target, const std::vector<int32_t>& Sacrifice
 		Out.castle = C.fusionCastle;
 		return Out;
 	}
-	if (T->level >= C.titans[static_cast<size_t>(T->def)].MaxLevel())
+	if (T->level >= TitanMaxLevel(*T))
 	{
 		Out.error = Error::MaxLevel;
 		return Out;
@@ -2246,7 +2445,7 @@ const RelicItem* Kingdom::FindRelic(int32_t Id) const
 
 int Kingdom::RelicSlots(const TitanState& T) const
 {
-	int Slots = 0;
+	int Slots = T.ascended ? C.ascendRelicSlots : 0;
 	for (const int Level : C.relicSlotLevels)
 	{
 		Slots += T.level >= Level ? 1 : 0;
@@ -2472,7 +2671,7 @@ std::string Kingdom::Save() const
 	JsonWriter W;
 	W.BeginObject();
 	W.Key("formatVersion");
-	W.Int(3);
+	W.Int(4);
 	W.Key("contentHash");
 	W.String(C.hash);
 	W.Key("time");
@@ -2493,6 +2692,25 @@ std::string Kingdom::Save() const
 	W.Int(Pending);
 	W.Key("pendingCapture");
 	W.Bool(PendingIsCapture);
+	// Seasons of victory points (format 4).
+	W.Key("season");
+	W.BeginObject();
+	W.Key("index");
+	W.Int(SeasonNo);
+	W.Key("last");
+	W.BeginObject();
+	W.Key("season");
+	W.Int(Last.season);
+	W.Key("vp");
+	W.Int(Last.vp);
+	W.Key("league");
+	W.Int(Last.league);
+	W.Key("gems");
+	W.Int(Last.gems);
+	W.Key("stones");
+	W.Int(Last.stones);
+	W.EndObject();
+	W.EndObject();
 	W.Key("resources");
 	W.BeginObject();
 	for (int I = 0; I < kResCount; ++I)
@@ -2628,6 +2846,8 @@ std::string Kingdom::Save() const
 		W.Int(T.xp);
 		W.Key("recoverUntil");
 		W.Int(T.recoverUntil);
+		W.Key("ascended");
+		W.Bool(T.ascended);
 		W.Key("relics");
 		W.BeginArray();
 		for (const int32_t R : T.relics)
@@ -2722,7 +2942,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		return false;
 	}
 	const int Version = J.GetInt("formatVersion", 0);
-	if (Version < 1 || Version > 3)
+	if (Version < 1 || Version > 4)
 	{
 		OutError = "unsupported kingdom save version";
 		return false;
@@ -2775,7 +2995,8 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.type = FindLandType(LJ.GetString("type"));
 			L.level = std::max(1, LJ.GetInt("level", 1));
 			L.stored = LJ.GetInt64("stored", 0);
-			L.carry = LJ.GetInt64("carry", 0);
+			// Before format 4 the remainder was in units x seconds; now it is in hundredths of a unit.
+			L.carry = LJ.GetInt64("carry", 0) * (Version < 4 ? 100 : 1);
 			L.lastAt = LJ.GetInt64("lastAt", 0);
 			L.titanId = static_cast<int32_t>(LJ.GetInt64("titan", 0));
 			if (L.type >= 0)
@@ -2811,6 +3032,20 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	StonesAt = J.GetInt64("stonesAt", Time);
 	Pending = static_cast<int32_t>(J.GetInt64("pending", 0));
 	PendingIsCapture = J.GetBool("pendingCapture", false);
+	SeasonNo = SeasonOf(Time);
+	Last = SeasonResult();
+	if (const JsonValue* SeasonJ = J.Find("season"))
+	{
+		SeasonNo = std::min(SeasonNo, SeasonJ->GetInt64("index", SeasonNo)); // Advance pays any season that ended since
+		if (const JsonValue* LastJ = SeasonJ->Find("last"))
+		{
+			Last.season = LastJ->GetInt64("season", -1);
+			Last.vp = LastJ->GetInt64("vp", 0);
+			Last.league = LastJ->GetInt("league", -1);
+			Last.gems = LastJ->GetInt64("gems", 0);
+			Last.stones = LastJ->GetInt64("stones", 0);
+		}
+	}
 	Res_.fill(0);
 	if (const JsonValue* R = J.Find("resources"))
 	{
@@ -2877,7 +3112,8 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				{
 					continue;
 				}
-				T.level = std::max(1, std::min(TJ.GetInt("level", 1), C.titans[static_cast<size_t>(T.def)].MaxLevel()));
+				T.ascended = TJ.GetBool("ascended", false);
+				T.level = std::max(1, std::min(TJ.GetInt("level", 1), TitanMaxLevel(T)));
 				T.xp = std::max<int64_t>(0, TJ.GetInt64("xp", 0));
 				T.recoverUntil = TJ.GetInt64("recoverUntil", 0);
 				if (const JsonValue* Rl = TJ.Find("relics"))
@@ -3007,6 +3243,12 @@ uint64_t Kingdom::Hash() const
 	W.I32(ExtraSlots);
 	W.I32(NextId);
 	W.I32(Pending);
+	W.I64(SeasonNo);
+	W.I64(Last.season);
+	W.I64(Last.vp);
+	W.I32(Last.league);
+	W.I64(Last.gems);
+	W.I64(Last.stones);
 	for (const Building& B : BuildingList)
 	{
 		W.I32(B.id);
@@ -3062,6 +3304,7 @@ uint64_t Kingdom::Hash() const
 		W.I32(T.level);
 		W.I64(T.xp);
 		W.I64(T.recoverUntil);
+		W.Bool(T.ascended);
 	}
 	W.I64(RelicAt);
 	W.U64(RelicCounter);

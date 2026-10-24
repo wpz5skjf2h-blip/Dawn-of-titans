@@ -1,5 +1,5 @@
 // Source/DoTKingdom/Public/DoTKingdom/KingdomContent.h
-// Kingdom content (Content/Data/kingdom): building level tables, expansions, lands, army, titans, start state.
+// Kingdom content (Content/Data/kingdom): building level tables, expansions, lands, seasons, army, titans, start state.
 // Numbers follow the original game where known (docs/Original_Reference.md).
 #pragma once
 
@@ -19,7 +19,8 @@ namespace dot
 {
 namespace kingdom
 {
-enum class Res : uint8_t { Gold, Food, Gems, Stones, Count };
+/** Shards (from ruins) pay for titan ascension; victory points (VP) rank the player in a season. */
+enum class Res : uint8_t { Gold, Food, Gems, Stones, Shards, Vp, Count };
 constexpr int kResCount = static_cast<int>(Res::Count);
 using ResArray = std::array<int64_t, kResCount>;
 inline int ResIndex(Res R) { return static_cast<int>(R); }
@@ -100,7 +101,22 @@ struct LandTypeDef
 	std::string id;
 	std::string name;
 	Res resource = Res::Gold;
-	std::vector<int64_t> produce; // per hour, by land level
+	std::vector<int64_t> produce; // per period, by land level
+	int64_t periodHours = 1; // ruins make one shard a day
+	std::vector<int64_t> fillHours; // by land level; empty = the common table
+	std::vector<int64_t> raidLoot; // of the land's resource, by land level; empty = the common table
+	int castle = 1; // Castle level from which the type appears on the world map
+	int64_t weight = 1; // how often it appears
+};
+
+/** A league at the end of a season: reached with this many VP, rewarded with gems and portal stones. */
+struct LeagueDef
+{
+	std::string id;
+	std::string name;
+	int64_t vp = 0;
+	int64_t gems = 0;
+	int64_t stones = 0;
 };
 
 /** One level of a troop type (the original's Militia, Archers, Spearmen). Costs are Food. */
@@ -192,7 +208,13 @@ struct KingdomContent
 	std::vector<int64_t> landFillHours;
 	std::vector<LandTypeDef> landTypes;
 	std::vector<int64_t> raidLoot;
+	/** VP for any won land battle, by land level (scaled by stars like loot). */
+	std::vector<int64_t> victoryVp;
 	int worldSize = 6;
+	/** Seasons: VP resets to zero at the end of each one and the reached league pays its reward. */
+	int64_t seasonEpoch = 0;
+	int64_t seasonSec = 7 * 86400;
+	std::vector<LeagueDef> leagues;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};
@@ -218,6 +240,11 @@ struct KingdomContent
 	std::array<int64_t, 4> titanStarsPct{{30, 100, 120, 150}}; // share of battle XP by stars won
 	int titanRecoveryFromLevel = 10;
 	int64_t titanRecoverySecPerLevel = 120;
+	/** Ascension of a max-level titan: shards and food by rarity, extra levels and relic slots. */
+	std::array<int64_t, 4> ascendShards{{5, 25, 50, 100}};
+	std::array<int64_t, 4> ascendFood{{180000, 820000, 2300000, 4800000}};
+	int ascendLevels = 10;
+	int ascendRelicSlots = 1;
 	int fusionCastle = 7;
 	int64_t fusionFoodPerStar = 2000; // wiki: fusion costs food; the amount is our estimate
 	int64_t fusionXpPerStarSq = 150;

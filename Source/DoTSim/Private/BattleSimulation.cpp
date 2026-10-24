@@ -157,7 +157,7 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		T.side = S;
 		T.def = Def;
 		T.stars = std::max(1, std::min(6, SS.titan.stars));
-		T.level = std::max(1, std::min(10 + 10 * T.stars, SS.titan.level));
+		T.level = std::max(1, std::min(10 + 10 * T.stars + (SS.titan.ascended ? 10 : 0), SS.titan.level));
 		const Fix64 LevelMult = Fix64::One() + P.levelGrowth * (T.level - 1);
 		const Fix64 Growth = P.rarityMult[static_cast<int>(TD.rarity)] * LevelMult * P.starMult[T.stars];
 		// Relic bonuses scale the titan's own stats (armor is capped like every armor).

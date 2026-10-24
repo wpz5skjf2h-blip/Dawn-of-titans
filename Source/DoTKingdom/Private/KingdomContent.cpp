@@ -162,6 +162,20 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 		Error = "kingdom/army.json: titanXp needs next and battle";
 		return false;
 	}
+	if (const JsonValue* A = J.Find("ascension"))
+	{
+		std::vector<int64_t> Shards;
+		std::vector<int64_t> Food;
+		ReadInts(A->Find("shards"), Shards);
+		ReadInts(A->Find("food"), Food);
+		for (size_t K = 0; K < 4; ++K)
+		{
+			Out.ascendShards[K] = K < Shards.size() ? Shards[K] : Out.ascendShards[K];
+			Out.ascendFood[K] = K < Food.size() ? Food[K] : Out.ascendFood[K];
+		}
+		Out.ascendLevels = std::max(0, A->GetInt("levels", 10));
+		Out.ascendRelicSlots = std::max(0, A->GetInt("relicSlots", 1));
+	}
 	if (const JsonValue* F = J.Find("fusion"))
 	{
 		Out.fusionCastle = F->GetInt("castle", 7);
@@ -288,6 +302,8 @@ const char* ToString(Res R)
 	case Res::Food: return "food";
 	case Res::Gems: return "gems";
 	case Res::Stones: return "stones";
+	case Res::Shards: return "shards";
+	case Res::Vp: return "vp";
 	default: return "?";
 	}
 }
@@ -561,6 +577,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				Out.raidLoot.push_back((*Loot)[I].AsInt64(0));
 			}
 		}
+		ReadInts(Lands->Find("victoryVp"), Out.victoryVp);
 		if (const JsonValue* Types = Lands->Find("types"))
 		{
 			for (size_t I = 0; I < Types->Size(); ++I)
@@ -570,12 +587,16 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				T.id = J.GetString("id");
 				T.name = J.GetString("name", T.id);
 				ParseRes(J.GetString("resource", "gold"), T.resource);
-				if (const JsonValue* Produce = J.Find("produce"))
+				ReadInts(J.Find("produce"), T.produce);
+				T.periodHours = std::max<int64_t>(1, J.GetInt64("periodHours", 1));
+				ReadInts(J.Find("fillHours"), T.fillHours);
+				ReadInts(J.Find("raidLoot"), T.raidLoot);
+				T.castle = std::max(1, J.GetInt("castle", 1));
+				T.weight = std::max<int64_t>(0, J.GetInt64("weight", 1));
+				if (T.produce.empty())
 				{
-					for (size_t K = 0; K < Produce->Size(); ++K)
-					{
-						T.produce.push_back((*Produce)[K].AsInt64(0));
-					}
+					Error = "kingdom/kingdom.json: land type '" + T.id + "' needs produce";
+					return false;
 				}
 				Out.landTypes.push_back(T);
 			}
@@ -585,6 +606,30 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	{
 		Error = "kingdom/kingdom.json: lands need types, fillHours and raidLoot";
 		return false;
+	}
+	if (const JsonValue* Season = Rules.Find("seasons"))
+	{
+		Out.seasonEpoch = Season->GetInt64("epoch", 0);
+		Out.seasonSec = std::max<int64_t>(3600, Season->GetInt64("days", 7) * 86400);
+		if (const JsonValue* Leagues = Season->Find("leagues"))
+		{
+			for (size_t I = 0; I < Leagues->Size(); ++I)
+			{
+				const JsonValue& J = (*Leagues)[I];
+				LeagueDef L;
+				L.id = J.GetString("id");
+				L.name = J.GetString("name", L.id);
+				L.vp = std::max<int64_t>(1, J.GetInt64("vp", 1));
+				L.gems = J.GetInt64("gems", 0);
+				L.stones = J.GetInt64("stones", 0);
+				if (!Out.leagues.empty() && L.vp <= Out.leagues.back().vp)
+				{
+					Error = "kingdom/kingdom.json: leagues must need more VP one after another";
+					return false;
+				}
+				Out.leagues.push_back(L);
+			}
+		}
 	}
 	if (const JsonValue* Gems = Rules.Find("gemsForResources"))
 	{

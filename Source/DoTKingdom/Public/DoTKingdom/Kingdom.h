@@ -1,7 +1,8 @@
 // Source/DoTKingdom/Public/DoTKingdom/Kingdom.h
-// The player's kingdom: city buildings, builders, timers, resources, expansions, lands, portal stones,
-// the army (training, troop levels, casualties), spells (Spell Forge stock, Arcane Tower levels) and the titan
-// roster (XP, relic items, fusion, titans guarding lands).
+// The player's kingdom: city buildings, builders, timers, resources, expansions, lands (gold, farm, ruins and
+// victory-point lands), portal stones, seasons of victory points, the army (training, troop levels, casualties),
+// spells (Spell Forge stock, Arcane Tower levels) and the titan roster (XP, relic items, fusion, ascension,
+// titans guarding lands).
 // Deterministic and engine-free like the battle simulation: integer math only, time is passed in
 // explicitly (seconds), so a server can replay the same actions and reach the same state.
 #pragma once
@@ -42,6 +43,7 @@ enum class Error : uint8_t
 	TitanRecovering,
 	NotReady,
 	RosterFull,
+	NotMaxLevel,
 	Count
 };
 DOTKINGDOM_API const char* ToString(Error E);
@@ -69,7 +71,7 @@ struct Land
 	int level = 1;
 	int32_t titanId = 0; // a titan on the land adds production per titan level
 	int64_t stored = 0;
-	int64_t carry = 0;
+	int64_t carry = 0; // remainder in units x 100 x seconds (the titan bonus is a percentage)
 	int64_t lastAt = 0;
 };
 
@@ -89,6 +91,7 @@ struct TitanState
 	int level = 1;
 	int64_t xp = 0; // towards the next level
 	int64_t recoverUntil = 0; // resting after a battle until this time
+	bool ascended = false; // ten more levels and one more relic slot
 	std::vector<int32_t> relics; // equipped relic ids
 };
 
@@ -107,6 +110,16 @@ struct SpellResearchSlot
 	int spell = -1;
 	int64_t from = 0;
 	int64_t until = 0;
+};
+
+/** How a season ended: its VP, the league reached (-1 for none) and what that paid. */
+struct SeasonResult
+{
+	int64_t season = -1;
+	int64_t vp = 0;
+	int league = -1;
+	int64_t gems = 0;
+	int64_t stones = 0;
 };
 
 struct Reward
@@ -173,7 +186,12 @@ public:
 	int64_t Uncollected(const Building& B) const;
 	int64_t UncollectedLand(const Land& L) const;
 	int64_t LandStoreCap(const Land& L) const;
+	/** Production per period of the land's type (an hour; a day for ruins). */
 	int64_t LandRate(const Land& L) const;
+	int64_t LandFillHours(const Land& L) const;
+	/** Raid loot of the land's own resource at three stars; VP for winning there (both before the stars). */
+	int64_t RaidLoot(const WorldLand& W) const;
+	int64_t VictoryVp(int LandLevel) const;
 	Check CheckBuild(int Def) const;
 	Check CheckUpgrade(int32_t Id) const;
 	Check CheckExpansion() const;
@@ -181,6 +199,14 @@ public:
 	int64_t GemsForResources(const ResArray& Missing) const;
 	bool CanPlace(int Def, int X, int Y, int32_t IgnoreId) const;
 	uint64_t Hash() const;
+
+	// --- Seasons of victory points ---
+	int64_t Season() const { return SeasonNo; }
+	int64_t SeasonOf(int64_t T) const;
+	int64_t SeasonStart(int64_t Season) const;
+	/** The league these VP reach (-1 for none). */
+	int League(int64_t Vp) const;
+	const SeasonResult& LastSeason() const { return Last; }
 
 	// --- Army (Barracks, Army Camp, Armoury, Medical School) ---
 	int TroopLevel(int Troop) const;
@@ -239,6 +265,10 @@ public:
 	const std::vector<TitanState>& Titans() const { return TitanList; }
 	const TitanState* FindTitan(int32_t Id) const;
 	int TitanCapacity() const;
+	/** The titan's level cap: 10 + 10 per star, ten more once ascended. */
+	int TitanMaxLevel(const TitanState& T) const;
+	/** Ascension of a max-level titan for shards and food. */
+	Check CheckAscend(int32_t TitanId) const;
 	int64_t XpToNext(int Level) const;
 	int64_t TitanSkipCost(int32_t Id) const;
 	int64_t RelicFreeAt() const { return RelicAt; }
@@ -298,6 +328,8 @@ public:
 	/** Fuses titans into the target (their XP moves to it). */
 	Error FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices);
 	Error SkipRecovery(int32_t TitanId);
+	/** Ascends a max-level titan: ten more levels and one more relic slot. Missing Food can be bought with gems. */
+	Error Ascend(int32_t TitanId, bool UseGems);
 
 private:
 	const LevelDef* CurrentLevel(const Building& B) const;
@@ -309,6 +341,9 @@ private:
 	void Complete(Building& B, int64_t At);
 	void RegenStones(int64_t Until);
 	void AddResource(Res R, int64_t Amount);
+	void RollSeason(int64_t At);
+	int64_t LandRateNum(const Land& L) const;
+	int64_t LandPeriodSec(const Land& L) const;
 	WorldLand MakeWorldLand();
 	void FillWorld();
 	int64_t ProducerRate(const Building& B) const;
@@ -343,6 +378,8 @@ private:
 	uint64_t WorldCounter = 0;
 	int32_t Pending = 0;
 	bool PendingIsCapture = false;
+	int64_t SeasonNo = 0;
+	SeasonResult Last;
 	// Army
 	std::vector<int> TroopLevels;
 	std::vector<int64_t> Army; // units by troop, squads away in battle included

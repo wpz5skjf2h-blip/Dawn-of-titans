@@ -71,6 +71,7 @@ bool ParseSide(const JsonValue& J, SideSetup& Out, bool bAttacker, std::string& 
 			Out.titan.titanId = T->GetString("id");
 			Out.titan.level = T->GetInt("level", 1);
 			Out.titan.stars = T->GetInt("stars", 1);
+			Out.titan.ascended = T->GetBool("ascended", false);
 			if (const JsonValue* AL = T->Find("abilityLevels"))
 			{
 				for (size_t I = 0; I < AL->Size() && I < 2; ++I)
@@ -160,6 +161,11 @@ void WriteSide(JsonWriter& W, const SideSetup& S)
 		W.Int(S.titan.level);
 		W.Key("stars");
 		W.Int(S.titan.stars);
+		if (S.titan.ascended)
+		{
+			W.Key("ascended");
+			W.Bool(true);
+		}
 		W.Key("abilityLevels");
 		W.BeginArray();
 		W.Int(S.titan.abilityLevels[0]);
