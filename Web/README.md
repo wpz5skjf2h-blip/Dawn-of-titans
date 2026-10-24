@@ -15,3 +15,12 @@ both compiled with Emscripten; no game rules live in JavaScript.
 | `make_content.py` | Writes `Content/Data` as one JSON file (handy for tools) |
 
 Run: `python3 -m http.server 8000 --directory Web/dist`, then open `http://localhost:8000`.
+
+Saves: the kingdom is kept in the browser (`localStorage`) and, inside claude.ai, in the viewer's private `db`
+documents `kingdom` (the live copy) and `kingdom-prev` (a second kingdom of the same account). On start the account
+copy wins when the browser had no kingdom, when it is the same kingdom (same seed) saved later, or when it is another
+kingdom that has gone at least as far; the kingdom not shown goes to `kingdom-prev`, and the menu can switch to it.
+"Start again" also keeps the old kingdom there.
+
+Errors: a failing frame, panel or window of the kingdom shows its text once and the island keeps being drawn; if the
+kingdom cannot start, the battle screen shows why.
