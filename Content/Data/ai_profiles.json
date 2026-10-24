@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  // Commander AI difficulty profiles (master prompt 21.2). Times in seconds.
+  "profiles": [
+    { "id": "recruit",   "reaction": 2.0, "decisionInterval": 2.0, "bestCounterChance": 0.30, "flanking": 0, "focusFire": 0, "spellSkill": 0, "formationMicro": false, "clash": { "perfect": 0.05, "good": 0.35 } },
+    { "id": "veteran",   "reaction": 1.2, "decisionInterval": 1.0, "bestCounterChance": 0.60, "flanking": 1, "focusFire": 1, "spellSkill": 1, "formationMicro": false, "clash": { "perfect": 0.15, "good": 0.50 } },
+    { "id": "warlord",   "reaction": 0.6, "decisionInterval": 0.5, "bestCounterChance": 0.85, "flanking": 2, "focusFire": 2, "spellSkill": 2, "formationMicro": true,  "clash": { "perfect": 0.30, "good": 0.50 } },
+    { "id": "nightmare", "reaction": 0.3, "decisionInterval": 0.5, "bestCounterChance": 1.00, "flanking": 3, "focusFire": 2, "spellSkill": 3, "formationMicro": true,  "clash": { "perfect": 0.45, "good": 0.45 } }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "M0 Counter Test: Spearmen vs Outriders",
+  "map": "map.highvale_01",
+  "seed": 3,
+  "timerSec": 120,
+  "skipDeploy": true,
+  "sides": {
+    "attacker": {
+      "name": "Pike Wall",
+      "ai": "veteran",
+      "titan": null,
+      "spells": [],
+      "squads": [
+        { "troop": "troop.spearmen", "tier": 1, "pos": [120, 100], "facingDeg": 0, "formation": "Line", "stance": "Hold" }
+      ]
+    },
+    "defender": {
+      "name": "Riders",
+      "ai": "veteran",
+      "titan": null,
+      "spells": [],
+      "squads": [
+        { "troop": "troop.outriders", "tier": 1, "pos": [120, 140], "facingDeg": 180, "formation": "Wedge", "stance": "Aggressive" }
+      ]
+    }
+  }
+}

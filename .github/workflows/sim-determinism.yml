@@ -1,0 +1,115 @@
+# Builds the deterministic battle simulation (Source/DoTSim) without Unreal, runs the unit tests,
+# then plays the same seeded battles on every platform and requires byte-identical results.
+# Master prompt, M0 exit criterion: "determinism test green on x86-64 and ARM64".
+# The wasm32 job covers the browser demo build (Web/), which uses the same sources.
+name: sim-determinism
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  run:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64-gcc
+            os: ubuntu-latest
+            cxx: g++
+          - name: linux-x64-clang
+            os: ubuntu-latest
+            cxx: clang++
+          # Hosted ARM64 Linux runners are free for public repositories.
+          # For a private repository, swap in a self-hosted ARM64 runner label.
+          - name: linux-arm64-gcc
+            os: ubuntu-24.04-arm
+            cxx: g++
+          # MSVC is the compiler Unreal uses on Windows (and it has no __int128 path).
+          - name: windows-x64-msvc
+            os: windows-latest
+            cxx: ''
+          # WebAssembly (32-bit pointers), as in the browser demo; runs under Node.
+          - name: wasm32-emscripten
+            os: ubuntu-latest
+            cxx: ''
+            wasm: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emscripten
+        if: matrix.wasm
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install latest
+          "$RUNNER_TEMP/emsdk/emsdk" activate latest
+          echo "EMSDK_ENV=$RUNNER_TEMP/emsdk/emsdk_env.sh" >> "$GITHUB_ENV"
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ -n "${EMSDK_ENV:-}" ]; then
+            source "$EMSDK_ENV"
+            emcmake cmake -S SimTools -B build -DCMAKE_BUILD_TYPE=Release
+          else
+            if [ -n "${{ matrix.cxx }}" ]; then export CXX=${{ matrix.cxx }}; fi
+            cmake -S SimTools -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ -n "${EMSDK_ENV:-}" ]; then source "$EMSDK_ENV"; fi
+          cmake --build build --config Release --parallel 4
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          if [ -n "${EMSDK_ENV:-}" ]; then source "$EMSDK_ENV"; fi
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Seeded battles
+        shell: bash
+        run: |
+          RUN=(build/dot_runner)
+          if [ -f build/Release/dot_runner.exe ]; then RUN=(build/Release/dot_runner.exe); fi
+          if [ -f build/dot_runner.js ]; then RUN=(node build/dot_runner.js); fi
+          OUT=determinism-${{ matrix.name }}.txt
+          : > "$OUT"
+          for S in m0_sandbox m0_titan_duel m0_cavalry_test; do
+            echo "# $S" >> "$OUT"
+            "${RUN[@]}" --scenario "scenarios/$S.json" --determinism 50 | tr -d '\r' >> "$OUT"
+          done
+          cat "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-${{ matrix.name }}
+          path: determinism-${{ matrix.name }}.txt
+
+  compare:
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          merge-multiple: true
+
+      - name: All platforms must match
+        run: |
+          REF=determinism-linux-x64-gcc.txt
+          STATUS=0
+          for F in determinism-*.txt; do
+            if diff -u "$REF" "$F"; then
+              echo "OK  $F"
+            else
+              echo "::error::$F differs from $REF"
+              STATUS=1
+            fi
+          done
+          exit $STATUS

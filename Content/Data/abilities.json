@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  // Titan abilities and commander spells share one data-driven framework (master prompt 4.12.1).
+  "abilities": [
+    {
+      "id": "ability.talos.molten_ichor", "name": "Molten Ichor",
+      "rage": 40, "cooldown": 12, "castTime": 0.6,
+      "shape": "Cone", "range": 10, "coneAngleDeg": 70, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.2, "poiseDamage": 15, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Burn", "flat": 12, "duration": 4, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInCone", "minTargets": 8 }
+    },
+    {
+      "id": "ability.talos.bronze_bulwark", "name": "Bronze Bulwark",
+      "rage": 40, "cooldown": 18, "castTime": 0.3,
+      "shape": "Self", "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.40, "duration": 5, "affects": ["Self"] }
+      ],
+      "ai": { "heuristic": "SelfDefense", "hpBelow": 0.75, "minTargets": 1 }
+    },
+    {
+      "id": "ability.thor.hammer_throw", "name": "Hammer Throw",
+      "rage": 50, "cooldown": 8, "castTime": 0.6,
+      "shape": "Line", "range": 30, "width": 4, "delivery": "Projectile", "projectileSpeed": 35, "returns": true,
+      "effects": [
+        { "type": "Damage", "coef": 1.5, "poiseDamage": 20, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 6, "vertical": 3, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.thor.thunderclap", "name": "Thunderclap",
+      "rage": 60, "cooldown": 14, "castTime": 0.4,
+      "shape": "Circle", "range": 20, "radius": 9, "delivery": "Leap", "leapTime": 0.8,
+      "effects": [
+        { "type": "Damage", "coef": 2.5, "poiseDamage": 40, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 1.0, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 7, "vertical": 7, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "spell.meteor_strike", "name": "Meteor Strike", "spell": true,
+      "valor": 6, "cooldown": 30,
+      "shape": "Circle", "radius": 6, "delivery": "Delayed", "delay": 0.8,
+      "effects": [
+        { "type": "Damage", "flat": 350, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "flat": 1200, "poiseDamage": 30, "affects": ["EnemyTitans"] },
+        { "type": "Knockback", "horizontal": 7, "vertical": 8, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 8 }
+    },
+    {
+      "id": "spell.war_drums", "name": "War Drums", "spell": true,
+      "valor": 3, "cooldown": 20,
+      "shape": "Circle", "radius": 15, "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": 0.25, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.25, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": 0.10, "duration": 8, "affects": ["AllyTitans"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.10, "duration": 8, "affects": ["AllyTitans"] }
+      ],
+      "ai": { "heuristic": "AlliesInCombat", "minTargets": 3 }
+    },
+    {
+      "id": "spell.healing_spring", "name": "Healing Spring", "spell": true,
+      "valor": 4, "cooldown": 25,
+      "shape": "Circle", "radius": 10, "delivery": "Zone", "zoneDuration": 6, "zonePulse": 1,
+      "effects": [
+        { "type": "Heal", "pctMaxHp": 0.05, "affects": ["AllyTroops"] },
+        { "type": "Heal", "pctMaxHp": 0.015, "affects": ["AllyTitans"] }
+      ],
+      "ai": { "heuristic": "AlliesDamaged", "minTargets": 6 }
+    },
+    // The original's spells (crafted in the Spell Forge, levelled in the Arcane Tower). Numbers are ours.
+    {
+      "id": "spell.fireball", "name": "Fireball", "spell": true,
+      "valor": 5, "cooldown": 20,
+      "shape": "Circle", "radius": 5, "delivery": "Delayed", "delay": 0.6,
+      "effects": [
+        { "type": "Damage", "flat": 300, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "flat": 900, "poiseDamage": 25, "affects": ["EnemyTitans"] },
+        { "type": "Burn", "flat": 10, "duration": 4, "affects": ["EnemyTroops"] },
+        { "type": "Knockback", "horizontal": 4, "vertical": 5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 8 }
+    },
+    {
+      "id": "spell.shield", "name": "Shield", "spell": true,
+      "valor": 3, "cooldown": 20,
+      "shape": "Circle", "radius": 12, "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.35, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.20, "duration": 8, "affects": ["AllyTitans"] }
+      ],
+      "ai": { "heuristic": "AlliesInCombat", "minTargets": 3 }
+    },
+    {
+      "id": "spell.freeze", "name": "Freeze", "spell": true,
+      "valor": 4, "cooldown": 22,
+      "shape": "Circle", "radius": 7, "delivery": "Instant",
+      "effects": [
+        { "type": "Stun", "duration": 2.5, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.5, "duration": 5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "spell.lightning", "name": "Lightning", "spell": true,
+      "valor": 5, "cooldown": 18,
+      "shape": "Circle", "radius": 3.5, "delivery": "Delayed", "delay": 0.3,
+      "effects": [
+        { "type": "Damage", "flat": 500, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "flat": 1500, "poiseDamage": 35, "affects": ["EnemyTitans"] },
+        { "type": "Stun", "duration": 0.5, "affects": ["EnemyTroops", "EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 6, "preferTitan": true }
+    },
+    {
+      "id": "spell.rage", "name": "Rage", "spell": true,
+      "valor": 3, "cooldown": 20,
+      "shape": "Circle", "radius": 15, "delivery": "Instant",
+      "effects": [
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.30, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": 0.20, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.12, "duration": 8, "affects": ["AllyTitans"] }
+      ],
+      "ai": { "heuristic": "AlliesInCombat", "minTargets": 3 }
+    },
+    {
+      "id": "spell.terror", "name": "Terror", "spell": true,
+      "valor": 4, "cooldown": 24,
+      "shape": "Circle", "radius": 9, "delivery": "Instant",
+      "effects": [
+        { "type": "Morale", "flat": 35, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": -0.25, "duration": 6, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10 }
+    },
+    {
+      "id": "spell.acid_cloud", "name": "Acid Cloud", "spell": true,
+      "valor": 5, "cooldown": 25,
+      "shape": "Circle", "radius": 8, "delivery": "Zone", "zoneDuration": 8, "zonePulse": 1,
+      "effects": [
+        { "type": "Damage", "flat": 45, "affects": ["EnemyTroops"] },
+        { "type": "Damage", "flat": 120, "affects": ["EnemyTitans"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.2, "duration": 1.5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10 }
+    }
+  ]
+}

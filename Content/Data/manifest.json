@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "m0-2026.10.23",
+  "files": {
+    "rules": "rules.json",
+    "counters": "counters.json",
+    "troops": "troops.json",
+    "abilities": "abilities.json",
+    "titans": "titans.json",
+    "ai": "ai_profiles.json",
+    "maps": ["maps/highvale_01.json"],
+    "scenarios": ["scenarios/m0_sandbox.json", "scenarios/m0_titan_duel.json", "scenarios/m0_cavalry_test.json"]
+  }
+}

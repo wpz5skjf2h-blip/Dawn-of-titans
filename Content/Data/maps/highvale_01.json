@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  // Highvale Ford: a river splits the field; two fords and a stone bridge give three routes.
+  "id": "map.highvale_01",
+  "name": "Highvale Ford",
+  "width": 240,
+  "depth": 160,
+  "cellSize": 2,
+  "deploy": {
+    "attacker": { "min": [12, 8], "max": [228, 40] },
+    "defender": { "min": [12, 120], "max": [228, 152] }
+  },
+  "features": [
+    { "type": "DeepWater",    "rect": { "x0": 0,   "z0": 74, "x1": 240, "z1": 84 } },
+    { "type": "ShallowWater", "rect": { "x0": 40,  "z0": 72, "x1": 64,  "z1": 86 } },
+    { "type": "ShallowWater", "rect": { "x0": 172, "z0": 72, "x1": 198, "z1": 86 } },
+    { "type": "Road",         "rect": { "x0": 112, "z0": 0,  "x1": 128, "z1": 160 } },
+
+    { "type": "Hill",   "circle": { "x": 70,  "z": 52,  "r": 20 }, "height": 6 },
+    { "type": "Hill",   "circle": { "x": 176, "z": 112, "r": 18 }, "height": 6 },
+    { "type": "Hill",   "circle": { "x": 212, "z": 36,  "r": 12 }, "height": 4 },
+
+    { "type": "Forest", "circle": { "x": 30,  "z": 110, "r": 16 } },
+    { "type": "Forest", "circle": { "x": 205, "z": 60,  "r": 14 } },
+    { "type": "Forest", "circle": { "x": 150, "z": 30,  "r": 10 } },
+
+    { "type": "Rock",   "circle": { "x": 95,  "z": 102, "r": 4 } },
+    { "type": "Rock",   "circle": { "x": 146, "z": 126, "r": 3.5 } },
+    { "type": "Rock",   "circle": { "x": 60,  "z": 132, "r": 3 } },
+
+    { "type": "Ruins",  "rect": { "x0": 96, "z0": 90, "x1": 108, "z1": 98 } }
+  ]
+}

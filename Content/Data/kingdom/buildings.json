@@ -1,0 +1,4330 @@
+{
+ "schemaVersion": 1,
+ "source": "docs/Original_Reference.md",
+ "buildings": [
+  {
+   "id": "castle",
+   "name": "Замок",
+   "category": "other",
+   "role": "castle",
+   "size": [
+    6,
+    6
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "description": "Сердце королевства. Его уровень открывает новые постройки и уровни остальных зданий.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {},
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "landCapacity": 3
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 2000
+     },
+     "timeSec": 300,
+     "skipGems": 7,
+     "castle": 1,
+     "src": "wiki",
+     "landCapacity": 3
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 4000
+     },
+     "timeSec": 600,
+     "skipGems": 18,
+     "castle": 2,
+     "src": "wiki",
+     "landCapacity": 3
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 6000
+     },
+     "timeSec": 1800,
+     "skipGems": 130,
+     "castle": 3,
+     "src": "wiki",
+     "landCapacity": 4
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 10600
+     },
+     "timeSec": 5400,
+     "skipGems": 156,
+     "castle": 4,
+     "src": "wiki",
+     "landCapacity": 5,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 4
+      },
+      {
+       "building": "army_camp",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 29200
+     },
+     "timeSec": 9600,
+     "skipGems": 208,
+     "castle": 5,
+     "src": "wiki",
+     "landCapacity": 6,
+     "requires": [
+      {
+       "building": "food_reserve",
+       "level": 2
+      },
+      {
+       "building": "gold_reserve",
+       "level": 2
+      }
+     ]
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 57300
+     },
+     "timeSec": 17400,
+     "skipGems": 291,
+     "castle": 6,
+     "src": "wiki",
+     "landCapacity": 6,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 6
+      },
+      {
+       "building": "arcane_tower",
+       "level": 1
+      }
+     ]
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 112900
+     },
+     "timeSec": 30600,
+     "skipGems": 452,
+     "castle": 7,
+     "src": "wiki",
+     "landCapacity": 7,
+     "requires": [
+      {
+       "building": "armoury",
+       "level": 6
+      },
+      {
+       "building": "hall_of_titans",
+       "level": 2
+      }
+     ]
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 176500
+     },
+     "timeSec": 50400,
+     "skipGems": 615,
+     "castle": 8,
+     "src": "wiki",
+     "landCapacity": 7,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 3
+      },
+      {
+       "building": "portal",
+       "level": 2
+      }
+     ]
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 264800
+     },
+     "timeSec": 70800,
+     "skipGems": 863,
+     "castle": 9,
+     "src": "wiki",
+     "landCapacity": 8,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 9
+      },
+      {
+       "building": "army_camp",
+       "level": 6
+      }
+     ]
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 393300
+     },
+     "timeSec": 99000,
+     "skipGems": 1242,
+     "castle": 10,
+     "src": "wiki",
+     "landCapacity": 8,
+     "requires": [
+      {
+       "building": "armoury",
+       "level": 9
+      },
+      {
+       "building": "hall_of_titans",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 573800
+     },
+     "timeSec": 140400,
+     "skipGems": 1618,
+     "castle": 11,
+     "src": "wiki",
+     "landCapacity": 9,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 6
+      },
+      {
+       "building": "portal",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 802500
+     },
+     "timeSec": 180000,
+     "skipGems": 1911,
+     "castle": 12,
+     "src": "wiki",
+     "landCapacity": 9,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 12
+      },
+      {
+       "building": "army_camp",
+       "level": 7
+      }
+     ]
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1089400
+     },
+     "timeSec": 234000,
+     "skipGems": 2262,
+     "castle": 13,
+     "src": "wiki",
+     "landCapacity": 10,
+     "requires": [
+      {
+       "building": "hall_of_titans",
+       "level": 4
+      },
+      {
+       "building": "armoury",
+       "level": 12
+      }
+     ]
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1357000
+     },
+     "timeSec": 286500,
+     "skipGems": 2534,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 10,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 9
+      },
+      {
+       "building": "portal",
+       "level": 4
+      }
+     ]
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 1690400
+     },
+     "timeSec": 351000,
+     "skipGems": 2993,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 11,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 15
+      },
+      {
+       "building": "army_camp",
+       "level": 8
+      }
+     ]
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2105600
+     },
+     "timeSec": 429600,
+     "skipGems": 3532,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 11,
+     "requires": [
+      {
+       "building": "armoury",
+       "level": 15
+      },
+      {
+       "building": "hall_of_titans",
+       "level": 5
+      }
+     ]
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 2622900
+     },
+     "timeSec": 526200,
+     "skipGems": 4171,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 12,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 12
+      },
+      {
+       "building": "portal",
+       "level": 5
+      }
+     ]
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3267200
+     },
+     "timeSec": 644400,
+     "skipGems": 4925,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 12,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 18
+      },
+      {
+       "building": "army_camp",
+       "level": 10
+      }
+     ]
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 4069800
+     },
+     "timeSec": 789000,
+     "skipGems": 5734,
+     "castle": 19,
+     "src": "wiki",
+     "landCapacity": 13,
+     "requires": [
+      {
+       "building": "armoury",
+       "level": 18
+      },
+      {
+       "building": "hall_of_titans",
+       "level": 6
+      }
+     ]
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 4919600
+     },
+     "timeSec": 939600,
+     "skipGems": 6710,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 13,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 15
+      },
+      {
+       "building": "portal",
+       "level": 6
+      }
+     ]
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 5642700
+     },
+     "timeSec": 1065900,
+     "skipGems": 7441,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 14,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 21
+      },
+      {
+       "building": "army_camp",
+       "level": 11
+      }
+     ]
+    },
+    {
+     "level": 23,
+     "cost": {
+      "gold": 6203600
+     },
+     "timeSec": 1162500,
+     "skipGems": 7990,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 14,
+     "requires": [
+      {
+       "building": "armoury",
+       "level": 21
+      },
+      {
+       "building": "hall_of_titans",
+       "level": 7
+      }
+     ]
+    },
+    {
+     "level": 24,
+     "cost": {
+      "gold": 6594300
+     },
+     "timeSec": 1229100,
+     "skipGems": 8364,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 15,
+     "requires": [
+      {
+       "building": "arcane_tower",
+       "level": 17
+      },
+      {
+       "building": "portal",
+       "level": 7
+      }
+     ]
+    },
+    {
+     "level": 25,
+     "cost": {
+      "gold": 6827000
+     },
+     "timeSec": 1268700,
+     "skipGems": 8584,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "landCapacity": 15,
+     "requires": [
+      {
+       "building": "garrison",
+       "level": 23
+      },
+      {
+       "building": "army_camp",
+       "level": 13
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "gold_mine",
+   "name": "Золотая шахта",
+   "category": "resources",
+   "role": "producer",
+   "resource": "gold",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     6,
+     4
+    ],
+    [
+     8,
+     5
+    ],
+    [
+     10,
+     6
+    ],
+    [
+     11,
+     7
+    ],
+    [
+     12,
+     8
+    ],
+    [
+     16,
+     9
+    ],
+    [
+     19,
+     10
+    ]
+   ],
+   "description": "Добывает золото. Шахта копит добычу до своей вместимости: соберите её в хранилище.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 200
+     },
+     "timeSec": 120,
+     "skipGems": 5,
+     "castle": 1,
+     "src": "wiki",
+     "produce": 100,
+     "store": 600
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 800
+     },
+     "timeSec": 300,
+     "skipGems": 9,
+     "castle": 2,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 200,
+     "store": 1800
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 2400
+     },
+     "timeSec": 600,
+     "skipGems": 16,
+     "castle": 3,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 250,
+     "store": 3000
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 4200
+     },
+     "timeSec": 1500,
+     "skipGems": 34,
+     "castle": 4,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 300,
+     "store": 4500
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 14600
+     },
+     "timeSec": 2400,
+     "skipGems": 50,
+     "castle": 5,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 350,
+     "store": 6300
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 31500
+     },
+     "timeSec": 4500,
+     "skipGems": 84,
+     "castle": 6,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 405,
+     "store": 8505
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 97100
+     },
+     "timeSec": 17700,
+     "skipGems": 258,
+     "castle": 8,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 510,
+     "store": 12240
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 145600
+     },
+     "timeSec": 28200,
+     "skipGems": 379,
+     "castle": 9,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 625,
+     "store": 15000
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 312300
+     },
+     "timeSec": 55500,
+     "skipGems": 660,
+     "castle": 11,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 760,
+     "store": 18240
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 441400
+     },
+     "timeSec": 72000,
+     "skipGems": 1405,
+     "castle": 12,
+     "src": "wiki",
+     "produce": 895,
+     "store": 21480
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 791100
+     },
+     "timeSec": 121800,
+     "skipGems": 1256,
+     "castle": 14,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1030,
+     "store": 24720
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 1017700
+     },
+     "timeSec": 152100,
+     "skipGems": 1508,
+     "castle": 15,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1175,
+     "store": 28200
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1571200
+     },
+     "timeSec": 219000,
+     "skipGems": 2757,
+     "castle": 17,
+     "src": "wiki",
+     "produce": 1340,
+     "store": 32160
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1892600
+     },
+     "timeSec": 263100,
+     "skipGems": 2363,
+     "castle": 18,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1505,
+     "store": 36120
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 2604000
+     },
+     "timeSec": 378600,
+     "skipGems": 3184,
+     "castle": 19,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1670,
+     "store": 40080
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2983800
+     },
+     "timeSec": 454500,
+     "skipGems": 3699,
+     "castle": 21,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1865,
+     "store": 44760
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 3765000
+     },
+     "timeSec": 654600,
+     "skipGems": 4989,
+     "castle": 22,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 2060,
+     "store": 49440
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 4156300
+     },
+     "timeSec": 785700,
+     "skipGems": 7052,
+     "castle": 24,
+     "src": "wiki",
+     "produce": 2190,
+     "store": 52560
+    }
+   ]
+  },
+  {
+   "id": "farm",
+   "name": "Ферма",
+   "category": "resources",
+   "role": "producer",
+   "resource": "food",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     6,
+     4
+    ],
+    [
+     8,
+     5
+    ],
+    [
+     10,
+     6
+    ],
+    [
+     11,
+     7
+    ],
+    [
+     12,
+     8
+    ],
+    [
+     16,
+     9
+    ],
+    [
+     19,
+     10
+    ]
+   ],
+   "description": "Выращивает еду для обучения войск. Урожай копится до вместимости фермы.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 200
+     },
+     "timeSec": 120,
+     "skipGems": 5,
+     "castle": 1,
+     "src": "wiki",
+     "produce": 100,
+     "store": 600
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 800
+     },
+     "timeSec": 300,
+     "skipGems": 9,
+     "castle": 2,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 200,
+     "store": 1800
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 2400
+     },
+     "timeSec": 600,
+     "skipGems": 16,
+     "castle": 3,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 250,
+     "store": 3000
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 4200
+     },
+     "timeSec": 1500,
+     "skipGems": 34,
+     "castle": 4,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 300,
+     "store": 4500
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 14600
+     },
+     "timeSec": 2400,
+     "skipGems": 50,
+     "castle": 5,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 350,
+     "store": 6300
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 31500
+     },
+     "timeSec": 4500,
+     "skipGems": 84,
+     "castle": 6,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 405,
+     "store": 8505
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 97100
+     },
+     "timeSec": 17700,
+     "skipGems": 258,
+     "castle": 8,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 510,
+     "store": 12240
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 145600
+     },
+     "timeSec": 28200,
+     "skipGems": 379,
+     "castle": 9,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 625,
+     "store": 15000
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 312300
+     },
+     "timeSec": 55500,
+     "skipGems": 660,
+     "castle": 11,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 760,
+     "store": 18240
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 441400
+     },
+     "timeSec": 72000,
+     "skipGems": 1405,
+     "castle": 12,
+     "src": "wiki",
+     "produce": 895,
+     "store": 21480
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 791100
+     },
+     "timeSec": 121800,
+     "skipGems": 1256,
+     "castle": 14,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1030,
+     "store": 24720
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 1017700
+     },
+     "timeSec": 152100,
+     "skipGems": 1508,
+     "castle": 15,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1175,
+     "store": 28200
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1571200
+     },
+     "timeSec": 219000,
+     "skipGems": 2757,
+     "castle": 17,
+     "src": "wiki",
+     "produce": 1340,
+     "store": 32160
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1892600
+     },
+     "timeSec": 263100,
+     "skipGems": 2363,
+     "castle": 18,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1505,
+     "store": 36120
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 2604000
+     },
+     "timeSec": 378600,
+     "skipGems": 3184,
+     "castle": 19,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1670,
+     "store": 40080
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2983800
+     },
+     "timeSec": 454500,
+     "skipGems": 3699,
+     "castle": 21,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 1865,
+     "store": 44760
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 3765000
+     },
+     "timeSec": 654600,
+     "skipGems": 4989,
+     "castle": 22,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "produce": 2060,
+     "store": 49440
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 4156300
+     },
+     "timeSec": 785700,
+     "skipGems": 7052,
+     "castle": 24,
+     "src": "wiki",
+     "produce": 2190,
+     "store": 52560
+    }
+   ]
+  },
+  {
+   "id": "gold_vault",
+   "name": "Золотое хранилище",
+   "category": "resources",
+   "role": "storage",
+   "resource": "gold",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ],
+    [
+     5,
+     2
+    ],
+    [
+     10,
+     3
+    ],
+    [
+     15,
+     4
+    ]
+   ],
+   "description": "Хранит собранное золото. Улучшение увеличивает вместимость.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 1000
+     },
+     "timeSec": 300,
+     "skipGems": 12,
+     "castle": 1,
+     "src": "wiki",
+     "capacity": 3000
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 2700
+     },
+     "timeSec": 600,
+     "skipGems": 52,
+     "castle": 3,
+     "src": "wiki",
+     "capacity": 6000
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 4800
+     },
+     "timeSec": 1500,
+     "skipGems": 130,
+     "castle": 4,
+     "src": "wiki",
+     "capacity": 11300
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 17500
+     },
+     "timeSec": 2400,
+     "skipGems": 182,
+     "castle": 5,
+     "src": "wiki",
+     "capacity": 20300
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 37200
+     },
+     "timeSec": 4500,
+     "skipGems": 265,
+     "castle": 6,
+     "src": "wiki",
+     "capacity": 34700
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 73400
+     },
+     "timeSec": 7800,
+     "skipGems": 371,
+     "castle": 7,
+     "src": "wiki",
+     "capacity": 56700
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 114700
+     },
+     "timeSec": 15000,
+     "skipGems": 533,
+     "castle": 8,
+     "src": "wiki",
+     "capacity": 88900
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 172100
+     },
+     "timeSec": 28200,
+     "skipGems": 1133,
+     "castle": 9,
+     "src": "wiki",
+     "capacity": 133900
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 369100
+     },
+     "timeSec": 55500,
+     "skipGems": 1432,
+     "castle": 10,
+     "src": "wiki",
+     "capacity": 194500
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 521600
+     },
+     "timeSec": 72000,
+     "skipGems": 1725,
+     "castle": 11,
+     "src": "wiki",
+     "capacity": 273100
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 708100
+     },
+     "timeSec": 93600,
+     "skipGems": 2014,
+     "castle": 12,
+     "src": "wiki",
+     "capacity": 371700
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 934900
+     },
+     "timeSec": 121800,
+     "skipGems": 2284,
+     "castle": 13,
+     "src": "wiki",
+     "capacity": 491600
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1175200
+     },
+     "timeSec": 148200,
+     "skipGems": 1476,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 618494
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1477200
+     },
+     "timeSec": 180000,
+     "skipGems": 1731,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 778142
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1856900
+     },
+     "timeSec": 219000,
+     "skipGems": 2802,
+     "castle": 17,
+     "src": "wiki",
+     "capacity": 979000
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2236700
+     },
+     "timeSec": 263100,
+     "skipGems": 3171,
+     "castle": 18,
+     "src": "wiki",
+     "capacity": 1179800
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2645400
+     },
+     "timeSec": 315600,
+     "skipGems": 3620,
+     "castle": 19,
+     "src": "wiki",
+     "capacity": 1395900
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3077400
+     },
+     "timeSec": 378600,
+     "skipGems": 4170,
+     "castle": 20,
+     "src": "wiki",
+     "capacity": 1624300,
+     "requires": [
+      {
+       "building": "gold_mine",
+       "level": 14,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3526300
+     },
+     "timeSec": 454500,
+     "skipGems": 4724,
+     "castle": 21,
+     "src": "wiki",
+     "capacity": 1861600,
+     "requires": [
+      {
+       "building": "gold_mine",
+       "level": 15,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 3937700
+     },
+     "timeSec": 545400,
+     "skipGems": 4296,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 2104500,
+     "requires": [
+      {
+       "building": "gold_mine",
+       "level": 16,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 4397000
+     },
+     "timeSec": 654600,
+     "skipGems": 4989,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 2350000,
+     "requires": [
+      {
+       "building": "gold_mine",
+       "level": 16,
+       "count": 5
+      }
+     ]
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 4910000
+     },
+     "timeSec": 785700,
+     "skipGems": 7252,
+     "castle": 24,
+     "src": "wiki",
+     "capacity": 2590000,
+     "requires": [
+      {
+       "building": "gold_mine",
+       "level": 17,
+       "count": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "granary",
+   "name": "Амбар",
+   "category": "resources",
+   "role": "storage",
+   "resource": "food",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ],
+    [
+     5,
+     2
+    ],
+    [
+     10,
+     3
+    ],
+    [
+     15,
+     4
+    ]
+   ],
+   "description": "Хранит собранную еду. Улучшение увеличивает вместимость.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 1000
+     },
+     "timeSec": 300,
+     "skipGems": 12,
+     "castle": 1,
+     "src": "wiki",
+     "capacity": 3000
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 2700
+     },
+     "timeSec": 600,
+     "skipGems": 52,
+     "castle": 3,
+     "src": "wiki",
+     "capacity": 6000
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 4800
+     },
+     "timeSec": 1500,
+     "skipGems": 130,
+     "castle": 4,
+     "src": "wiki",
+     "capacity": 11300
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 17500
+     },
+     "timeSec": 2400,
+     "skipGems": 182,
+     "castle": 5,
+     "src": "wiki",
+     "capacity": 20300
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 37200
+     },
+     "timeSec": 4500,
+     "skipGems": 265,
+     "castle": 6,
+     "src": "wiki",
+     "capacity": 34700
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 73400
+     },
+     "timeSec": 7800,
+     "skipGems": 371,
+     "castle": 7,
+     "src": "wiki",
+     "capacity": 56700
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 100300
+     },
+     "timeSec": 15000,
+     "skipGems": 533,
+     "castle": 8,
+     "src": "wiki",
+     "capacity": 88900
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 172100
+     },
+     "timeSec": 28200,
+     "skipGems": 1133,
+     "castle": 9,
+     "src": "wiki",
+     "capacity": 133900
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 369100
+     },
+     "timeSec": 55500,
+     "skipGems": 1432,
+     "castle": 10,
+     "src": "wiki",
+     "capacity": 194500
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 521600
+     },
+     "timeSec": 72000,
+     "skipGems": 1725,
+     "castle": 11,
+     "src": "wiki",
+     "capacity": 273100
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 708100
+     },
+     "timeSec": 93600,
+     "skipGems": 2014,
+     "castle": 12,
+     "src": "wiki",
+     "capacity": 371700
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 934900
+     },
+     "timeSec": 121800,
+     "skipGems": 2284,
+     "castle": 13,
+     "src": "wiki",
+     "capacity": 491600
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1175200
+     },
+     "timeSec": 148200,
+     "skipGems": 1476,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 618494
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1477200
+     },
+     "timeSec": 180000,
+     "skipGems": 1731,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 778142
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1856900
+     },
+     "timeSec": 219000,
+     "skipGems": 2802,
+     "castle": 17,
+     "src": "wiki",
+     "capacity": 979000
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2236700
+     },
+     "timeSec": 263100,
+     "skipGems": 3171,
+     "castle": 18,
+     "src": "wiki",
+     "capacity": 1179800
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2645400
+     },
+     "timeSec": 315600,
+     "skipGems": 3620,
+     "castle": 19,
+     "src": "wiki",
+     "capacity": 1395900
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3077400
+     },
+     "timeSec": 378600,
+     "skipGems": 4170,
+     "castle": 20,
+     "src": "wiki",
+     "capacity": 1624300,
+     "requires": [
+      {
+       "building": "farm",
+       "level": 14,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3526300
+     },
+     "timeSec": 454500,
+     "skipGems": 4724,
+     "castle": 21,
+     "src": "wiki",
+     "capacity": 1861600,
+     "requires": [
+      {
+       "building": "farm",
+       "level": 15,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 3937700
+     },
+     "timeSec": 545400,
+     "skipGems": 4296,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 2104500,
+     "requires": [
+      {
+       "building": "farm",
+       "level": 16,
+       "count": 4
+      }
+     ]
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 4397000
+     },
+     "timeSec": 654600,
+     "skipGems": 4989,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "capacity": 2350000,
+     "requires": [
+      {
+       "building": "farm",
+       "level": 16,
+       "count": 5
+      }
+     ]
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 4910000
+     },
+     "timeSec": 785700,
+     "skipGems": 7252,
+     "castle": 24,
+     "src": "wiki",
+     "capacity": 2590000,
+     "requires": [
+      {
+       "building": "farm",
+       "level": 17,
+       "count": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "gold_reserve",
+   "name": "Золотой резерв",
+   "category": "resources",
+   "role": "reserve",
+   "resource": "gold",
+   "size": [
+    2,
+    2
+   ],
+   "unlockCastle": 3,
+   "counts": [
+    [
+     3,
+     1
+    ],
+    [
+     8,
+     2
+    ]
+   ],
+   "description": "Защищает часть запасов: эти ресурсы нельзя украсть при нападении.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 4200
+     },
+     "timeSec": 2400,
+     "skipGems": 50,
+     "castle": 1,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "protect": 2000
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 13100
+     },
+     "timeSec": 2340,
+     "skipGems": 49,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 5000
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 26300
+     },
+     "timeSec": 4800,
+     "skipGems": 89,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 8193
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 52800
+     },
+     "timeSec": 9600,
+     "skipGems": 156,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 13426
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 105900
+     },
+     "timeSec": 19200,
+     "skipGems": 276,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 22000
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 157200
+     },
+     "timeSec": 28200,
+     "skipGems": 379,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 32210
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 233300
+     },
+     "timeSec": 42000,
+     "skipGems": 525,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 47158
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 346200
+     },
+     "timeSec": 62400,
+     "skipGems": 726,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 69044
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 513800
+     },
+     "timeSec": 92400,
+     "skipGems": 1002,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 101087
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 762600
+     },
+     "timeSec": 137400,
+     "skipGems": 1387,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 148000
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 905100
+     },
+     "timeSec": 162900,
+     "skipGems": 1595,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 175550
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 1074300
+     },
+     "timeSec": 193500,
+     "skipGems": 1837,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 208229
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1275000
+     },
+     "timeSec": 229500,
+     "skipGems": 2112,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 246991
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1513300
+     },
+     "timeSec": 272400,
+     "skipGems": 2431,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 292969
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1796200
+     },
+     "timeSec": 323400,
+     "skipGems": 2798,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 347506
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2131800
+     },
+     "timeSec": 383700,
+     "skipGems": 3220,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 412194
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2530200
+     },
+     "timeSec": 455400,
+     "skipGems": 3705,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 488925
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3003100
+     },
+     "timeSec": 540600,
+     "skipGems": 4265,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 579938
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3564400
+     },
+     "timeSec": 641700,
+     "skipGems": 4908,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 687895
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 4230500
+     },
+     "timeSec": 761400,
+     "skipGems": 5647,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 815947
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 5021100
+     },
+     "timeSec": 903900,
+     "skipGems": 6501,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 967836
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 5959500
+     },
+     "timeSec": 1101600,
+     "skipGems": 7645,
+     "castle": 25,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "protect": 1148000
+    }
+   ]
+  },
+  {
+   "id": "food_reserve",
+   "name": "Продовольственный резерв",
+   "category": "resources",
+   "role": "reserve",
+   "resource": "food",
+   "size": [
+    2,
+    2
+   ],
+   "unlockCastle": 3,
+   "counts": [
+    [
+     3,
+     1
+    ],
+    [
+     8,
+     2
+    ]
+   ],
+   "description": "Защищает часть запасов: эти ресурсы нельзя украсть при нападении.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 4200
+     },
+     "timeSec": 2400,
+     "skipGems": 50,
+     "castle": 1,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "protect": 2000
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 13100
+     },
+     "timeSec": 2340,
+     "skipGems": 49,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 5000
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 26300
+     },
+     "timeSec": 4800,
+     "skipGems": 89,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 8193
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 52800
+     },
+     "timeSec": 9600,
+     "skipGems": 156,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 13426
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 105900
+     },
+     "timeSec": 19200,
+     "skipGems": 276,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 22000
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 157200
+     },
+     "timeSec": 28200,
+     "skipGems": 379,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 32210
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 233300
+     },
+     "timeSec": 42000,
+     "skipGems": 525,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 47158
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 346200
+     },
+     "timeSec": 62400,
+     "skipGems": 726,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 69044
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 513800
+     },
+     "timeSec": 92400,
+     "skipGems": 1002,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 101087
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 762600
+     },
+     "timeSec": 137400,
+     "skipGems": 1387,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 148000
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 905100
+     },
+     "timeSec": 162900,
+     "skipGems": 1595,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 175550
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 1074300
+     },
+     "timeSec": 193500,
+     "skipGems": 1837,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 208229
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1275000
+     },
+     "timeSec": 229500,
+     "skipGems": 2112,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 246991
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1513300
+     },
+     "timeSec": 272400,
+     "skipGems": 2431,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 292969
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1796200
+     },
+     "timeSec": 323400,
+     "skipGems": 2798,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 347506
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2131800
+     },
+     "timeSec": 383700,
+     "skipGems": 3220,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 412194
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2530200
+     },
+     "timeSec": 455400,
+     "skipGems": 3705,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 488925
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3003100
+     },
+     "timeSec": 540600,
+     "skipGems": 4265,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 579938
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3564400
+     },
+     "timeSec": 641700,
+     "skipGems": 4908,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 687895
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 4230500
+     },
+     "timeSec": 761400,
+     "skipGems": 5647,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 815947
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 5021100
+     },
+     "timeSec": 903900,
+     "skipGems": 6501,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "protect": 967836
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 5959500
+     },
+     "timeSec": 1101600,
+     "skipGems": 7645,
+     "castle": 25,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "protect": 1148000
+    }
+   ]
+  },
+  {
+   "id": "barracks",
+   "name": "Казармы",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "description": "Обучает войска. Улучшение удлиняет очередь обучения.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 600
+     },
+     "timeSec": 60,
+     "skipGems": 2,
+     "castle": 1,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "queue": 6
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 1200
+     },
+     "timeSec": 300,
+     "skipGems": 9,
+     "castle": 2,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 7
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 2400
+     },
+     "timeSec": 1200,
+     "skipGems": 28,
+     "castle": 4,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 8
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 16600
+     },
+     "timeSec": 5700,
+     "skipGems": 102,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 10
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 114700
+     },
+     "timeSec": 25200,
+     "skipGems": 345,
+     "castle": 8,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "queue": 12
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 230200
+     },
+     "timeSec": 44700,
+     "skipGems": 552,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 14
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 461800
+     },
+     "timeSec": 79500,
+     "skipGems": 886,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 15
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 926700
+     },
+     "timeSec": 141300,
+     "skipGems": 1419,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 18
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 1859500
+     },
+     "timeSec": 251100,
+     "skipGems": 2274,
+     "castle": 16,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "queue": 20
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 2924900
+     },
+     "timeSec": 361800,
+     "skipGems": 3068,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 22
+    }
+   ]
+  },
+  {
+   "id": "army_camp",
+   "name": "Лагерь армии",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "description": "Здесь стоят обученные войска. Улучшение увеличивает их число и слоты армии в бою.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 800
+     },
+     "timeSec": 60,
+     "skipGems": 2,
+     "castle": 1,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "troops": 10,
+     "slots": 3
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 2300
+     },
+     "timeSec": 420,
+     "skipGems": 12,
+     "castle": 2,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 20,
+     "slots": 3
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 6800
+     },
+     "timeSec": 1200,
+     "skipGems": 28,
+     "castle": 4,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 30,
+     "slots": 4
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 19900
+     },
+     "timeSec": 3600,
+     "skipGems": 70,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 50,
+     "slots": 4
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 58000
+     },
+     "timeSec": 10500,
+     "skipGems": 168,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 70,
+     "slots": 5
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 169300
+     },
+     "timeSec": 30600,
+     "skipGems": 405,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 140,
+     "slots": 6
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 494000
+     },
+     "timeSec": 88800,
+     "skipGems": 970,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 180,
+     "slots": 6,
+     "requires": [
+      {
+       "building": "alliance_camp",
+       "level": 5
+      }
+     ]
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 947800
+     },
+     "timeSec": 170700,
+     "skipGems": 1657,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 225,
+     "slots": 7,
+     "requires": [
+      {
+       "building": "alliance_camp",
+       "level": 6
+      }
+     ]
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 1401500
+     },
+     "timeSec": 252300,
+     "skipGems": 2283,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 262,
+     "slots": 8
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 2072300
+     },
+     "timeSec": 372900,
+     "skipGems": 3145,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 305,
+     "slots": 10
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 3064300
+     },
+     "timeSec": 551700,
+     "skipGems": 4336,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 355,
+     "slots": 11
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 4531100
+     },
+     "timeSec": 815700,
+     "skipGems": 5976,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 413,
+     "slots": 12
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 6700000
+     },
+     "timeSec": 1468800,
+     "skipGems": 9679,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "troops": 480,
+     "slots": 14
+    }
+   ]
+  },
+  {
+   "id": "garrison",
+   "name": "Гарнизон",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 2,
+   "counts": [
+    [
+     2,
+     1
+    ]
+   ],
+   "description": "Войска гарнизона защищают город от нападений других игроков.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 800
+     },
+     "timeSec": 300,
+     "skipGems": 5,
+     "castle": 1,
+     "src": "est",
+     "defenders": 5
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 1700
+     },
+     "timeSec": 600,
+     "skipGems": 16,
+     "castle": 2,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 6
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 3700
+     },
+     "timeSec": 1500,
+     "skipGems": 34,
+     "castle": 3,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 6
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 8100
+     },
+     "timeSec": 3600,
+     "skipGems": 70,
+     "castle": 4,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 7
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 17500
+     },
+     "timeSec": 8100,
+     "skipGems": 291,
+     "castle": 5,
+     "src": "est",
+     "defenders": 8,
+     "requires": [
+      {
+       "building": "gold_reserve",
+       "level": 2
+      }
+     ]
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 31600
+     },
+     "timeSec": 12900,
+     "skipGems": 199,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 9
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 56900
+     },
+     "timeSec": 20700,
+     "skipGems": 294,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 10
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 102700
+     },
+     "timeSec": 33000,
+     "skipGems": 431,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 11
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 185300
+     },
+     "timeSec": 52800,
+     "skipGems": 633,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 12
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 334300
+     },
+     "timeSec": 84300,
+     "skipGems": 1458,
+     "castle": 10,
+     "src": "est",
+     "defenders": 14,
+     "requires": [
+      {
+       "building": "food_reserve",
+       "level": 7,
+       "count": 2
+      }
+     ]
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 460900
+     },
+     "timeSec": 110400,
+     "skipGems": 1159,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 15
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 635500
+     },
+     "timeSec": 144300,
+     "skipGems": 1444,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 17
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 876100
+     },
+     "timeSec": 189000,
+     "skipGems": 1801,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 19
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1207900
+     },
+     "timeSec": 247200,
+     "skipGems": 2245,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 22
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1665400
+     },
+     "timeSec": 323400,
+     "skipGems": 2869,
+     "castle": 15,
+     "src": "est",
+     "defenders": 24
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2031500
+     },
+     "timeSec": 388200,
+     "skipGems": 3251,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 27
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 2478100
+     },
+     "timeSec": 465600,
+     "skipGems": 3773,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 30
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3022800
+     },
+     "timeSec": 558900,
+     "skipGems": 4383,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 34
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 3687300
+     },
+     "timeSec": 670800,
+     "skipGems": 5090,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 38
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 4497800
+     },
+     "timeSec": 804900,
+     "skipGems": 5562,
+     "castle": 20,
+     "src": "est",
+     "defenders": 43
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 5145600
+     },
+     "timeSec": 966000,
+     "skipGems": 6865,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 48
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 5886600
+     },
+     "timeSec": 1159200,
+     "skipGems": 7453,
+     "castle": 22,
+     "src": "est",
+     "defenders": 54
+    },
+    {
+     "level": 23,
+     "cost": {
+      "gold": 6640000
+     },
+     "timeSec": 1356300,
+     "skipGems": 9067,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "defenders": 60
+    }
+   ]
+  },
+  {
+   "id": "armoury",
+   "name": "Арсенал",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 2,
+   "counts": [
+    [
+     2,
+     1
+    ]
+   ],
+   "description": "Повышает уровень производимых войск. Улучшение поднимает предел уровня войск.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 1500
+     },
+     "timeSec": 300,
+     "skipGems": 9,
+     "castle": 2,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 2
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 2500
+     },
+     "timeSec": 480,
+     "skipGems": 13,
+     "castle": 3,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 3
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 4200
+     },
+     "timeSec": 780,
+     "skipGems": 20,
+     "castle": 4,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 4
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 7000
+     },
+     "timeSec": 1260,
+     "skipGems": 30,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 5
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 11700
+     },
+     "timeSec": 2100,
+     "skipGems": 45,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 6,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 4
+      }
+     ]
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 19600
+     },
+     "timeSec": 3540,
+     "skipGems": 69,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 7
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 32800
+     },
+     "timeSec": 6000,
+     "skipGems": 106,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 8,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 5
+      }
+     ]
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 54800
+     },
+     "timeSec": 9900,
+     "skipGems": 160,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 9
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 91500
+     },
+     "timeSec": 16500,
+     "skipGems": 244,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 10
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 153100
+     },
+     "timeSec": 27600,
+     "skipGems": 372,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 11
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 255900
+     },
+     "timeSec": 46200,
+     "skipGems": 567,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 12
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 427800
+     },
+     "timeSec": 77100,
+     "skipGems": 864,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 13
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 715200
+     },
+     "timeSec": 128700,
+     "skipGems": 1315,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 14
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 1195700
+     },
+     "timeSec": 215100,
+     "skipGems": 2003,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 15
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 1999000
+     },
+     "timeSec": 342600,
+     "skipGems": 4497,
+     "castle": 16,
+     "src": "est",
+     "maxTroopLevel": 16,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 7
+      }
+     ]
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 2513900
+     },
+     "timeSec": 411000,
+     "skipGems": 5190,
+     "castle": 17,
+     "src": "est",
+     "maxTroopLevel": 17,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 8
+      }
+     ]
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 3096900
+     },
+     "timeSec": 493200,
+     "skipGems": 6107,
+     "castle": 18,
+     "src": "est",
+     "maxTroopLevel": 18
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 3662800
+     },
+     "timeSec": 591900,
+     "skipGems": 7080,
+     "castle": 19,
+     "src": "est",
+     "maxTroopLevel": 19
+    },
+    {
+     "level": 19,
+     "cost": {
+      "gold": 4261100
+     },
+     "timeSec": 710100,
+     "skipGems": 8083,
+     "castle": 20,
+     "src": "est",
+     "maxTroopLevel": 20
+    },
+    {
+     "level": 20,
+     "cost": {
+      "gold": 4732400
+     },
+     "timeSec": 851700,
+     "skipGems": 6191,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 21
+    },
+    {
+     "level": 21,
+     "cost": {
+      "gold": 5255900
+     },
+     "timeSec": 946200,
+     "skipGems": 6749,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 22
+    },
+    {
+     "level": 22,
+     "cost": {
+      "gold": 5837200
+     },
+     "timeSec": 1050600,
+     "skipGems": 7354,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 23
+    },
+    {
+     "level": 23,
+     "cost": {
+      "gold": 6482900
+     },
+     "timeSec": 1167000,
+     "skipGems": 8015,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 24
+    },
+    {
+     "level": 24,
+     "cost": {
+      "gold": 7200000
+     },
+     "timeSec": 1749600,
+     "skipGems": 11172,
+     "castle": 25,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 25
+    }
+   ]
+  },
+  {
+   "id": "medical_school",
+   "name": "Медицинская школа",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 7,
+   "counts": [
+    [
+     7,
+     1
+    ]
+   ],
+   "description": "Раненые в бою бойцы лечатся и возвращаются в армию. Улучшение снижает порог выживания.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 62100
+     },
+     "timeSec": 11100,
+     "skipGems": 130,
+     "castle": 7,
+     "src": "est",
+     "survival": 85
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 146600
+     },
+     "timeSec": 26400,
+     "skipGems": 359,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 84
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 346100
+     },
+     "timeSec": 62400,
+     "skipGems": 726,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 83
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 817100
+     },
+     "timeSec": 115200,
+     "skipGems": 1200,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 82
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 1132000
+     },
+     "timeSec": 203700,
+     "skipGems": 1916,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 81
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 1568200
+     },
+     "timeSec": 282300,
+     "skipGems": 2503,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 80
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 2172600
+     },
+     "timeSec": 391200,
+     "skipGems": 3271,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 79
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 3009800
+     },
+     "timeSec": 541800,
+     "skipGems": 4272,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 78
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 4169700
+     },
+     "timeSec": 750600,
+     "skipGems": 5582,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 77
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 5776600
+     },
+     "timeSec": 1039800,
+     "skipGems": 7292,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "survival": 76
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 8002800
+     },
+     "timeSec": 1440600,
+     "skipGems": 11302,
+     "castle": 25,
+     "src": "est",
+     "survival": 75
+    }
+   ]
+  },
+  {
+   "id": "alliance_camp",
+   "name": "Лагерь альянса",
+   "category": "troops",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 6,
+   "counts": [
+    [
+     6,
+     1
+    ]
+   ],
+   "description": "Сюда союзники присылают подкрепления. Улучшение увеличивает их число.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 30000
+     },
+     "timeSec": 5400,
+     "skipGems": 98,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 1
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 53500
+     },
+     "timeSec": 9600,
+     "skipGems": 156,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 1
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 95500
+     },
+     "timeSec": 17100,
+     "skipGems": 251,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 2
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 170400
+     },
+     "timeSec": 30600,
+     "skipGems": 405,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 2
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 304100
+     },
+     "timeSec": 54600,
+     "skipGems": 651,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 3
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 542600
+     },
+     "timeSec": 97800,
+     "skipGems": 1050,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 4
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 968200
+     },
+     "timeSec": 174300,
+     "skipGems": 1686,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 5
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 1727500
+     },
+     "timeSec": 310800,
+     "skipGems": 2709,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 6
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 3082400
+     },
+     "timeSec": 554700,
+     "skipGems": 4356,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 8
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 5500000
+     },
+     "timeSec": 990000,
+     "skipGems": 7004,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "reinforcements": 10
+    }
+   ]
+  },
+  {
+   "id": "arcane_tower",
+   "name": "Магическая башня",
+   "category": "spells",
+   "role": "other",
+   "size": [
+    2,
+    2
+   ],
+   "unlockCastle": 6,
+   "counts": [
+    [
+     6,
+     1
+    ]
+   ],
+   "description": "Улучшает заклинания. Уровень башни задаёт число одновременных улучшений и их предел.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 57200
+     },
+     "timeSec": 10200,
+     "skipGems": 164,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 1,
+     "maxSpellLevel": 6
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 76500
+     },
+     "timeSec": 13800,
+     "skipGems": 211,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 1,
+     "maxSpellLevel": 7
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 102300
+     },
+     "timeSec": 18300,
+     "skipGems": 266,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 1,
+     "maxSpellLevel": 7
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 136900
+     },
+     "timeSec": 24600,
+     "skipGems": 338,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 1,
+     "maxSpellLevel": 8
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 183100
+     },
+     "timeSec": 33000,
+     "skipGems": 431,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 2,
+     "maxSpellLevel": 8
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 245000
+     },
+     "timeSec": 44100,
+     "skipGems": 546,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 2,
+     "maxSpellLevel": 9
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 327700
+     },
+     "timeSec": 59100,
+     "skipGems": 694,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 2,
+     "maxSpellLevel": 10
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 438300
+     },
+     "timeSec": 78900,
+     "skipGems": 880,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 2,
+     "maxSpellLevel": 11
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 586300
+     },
+     "timeSec": 105600,
+     "skipGems": 1118,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 2,
+     "maxSpellLevel": 11
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 784200
+     },
+     "timeSec": 141300,
+     "skipGems": 1419,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 3,
+     "maxSpellLevel": 12
+    },
+    {
+     "level": 11,
+     "cost": {
+      "gold": 1049000
+     },
+     "timeSec": 188700,
+     "skipGems": 1799,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 3,
+     "maxSpellLevel": 14
+    },
+    {
+     "level": 12,
+     "cost": {
+      "gold": 1403200
+     },
+     "timeSec": 252600,
+     "skipGems": 2285,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 3,
+     "maxSpellLevel": 15
+    },
+    {
+     "level": 13,
+     "cost": {
+      "gold": 1877000
+     },
+     "timeSec": 337800,
+     "skipGems": 2900,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 4,
+     "maxSpellLevel": 16
+    },
+    {
+     "level": 14,
+     "cost": {
+      "gold": 2510800
+     },
+     "timeSec": 451800,
+     "skipGems": 3681,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 4,
+     "maxSpellLevel": 17
+    },
+    {
+     "level": 15,
+     "cost": {
+      "gold": 3358500
+     },
+     "timeSec": 604500,
+     "skipGems": 4674,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 4,
+     "maxSpellLevel": 19
+    },
+    {
+     "level": 16,
+     "cost": {
+      "gold": 4492500
+     },
+     "timeSec": 808800,
+     "skipGems": 5934,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 5,
+     "maxSpellLevel": 20
+    },
+    {
+     "level": 17,
+     "cost": {
+      "gold": 6009300
+     },
+     "timeSec": 1081800,
+     "skipGems": 7532,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 5,
+     "maxSpellLevel": 22
+    },
+    {
+     "level": 18,
+     "cost": {
+      "gold": 6708500
+     },
+     "timeSec": 1207500,
+     "skipGems": 8243,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "spellSlots": 6,
+     "maxSpellLevel": 23
+    }
+   ]
+  },
+  {
+   "id": "spell_forge",
+   "name": "Кузня заклинаний",
+   "category": "spells",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 5,
+   "counts": [
+    [
+     5,
+     1
+    ]
+   ],
+   "description": "Создаёт заклинания для боя. Улучшение открывает новые заклинания и увеличивает запас.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 10200
+     },
+     "timeSec": 1860,
+     "skipGems": 41,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 2,
+     "capacity": 10
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 22100
+     },
+     "timeSec": 3900,
+     "skipGems": 75,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 2,
+     "capacity": 13
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 48000
+     },
+     "timeSec": 8700,
+     "skipGems": 144,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 3,
+     "capacity": 16
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 104000
+     },
+     "timeSec": 18600,
+     "skipGems": 269,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 4,
+     "capacity": 20
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 225600
+     },
+     "timeSec": 40500,
+     "skipGems": 509,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 4,
+     "capacity": 25
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 489300
+     },
+     "timeSec": 88200,
+     "skipGems": 964,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 5,
+     "capacity": 32
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 1061200
+     },
+     "timeSec": 191100,
+     "skipGems": 1818,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 7,
+     "capacity": 41
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 2301400
+     },
+     "timeSec": 414300,
+     "skipGems": 3429,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 8,
+     "capacity": 51
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 4991000
+     },
+     "timeSec": 898500,
+     "skipGems": 6469,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "queue": 10,
+     "capacity": 65
+    }
+   ]
+  },
+  {
+   "id": "portal",
+   "name": "Портал",
+   "category": "other",
+   "role": "portal",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "description": "Хранит камни портала, на которых войска переносятся в бой. Камень восстанавливается раз в 7 минут.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {},
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "stones": 18
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 132400
+     },
+     "timeSec": 22800,
+     "skipGems": 69,
+     "castle": 8,
+     "src": "wiki",
+     "stones": 20
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 494000
+     },
+     "timeSec": 62400,
+     "skipGems": 726,
+     "castle": 11,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "stones": 22,
+     "expansion": 1
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 1290000
+     },
+     "timeSec": 136800,
+     "skipGems": 1382,
+     "castle": 14,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "stones": 24,
+     "expansion": 2
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 2630000
+     },
+     "timeSec": 246600,
+     "skipGems": 2241,
+     "castle": 17,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "stones": 26,
+     "expansion": 3
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 4450000
+     },
+     "timeSec": 426000,
+     "skipGems": 3508,
+     "castle": 20,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "stones": 28,
+     "expansion": 4
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 6710000
+     },
+     "timeSec": 736500,
+     "skipGems": 6966,
+     "castle": 23,
+     "src": "wiki",
+     "stones": 30,
+     "expansion": 5
+    }
+   ]
+  },
+  {
+   "id": "builders_yard",
+   "name": "Двор строителей",
+   "category": "other",
+   "role": "builders",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "instant": true,
+   "description": "Строители возводят и улучшают постройки. Каждый строитель ведёт одну стройку одновременно.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {},
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "builders": 1
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gems": 1500
+     },
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "builders": 2
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gems": 4000
+     },
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "builders": 3
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gems": 9000
+     },
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "builders": 4
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gems": 20000
+     },
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "builders": 5
+    }
+   ]
+  },
+  {
+   "id": "hall_of_titans",
+   "name": "Зал титанов",
+   "category": "other",
+   "role": "other",
+   "size": [
+    5,
+    5
+   ],
+   "unlockCastle": 1,
+   "counts": [
+    [
+     1,
+     1
+    ]
+   ],
+   "description": "Здесь живут ваши титаны. Улучшение увеличивает число титанов, которых можно держать.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {},
+     "timeSec": 0,
+     "skipGems": 0,
+     "castle": 1,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "titans": 100
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 83500
+     },
+     "timeSec": 15000,
+     "skipGems": 226,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "titans": 120,
+     "requires": [
+      {
+       "building": "medical_school",
+       "level": 1
+      }
+     ]
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 354000
+     },
+     "timeSec": 63600,
+     "skipGems": 738,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "titans": 140
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 904200
+     },
+     "timeSec": 162900,
+     "skipGems": 1595,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "titans": 160
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 2208200
+     },
+     "timeSec": 397500,
+     "skipGems": 3314,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "titans": 180
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 3907000
+     },
+     "timeSec": 703200,
+     "skipGems": 5291,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "titans": 200
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 5947900
+     },
+     "timeSec": 818400,
+     "skipGems": 5992,
+     "castle": 22,
+     "src": "wiki",
+     "skipGemsSrc": "est",
+     "titans": 220
+    }
+   ]
+  },
+  {
+   "id": "relic_temple",
+   "name": "Храм реликвий",
+   "category": "other",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 3,
+   "counts": [
+    [
+     3,
+     1
+    ]
+   ],
+   "description": "Призыв титанов и реликвий. Раз в день даёт бесплатную реликвию.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 25000
+     },
+     "timeSec": 3600,
+     "skipGems": 70,
+     "castle": 3,
+     "src": "est",
+     "skipGemsSrc": "est"
+    }
+   ]
+  },
+  {
+   "id": "eternal_shrine",
+   "name": "Вечное святилище",
+   "category": "other",
+   "role": "other",
+   "size": [
+    2,
+    2
+   ],
+   "unlockCastle": 5,
+   "counts": [
+    [
+     5,
+     1
+    ]
+   ],
+   "description": "Украшение королевства. Каждый день даёт 11 божественных самоцветов.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 50000
+     },
+     "timeSec": 7200,
+     "skipGems": 124,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est"
+    }
+   ]
+  },
+  {
+   "id": "adventurers_guild",
+   "name": "Гильдия искателей приключений",
+   "category": "other",
+   "role": "other",
+   "size": [
+    3,
+    3
+   ],
+   "unlockCastle": 8,
+   "counts": [
+    [
+     8,
+     1
+    ]
+   ],
+   "description": "Здесь открываются временные кампании. Новая кампания отмечена золотой статуей на башне.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 120000
+     },
+     "timeSec": 14400,
+     "skipGems": 218,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "M0 Titan Duel: practice the Clash",
+  "map": "map.highvale_01",
+  "seed": 7,
+  "timerSec": 120,
+  "skipDeploy": true,
+  "sides": {
+    "attacker": {
+      "name": "House of Highvale",
+      "ai": "",
+      "titan": { "id": "titan.thor", "level": 10, "stars": 4, "abilityLevels": [1, 1], "pos": [120, 60], "facingDeg": 0 },
+      "spells": ["spell.meteor_strike", "spell.war_drums", "spell.healing_spring"],
+      "squads": [
+        { "troop": "troop.archers", "tier": 2, "pos": [120, 40], "facingDeg": 0, "formation": "Line" }
+      ]
+    },
+    "defender": {
+      "name": "The Bronze Hollow",
+      "ai": "recruit",
+      "titan": { "id": "titan.talos", "level": 36, "stars": 3, "abilityLevels": [1, 1], "pos": [120, 100], "facingDeg": 180 },
+      "spells": [],
+      "squads": [
+        { "troop": "troop.militia", "tier": 1, "pos": [120, 130], "facingDeg": 180, "formation": "Line" }
+      ]
+    }
+  }
+}

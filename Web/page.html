@@ -1,0 +1,642 @@
+<title>Dawn of Titans</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#11161b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700;800&family=Fira+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: full-bleed battlefield; HUD floats in a top bar and a bottom dock that clear the safe areas.
+   One deliberate visual world (bronze and slate over a sunlit field), so a single dark theme. */
+:root {
+  --slate: #11161b;
+  --panel: rgba(17, 22, 27, 0.82);
+  --panel-hi: rgba(30, 37, 44, 0.92);
+  --hair: rgba(210, 162, 90, 0.38);
+  --bronze: #d2a25a;
+  --bronze-deep: #8a6230;
+  --parch: #efe7d6;
+  --dim: #a8a091;
+  --own: #4f8cff;
+  --enemy: #e5533d;
+  --valor: #f2c14e;
+  --rage: #ff7a2f;
+  --good: #5fd38d;
+  --font-display: "Alegreya SC", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-ui: "Fira Sans Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", system-ui, sans-serif;
+  --gut-l: max(16px, env(safe-area-inset-left, 0px));
+  --gut-r: max(16px, env(safe-area-inset-right, 0px));
+  --card-h: clamp(64px, 11vh, 84px);
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--slate); color: var(--parch); font-family: var(--font-ui); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+#game { position: fixed; inset: 0; overflow: hidden; touch-action: none; overscroll-behavior: none; background: var(--slate); }
+#gl, #ov { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#ov { touch-action: none; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
+#hud > * { pointer-events: auto; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--bronze); outline-offset: 2px; }
+.icon svg { width: 20px; height: 20px; display: block; }
+
+/* Top bar */
+#top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px;
+  padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: 8px; padding-left: var(--gut-l); padding-right: var(--gut-r);
+  background: linear-gradient(to bottom, rgba(10, 13, 16, 0.78), rgba(10, 13, 16, 0)); pointer-events: none; }
+#top > * { pointer-events: auto; }
+.chip { height: 38px; min-width: 38px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chip.on { border-color: var(--bronze); color: var(--valor); }
+#timer { font-family: var(--font-display); font-size: 22px; letter-spacing: 0.04em; min-width: 76px; }
+#stars { display: flex; gap: 2px; }
+#stars svg { width: 22px; height: 22px; fill: rgba(239, 231, 214, 0.16); stroke: rgba(239, 231, 214, 0.35); stroke-width: 1; transition: fill 0.3s, transform 0.3s; }
+#stars svg.lit { fill: var(--valor); stroke: #fff3c4; transform: scale(1.12); }
+#armies { flex: 1 1 auto; min-width: 0; max-width: 460px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.army { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.army i { display: block; height: 100%; width: 100%; transition: width 0.4s; }
+#ownBar i { background: var(--own); margin-left: auto; }
+#enBar i { background: var(--enemy); }
+#armyPct { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--dim); }
+#armyPct b { color: var(--parch); font-weight: 700; }
+#btnSpeed { margin-left: auto; }
+#replayTag { font-family: var(--font-display); letter-spacing: 0.12em; color: var(--valor); }
+
+/* Toasts and centre messages */
+#toasts { position: absolute; top: calc(max(8px, env(safe-area-inset-top, 0px)) + 52px); left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(92vw, 560px); }
+.toast { padding: 7px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--hair); font-weight: 600; font-size: 15px;
+  text-align: center; text-wrap: balance; animation: toastIn 0.25s ease-out; }
+.toast.gold { color: var(--valor); } .toast.bad { color: #ffb4a6; border-color: rgba(229, 83, 61, 0.5); } .toast.own { color: #bcd3ff; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+#bigMsg { position: absolute; left: 0; right: 0; top: 34%; text-align: center; font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(42px, 9vw, 96px); color: var(--parch); text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6); pointer-events: none; }
+
+/* Deploy panel */
+#deploy { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--card-h) + max(8px, env(safe-area-inset-bottom, 0px)) + 22px);
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; background: var(--panel); border: 1px solid var(--hair); border-radius: 14px;
+  max-width: calc(100vw - 32px); }
+#deploy p { margin: 0; font-size: 14px; color: var(--dim); max-width: 34ch; }
+.btn { height: 44px; padding: 0 16px; border-radius: 11px; font-weight: 700; letter-spacing: 0.02em; background: var(--panel-hi); border: 1px solid var(--hair); white-space: nowrap; }
+.btn.primary { background: linear-gradient(#e0b46c, #b5813b); color: #1d140a; border-color: #f1cf8f; }
+.btn.danger { color: #ffb4a6; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Clash */
+#clash { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--card-h) + max(8px, env(safe-area-inset-bottom, 0px)) + 22px); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#clashBtn { width: min(64vw, 300px); height: 74px; border-radius: 18px; font-family: var(--font-display); font-weight: 800; font-size: 30px; letter-spacing: 0.06em;
+  background: radial-gradient(circle at 50% 30%, #ffd98a, #c27a24 70%); color: #2a1606; border: 2px solid #ffe7b0; box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.0); }
+#clashBtn.hot { box-shadow: 0 0 28px 6px rgba(242, 193, 78, 0.75); }
+#clashHint { font-size: 13px; color: var(--dim); background: var(--panel); padding: 3px 10px; border-radius: 8px; }
+
+/* Bottom dock */
+#dock { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; gap: 10px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); padding-top: 18px; padding-left: var(--gut-l); padding-right: var(--gut-r);
+  background: linear-gradient(to top, rgba(10, 13, 16, 0.72), rgba(10, 13, 16, 0)); pointer-events: none; }
+#dock > * { pointer-events: auto; }
+#squads { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; padding-top: 4px; }
+#squads::-webkit-scrollbar { display: none; }
+.card { position: relative; flex: 0 0 auto; height: var(--card-h); border-radius: 11px; background: var(--panel); border: 1px solid var(--hair);
+  display: flex; flex-direction: column; justify-content: space-between; padding: 6px 8px; text-align: left; overflow: hidden; touch-action: none; }
+.card.sel { border-color: var(--own); box-shadow: inset 0 0 0 1px var(--own), 0 0 14px rgba(79, 140, 255, 0.45); background: var(--panel-hi); }
+.card.dead { opacity: 0.35; }
+.sq { width: clamp(64px, 7.4vw, 92px); }
+.sq .nm { font-weight: 700; font-size: 13px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sq .row2 { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.sq .ct { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.card .top { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.card .top .gi { width: 20px; height: 20px; flex: 0 0 auto; }
+.sq .tag { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--valor); white-space: nowrap; }
+.sq .tag:empty { display: none; }
+.sq .tag.bad { color: #ff9b88; }
+@media (pointer: coarse) { .sq[data-state]::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; } }
+.sq[data-state="melee"]::after { background: var(--enemy); }
+.sq[data-state="charge"]::after { background: var(--rage); }
+.sq[data-state="rout"]::after { background: var(--valor); }
+.sq[data-state="auto"]::after { border: 2px solid var(--bronze); width: 5px; height: 5px; }
+.sq .mor { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.sq .mor i { display: block; height: 100%; background: var(--good); }
+.all { width: 44px; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+kbd { font-family: var(--font-ui); font-size: 10px; font-weight: 700; color: var(--dim); border: 1px solid rgba(239, 231, 214, 0.25); border-radius: 4px; padding: 0 3px; margin-right: 4px; }
+@media (pointer: coarse) { kbd { display: none; } }
+
+#titanCard { width: clamp(190px, 21vw, 250px); }
+#titanCard .row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+#titanCard .nm { font-family: var(--font-display); font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#titanCard .lv { font-size: 12px; color: var(--valor); white-space: nowrap; }
+.meter { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; position: relative; }
+.meter i { display: block; height: 100%; }
+#tHp i { background: linear-gradient(90deg, #47b870, #86e09f); }
+#tRage { height: 4px; } #tRage i { background: var(--rage); }
+#abil { display: flex; gap: 6px; }
+.ab { flex: 1 1 0; min-width: 0; height: 30px; border-radius: 8px; background: rgba(255, 122, 47, 0.12); border: 1px solid rgba(255, 122, 47, 0.45); font-size: 13px; font-weight: 600;
+  position: relative; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 6px; }
+.ab .lbl { display: inline-flex; align-items: center; }
+.ab.ready { background: rgba(255, 122, 47, 0.28); border-color: var(--rage); }
+.ab.arm, .sp.arm { box-shadow: 0 0 0 2px var(--valor), 0 0 16px rgba(242, 193, 78, 0.6); }
+.ab .cd, .sp .cd { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8, 10, 12, 0.62); font-variant-numeric: tabular-nums; font-weight: 700; }
+
+#spellBox { display: flex; flex-direction: column; gap: 4px; }
+#valor { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--valor); font-weight: 700; font-variant-numeric: tabular-nums; }
+#valorPips { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; width: 100%; min-width: 120px; }
+#valorPips i { height: 6px; border-radius: 2px; background: rgba(242, 193, 78, 0.18); position: relative; overflow: hidden; }
+#valorPips i b { position: absolute; inset: 0; background: var(--valor); transform-origin: left; }
+#spells { display: flex; gap: 6px; }
+.sp { width: clamp(64px, 7.2vw, 86px); height: calc(var(--card-h) - 16px); padding: 5px 7px; justify-content: space-between; }
+.sp .nm { font-size: 12px; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp .cost { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--valor); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sp .cost kbd { margin: 0 0 0 auto; }
+.vg { width: 10px; height: 10px; fill: var(--valor); flex: 0 0 auto; }
+.sp.off .nm, .sp.off .cost { opacity: 0.5; }
+.sp .ch { font-size: 12px; color: var(--parch); font-weight: 700; }
+
+/* Radial command menu */
+#radial { position: absolute; width: 0; height: 0; }
+#radial button { position: absolute; transform: translate(-50%, -50%); min-width: 64px; height: 36px; padding: 0 10px; border-radius: 18px; background: var(--panel-hi);
+  border: 1px solid var(--hair); font-size: 13px; font-weight: 600; white-space: nowrap; animation: pop 0.14s ease-out both; }
+#radial button.on { border-color: var(--valor); color: var(--valor); }
+@keyframes pop { from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } }
+
+#perf { position: absolute; right: var(--gut-r); bottom: calc(var(--card-h) + max(8px, env(safe-area-inset-bottom, 0px)) + 26px); font-size: 11px; color: rgba(239, 231, 214, 0.55);
+  font-variant-numeric: tabular-nums; pointer-events: none; text-align: right; }
+
+/* Sheets: menu, results, help, loading */
+.sheet { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(6, 8, 10, 0.55);
+  padding-left: var(--gut-l); padding-right: var(--gut-r); padding-block: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-bottom, 0px)); }
+.panel { width: min(560px, 100%); max-height: 100%; overflow-y: auto; background: linear-gradient(180deg, #1b2229, #12171c); border: 1px solid var(--hair); border-radius: 18px;
+  padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 14px; }
+.panel h2 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 30px; letter-spacing: 0.03em; text-wrap: balance; }
+.panel h3 { margin: 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bronze); font-weight: 700; }
+.panel p { margin: 0; color: var(--dim); line-height: 1.45; }
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+.opt { text-align: left; padding: 9px 11px; border-radius: 11px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; gap: 2px; }
+.opt b { font-weight: 700; } .opt span { font-size: 12px; color: var(--dim); }
+.opt.on { border-color: var(--bronze); background: rgba(210, 162, 90, 0.12); }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+.seg button { height: 38px; border-radius: 9px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); font-weight: 600; font-size: 14px; }
+.seg button.on { border-color: var(--bronze); color: var(--valor); background: rgba(210, 162, 90, 0.12); }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions .btn { flex: 1 1 140px; }
+.panel > .actions:last-of-type { position: sticky; bottom: -16px; margin: 0 -18px -16px; padding: 10px 18px 16px; background: linear-gradient(to top, #12171c 75%, rgba(18, 23, 28, 0)); }
+.fine { font-size: 12px; color: rgba(168, 160, 145, 0.85); line-height: 1.5; }
+.fine code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 11px; color: var(--parch); word-break: break-all; }
+#resTitle.win { color: var(--valor); } #resTitle.loss { color: #ff9b88; }
+#resStars { display: flex; gap: 6px; }
+#resStars svg { width: 34px; height: 34px; fill: rgba(239, 231, 214, 0.14); }
+#resStars svg.lit { fill: var(--valor); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--dim); }
+.verify { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 11px; background: rgba(95, 211, 141, 0.08); border: 1px solid rgba(95, 211, 141, 0.3); }
+.verify.bad { background: rgba(229, 83, 61, 0.08); border-color: rgba(229, 83, 61, 0.35); }
+.verify svg { flex: 0 0 auto; width: 22px; height: 22px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 14px; }
+.keys dt { color: var(--valor); font-weight: 700; white-space: nowrap; }
+.keys dd { margin: 0; color: var(--dim); }
+.legend { font-size: 13px; }
+#loading { background: radial-gradient(ellipse at 50% 35%, #2a2216, #0d1013 70%); flex-direction: column; gap: 10px; text-align: center; }
+#loading h1 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 8vw, 72px); letter-spacing: 0.04em; color: var(--bronze); text-wrap: balance; }
+#loading p { margin: 0; color: var(--dim); max-width: 44ch; }
+#loadErr { color: #ffb4a6; max-width: 60ch; }
+
+/* Touch screens: compact cards, state shown as a dot instead of a word. */
+@media (pointer: coarse) {
+  #perf { display: none; }
+  .sq .tag { display: none; }
+}
+/* Narrow screens: army bars move to their own line under the top bar. */
+@media (max-width: 600px) {
+  #top { flex-wrap: wrap; row-gap: 6px; }
+  #armies { order: 10; flex-basis: 100%; max-width: none; }
+  #toasts { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 74px); }
+}
+/* Portrait phones: titan and spells on one row, squads on the row below. */
+@media (max-aspect-ratio: 1/1) {
+  :root { --card-h: 64px; }
+  #dock { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "titan spells" "squads squads"; align-items: end; gap: 8px; }
+  #titanCard { grid-area: titan; width: auto; min-width: 0; }
+  #spellBox { grid-area: spells; }
+  #squads { grid-area: squads; }
+  #squads { gap: 4px; }
+  .sq { width: 49px; padding: 5px 4px; }
+  .sq .nm { font-size: 11.5px; }
+  .sq .ct { font-size: 11px; }
+  .card .top { justify-content: center; }
+  .card .top .nm { display: none; }
+  .card .top .gi { width: 24px; height: 24px; }
+  .all { width: 36px; }
+  .sp { width: 58px; padding: 5px; }
+  #valorPips { min-width: 0; }
+  #deploy p { display: none; }
+  #clashBtn { height: 58px; font-size: 26px; }
+  #deploy, #clash, #perf { bottom: calc(var(--card-h) * 2 + max(8px, env(safe-area-inset-bottom, 0px)) + 30px); }
+  .toast { font-size: 13px; padding: 5px 10px; }
+}
+/* Landscape phones: one compact row. */
+@media (max-height: 430px) and (min-aspect-ratio: 1/1) {
+  :root { --card-h: 58px; }
+  #top { padding-bottom: 4px; gap: 8px; }
+  .chip { height: 32px; min-width: 32px; }
+  #timer { font-size: 18px; min-width: 60px; }
+  #stars svg { width: 18px; height: 18px; }
+  #toasts { top: calc(max(6px, env(safe-area-inset-top, 0px)) + 42px); }
+  .toast { font-size: 13px; padding: 4px 10px; }
+  #dock { gap: 6px; padding-top: 10px; }
+  #squads { gap: 5px; }
+  .sq { width: 50px; padding: 4px; }
+  .sq .nm { font-size: 11.5px; }
+  .sq .ct { font-size: 11px; }
+  .card .top { justify-content: center; }
+  .card .top .nm { display: none; }
+  .card .top .gi { width: 22px; height: 22px; }
+  .all { width: 36px; }
+  #titanCard { width: 148px; padding: 4px 7px; }
+  #titanCard .nm { font-size: 14px; }
+  .ab { height: 24px; font-size: 12px; }
+  .sp { width: 54px; padding: 4px 5px; height: calc(var(--card-h) - 14px); }
+  .sp .nm { font-size: 11px; }
+  #clashBtn { width: 200px; height: 46px; font-size: 22px; border-radius: 13px; }
+  #clashHint { display: none; }
+  #valorPips { min-width: 0; }
+  #perf { display: none; }
+  #deploy p { display: none; }
+  #bigMsg { top: 26%; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ===== Kingdom ===== */
+body.mode-kingdom #ov, body.mode-kingdom #hud { display: none; }
+body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
+#kov { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#khud { position: absolute; inset: 0; pointer-events: none; }
+#khud > * { pointer-events: auto; }
+#kTop { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: 8px; padding-left: var(--gut-l); padding-right: var(--gut-r);
+  background: linear-gradient(to bottom, rgba(10, 13, 16, 0.6), rgba(10, 13, 16, 0)); pointer-events: none; }
+#kTop > * { pointer-events: auto; }
+.res { height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 6px; background: var(--panel); border: 1px solid var(--hair);
+  border-radius: 18px; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14px; position: relative; overflow: hidden; }
+.res svg { width: 22px; height: 22px; flex: 0 0 auto; }
+.res .fill { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: 0.55; }
+.res small { font-weight: 500; color: var(--dim); font-size: 11px; }
+.res.gold { color: var(--valor); } .res.food { color: #b6e07a; } .res.gems { color: #7fe0e6; } .res.stones { color: #c9a6ff; } .res.builders { color: var(--parch); }
+.res span { color: var(--parch); }
+.res.full span { color: var(--valor); }
+#kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+#kBottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding-left: var(--gut-l); padding-right: var(--gut-r); pointer-events: none; }
+#kBottom > * { pointer-events: auto; }
+.bigbtn { min-width: 112px; height: 64px; border-radius: 16px; font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: 0.03em;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border: 2px solid #f1cf8f; color: #1d140a;
+  background: linear-gradient(#e7bd72, #b5813b); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+.bigbtn small { font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0; opacity: 0.8; }
+.bigbtn { flex-direction: row; gap: 8px; padding: 0 14px 0 10px; }
+.bigbtn .bt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.05; min-width: 0; }
+.bigbtn .gi.bi { width: 36px; height: 36px; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.bigbtn.alt { background: linear-gradient(#2d3a47, #1b232b); color: var(--parch); border-color: var(--hair); }
+#kPanel { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom, 0px)); width: min(520px, calc(100vw - 32px));
+  background: linear-gradient(180deg, #1b2229f2, #12171cf2); border: 1px solid var(--hair); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); }
+#kPanel .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+#kPanel h3 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--parch); }
+#kPanel .lvl { color: var(--valor); font-weight: 700; white-space: nowrap; }
+#kPanel .stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--dim); }
+#kPanel .stats b { color: var(--parch); font-weight: 600; }
+#kPanel .note { font-size: 13px; color: #ffb4a6; }
+#kPanel .row { display: flex; flex-wrap: wrap; gap: 8px; }
+#kPanel .row .btn { flex: 1 1 auto; }
+.cost { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.cost svg { width: 16px; height: 16px; }
+.btn .sub { display: block; font-size: 11px; font-weight: 600; opacity: 0.8; }
+.btn.tall { height: auto; min-height: 48px; padding: 6px 14px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; }
+.progress { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.progress i { display: block; height: 100%; background: linear-gradient(90deg, #d2a25a, #f2c14e); }
+.shopTabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.shopTabs button { height: 34px; padding: 0 12px; border-radius: 17px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); font-weight: 600; font-size: 14px; }
+.shopTabs button.on { border-color: var(--bronze); color: var(--valor); background: rgba(210, 162, 90, 0.12); }
+.shopGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.shopCard { text-align: left; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shopCard img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 8px; background: radial-gradient(circle at 50% 40%, #3b4a2e, #1c2418); }
+.shopCard b { font-size: 14px; }
+.shopCard .meta { font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.shopCard.off { opacity: 0.55; }
+.shopCard .why { font-size: 11px; color: #ffb4a6; }
+.cmp { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: 14px; align-items: baseline; }
+.cmp .k { color: var(--dim); } .cmp .v { font-variant-numeric: tabular-nums; text-align: right; } .cmp .n { color: var(--good); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.landCard { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); }
+.landCard .ico { width: 56px; height: 56px; border-radius: 12px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 22px; }
+.landCard .ico.gold { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); color: #2a1a05; }
+.landCard .ico.food { background: radial-gradient(circle at 40% 35%, #c8ec8c, #4f7a24); color: #16220a; }
+.landCard .info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.landCard .info b { font-size: 15px; }
+.landCard .info span { font-size: 12px; color: var(--dim); }
+.landCard .row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.landCard .row .btn { flex: 1 1 140px; }
+#kPlace { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center;
+  background: var(--panel); border: 1px solid var(--hair); border-radius: 16px; padding: 8px 10px; }
+#kPlace p { margin: 0; font-size: 13px; color: var(--dim); max-width: 26ch; }
+#kPlace .btn { min-width: 64px; }
+#kToasts { position: absolute; top: calc(max(8px, env(safe-area-inset-top, 0px)) + 54px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(92vw, 520px); }
+#kPanel .head .x { margin-left: auto; height: 34px; min-width: 34px; padding: 0 10px; font-size: 15px; }
+#kPanel .head { align-items: center; }
+#kPanel .stats span { white-space: nowrap; }
+.uprow { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--dim); }
+.uprow b { color: var(--parch); font-variant-numeric: tabular-nums; }
+.cost.short { color: #ff9b88; }
+#kSheetPanel svg:not(.gi), #kPanel svg:not(.gi), #kPlace svg:not(.gi) { width: 16px; height: 16px; vertical-align: -3px; flex: 0 0 auto; }
+.costline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 14px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.costline > span:not(.cost) { color: var(--dim); }
+.costline b { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.costline .btn { margin-left: auto; height: 38px; }
+.panel .note { color: #ffb4a6; font-size: 14px; }
+#kSheetPanel .landCard .ico svg:not(.gi) { width: 30px; height: 30px; }
+.shopCard .meta .cost { font-size: 12px; }
+#kPlaceOk .cost svg { width: 16px; height: 16px; vertical-align: -3px; }
+#kPlace p .cost svg { width: 14px; height: 14px; vertical-align: -2px; }
+.troopRow { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); }
+.troopRow .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.troopRow .info b { font-size: 15px; }
+.troopRow .info span { font-size: 12px; color: var(--dim); }
+.troopRow .why, .titanCard .why { color: #ffb4a6; }
+.troopRow .count { font-size: 18px; font-variant-numeric: tabular-nums; color: var(--parch); }
+.troopRow .btn { height: 40px; }
+.ico.troop { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 20px;
+  background: radial-gradient(circle at 40% 35%, #6f8fd8, #2c4a8e); color: #eaf0ff; }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.stepper .btn { width: 40px; padding: 0; font-size: 20px; }
+.stepper b { min-width: 22px; text-align: center; font-size: 17px; font-variant-numeric: tabular-nums; }
+.qitem { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 14px; padding: 4px 2px; }
+.qitem b { color: var(--valor); font-variant-numeric: tabular-nums; }
+.qitem .btn.x { height: 32px; min-width: 32px; padding: 0 8px; }
+.stars { color: var(--valor); letter-spacing: -1px; white-space: nowrap; }
+.stars i { font-style: normal; color: rgba(239, 231, 214, 0.2); }
+.titanCard { border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); padding: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.titanCard.on { border-color: var(--bronze); background: rgba(210, 162, 90, 0.12); }
+.titanCard .head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.titanCard .head b { font-family: var(--font-display); font-size: 17px; }
+.titanCard .meta { font-size: 12px; color: var(--dim); }
+.titanCard .meta:empty { display: none; }
+.titanCard .row { display: flex; flex-wrap: wrap; gap: 6px; }
+.titanCard .row .btn { flex: 1 1 auto; height: 36px; font-size: 13px; padding: 0 10px; }
+.titanCard .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+.opt[disabled] { opacity: 0.45; }
+.ico.spell { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 20px;
+  background: radial-gradient(circle at 40% 35%, #b08cff, #4b2a8a); color: #f3ecff; }
+.ico.relic { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; color: #fff; background: radial-gradient(circle at 40% 35%, #9aa3ad, #4a525b); }
+.ico.relic.r2 { background: radial-gradient(circle at 40% 35%, #8fd6a0, #2f6e44); }
+.ico.relic.r3 { background: radial-gradient(circle at 40% 35%, #8fc0ff, #2c4f9e); }
+.ico.relic.r4 { background: radial-gradient(circle at 40% 35%, #d2a6ff, #5b2f9e); }
+.ico.relic.r5 { background: radial-gradient(circle at 40% 35%, #ffd98a, #a8681c); }
+/* Icon tiles: glyphs from icons.js on a tile coloured by category. */
+.ico { position: relative; flex: 0 0 auto; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.ico > .gi { width: 86%; height: 86%; display: block; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.ico > .gi.crack { position: absolute; inset: 7%; }
+.ico.relic.broken > .gi:not(.crack) { opacity: 0.5; filter: grayscale(0.7); }
+.ico.bld, .ico.titan, .ico.altar { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; }
+.ico.bld.resources { background: radial-gradient(circle at 40% 35%, #a6dc7c, #3f7a2a); }
+.ico.bld.troops { background: radial-gradient(circle at 40% 35%, #e08a78, #7a2a22); }
+.ico.bld.spells { background: radial-gradient(circle at 40% 35%, #b08cff, #4b2a8a); }
+.ico.bld.other, .ico.altar { background: radial-gradient(circle at 40% 35%, #e6bd7e, #7a5226); }
+.ico.altar.silver { background: radial-gradient(circle at 40% 35%, #c3ceda, #4a5868); }
+.ico.titan { background: radial-gradient(circle at 40% 35%, #7d8fae, #2a364d); }
+.landCard > .ico { width: 56px; height: 56px; border-radius: 12px; }
+.ico.land { display: grid; place-items: center; }
+.ico.land.gold { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); }
+.ico.land.food { background: radial-gradient(circle at 40% 35%, #c8ec8c, #4f7a24); }
+.ico.land .lvb { position: absolute; right: -5px; bottom: -5px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; display: grid; place-items: center;
+  font: 700 12px/1 var(--font-ui); font-style: normal; color: var(--parch); background: #1b232b; border: 1px solid var(--bronze); }
+.gi.mini { width: 18px; height: 18px; vertical-align: -4px; margin-right: 5px; flex: 0 0 auto; }
+h2.ti { display: flex; align-items: center; gap: 12px; }
+h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
+#kPanel .head .ico { width: 42px; height: 42px; border-radius: 10px; }
+#kPanel .head .ico.land { width: 42px; height: 42px; }
+.opt.wi { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 9px; row-gap: 1px; align-items: center; }
+.opt.wi > .ico { grid-row: span 2; width: 36px; height: 36px; border-radius: 9px; }
+.titanCard .head { justify-content: flex-start; align-items: center; gap: 10px; }
+.titanCard .head .nm { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.shopCard .pic { position: relative; display: block; }
+.shopCard .pic > .ico { position: absolute; left: 6px; top: 6px; width: 34px; height: 34px; border-radius: 9px; }
+.shopCard .pic > .ico:only-child { position: static; width: 100%; height: auto; aspect-ratio: 4 / 3; border-radius: 8px; }
+.shopCard .pic > .ico:only-child > .gi { width: 50%; height: 50%; }
+.unlocks { display: flex; flex-wrap: wrap; gap: 6px; }
+.unlocks span { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); font-size: 13px; }
+.progress.thin { height: 4px; margin-top: 2px; }
+.troopRow > .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.troopRow > .row .btn { height: 36px; font-size: 13px; padding: 0 10px; }
+.troopRow .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+@media (max-width: 600px) {
+  .troopRow { grid-template-columns: 40px 1fr; }
+  .troopRow > .btn, .troopRow > .stepper, .troopRow > .count, .troopRow > .row { grid-column: 1 / -1; justify-self: stretch; }
+  .ico.spell, .ico.relic, .troopRow .ico.titan { width: 40px; height: 40px; }
+  h2.ti > .ico { width: 40px; height: 40px; }
+  #kSheetPanel h2.ti { font-size: 25px; gap: 10px; }
+  .bigbtn { position: relative; padding: 6px 6px 0; }
+  .bigbtn .bt { align-items: center; }
+  .bigbtn .gi.bi { position: absolute; top: -17px; left: 50%; transform: translateX(-50%); width: 32px; height: 32px; }
+  .troopRow > .stepper { justify-content: flex-end; }
+  .ico.troop { width: 40px; height: 40px; }
+  .bigbtn { min-width: 0; flex: 1 1 0; }
+  #kBottom { gap: 8px; }
+}
+@media (max-width: 600px) {
+  #kPanel .row .btn.tall { flex: 1 1 calc(50% - 8px); min-height: 44px; }
+  #kPlace { left: var(--gut-l); right: var(--gut-r); transform: none; }
+  #kPlace p { max-width: none; flex: 1 1 auto; }
+}
+@media (max-width: 600px) {
+  .res { height: 32px; font-size: 13px; padding: 0 8px 0 4px; }
+  .res svg { width: 18px; height: 18px; }
+  .res small { display: none; }
+  #kCastle { font-size: 14px; }
+  .bigbtn { min-width: 96px; height: 56px; font-size: 17px; }
+  #kToasts { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 84px); }
+}
+@media (max-height: 430px) {
+  .res { height: 30px; }
+  .bigbtn { height: 50px; font-size: 16px; }
+  #kPanel { padding: 8px 12px; gap: 6px; }
+  #kPanel h3 { font-size: 18px; }
+}
+</style>
+
+<div id="game">
+  <canvas id="gl"></canvas>
+  <canvas id="ov" aria-label="Поле боя"></canvas>
+  <canvas id="kov" aria-label="Королевство"></canvas>
+  <div id="khud">
+    <header id="kTop">
+      <button class="chip icon" id="kMenuBtn" aria-label="Меню королевства">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+      </button>
+      <div class="chip" id="kCastle">Замок 1</div>
+      <div class="res gold" id="rGold" title="Золото"></div>
+      <div class="res food" id="rFood" title="Еда"></div>
+      <div class="res gems" id="rGems" title="Самоцветы"></div>
+      <button class="res stones" id="rStones" title="Камни портала"></button>
+      <div class="res builders" id="rBuilders" title="Строители"></div>
+    </header>
+    <div id="kToasts" aria-live="polite"></div>
+    <footer id="kBottom">
+      <button class="bigbtn" id="kAttack"><span class="bt">Атака<small id="kAttackSub">Земли</small></span></button>
+      <button class="bigbtn alt" id="kArmyBtn"><span class="bt">Армия<small id="kArmySub">Титаны и войска</small></span></button>
+      <button class="bigbtn alt" id="kShopBtn"><span class="bt">Строить<small>Магазин</small></span></button>
+    </footer>
+    <div id="kPanel" hidden></div>
+    <div id="kPlace" hidden>
+      <p id="kPlaceText">Перетащите постройку на свободное место.</p>
+      <button class="btn" id="kPlaceCancel">Отмена</button>
+      <button class="btn primary" id="kPlaceOk">Готово</button>
+    </div>
+  </div>
+  <div class="sheet" id="kSheet" hidden>
+    <div class="panel" role="dialog" aria-labelledby="kSheetTitle" id="kSheetPanel"></div>
+  </div>
+  <div id="hud">
+    <header id="top">
+      <button class="chip icon" id="btnMenu" aria-label="Меню">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+      </button>
+      <div class="chip" id="timer">3:00</div>
+      <div id="stars" aria-label="Звёзды"></div>
+      <div id="armies" aria-label="Силы армий">
+        <div class="army" id="ownBar"><i></i></div>
+        <div id="armyPct"><b id="ownPct">100%</b> · <b id="enPct">100%</b></div>
+        <div class="army" id="enBar"><i></i></div>
+      </div>
+      <span id="replayTag" hidden>Реплей</span>
+      <button class="chip" id="btnSpeed" aria-label="Скорость боя">1×</button>
+      <button class="chip icon" id="btnPause" aria-label="Пауза">
+        <svg viewBox="0 0 20 20" fill="currentColor" id="icoPause"><rect x="4" y="3" width="4" height="14" rx="1"/><rect x="12" y="3" width="4" height="14" rx="1"/></svg>
+      </button>
+    </header>
+    <div id="toasts" aria-live="polite"></div>
+    <div id="bigMsg" hidden></div>
+    <div id="deploy" hidden>
+      <p>Расстановка: перетащите отряды внутри синей зоны.</p>
+      <button class="btn" id="btnAutoDeploy">Авто</button>
+      <button class="btn primary" id="btnFight">В бой!</button>
+    </div>
+    <div id="clash" hidden>
+      <div id="clashHint">Жмите, когда кольцо сойдётся с меткой</div>
+      <button id="clashBtn">Удар!</button>
+    </div>
+    <div id="radial"></div>
+    <div id="perf"></div>
+    <footer id="dock">
+      <div id="squads"></div>
+      <div class="card" id="titanCard" data-unit="0" hidden>
+        <div class="row"><span class="nm" id="tName">Тор</span><span class="lv" id="tLv"></span></div>
+        <div class="meter" id="tHp"><i></i></div>
+        <div class="meter" id="tRage"><i></i></div>
+        <div id="abil"></div>
+      </div>
+      <div id="spellBox">
+        <div id="valor"><span id="valorNum">3</span><div id="valorPips"></div></div>
+        <div id="spells"></div>
+      </div>
+    </footer>
+  </div>
+
+  <div class="sheet" id="menu" hidden>
+    <div class="panel" role="dialog" aria-labelledby="menuTitle">
+      <h2 id="menuTitle">Dawn of Titans</h2>
+      <p>Бои Dawn of Titans: вы командуете синей армией и титаном Тором, ИИ — красной армией. Здесь тренировочные бои;
+        бои за земли начинаются из королевства кнопкой «Атака».</p>
+      <h3>Что на экране</h3>
+      <dl class="keys legend">
+        <dt>☰ слева вверху</dt><dd>это меню: сражение, сложность, графика, перезапуск</dd>
+        <dt>Таймер и звёзды</dt><dd>время боя и три задачи на звёзды</dd>
+        <dt>Синяя и красная полосы</dt><dd>сколько осталось от вашей армии и от вражеской</dd>
+        <dt>Карточки внизу слева</dt><dd>ваши отряды: тап выбирает, второй тап показывает отряд на поле</dd>
+        <dt>Карточка «Тор»</dt><dd>здоровье, ярость и две способности титана</dd>
+        <dt>Карточки справа</dt><dd>заклинания; стоят доблести (◆), она копится со временем</dd>
+        <dt>Фигурки на поле</dt><dd>временная графика: солдаты и титаны собраны из простых фигур, настоящих моделей ещё нет</dd>
+      </dl>
+      <h3>Сражение</h3>
+      <div class="opts" id="scenarioOpts"></div>
+      <h3>Противник</h3>
+      <div class="seg" id="aiOpts"></div>
+      <h3>Графика</h3>
+      <div class="seg three" id="qualityOpts"></div>
+      <div class="toggles">
+        <button class="chip" id="tglAuto">Автобой</button>
+        <button class="chip" id="tglFollow">Камера за титаном</button>
+        <button class="chip" id="tglSound">Звук</button>
+      </div>
+      <p class="fine" id="engineInfo"></p>
+      <div class="actions">
+        <button class="btn primary" id="btnClose">Продолжить</button>
+        <button class="btn" id="btnRestart">Начать заново</button>
+        <button class="btn" id="btnReplay">Реплей боя</button>
+        <button class="btn" id="btnHelp">Управление</button>
+        <button class="btn" id="btnToKingdom">В королевство</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="help" hidden>
+    <div class="panel" role="dialog" aria-labelledby="helpTitle">
+      <h2 id="helpTitle">Управление</h2>
+      <h3>Тач</h3>
+      <dl class="keys">
+        <dt>Тап</dt><dd>выбрать отряд или титана; тап по земле или врагу отдаёт приказ</dd>
+        <dt>Двойной тап</dt><dd>атака с разгона</dd>
+        <dt>Протянуть от отряда</dt><dd>нарисовать путь (можно и от карточки снизу)</dd>
+        <dt>Долгое нажатие</dt><dd>строй, стойка, стоп, отступление, авто</dd>
+        <dt>Два пальца</dt><dd>приблизить и сдвинуть камеру</dd>
+        <dt>Карта заклинания</dt><dd>перетащите на поле или тапните, затем тап по цели</dd>
+      </dl>
+      <h3>Мышь и клавиатура</h3>
+      <dl class="keys">
+        <dt>ЛКМ / ПКМ</dt><dd>выбор / приказ; протяжка ПКМ рисует путь</dd>
+        <dt>1–6, T, ~</dt><dd>отряды, титан, все отряды</dd>
+        <dt>Q E · Z X C</dt><dd>способности титана · заклинания</dd>
+        <dt>F / G · H / R</dt><dd>строй / стойка · стоп / отступить</dd>
+        <dt>Пробел</dt><dd>удар в схватке титанов, иначе пауза</dd>
+        <dt>Tab · WASD · колесо</dt><dd>скорость · камера · зум</dd>
+        <dt>F5 · F6</dt><dd>заново · реплей</dd>
+      </dl>
+      <div class="actions"><button class="btn primary" id="btnHelpClose">Понятно</button></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="results" hidden>
+    <div class="panel" role="dialog" aria-labelledby="resTitle">
+      <h2 id="resTitle">Победа</h2>
+      <div id="resStars"></div>
+      <div class="stats" id="resStats"></div>
+      <div class="verify" id="resVerify"></div>
+      <div class="actions">
+        <button class="btn primary" id="btnResAgain">Ещё раз</button>
+        <button class="btn" id="btnResReplay">Смотреть реплей</button>
+        <button class="btn" id="btnResHarder">Сложнее</button>
+        <button class="btn" id="btnResMenu">Другое сражение</button>
+        <button class="btn primary" id="btnResKingdom" hidden>В королевство</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="loading">
+    <h1>Dawn of Titans</h1>
+    <p id="loadMsg">Загружаю симуляцию боя…</p>
+    <p class="fine" id="loadErr" hidden></p>
+    <p class="fine">Фанатский прототип по мотивам Dawn of Titans (NaturalMotion, 2015). Не связан с правообладателями игры; графика и код свои.</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script id="content-data" type="application/json">/*CONTENT_JSON*/</script>
+<script>
+/*ICONS_JS*/
+</script>
+<script>
+/*APP_JS*/
+</script>
+<script>
+/*KINGDOM_JS*/
+</script>

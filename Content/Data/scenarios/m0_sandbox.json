@@ -1,0 +1,37 @@
+{
+  "name": "M0 Sandbox: Thor vs Talos at Highvale Ford",
+  "map": "map.highvale_01",
+  "seed": 20261023,
+  "timerSec": 180,
+  "skipDeploy": false,
+  "sides": {
+    "attacker": {
+      "name": "House of Highvale",
+      "ai": "",
+      "titan": { "id": "titan.thor", "level": 10, "stars": 4, "abilityLevels": [1, 1], "pos": [120, 26], "facingDeg": 0 },
+      "spells": ["spell.meteor_strike", "spell.war_drums", "spell.healing_spring"],
+      "squads": [
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [96, 32],  "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.swordsmen", "tier": 2, "pos": [120, 34], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [144, 32], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [104, 18], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [136, 18], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.outriders", "tier": 2, "pos": [40, 26],  "facingDeg": 0, "formation": "Wedge" }
+      ]
+    },
+    "defender": {
+      "name": "Herald Vask's Host",
+      "ai": "veteran",
+      "titan": { "id": "titan.talos", "level": 36, "stars": 3, "abilityLevels": [1, 1], "pos": [120, 134], "facingDeg": 180 },
+      "spells": ["spell.meteor_strike", "spell.war_drums", "spell.healing_spring"],
+      "squads": [
+        { "troop": "troop.militia",   "tier": 2, "pos": [100, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [140, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [120, 126], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [120, 142], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.outriders", "tier": 2, "pos": [200, 134], "facingDeg": 180, "formation": "Wedge" },
+        { "troop": "troop.knights",   "tier": 1, "pos": [60, 132],  "facingDeg": 180, "formation": "Wedge" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,933 @@
+{
+ "schemaVersion": 1,
+ "source": "docs/Original_Reference.md",
+ "troops": [
+  {
+   "id": "troop.militia",
+   "name": "Ополчение",
+   "unlockCastle": 1,
+   "levels": [
+    {
+     "level": 1,
+     "cost": 135,
+     "trainSec": 60,
+     "upgradeCost": 3500,
+     "upgradeSec": 1800,
+     "tier": 1,
+     "src": "wiki"
+    },
+    {
+     "level": 2,
+     "cost": 215,
+     "trainSec": 60,
+     "upgradeCost": 9800,
+     "upgradeSec": 2700,
+     "tier": 1,
+     "src": "wiki"
+    },
+    {
+     "level": 3,
+     "cost": 540,
+     "trainSec": 60,
+     "upgradeCost": 12500,
+     "upgradeSec": 4080,
+     "tier": 2,
+     "src": "wiki"
+    },
+    {
+     "level": 4,
+     "cost": 910,
+     "trainSec": 60,
+     "upgradeCost": 18000,
+     "upgradeSec": 6120,
+     "tier": 2,
+     "src": "wiki"
+    },
+    {
+     "level": 5,
+     "cost": 1595,
+     "trainSec": 60,
+     "upgradeCost": 46400,
+     "upgradeSec": 9240,
+     "tier": 2,
+     "src": "wiki"
+    },
+    {
+     "level": 6,
+     "cost": 2400,
+     "trainSec": 60,
+     "upgradeCost": 72800,
+     "upgradeSec": 13860,
+     "tier": 3,
+     "src": "wiki"
+    },
+    {
+     "level": 7,
+     "cost": 2640,
+     "trainSec": 60,
+     "upgradeCost": 111500,
+     "upgradeSec": 20820,
+     "tier": 3,
+     "src": "wiki"
+    },
+    {
+     "level": 8,
+     "cost": 2865,
+     "trainSec": 60,
+     "upgradeCost": 161900,
+     "upgradeSec": 31320,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 9,
+     "cost": 3035,
+     "trainSec": 70,
+     "upgradeCost": 213600,
+     "upgradeSec": 47160,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 10,
+     "cost": 3155,
+     "trainSec": 80,
+     "upgradeCost": 260200,
+     "upgradeSec": 70920,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 11,
+     "cost": 3235,
+     "trainSec": 90,
+     "upgradeCost": 297000,
+     "upgradeSec": 106620,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 12,
+     "cost": 3280,
+     "trainSec": 100,
+     "upgradeCost": 321500,
+     "upgradeSec": 160380,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 13,
+     "cost": 3295,
+     "trainSec": 105,
+     "upgradeCost": 333800,
+     "upgradeSec": 241200,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 14,
+     "cost": 3295,
+     "trainSec": 110,
+     "upgradeCost": 335500,
+     "upgradeSec": 344520,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 15,
+     "cost": 3275,
+     "trainSec": 110,
+     "upgradeCost": 329100,
+     "upgradeSec": 448860,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 16,
+     "cost": 3245,
+     "trainSec": 110,
+     "upgradeCost": 317100,
+     "upgradeSec": 541680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 17,
+     "cost": 3210,
+     "trainSec": 110,
+     "upgradeCost": 301700,
+     "upgradeSec": 613980,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 18,
+     "cost": 3170,
+     "trainSec": 110,
+     "upgradeCost": 284700,
+     "upgradeSec": 661680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 19,
+     "cost": 3130,
+     "trainSec": 110,
+     "upgradeCost": 267400,
+     "upgradeSec": 685260,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 20,
+     "cost": 3085,
+     "trainSec": 110,
+     "upgradeCost": 250600,
+     "upgradeSec": 688200,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 21,
+     "cost": 3045,
+     "trainSec": 105,
+     "upgradeCost": 0,
+     "upgradeSec": 0,
+     "tier": 5,
+     "src": "est"
+    }
+   ]
+  },
+  {
+   "id": "troop.archers",
+   "name": "Лучники",
+   "unlockCastle": 1,
+   "levels": [
+    {
+     "level": 1,
+     "cost": 200,
+     "trainSec": 180,
+     "upgradeCost": 8800,
+     "upgradeSec": 1800,
+     "tier": 1,
+     "src": "est"
+    },
+    {
+     "level": 2,
+     "cost": 320,
+     "trainSec": 180,
+     "upgradeCost": 24600,
+     "upgradeSec": 2700,
+     "tier": 1,
+     "src": "est"
+    },
+    {
+     "level": 3,
+     "cost": 800,
+     "trainSec": 180,
+     "upgradeCost": 31400,
+     "upgradeSec": 4080,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 4,
+     "cost": 1350,
+     "trainSec": 180,
+     "upgradeCost": 45300,
+     "upgradeSec": 6120,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 5,
+     "cost": 2365,
+     "trainSec": 180,
+     "upgradeCost": 116700,
+     "upgradeSec": 9240,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 6,
+     "cost": 3555,
+     "trainSec": 180,
+     "upgradeCost": 183000,
+     "upgradeSec": 13860,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 7,
+     "cost": 3910,
+     "trainSec": 180,
+     "upgradeCost": 280300,
+     "upgradeSec": 20820,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 8,
+     "cost": 4245,
+     "trainSec": 180,
+     "upgradeCost": 407100,
+     "upgradeSec": 31320,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 9,
+     "cost": 4495,
+     "trainSec": 180,
+     "upgradeCost": 537100,
+     "upgradeSec": 47160,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 10,
+     "cost": 4675,
+     "trainSec": 180,
+     "upgradeCost": 654200,
+     "upgradeSec": 70920,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 11,
+     "cost": 4795,
+     "trainSec": 180,
+     "upgradeCost": 746700,
+     "upgradeSec": 106620,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 12,
+     "cost": 4860,
+     "trainSec": 180,
+     "upgradeCost": 808300,
+     "upgradeSec": 160380,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 13,
+     "cost": 4880,
+     "trainSec": 180,
+     "upgradeCost": 839300,
+     "upgradeSec": 241200,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 14,
+     "cost": 4880,
+     "trainSec": 180,
+     "upgradeCost": 843500,
+     "upgradeSec": 344520,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 15,
+     "cost": 4850,
+     "trainSec": 180,
+     "upgradeCost": 827500,
+     "upgradeSec": 448860,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 16,
+     "cost": 4805,
+     "trainSec": 180,
+     "upgradeCost": 797300,
+     "upgradeSec": 541680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 17,
+     "cost": 4755,
+     "trainSec": 180,
+     "upgradeCost": 758600,
+     "upgradeSec": 613980,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 18,
+     "cost": 4695,
+     "trainSec": 180,
+     "upgradeCost": 715800,
+     "upgradeSec": 661680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 19,
+     "cost": 4635,
+     "trainSec": 180,
+     "upgradeCost": 672300,
+     "upgradeSec": 685260,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 20,
+     "cost": 4570,
+     "trainSec": 180,
+     "upgradeCost": 630100,
+     "upgradeSec": 688200,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 21,
+     "cost": 4510,
+     "trainSec": 180,
+     "upgradeCost": 0,
+     "upgradeSec": 0,
+     "tier": 5,
+     "src": "est"
+    }
+   ]
+  },
+  {
+   "id": "troop.spearmen",
+   "name": "Копейщики",
+   "unlockCastle": 3,
+   "levels": [
+    {
+     "level": 1,
+     "cost": 145,
+     "trainSec": 300,
+     "upgradeCost": 6600,
+     "upgradeSec": 1800,
+     "tier": 1,
+     "src": "wiki"
+    },
+    {
+     "level": 2,
+     "cost": 230,
+     "trainSec": 300,
+     "upgradeCost": 18500,
+     "upgradeSec": 2700,
+     "tier": 1,
+     "src": "est"
+    },
+    {
+     "level": 3,
+     "cost": 580,
+     "trainSec": 300,
+     "upgradeCost": 23600,
+     "upgradeSec": 4080,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 4,
+     "cost": 975,
+     "trainSec": 300,
+     "upgradeCost": 33900,
+     "upgradeSec": 6120,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 5,
+     "cost": 1715,
+     "trainSec": 300,
+     "upgradeCost": 87500,
+     "upgradeSec": 9240,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 6,
+     "cost": 2580,
+     "trainSec": 300,
+     "upgradeCost": 137300,
+     "upgradeSec": 13860,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 7,
+     "cost": 2835,
+     "trainSec": 300,
+     "upgradeCost": 210300,
+     "upgradeSec": 20820,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 8,
+     "cost": 3075,
+     "trainSec": 300,
+     "upgradeCost": 305300,
+     "upgradeSec": 31320,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 9,
+     "cost": 3260,
+     "trainSec": 300,
+     "upgradeCost": 402800,
+     "upgradeSec": 47160,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 10,
+     "cost": 3390,
+     "trainSec": 300,
+     "upgradeCost": 490700,
+     "upgradeSec": 70920,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 11,
+     "cost": 3475,
+     "trainSec": 300,
+     "upgradeCost": 560100,
+     "upgradeSec": 106620,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 12,
+     "cost": 3525,
+     "trainSec": 300,
+     "upgradeCost": 606300,
+     "upgradeSec": 160380,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 13,
+     "cost": 3540,
+     "trainSec": 300,
+     "upgradeCost": 629500,
+     "upgradeSec": 241200,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 14,
+     "cost": 3540,
+     "trainSec": 300,
+     "upgradeCost": 632700,
+     "upgradeSec": 344520,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 15,
+     "cost": 3520,
+     "trainSec": 300,
+     "upgradeCost": 620600,
+     "upgradeSec": 448860,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 16,
+     "cost": 3485,
+     "trainSec": 300,
+     "upgradeCost": 598000,
+     "upgradeSec": 541680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 17,
+     "cost": 3450,
+     "trainSec": 300,
+     "upgradeCost": 568900,
+     "upgradeSec": 613980,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 18,
+     "cost": 3405,
+     "trainSec": 300,
+     "upgradeCost": 536900,
+     "upgradeSec": 661680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 19,
+     "cost": 3360,
+     "trainSec": 300,
+     "upgradeCost": 504200,
+     "upgradeSec": 685260,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 20,
+     "cost": 3315,
+     "trainSec": 300,
+     "upgradeCost": 472600,
+     "upgradeSec": 688200,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 21,
+     "cost": 3270,
+     "trainSec": 300,
+     "upgradeCost": 0,
+     "upgradeSec": 0,
+     "tier": 5,
+     "src": "est"
+    }
+   ]
+  }
+ ],
+ "titans": [
+  {
+   "id": "titan.talos",
+   "name": "Талос",
+   "class": "Champion",
+   "classRu": "Чемпион",
+   "stars": 1
+  },
+  {
+   "id": "titan.minotaur",
+   "name": "Минотавр",
+   "class": "Berserker",
+   "classRu": "Берсерк",
+   "stars": 1
+  },
+  {
+   "id": "titan.cyclops",
+   "name": "Циклоп",
+   "class": "Guardian",
+   "classRu": "Страж",
+   "stars": 1
+  },
+  {
+   "id": "titan.perun",
+   "name": "Перун",
+   "class": "Berserker",
+   "classRu": "Берсерк",
+   "stars": 2
+  },
+  {
+   "id": "titan.atlas",
+   "name": "Атлант",
+   "class": "Guardian",
+   "classRu": "Страж",
+   "stars": 2
+  },
+  {
+   "id": "titan.ymir",
+   "name": "Имир",
+   "class": "Champion",
+   "classRu": "Чемпион",
+   "stars": 2
+  },
+  {
+   "id": "titan.surtr",
+   "name": "Сурт",
+   "class": "Berserker",
+   "classRu": "Берсерк",
+   "stars": 3
+  },
+  {
+   "id": "titan.hecate",
+   "name": "Геката",
+   "class": "Sorcerer",
+   "classRu": "Чародей",
+   "stars": 3
+  },
+  {
+   "id": "titan.artemis",
+   "name": "Артемида",
+   "class": "Ranger",
+   "classRu": "Следопыт",
+   "stars": 3
+  },
+  {
+   "id": "titan.thor",
+   "name": "Тор",
+   "class": "Berserker",
+   "classRu": "Берсерк",
+   "stars": 4
+  }
+ ],
+ "titanXp": {
+  "next": [
+   100,
+   260,
+   480,
+   760,
+   1100,
+   1500,
+   1960,
+   2480,
+   3060,
+   3700,
+   4400,
+   5160,
+   5980,
+   6860,
+   7800,
+   8800,
+   9860,
+   10980,
+   12160,
+   13400,
+   14700,
+   16060,
+   17480,
+   18960,
+   20500,
+   22100,
+   23760,
+   25480,
+   27260,
+   29100,
+   31000,
+   32960,
+   34980,
+   37060,
+   39200,
+   41400,
+   43660,
+   45980,
+   48360,
+   50800,
+   53300,
+   55860,
+   58480,
+   61160,
+   63900,
+   66700,
+   69560,
+   72480,
+   75460,
+   78500,
+   81600,
+   84760,
+   87980,
+   91260,
+   94600,
+   98000,
+   101460,
+   104980,
+   108560
+  ],
+  "battle": [
+   60,
+   90,
+   120,
+   160,
+   200,
+   250,
+   300,
+   360,
+   420
+  ],
+  "starsPct": [
+   30,
+   100,
+   120,
+   150
+  ],
+  "recoveryFromLevel": 10,
+  "recoverySecPerLevel": 120
+ },
+ "fusion": {
+  "castle": 7,
+  "foodPerStar": 2000,
+  "xpPerStarSq": 150,
+  "keepXpPct": 50
+ },
+ "altars": [
+  {
+   "id": "daily",
+   "name": "Ежедневная реликвия",
+   "gems": 0,
+   "cooldownSec": 86400,
+   "weights": [
+    70,
+    25,
+    5,
+    0
+   ]
+  },
+  {
+   "id": "silver",
+   "name": "Серебряный алтарь",
+   "gems": 1000,
+   "cooldownSec": 0,
+   "weights": [
+    0,
+    60,
+    35,
+    5
+   ]
+  },
+  {
+   "id": "gold",
+   "name": "Золотой алтарь",
+   "gems": 4000,
+   "cooldownSec": 0,
+   "weights": [
+    0,
+    0,
+    70,
+    30
+   ]
+  }
+ ],
+ "spells": [
+  {
+   "id": "spell.fireball",
+   "name": "Огненный шар",
+   "forge": 1,
+   "craftGold": 1500,
+   "craftSec": 600
+  },
+  {
+   "id": "spell.shield",
+   "name": "Щит",
+   "forge": 1,
+   "craftGold": 1200,
+   "craftSec": 480
+  },
+  {
+   "id": "spell.freeze",
+   "name": "Заморозка",
+   "forge": 2,
+   "craftGold": 1800,
+   "craftSec": 720
+  },
+  {
+   "id": "spell.lightning",
+   "name": "Молния",
+   "forge": 3,
+   "craftGold": 2200,
+   "craftSec": 900
+  },
+  {
+   "id": "spell.rage",
+   "name": "Ярость",
+   "forge": 4,
+   "craftGold": 1600,
+   "craftSec": 600
+  },
+  {
+   "id": "spell.terror",
+   "name": "Ужас",
+   "forge": 5,
+   "craftGold": 2000,
+   "craftSec": 720
+  },
+  {
+   "id": "spell.acid_cloud",
+   "name": "Кислотное облако",
+   "forge": 6,
+   "craftGold": 2400,
+   "craftSec": 900
+  }
+ ],
+ "spellResearch": {
+  "goldBase": 20000,
+  "goldGrowth": 1.55,
+  "secBase": 7200,
+  "secGrowth": 1.45,
+  "craftPctPerLevel": 15
+ },
+ "battleSpellKinds": 3,
+ "relics": {
+  "kinds": [
+   {
+    "id": "atk",
+    "name": "Реликвия ярости",
+    "stat": "atkPct"
+   },
+   {
+    "id": "hp",
+    "name": "Реликвия стойкости",
+    "stat": "hpPct"
+   },
+   {
+    "id": "armor",
+    "name": "Реликвия брони",
+    "stat": "armorPct"
+   }
+  ],
+  "bonusPct": [
+   3,
+   5,
+   8,
+   12,
+   16
+  ],
+  "durability": [
+   10,
+   14,
+   18,
+   24,
+   30
+  ],
+  "slotLevels": [
+   1,
+   20,
+   30,
+   40,
+   50
+  ],
+  "repairCastle": 8,
+  "repairWeight": [
+   10,
+   20,
+   35,
+   50,
+   70
+  ],
+  "repairFood": [
+   1000,
+   2500,
+   6000,
+   15000,
+   30000
+  ],
+  "maxRelics": 100,
+  "dailyRelicPct": 60,
+  "dailyRarity": [
+   60,
+   35,
+   5,
+   0,
+   0
+  ]
+ },
+ "landTitanPctPerLevel": 1,
+ "skipSecPerGem": 60,
+ "start": {
+  "army": {
+   "troop.militia": 3,
+   "troop.archers": 1
+  },
+  "titans": [
+   {
+    "id": "titan.perun",
+    "level": 5
+   },
+   {
+    "id": "titan.talos",
+    "level": 5
+   }
+  ]
+ }
+}

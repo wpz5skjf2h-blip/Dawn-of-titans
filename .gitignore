@@ -1,0 +1,32 @@
+# Unreal Engine
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+.vs/
+.vscode/
+.idea/
+*.xcworkspace
+*.xcodeproj
+
+# Standalone simulation tools
+/build*/
+__pycache__/
+
+# Web demo build output (Web/build.sh + Web/bundle.py) and toolchain
+Web/dist/
+emsdk/
+*.replay.json
+balance*.csv
+
+# OS
+.DS_Store
+Thumbs.db
