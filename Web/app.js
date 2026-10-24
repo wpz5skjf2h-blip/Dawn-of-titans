@@ -74,6 +74,7 @@ const SCENARIOS = [
 	{ path: 'scenarios/m0_cavalry_test.json', name: 'Копья против конницы', note: 'Удержите строй копейщиков против всадников' },
 	{ path: 'scenarios/m1_raise_dead.json', name: 'Факелы Гекаты', note: 'Геката и «Поднять мёртвых» против огненного войска Сурта' },
 ];
+const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
 const QUALITY = [['auto', 'Авто'], ['high', 'Высокое'], ['low', 'Экономное']];
 const SIDE_COLOR = [new THREE.Color(0x3d7bf2), new THREE.Color(0xd9442f)];
@@ -95,6 +96,7 @@ const settings = {
 	scenario: clamp(store.get('scenario', 0) | 0, 0, SCENARIOS.length - 1),
 	ai: AIS.includes(store.get('ai', 'veteran')) ? store.get('ai', 'veteran') : 'veteran',
 	quality: store.get('quality', 'auto'),
+	titan: typeof store.get('titan', '') === 'string' ? store.get('titan', '') : '',
 	sound: store.get('sound', true) !== false,
 	follow: false,
 };
@@ -1243,12 +1245,27 @@ function unitAlive(id) {
 	return !!s && !!s.act;
 }
 
+/** Training battles can swap the player's titan for any titan of the roster; the scenario keeps its level and stars. */
+function trainingPath(path) {
+	if (!settings.titan) return path;
+	try {
+		const files = app.contentFiles();
+		const sc = JSON.parse(files[path].replace(/^\s*\/\/.*$/gm, ''));
+		if (sc.sides.attacker.titan.id === settings.titan) return path;
+		sc.sides.attacker.titan.id = settings.titan;
+		const custom = 'scenarios/_training_titan.json';
+		game.sim.addFile(custom, JSON.stringify(sc));
+		return custom;
+	} catch (e) {
+		return path;
+	}
+}
 function startBattle(asReplay, override) {
 	const sim = game.sim;
 	if (override) game.context = override.context;
 	else if (!asReplay) game.context = { kind: 'training' };
 	const sc = SCENARIOS[settings.scenario];
-	const path = override ? override.path : sc.path;
+	const path = override ? override.path : asReplay ? '' : trainingPath(sc.path);
 	const ai = override ? override.ai : settings.ai;
 	const ok = asReplay ? sim.replay() : sim.start(path, ai, '');
 	if (!ok) { toast(sim.error(), 'bad'); return false; }
@@ -1266,7 +1283,7 @@ function startBattle(asReplay, override) {
 	game.verify = null;
 	game.lastPhase = -1;
 	if (!asReplay) game.allAuto = false;
-	game.loaded = { scenario: settings.scenario, ai: settings.ai };
+	if (!asReplay) game.loaded = { scenario: settings.scenario, ai: settings.ai, titan: override ? '' : settings.titan };
 	effects.length = 0;
 	input.draw = null;
 	closeRadial();
@@ -2354,6 +2371,16 @@ function buildMenu() {
 		b.addEventListener('click', () => { settings.ai = id; store.set('ai', id); buildMenu(); });
 		ao.appendChild(b);
 	});
+	const to = $('titanOpts');
+	to.innerHTML = '';
+	[''].concat(TITANS).forEach((id) => {
+		const b = document.createElement('button');
+		b.textContent = id ? RU.titan[id] || id : 'По сценарию';
+		if (id) b.title = app.titanAbilities(id).join(', ');
+		if (id === settings.titan) b.className = 'on';
+		b.addEventListener('click', () => { settings.titan = id; store.set('titan', id); buildMenu(); });
+		to.appendChild(b);
+	});
 	const qo = $('qualityOpts');
 	qo.innerHTML = '';
 	QUALITY.forEach(([id, label]) => {
@@ -2363,7 +2390,7 @@ function buildMenu() {
 		b.addEventListener('click', () => { settings.quality = id; store.set('quality', id); applyQuality(); buildMenu(); });
 		qo.appendChild(b);
 	});
-	const changed = game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai);
+	const changed = game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai || game.loaded.titan !== settings.titan);
 	$('btnClose').textContent = changed ? 'Начать этот бой' : game.firstMenu ? 'Играть' : 'Продолжить';
 	setClass($('btnClose'), 'primary', changed || game.firstMenu);
 	const landBattle = game.context.kind === 'land' && !(game.fr && game.fr.phase === PH.Finished);
@@ -2371,6 +2398,8 @@ function buildMenu() {
 	$('btnToKingdom').hidden = !app.kingdomReady || landBattle;
 	$('scenarioOpts').hidden = landBattle;
 	$('aiOpts').hidden = landBattle;
+	$('titanOpts').hidden = landBattle;
+	$('titanOpts').previousElementSibling.hidden = landBattle;
 	$('scenarioOpts').previousElementSibling.hidden = landBattle;
 	$('aiOpts').previousElementSibling.hidden = landBattle;
 	setClass($('tglAuto'), 'on', game.allAuto);
@@ -2391,7 +2420,7 @@ function closeMenu() {
 	$('menu').hidden = true;
 	game.paused = !!game.pausedBeforeMenu;
 	game.firstMenu = false;
-	if (game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai)) startBattle(false);
+	if (game.loaded && (game.loaded.scenario !== settings.scenario || game.loaded.ai !== settings.ai || game.loaded.titan !== settings.titan)) startBattle(false);
 }
 
 $('btnMenu').addEventListener('click', openMenu);

@@ -2908,6 +2908,7 @@ function landIcon(resource, lv) {
 /** Sheet heading with an icon tile in front. */
 const sheetTitle = (icon, text) => '<h2 id="kSheetTitle" class="ti">' + icon + '<span>' + text + '</span></h2>';
 const starsHtml = (n) => '<span class="stars" aria-label="' + n + ' из 4">' + '★'.repeat(n) + '<i>' + '★'.repeat(4 - n) + '</i></span>';
+const titanAbil = (id) => (K.app && K.app.titanAbilities ? K.app.titanAbilities(id) : []);
 function titanName(t) { return K.army.titans[t.def].name; }
 function titanTotalXp(t) {
 	let x = t.xp;
@@ -3049,8 +3050,16 @@ function openTitans() {
 			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
 				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
+				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
 				'<span class="meta" data-live="tr' + t.id + '"></span><div class="row">' + act + '</div></div>';
 		});
+		// The rest of the roster, greyed out: the original showed every titan you could still summon.
+		const locked = K.army.titans.map((d, i) => ({ d, i })).filter((x) => !st.titans.some((t) => t.def === x.i))
+			.sort((x, y) => x.d.stars - y.d.stars).map(({ d, i }) =>
+				'<div class="titanCard locked"><div class="head">' + titanIcon({ def: i }) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
+				'<span class="meta">' + esc(d.classRu) + ' · ещё не призван</span>' +
+				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
+				'<div class="row"><button class="btn" data-act="relics">Призвать на алтаре</button></div></div>');
 		let head = '';
 		if (fz) {
 			const pv = fusionPreview(fz.target, fz.picks);
@@ -3062,7 +3071,9 @@ function openTitans() {
 		const html = sheetTitle(buildingIconById('hall_of_titans'), 'Зал титанов') +
 			'<p class="fine">Титанов: ' + st.titans.length + ' из ' + st.tcap + '. Редкость от одной до четырёх звёзд задаёт предел уровня: 20, 30, 40 и 50, как в оригинале версии 1.8. ' +
 			'Опыт титаны получают в боях; после боя титаны выше 10-го уровня отдыхают. ' + (canFuse ? 'Слияние за еду переносит силу ненужных титанов в выбранного, как в оригинале.' : 'Слияние откроется на Замке ' + st.fuseCastle + '.') + '</p>' +
-			head + '<div class="shopGrid">' + cards.join('') + '</div><div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
+			head + '<div class="shopGrid">' + cards.join('') + '</div>' +
+			(locked.length && !fz ? '<h3>Ещё не призваны</h3><p class="fine">Новых титанов дают алтари Храма реликвий: бесплатный раз в сутки, серебряный и золотой за самоцветы. Попробовать любого титана можно в меню боя, раздел «Ваш титан».</p><div class="shopGrid">' + locked.join('') + '</div>' : '') +
+			'<div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
 		return {
 			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length).join(), st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
 			live(el) { for (const t of K.st.titans) liveTitan(el, t); },
