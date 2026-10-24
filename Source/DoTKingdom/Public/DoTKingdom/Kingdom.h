@@ -216,6 +216,10 @@ public:
 	int BattleSlots() const;
 	int QueueCapacity() const;
 	int MaxTroopLevel() const;
+	/** The highest level this troop can be raised to now: the Armoury's limit, and for a council troop also its council's. */
+	int TroopLevelCap(int Troop) const;
+	/** Level of the troop's envoy council (0 if not built; -1 for a Barracks troop). */
+	int CouncilLevel(int Troop) const;
 	/** Share of a squad (%) that must survive a battle for it to come back; 100 without a Medical School. */
 	int SurvivalPct() const;
 	const std::vector<int>& TrainQueue() const { return Queue; }

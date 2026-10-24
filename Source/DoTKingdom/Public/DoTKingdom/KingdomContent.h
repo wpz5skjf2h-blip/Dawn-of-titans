@@ -136,6 +136,11 @@ struct TroopType
 	std::string id; // battle content troop id
 	std::string name;
 	int unlockCastle = 1;
+	/** The envoy council (building) whose people send this troop, -1 for the Barracks' own; and the council level it needs.
+	 *  Every troop trains in the Barracks queue, as in the original; a council troop also needs its council, whose level
+	 *  caps the troop's level (stat maxTroopLevel on the council's levels). */
+	int council = -1;
+	int councilLevel = 1;
 	std::vector<TroopLevelDef> levels;
 
 	int MaxLevel() const { return static_cast<int>(levels.size()); }

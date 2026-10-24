@@ -25,11 +25,11 @@ const SEASON_KEY = 'dot.kingdom.seasonSeen';
 const AI_RU = { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' };
 const TROOP_RU = { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
 	'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.grenadiers': 'гренадеры', 'troop.chainbreakers': 'цепеломы',
-	'troop.priests': 'боевые жрецы' };
-const CAVALRY = new Set(['troop.outriders', 'troop.knights']);
+	'troop.priests': 'боевые жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры' };
+const CAVALRY = new Set(['troop.outriders', 'troop.knights', 'troop.panthers']);
 /** Troops that deploy behind the melee line. */
 const BACK_ROW = new Set(['troop.archers', 'troop.grenadiers', 'troop.priests']);
-const CATS = [['resources', 'Ресурсы'], ['troops', 'Войска'], ['spells', 'Заклинания'], ['other', 'Прочее']];
+const CATS = [['resources', 'Ресурсы'], ['troops', 'Войска'], ['councils', 'Советы'], ['spells', 'Заклинания'], ['other', 'Прочее']];
 
 // Shared state of the kingdom screen.
 const K = {
@@ -770,6 +770,81 @@ const MODELS = {
 		k.cyl(0.9, 4.2, 1.7, 0, -1.5, mat(PAL.stone), 8).cone(1.1, 1.5, 1.7, 4.2, -1.5, mat(PAL.roofB), 8);
 		k.box(0.24, 0.6, 0.2, 1.7, 5.7, -1.5, mat(PAL.gold, GOLD)).ball(0.17, 1.7, 6.45, -1.5, mat(PAL.gold, GOLD));
 		k.box(0.08, 0.6, 0.9, 1.55, 1.2, 1.5, mat(PAL.wood)).box(0.6, 0.06, 0.06, 1.3, 1.85, 1.5, mat(PAL.woodD));
+	},
+	// Envoy councils: each people's embassy in its own style (fire, frost, jade, marsh).
+	council_sunreach(k, t) {
+		const sand = mat(0xe2c48e);
+		const sand2 = mat(0xc9a56a);
+		const gold = mat(PAL.gold, GOLD);
+		const h = 2.4 + t * 0.3;
+		k.box(7.2, 0.3, 7.2, 0, 0, 0, sand2).box(5.0, h, 4.0, 0, 0.3, -1.1, sand);
+		k.cyl(1.7, 0.5, 0, 0.3 + h, -1.1, sand2, 12).add(G.ball, gold, 0, 0.8 + h, -1.1, 1.65, 1.5, 1.65).cone(0.18, 1.0, 0, 2.2 + h, -1.1, gold, 6);
+		for (const x of [-2.9, 2.9]) k.cyl(0.6, h + 1.6, x, 0.3, -2.4, sand, 8).ball(0.62, x, 1.9 + h, -2.4, gold, 1.3);
+		for (const x of [-1.5, -0.5, 0.5, 1.5]) k.box(0.4, 1.7, 0.1, x, 0.3, 0.92, mat(0x7a3a1c));
+		k.box(5.4, 0.3, 0.6, 0, 0.3 + h, 0.95, sand2);
+		for (const x of [-2.4, 2.4]) {
+			k.cyl(0.45, 0.9, x, 0.3, 2.2, mat(PAL.iron), 8, 1.3);
+			k.spin(() => { const f = new T.Mesh(cylGeo(0, 7), glow(0xff8a2a, 1.7)); f.position.set(x, 1.2, 2.2); return f; },
+				(o, tt) => { const s = 0.9 + Math.sin(tt * 11 + x) * 0.1; o.scale.set(0.38 * s, 0.9 * s, 0.38 * s); });
+		}
+		k.flag(-3.1, 0.3, 0.6, 3.4 + t * 0.3, 0xe0672a);
+		if (t >= 2) k.flag(3.1, 0.3, 0.6, 3.4 + t * 0.3, 0xf2c14e);
+	},
+	council_rimeheim(k, t) {
+		const log = mat(0x6a4a30);
+		const ice = mat(0xbfe8ff, { roughness: 0.25, metalness: 0.1 });
+		const snow = mat(0xf4f8fb);
+		const h = 2.0 + t * 0.25;
+		k.box(7.2, 0.25, 7.2, 0, 0, 0, snow).box(6.2, h, 3.2, 0, 0.25, -1.4, log);
+		k.gable(6.8, 2.0, 3.8, 0, 0.25 + h, -1.4, mat(0x4f7fa8)).gable(6.9, 0.35, 3.9, 0, 1.95 + h, -1.4, snow);
+		for (const x of [-3.3, 3.3]) k.box(0.2, 1.2, 0.2, x, 1.6 + h, 0.4, mat(PAL.woodD)).cone(0.3, 0.5, x, 2.8 + h, 0.4, mat(PAL.woodD), 5);
+		k.box(1.2, 1.6, 0.12, 0, 0.25, 0.22, mat(PAL.woodD)).box(5.0, 0.14, 0.14, 0, 0.25 + h - 0.2, 0.25, mat(PAL.woodD));
+		k.seed = 11;
+		for (let i = 0; i < 5 + t; i++) {
+			const a = k.rnd() * Math.PI * 2;
+			const r = 2.2 + k.rnd() * 1.0;
+			k.add(G.oct, ice, Math.cos(a) * r, 0.5, 1.8 + Math.sin(a) * 0.8, 0.3, 0.7 + k.rnd() * 0.6, 0.3, a);
+		}
+		for (let i = -2; i <= 2; i++) k.box(0.1, 1.9, 0.1, i * 0.35 - 2.2, 0.25, 2.9, mat(PAL.iron)).cone(0.07, 0.3, i * 0.35 - 2.2, 2.15, 2.9, ice, 4);
+		k.spin(() => { const o = new T.Mesh(G.oct, glow(0x8fdcff, 1.2)); o.scale.set(0.35, 0.6, 0.35); return o; },
+			(o, tt) => { o.position.set(2.2, 2.0 + Math.sin(tt * 1.5) * 0.15, 2.4); o.rotation.y = tt * 0.9; });
+		k.flag(-3.1, 0.25, -3.1, 3.6, 0x8fd0ff);
+	},
+	council_jade(k, t) {
+		const st = mat(0xb9b29c);
+		const jade = mat(0x2f9a72, { roughness: 0.4 });
+		const red = mat(0xa8322a);
+		k.box(7.2, 0.35, 7.2, 0, 0, 0, mat(PAL.stone2)).box(4.6, 1.9, 4.0, 0, 0.35, -1.1, red);
+		k.pyr(6.4, 1.1, 5.8, 0, 2.25, -1.1, jade).box(3.4, 1.3 + t * 0.15, 3.0, 0, 3.35, -1.1, red);
+		k.pyr(4.8, 1.0, 4.4, 0, 4.65 + t * 0.15, -1.1, jade).cone(0.2, 1.0, 0, 5.65 + t * 0.15, -1.1, mat(PAL.gold, GOLD), 6);
+		for (const x of [-1.7, 1.7]) k.cyl(0.18, 1.9, x, 0.35, 0.95, red, 8);
+		// A stone giant keeps watch by the gate.
+		k.box(0.42, 1.0, 0.5, 2.2, 0.35, 2.1, st).box(0.42, 1.0, 0.5, 2.85, 0.35, 2.1, st).box(1.5, 1.3, 0.9, 2.52, 1.35, 2.1, st);
+		k.ball(0.38, 2.52, 2.95, 2.1, st).box(0.3, 1.1, 0.3, 1.6, 1.5, 2.1, st).box(0.3, 1.1, 0.3, 3.45, 1.5, 2.1, st);
+		k.cyl(0.22, 1.6, 3.45, 0.35, 2.6, mat(PAL.woodD), 6, 1.6);
+		if (t >= 2) k.ball(0.5, -2.6, 0.6, 2.4, jade, 0.8).ball(0.3, -2.0, 0.45, 2.9, jade, 0.8);
+		k.flag(-3.1, 0.35, -2.9, 4.2, 0x2f9a72);
+	},
+	council_mistmoor(k, t) {
+		const wood = mat(0x4e3a26);
+		const bog = mat(0x3e5a3a);
+		const moss = mat(0x5f8a3c);
+		k.box(7.2, 0.15, 7.2, 0, 0, 0, bog).cyl(2.2, 0.06, 1.6, 0.15, 2.0, mat(0x2f4a3a, { roughness: 0.3 }), 14);
+		for (const [x, z] of [[-2.2, -2.6], [2.2, -2.6], [-2.2, 0.2], [2.2, 0.2]]) k.cyl(0.16, 1.4, x, 0.15, z, wood, 6);
+		k.box(5.0, 0.2, 3.4, 0, 1.55, -1.2, wood).box(4.2, 1.9 + t * 0.2, 2.8, 0, 1.75, -1.2, mat(0x6b5236));
+		k.cone(3.4, 2.1, 0, 3.65 + t * 0.2, -1.2, mat(PAL.thatch), 7).cone(1.0, 0.8, 0, 5.4 + t * 0.2, -1.2, moss, 7);
+		k.add(G.box, wood, -0.6, 0.85, 1.1, 0.9, 0.1, 2.0, 0, 0.75);
+		for (const [x, z, s] of [[-2.9, 2.4, 1], [3.0, -2.9, 0.8]]) {
+			k.add(cylGeo(0.6, 6), wood, x, 1.3 * s, z, 0.22 * s, 2.6 * s, 0.22 * s, 0, 0.2, 0.25);
+			k.ball(0.9 * s, x + 0.35, 2.7 * s, z, moss, 0.7);
+		}
+		k.box(0.12, 0.7, 0.12, 0.7, 3.65, 0.25, wood).add(G.box, mat(0x1d1a22), 0.7, 4.4, 0.25, 0.7, 0.28, 0.12);
+		k.spin(() => {
+			const g = new T.Group();
+			for (let i = 0; i < 4; i++) { const b = new T.Mesh(G.ball, glow(0x8cff6a, 1.2)); b.scale.setScalar(0.12); g.add(b); }
+			return g;
+		}, (g, tt) => g.children.forEach((b, i) => b.position.set(1.6 + Math.cos(tt * 0.7 + i * 1.6) * 1.4, 0.6 + Math.sin(tt * 1.3 + i) * 0.25, 2.0 + Math.sin(tt * 0.7 + i * 1.6) * 1.0)));
+		k.flag(2.6, 0.15, 0.9, 3.3, 0x5fae3e);
 	},
 };
 
@@ -2025,6 +2100,7 @@ function buildingPanel(id) {
 	else if (d.id === 'relic_temple') stats.push('Бесплатная реликвия: <b data-live="relic"></b>');
 	else if (d.id === 'spell_forge') stats.push('Запас <b>' + st.spells.total + ' / ' + st.spells.cap + '</b>', 'Очередь <b>' + st.spells.queue.length + ' / ' + st.spells.qcap + '</b>');
 	else if (d.id === 'arcane_tower') stats.push('Улучшений сразу <b>' + st.spells.slots + '</b>', 'Предел уровня <b>' + st.spells.maxLv + '</b>');
+	else if (d.category === 'councils') stats.push('Присылает <b>' + councilTroops(d.id).map((t) => esc(K.army.troops[t].name)).join(', ') + '</b>', 'Предел уровня их войск <b>' + cur.maxTroopLevel + '</b>');
 	else for (const k of statKeys(d, cur).slice(0, 3)) stats.push(statLabel(d, k) + ' <b>' + fmt(cur[k]) + '</b>');
 	const btn = [];
 	if (b.up) {
@@ -2034,8 +2110,8 @@ function buildingPanel(id) {
 		if (nx) btn.push('<button class="btn tall primary" data-act="upgrade" data-id="' + id + '">' + (d.role === 'builders' ? 'Нанять строителя' : 'Улучшить') + '<span class="sub">до уровня ' + (b.lv + 1) + '</span></button>');
 		else btn.push('<button class="btn tall" disabled>Макс. уровень<span class="sub">' + b.lv + ' из ' + d.levels.length + '</span></button>');
 	}
-	const extra = b.lv > 0 && BUILDING_ACT[d.id];
-	if (extra) btn.unshift('<button class="btn tall primary" data-act="' + extra[0] + '">' + extra[1] + '<span class="sub" data-live="extra"></span></button>');
+	const extra = b.lv > 0 && (BUILDING_ACT[d.id] || (d.category === 'councils' && ['council', 'Посланники']));
+	if (extra) btn.unshift('<button class="btn tall primary" data-act="' + extra[0] + '"' + (extra[0] === 'council' ? ' data-id="' + b.def + '"' : '') + '>' + extra[1] + '<span class="sub" data-live="extra"></span></button>');
 	btn.push('<button class="btn tall" data-act="move" data-id="' + id + '">Переместить<span class="sub">или зажмите</span></button>');
 	btn.push('<button class="btn tall" data-act="info" data-id="' + id + '">Подробнее</button>');
 	const html = '<div class="head">' + buildingIcon(b.def) + '<h3>' + esc(d.name) + '</h3><span class="lvl">' + (b.lv ? 'уровень ' + b.lv : 'строится') + '</span>' +
@@ -2127,6 +2203,7 @@ function onAct(e) {
 	case 'army': openArmy(); break;
 	case 'barracks': openBarracks(); break;
 	case 'armoury': openArmoury(); break;
+	case 'council': openCouncil(id); break;
 	case 'titans': openTitans(); break;
 	case 'relics': openRelics(); break;
 	case 'train': {
@@ -3030,7 +3107,16 @@ const TROOP_NOTE = {
 	'troop.priests': 'не сражаются: лечат, ободряют и укрепляют броню отрядов рядом',
 	'troop.chainbreakers': 'гарпуны замедляют титана, пять цепей сковывают его',
 	'troop.knights': 'тяжёлый таранный удар и топот по лёгкой пехоте',
+	'troop.pikemen': 'длинные пики держат конницу и зверей, ледяной удар замедляет врага',
+	'troop.goliaths': 'трое великанов: удар дубиной бьёт по площади и валит пехоту с ног',
+	'troop.panthers': 'быстрые звери, рвут стрелков, яд жжёт после укуса; гибнут на пиках',
 };
+/** Troop indices a council sends (army.json "council"), in content order. */
+function councilTroops(councilId) {
+	const out = [];
+	K.army.troops.forEach((tr, t) => { if (tr.council === councilId) out.push(t); });
+	return out;
+}
 /** Icon tile: a glyph from icons.js on a tile coloured by `tile` (troop, spell, relic r1..r5, bld <category>, titan, altar). */
 const icoHtml = (name, tile) => '<div class="ico ' + tile + '">' + DotIcons.svg(name) + '</div>';
 const mini = (name) => DotIcons.svg(name, 'mini');
@@ -3095,25 +3181,53 @@ function openArmy() {
 		return { key: ['army', a.n.join(), a.lv.join(), a.total, a.cap, a.queue.length, K.st.spells.stock.join(), K.st.titans.map((t) => t.id + ':' + t.lv).join()].join('|'), html };
 	});
 }
+/** One Barracks row: troop, level, time, note and the train button (also used by council screens). */
+function trainRow(t) {
+	const a = K.st.army;
+	const tr = K.army.troops[t];
+	const ck = a.train[t];
+	const ok = ck.err === E.None;
+	return '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + a.lv[t] + '</b><span>в лагере ' + a.n[t] + ' · ' + fmtDur(ck.t) + ' · ' +
+		esc(TROOP_NOTE[tr.id] || '') + '</span>' + (ok ? '' : '<span class="why">' + esc(errText(ck.err, ck)) + '</span>') + '</div>' +
+		'<button class="btn' + (ok ? ' primary' : '') + '" data-act="train" data-id="' + t + '"' + (ok ? '' : ' disabled') + '>Обучить ' + costHtml(ck.cost, K.st.res) + '</button></div>';
+}
+/** Envoy council screen: the troops it sends, their level cap and what the next council level opens. */
+function openCouncil(def) {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const a = K.st.army;
+		const d = defOf(def);
+		const b = K.st.b.find((x) => x.def === def);
+		const lv = b ? b.lv : 0;
+		const cap = lv > 0 ? levelDef(d, lv).maxTroopLevel : 1;
+		const troops = councilTroops(d.id);
+		const next = d.levels[lv];
+		const html = sheetTitle(buildingIcon(def), esc(d.name)) +
+			'<p class="fine">' + esc(d.description) + '</p>' +
+			'<div class="costline"><span>Уровень совета</span><b>' + lv + ' / ' + d.levels.length + '</b><span>Предел уровня войск</span><b>' + cap + '</b>' +
+			(next ? '<span>На ур. ' + (lv + 1) + '</span><b>' + next.maxTroopLevel + '</b>' : '') + '</div>' +
+			'<p class="fine">Войска совета обучаются в Казармах, как в оригинале. Их уровень не выше предела совета и Арсенала (сейчас ' + Math.min(cap, a.maxLv) + ').</p>' +
+			troops.map(trainRow).join('') +
+			'<div class="actions"><button class="btn primary" data-act="barracks">Казармы</button><button class="btn" data-act="armoury">Арсенал</button>' + closeBtn + '</div>';
+		return { key: ['council', def, lv, a.n.join(), a.lv.join(), a.lvCap.join(), a.train.map((c) => c.err).join(), K.st.res[1] >> 4].join('|'), html };
+	});
+}
 function openBarracks() {
 	cancelPlace();
 	select(null);
 	openSheet(() => {
 		const a = K.st.army;
-		const rows = K.army.troops.map((tr, t) => {
-			const ck = a.train[t];
-			const ok = ck.err === E.None;
-			return '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + a.lv[t] + '</b><span>в лагере ' + a.n[t] + ' · ' + fmtDur(ck.t) + ' · ' +
-				esc(TROOP_NOTE[tr.id] || '') + '</span>' + (ok ? '' : '<span class="why">' + esc(errText(ck.err, ck)) + '</span>') + '</div>' +
-				'<button class="btn' + (ok ? ' primary' : '') + '" data-act="train" data-id="' + t + '"' + (ok ? '' : ' disabled') + '>Обучить ' + costHtml(ck.cost, K.st.res) + '</button></div>';
-		});
+		const own = [];
+		const sent = [];
+		K.army.troops.forEach((tr, t) => (tr.council ? sent : own).push(trainRow(t)));
 		const queue = a.queue.map((t, i) => '<div class="qitem"><span>' + (i + 1) + '. ' + mini(K.army.troops[t].id) + esc(K.army.troops[t].name) + '</span><b data-live="q' + i + '"></b>' +
 			'<button class="btn x" data-act="cancel-train" data-id="' + i + '" aria-label="Отменить">✕</button></div>');
 		const armed = isArmed('tskip');
 		const html = sheetTitle(buildingIconById('barracks'), 'Казармы') +
 			'<p class="fine">Отряды обучаются по одному за еду, как в оригинале, и встают в Лагерь армии. Очередь растёт с уровнем Казарм.</p>' +
 			'<div class="costline"><span>В лагере</span><b>' + a.total + ' / ' + a.cap + '</b><span>Очередь</span><b>' + a.queue.length + ' / ' + a.qcap + '</b><span>Еда</span><b>' + iconSvg('food') + fmtShort(K.st.res[1]) + '</b></div>' +
-			rows.join('') +
+			own.join('') + '<h3>Войска советов</h3><p class="fine">Их присылают Советы посланников (вкладка «Советы» в строительстве); обучают их здесь же.</p>' + sent.join('') +
 			(a.queue.length ? '<h3>Очередь</h3>' + queue.join('') : '') +
 			(a.qb ? '<p class="note">Лагерь армии полон: следующий отряд ждёт места.</p>' : '') +
 			'<div class="actions">' + (a.tskip > 0 ? '<button class="btn" data-act="skip-train" data-gems="' + a.tskip + '">' + (armed ? 'Подтвердить ' : 'Завершить сразу ') + gemSpan(a.tskip) + '</button>' : '') + closeBtn + '</div>';
@@ -3142,7 +3256,8 @@ function openArmoury() {
 			else btn = '<button class="btn" disabled>' + (ck.err === E.MaxLevel ? 'Макс. уровень' : 'Улучшить') + '</button>';
 			const lv = tr.levels[a.lv[t] - 1];
 			return '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + a.lv[t] + ' из ' + tr.levels.length + '</b>' +
-				'<span>обучение ' + fmt(lv.cost) + ' еды · ' + (ck.t ? 'улучшение ' + fmtDur(ck.t) : '') + (lv.src === 'wiki' ? ' · цифры из вики' : ' · оценка') + '</span>' +
+				'<span>обучение ' + fmt(lv.cost) + ' еды · ' + (ck.t ? 'улучшение ' + fmtDur(ck.t) : '') + (lv.src === 'wiki' ? ' · цифры из вики' : ' · оценка') +
+				(tr.council && a.lvCap[t] < a.maxLv ? ' · предел ур. ' + a.lvCap[t] + ' задаёт совет' : '') + '</span>' +
 				(ck.err !== E.None && ck.err !== E.NotEnough ? '<span class="why">' + esc(errText(ck.err, ck)) + '</span>' : '') + '</div>' + btn + '</div>';
 		});
 		const html = sheetTitle(buildingIconById('armoury'), 'Арсенал') +

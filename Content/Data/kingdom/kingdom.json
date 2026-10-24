@@ -35,9 +35,9 @@
       { "id": "forest", "name": "Лес", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
         "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.forest_01", "field": "Чаща", "fieldNote": "леса по флангам укрывают отряды, в центре дорога и холм", "swap": { "troop.knights": "troop.swordsmen", "troop.outriders": "troop.archers" } },
       { "id": "lake", "name": "Озеро", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
-        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.lake_01", "field": "Зеркальное озеро", "fieldNote": "глубокая вода посередине, через неё один брод", "swap": { "troop.outriders": "troop.archers" } },
+        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.lake_01", "field": "Зеркальное озеро", "fieldNote": "глубокая вода посередине, через неё один брод", "swap": { "troop.outriders": "troop.archers", "troop.panthers": "troop.pikemen" } },
       { "id": "mountain", "name": "Гора", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
-        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen" } },
+        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen", "troop.panthers": "troop.goliaths" } },
       { "id": "ruins", "name": "Руины", "resource": "shards", "castle": 5, "weight": 10, "periodHours": 24, "produce": [1, 1, 1, 1, 1, 1, 1, 1, 1], "fillHours": [72],
         "raidLoot": [1, 1, 1, 1, 2, 2, 2, 3, 3], "map": "map.ruins_01", "field": "Павший город", "fieldNote": "в развалинах стрелки получают меньше урона", "swap": { "troop.militia": "troop.archers" } }
     ],
@@ -88,7 +88,8 @@
     ]
   },
 
-  // Battles for lands by land level (read by the clients to build the battle setup).
+  // Battles for lands by land level (read by the clients to build the battle setup). From land level 6 the
+  // defenders bring council troops, as higher lands in the original field stronger armies (which troops is ours).
   "battles": [
     { "ai": "recruit",   "tier": 1, "squads": ["troop.militia", "troop.militia", "troop.archers"] },
     { "ai": "recruit",   "tier": 1, "squads": ["troop.militia", "troop.spearmen", "troop.militia", "troop.archers"] },
@@ -96,13 +97,13 @@
     { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"] },
     { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"],
       "titan": { "id": "titan.talos", "level": 12, "stars": 1 } },
-    { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.militia", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
+    { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.pikemen", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 20, "stars": 2 } },
-    { "ai": "warlord",   "tier": 2, "squads": ["troop.militia", "troop.grenadiers", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
+    { "ai": "warlord",   "tier": 2, "squads": ["troop.militia", "troop.grenadiers", "troop.pikemen", "troop.archers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 28, "stars": 3 } },
-    { "ai": "warlord",   "tier": 3, "squads": ["troop.swordsmen", "troop.chainbreakers", "troop.spearmen", "troop.grenadiers", "troop.outriders", "troop.knights"],
+    { "ai": "warlord",   "tier": 3, "squads": ["troop.swordsmen", "troop.chainbreakers", "troop.goliaths", "troop.grenadiers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 36, "stars": 3 } },
-    { "ai": "nightmare", "tier": 3, "squads": ["troop.swordsmen", "troop.spearmen", "troop.priests", "troop.grenadiers", "troop.outriders", "troop.knights"],
+    { "ai": "nightmare", "tier": 3, "squads": ["troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 40, "stars": 4 } }
   ],
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]

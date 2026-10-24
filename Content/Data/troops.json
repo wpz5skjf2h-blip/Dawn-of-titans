@@ -101,7 +101,8 @@
         { "name": "Deathless", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
     },
-    // Master prompt 4.9, troops 7, 9 and 10 (Ballista Crew comes later). In the original, grenadiers were an envoy-council troop.
+    // Master prompt 4.9, troops 7, 9 and 10 (Ballista Crew comes later). In the kingdom they come from the envoy councils:
+    // grenadiers and war priests from the Council of Sunreach, chainbreakers from the Council of Rimeheim.
     {
       "id": "troop.grenadiers", "name": "Grenadiers", "short": "GRN", "class": "Ranged", "move": "Infantry", "counterRow": "grenadiers",
       "squadSize": 12, "hp": 100, "armor": 0.05, "atk": 40, "attackInterval": 3.5, "range": 22, "minRange": 4, "moveSpeed": 3.2,
@@ -144,6 +145,54 @@
         { "name": "Hierophants", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
         { "name": "Oracles", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
         { "name": "Aether Saints", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    // Envoy council troops modelled on the original's other peoples (docs/Original_Reference.md, 4г):
+    // Pikemen (the original's ice pikemen): heavier, harder-hitting pikes; each hit chills the target.
+    {
+      "id": "troop.pikemen", "name": "Pikemen", "short": "PIK", "class": "Pike", "move": "Infantry", "counterRow": "pikemen",
+      "squadSize": 24, "hp": 250, "armor": 0.30, "atk": 22, "attackInterval": 1.4, "range": 3.0, "moveSpeed": 3.0,
+      "collisionRadius": 0.4, "spacing": 1.4, "critChance": 0.05, "critDamage": 1.5,
+      "specials": { "brace": { "chargeDamageTakenMult": 2.0, "titanChargeDamageMult": 0.5 },
+        "frost": { "moveSlow": 0.20, "attackSlow": 0.15, "duration": 3, "titanMult": 0.25 } },
+      "formations": ["Line", "Column", "Square", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Rime Levy", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Pikemen", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Frostpikes", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Glacier Guard", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Winter Legion", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    // Goliaths (the original's earth giants): three slow giants with clubs that sweep and topple soldiers.
+    // Since 1.8 the original sends one goliath per unit; three keep a squad able to hold a line here.
+    {
+      "id": "troop.goliaths", "name": "Goliaths", "short": "GOL", "class": "Pike", "move": "Infantry", "counterRow": "goliaths",
+      "squadSize": 3, "hp": 1400, "armor": 0.35, "atk": 60, "attackInterval": 2.4, "range": 2.5, "moveSpeed": 2.4,
+      "collisionRadius": 1.1, "spacing": 3.4, "knockbackMult": 0.15, "critChance": 0.05, "critDamage": 1.5, "maxAttackers": 8,
+      "specials": { "cleave": { "radius": 2.6, "mult": 0.6, "maxTargets": 4, "knockdown": 0.8 } },
+      "formations": ["Line", "Column", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Hill Giants", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Goliaths", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Stonebacks", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Jade Colossi", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Mountain Kings", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    // Panthers (the original's poison panther riders): the fastest troop, fragile, venomous bites, hunts shooters.
+    {
+      "id": "troop.panthers", "name": "Panthers", "short": "PAN", "class": "Cavalry", "move": "Cavalry", "counterRow": "panthers",
+      "squadSize": 6, "hp": 300, "armor": 0.05, "atk": 26, "attackInterval": 1.1, "range": 1.6, "moveSpeed": 10.5,
+      "collisionRadius": 0.8, "spacing": 2.2, "knockbackMult": 0.5, "critChance": 0.10, "critDamage": 1.5,
+      "specials": { "charge": { "firstHitMult": 2.0, "knockdown": 0.8 }, "poison": { "dps": 6, "duration": 5 } },
+      "formations": ["Line", "Column", "Wedge", "Loose"], "defaultStance": "Skirmish",
+      "tiers": [
+        { "name": "Marsh Cats", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Panthers", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Shadow Panthers", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Venomfangs", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Mistmoor Stalkers", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
     }
   ]

@@ -151,8 +151,13 @@ void TestJson()
 void TestContent()
 {
 	const SimContent& C = Content();
-	DOT_CHECK(C.troops.size() == 10);
+	DOT_CHECK(C.troops.size() == 13);
 	DOT_CHECK(C.FindTroop("troop.skeleton") == 6);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.pikemen"))].frost);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].cleave);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].maxAttackers == 8);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.panthers"))].poison);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.panthers"))].IsCavalry());
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.grenadiers"))].firebomb);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.chainbreakers"))].chains);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.priests"))].support);
@@ -836,6 +841,137 @@ void TestNewTroops()
 	}
 }
 
+/** Wins of side A in an AI-vs-AI fight over several seeds; each side lists its squads, the second one 12 m behind the first. */
+int DuelWins(std::vector<const char*> A, std::vector<const char*> B, int Seeds)
+{
+	int Wins = 0;
+	for (uint64_t Seed = 1; Seed <= static_cast<uint64_t>(Seeds); ++Seed)
+	{
+		BattleSetup S = Scenario("scenarios/m0_cavalry_test.json");
+		S.seed = Seed;
+		for (int Side = 0; Side < 2; ++Side)
+		{
+			const SquadSetup Base = S.sides[Side].squads[0];
+			S.sides[Side].squads.clear();
+			const std::vector<const char*>& List = Side == 0 ? A : B;
+			for (size_t K = 0; K < List.size(); ++K)
+			{
+				SquadSetup Q = Base;
+				Q.troopId = List[K];
+				Q.stanceSet = false;
+				Q.formation = Formation::Line;
+				Q.position = Base.position + FixVec2(Fix64::Zero(), fx::Int(static_cast<int>(K) * (Side == 0 ? -12 : 12)));
+				S.sides[Side].squads.push_back(Q);
+			}
+		}
+		BattleSimulation Sim(Content());
+		std::string Error;
+		DOT_CHECK(Sim.Init(S, Error));
+		RunToEnd(Sim);
+		Wins += Sim.Result().outcome == BattleOutcome::Victory ? 1 : 0;
+	}
+	return Wins;
+}
+
+void TestCouncilTroops()
+{
+	std::string Error;
+	const SimContent& C = Content();
+	// Pikemen (ice): every hit chills the enemy squad, slowing its steps and blows; chills refresh, they do not stack.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.pikemen", 120, 70, true, Stance::Aggressive)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 86, false, Stance::Aggressive)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		Fix64 Slowest;
+		for (int I = 0; I < 20 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Slowest = fx::Min(Slowest, Sim.SquadStat(Sim.Squads()[1], StatType::MoveSpeedPct));
+		}
+		DOT_CHECK(Slowest == -fx::Pct(20));
+		DOT_CHECK(Sim.SquadStat(Sim.Squads()[0], StatType::MoveSpeedPct) == Fix64::Zero());
+	}
+	// Goliaths (earth): three giants; a club sweep hurts and topples the soldiers around its target, and up to
+	// eight enemies can surround one giant.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.goliaths", 120, 70, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 84, false, Stance::Aggressive)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		DOT_CHECK(Sim.Squads()[0].startCount == 3);
+		int MostDown = 0;
+		int MostOnOneGiant = 0;
+		for (int I = 0; I < 25 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			int Down = 0;
+			std::vector<int> OnGiant(Sim.Soldiers().size(), 0);
+			for (const int32_t M : Sim.Squads()[1].members)
+			{
+				const Soldier& Sol = Sim.Soldiers()[static_cast<size_t>(M)];
+				Down += Sol.Alive() && Sol.state == SoldierState::KnockedDown ? 1 : 0;
+				if (Sol.Alive() && Sol.targetSoldier >= 0)
+				{
+					MostOnOneGiant = std::max(MostOnOneGiant, ++OnGiant[static_cast<size_t>(Sol.targetSoldier)]);
+				}
+			}
+			MostDown = std::max(MostDown, Down);
+		}
+		DOT_CHECK(MostDown >= 3);
+		DOT_CHECK(MostOnOneGiant > C.rules.maxAttackersPerSoldier);
+		DOT_CHECK(MostOnOneGiant <= 8);
+		DOT_CHECK(Sim.Squads()[1].aliveCount < Sim.Squads()[1].startCount - 8);
+	}
+	// Panthers (poison): bites leave venom that keeps hurting; War Priests' sanctuary washes it out.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.panthers", 120, 60, true, Stance::Aggressive)};
+		S.sides[1].squads = {MakeSquad("troop.archers", 120, 90, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		bool bPoisoned = false;
+		for (int I = 0; I < 20 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			for (const int32_t M : Sim.Squads()[1].members)
+			{
+				const Soldier& Sol = Sim.Soldiers()[static_cast<size_t>(M)];
+				bPoisoned = bPoisoned || (Sol.Alive() && Sol.poisonTicks > 0 && Sol.poisonDps > Fix64::Zero());
+			}
+		}
+		DOT_CHECK(bPoisoned);
+	}
+	// The original's counter chart: pikes beat panthers, panthers beat archers and grenadiers, goliaths beat militia
+	// and fall to shooters (militia backed by archers win where two militia squads lose).
+	const int PikesVsPanthers = DuelWins({"troop.pikemen"}, {"troop.panthers"}, 6);
+	const int PanthersVsArchers = DuelWins({"troop.panthers"}, {"troop.archers"}, 6);
+	const int PanthersVsGrenadiers = DuelWins({"troop.panthers"}, {"troop.grenadiers"}, 6);
+	const int GoliathsVsMilitia = DuelWins({"troop.goliaths"}, {"troop.militia"}, 6);
+	const int MilitiaPairVsGoliaths = DuelWins({"troop.militia", "troop.militia"}, {"troop.goliaths"}, 6);
+	const int MilitiaArchersVsGoliaths = DuelWins({"troop.militia", "troop.archers"}, {"troop.goliaths"}, 6);
+	std::printf("  pikemen vs panthers %d/6, panthers vs archers %d/6, panthers vs grenadiers %d/6, goliaths vs militia %d/6,\n"
+		"  goliaths vs militia x2: militia %d/6, vs militia + archers: those %d/6\n",
+		PikesVsPanthers, PanthersVsArchers, PanthersVsGrenadiers, GoliathsVsMilitia, MilitiaPairVsGoliaths, MilitiaArchersVsGoliaths);
+	DOT_CHECK(PikesVsPanthers >= 5);
+	DOT_CHECK(PanthersVsArchers >= 5);
+	DOT_CHECK(PanthersVsGrenadiers >= 5);
+	DOT_CHECK(GoliathsVsMilitia >= 5);
+	DOT_CHECK(MilitiaPairVsGoliaths <= 1);
+	DOT_CHECK(MilitiaArchersVsGoliaths >= 5);
+}
+
 void TestTitanAbilities()
 {
 	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
@@ -905,7 +1041,7 @@ int main()
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
 		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
 		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities},
-		{"NewTroops", TestNewTroops}, {"LandMaps", TestLandMaps}};
+		{"NewTroops", TestNewTroops}, {"CouncilTroops", TestCouncilTroops}, {"LandMaps", TestLandMaps}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

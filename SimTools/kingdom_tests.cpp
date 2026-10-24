@@ -66,7 +66,7 @@ const int64_t Hour = 3600;
 void TestContentMatchesOriginal()
 {
 	const KingdomContent& C = Content();
-	KD_CHECK(C.buildings.size() == 21);
+	KD_CHECK(C.buildings.size() == 25); // the original's 21 and four envoy councils
 	KD_CHECK(C.buildings[static_cast<size_t>(Def("castle"))].MaxLevel() == 25);
 	const BuildingDef& Mine = C.buildings[static_cast<size_t>(Def("gold_mine"))];
 	// Gold Mine level 10 in the wiki: 895/h, holds 21 480, costs 441 400 gold, 20 h, Castle 12.
@@ -319,6 +319,82 @@ void TestArmyContent()
 	KD_CHECK(C.fusionCastle == 7);
 }
 
+void TestEnvoyCouncils()
+{
+	const KingdomContent& C = Content();
+	// Four councils, one per people, one of each; a council's people send their troops to the Barracks queue.
+	struct Expect { const char* Troop; const char* Council; int Level; int Castle; };
+	const Expect Table[] = {{"troop.grenadiers", "council_sunreach", 1, 5}, {"troop.priests", "council_sunreach", 3, 9},
+		{"troop.pikemen", "council_rimeheim", 1, 6}, {"troop.chainbreakers", "council_rimeheim", 3, 10},
+		{"troop.goliaths", "council_jade", 1, 7}, {"troop.panthers", "council_mistmoor", 1, 8}};
+	for (const Expect& E : Table)
+	{
+		const TroopType& T = C.troops[static_cast<size_t>(Troop(E.Troop))];
+		KD_CHECK(T.council == Def(E.Council) && T.councilLevel == E.Level && T.unlockCastle == E.Castle);
+		const BuildingDef& B = C.buildings[static_cast<size_t>(Def(E.Council))];
+		KD_CHECK(B.category == "councils" && B.MaxLevel() == 10 && B.MaxCount(25) == 1);
+		// The council level that sends the troop opens no earlier than the troop's Castle level.
+		KD_CHECK(B.levels[static_cast<size_t>(E.Level - 1)].castle == E.Castle);
+	}
+	KD_CHECK(C.buildings[static_cast<size_t>(Def("council_mistmoor"))].unlockCastle == 8); // wiki: Panthers at Castle 8
+	for (const char* Id : {"troop.militia", "troop.archers", "troop.spearmen", "troop.swordsmen", "troop.outriders", "troop.knights"})
+	{
+		KD_CHECK(C.troops[static_cast<size_t>(Troop(Id))].council < 0);
+	}
+
+	// Castle 9 with Barracks 3, an Armoury 10 and lots of food; one grenadier unit trained before the councils existed.
+	Kingdom K(Content());
+	K.NewGame(T0, 31);
+	std::string Save = WithBuilding(K.Save(), "armoury", 10, 30);
+	Save = Replace(Save, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":9");
+	Save = Replace(Save, "\"food\":" + std::to_string(K.Amount(Res::Food)), "\"food\":5000000");
+	Save = Replace(Save, "\"gold\":" + std::to_string(K.Amount(Res::Gold)), "\"gold\":5000000");
+	Save = Replace(Save, "\"troop.grenadiers\":0", "\"troop.grenadiers\":1");
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	const int Gren = Troop("troop.grenadiers");
+	const int Pri = Troop("troop.priests");
+	KD_CHECK(L.ArmyCount(Gren) == 1); // old units stay in the camp
+	Check Ck = L.CheckTrain(Gren);
+	KD_CHECK(Ck.error == Error::NeedRequirement && Ck.missing.building == Def("council_sunreach") && Ck.missing.level == 1);
+	KD_CHECK(L.CouncilLevel(Gren) == 0 && L.CouncilLevel(Troop("troop.militia")) == -1);
+	KD_CHECK(L.TroopLevelCap(Gren) == 1 && L.TroopLevelCap(Troop("troop.militia")) == 11);
+	// A council needs Barracks 3 first.
+	Check B = L.CheckBuild(Def("council_sunreach"));
+	KD_CHECK(B.error == Error::NeedRequirement && B.missing.building == Def("barracks") && B.missing.level == 3);
+	// The Mistmoor council (panthers) opens only at Castle 8; this kingdom is at 9, so all four can be built.
+	KD_CHECK(L.CheckBuild(Def("council_mistmoor")).error != Error::CastleTooLow);
+
+	// With the council at level 1: grenadiers train, war priests wait for council level 3, the troop level is capped at 3.
+	Save = WithBuilding(Replace(L.Save(), "\"def\":\"barracks\",\"level\":1", "\"def\":\"barracks\",\"level\":3"), "council_sunreach", 1, 20);
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Save, Error));
+	KD_CHECK(M.CheckBuild(Def("council_sunreach")).error == Error::LimitReached);
+	KD_CHECK(M.CheckTrain(Gren).error == Error::None && M.Train(Gren) == Error::None);
+	Ck = M.CheckTrain(Pri);
+	KD_CHECK(Ck.error == Error::NeedRequirement && Ck.missing.building == Def("council_sunreach") && Ck.missing.level == 3);
+	KD_CHECK(M.CouncilLevel(Gren) == 1 && M.TroopLevelCap(Gren) == 3);
+	KD_CHECK(M.UpgradeTroop(Gren, false) == Error::None);
+	M.Advance(M.Now() + 30 * 86400);
+	KD_CHECK(M.UpgradeTroop(Gren, false) == Error::None);
+	M.Advance(M.Now() + 30 * 86400);
+	KD_CHECK(M.TroopLevel(Gren) == 3);
+	Ck = M.CheckTroopUpgrade(Gren);
+	KD_CHECK(Ck.error == Error::NeedRequirement && Ck.missing.building == Def("council_sunreach") && Ck.missing.level == 2);
+	KD_CHECK(M.ArmyCount(Gren) == 2);
+
+	// Council level 3: war priests too, and the troop level cap rises to 7.
+	Save = Replace(M.Save(), "\"def\":\"council_sunreach\",\"level\":1", "\"def\":\"council_sunreach\",\"level\":3");
+	Kingdom N(Content());
+	KD_CHECK(N.Load(Save, Error));
+	KD_CHECK(N.CheckTrain(Pri).error == Error::None && N.TroopLevelCap(Gren) == 7 && N.CheckTroopUpgrade(Gren).error == Error::None);
+	// Another council does not help: pikemen still need the Rimeheim council.
+	KD_CHECK(N.CheckTrain(Troop("troop.pikemen")).missing.building == Def("council_rimeheim"));
+	Kingdom Back(Content());
+	KD_CHECK(Back.Load(N.Save(), Error) && Back.Hash() == N.Hash());
+}
+
 void TestTrainingQueue()
 {
 	Kingdom K(Content());
@@ -327,8 +403,9 @@ void TestTrainingQueue()
 	KD_CHECK(K.ArmyCount(Mil) == 3 && K.ArmyTotal() == 4 && K.ArmyCapacity() == 10 && K.BattleSlots() == 3);
 	KD_CHECK(K.QueueCapacity() == 6 && K.SurvivalPct() == 100 && K.MaxTroopLevel() == 1);
 	KD_CHECK(K.CheckTrain(Troop("troop.spearmen")).error == Error::Locked); // Spearmen from Castle 3 (estimate)
-	KD_CHECK(Content().troops.size() == 9);
-	for (const char* Id : {"troop.swordsmen", "troop.grenadiers", "troop.outriders", "troop.priests", "troop.chainbreakers", "troop.knights"})
+	KD_CHECK(Content().troops.size() == 12);
+	for (const char* Id : {"troop.swordsmen", "troop.grenadiers", "troop.outriders", "troop.priests", "troop.chainbreakers", "troop.knights",
+			 "troop.pikemen", "troop.goliaths", "troop.panthers"})
 	{
 		const int T = Troop(Id);
 		KD_CHECK(T >= 0 && Content().troops[static_cast<size_t>(T)].unlockCastle > 3);
@@ -768,6 +845,7 @@ int main()
 		{"PortalUpgradeMidway", TestPortalUpgradeMidway},
 		{"ArmyContent", TestArmyContent},
 		{"TrainingQueue", TestTrainingQueue},
+		{"EnvoyCouncils", TestEnvoyCouncils},
 		{"TroopResearch", TestTroopResearch},
 		{"CasualtiesTitansRelicsFusion", TestCasualtiesTitansRelicsFusion},
 		{"ArmySaveAndMigration", TestArmySaveAndMigration},
