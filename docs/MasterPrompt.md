@@ -1070,7 +1070,8 @@ estimates `"src": "est"`.
   Mines and Farms keep their output up to their own capacity until it is collected with a tap.
 - **Buildings (original names):** Castle (max 25, gates everything), Gold Mine, Farm, Gold Vault, Granary, Gold Reserve,
   Food Reserve, Barracks, Army Camp, Garrison, Armoury, Medical School, Alliance Camp, Arcane Tower, Spell Forge, Portal,
-  Builder's Yard, Hall of Titans, Relic Temple, Eternal Shrine, Adventurers' Guild. Emissary Councils come later under our own faction names.
+  Builder's Yard, Hall of Titans, Relic Temple, Eternal Shrine, Adventurers' Guild, plus four Emissary Councils under our own names
+  (Sunreach, Rimeheim, Jade Peaks, Mistmoor) with the original's elements (fire, ice, earth, poison).
 - **Builders:** 1 at the start; Builder's Yard hires the 2nd–5th for 1,500 / 4,000 / 9,000 / 20,000 Gems. One construction per builder.
   Missing Gold/Food can be bought with Gems; speed-ups cost Gems pro rata of the remaining time.
 - **Castle requirements** repeat in a three-level cycle: Garrison + Army Camp → Armoury + Hall of Titans → Arcane Tower + Portal.
@@ -1081,7 +1082,10 @@ estimates `"src": "est"`.
   145 Food, 5 min; Archers 200 Food). Trained units wait in the Army Camp (capacity 10 → 225; battle slots 3 → 14).
   The Armoury raises troop levels for Food (Militia 1→2: 3,500), capped by the Armoury level. **Casualties:** without a
   Medical School every squad that took damage is destroyed after the battle; with it a squad returns if it kept at least
-  the threshold (85% at L1 → 75% at L11). Emissary troops come with the Emissary Councils.
+  the threshold (85% at L1 → 75% at L11). **Emissary troops** (original rule): every troop trains in the Barracks, but a
+  people's troop needs its council: Sunreach sends Grenadiers (War Priests from council L3), Rimeheim sends Pikemen
+  (Chainbreakers from L3), Jade Peaks sends Goliaths, Mistmoor sends Panthers (Castle 8, wiki). The council level caps its
+  troops' level at 2 × level + 1 (ours); pikes slow, goliaths cleave and knock down, panthers poison (numbers ours).
 - **Titans (original rules; supersedes 5.x where they differ):** rarity R1–R4 (stars) sets the max level 20/30/40/50;
   titans earn XP in battles and rest after battles once above level 10. The Relic Temple gives a free relic every day and
   has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan.

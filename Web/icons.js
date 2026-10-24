@@ -98,6 +98,17 @@ const DotIcons = (() => {
 		// A priest's staff crowned with a golden sun.
 		'troop.priests': stick('M24 46V20', K.wood, 3.4) + RAYS + c(24, 13, 8, K.gold) + c(24, 13, 4, K.fireY) + hi('M19 10C20 8 22 7 24 7') +
 			p('M15 30C19 27 29 27 33 30L31 33C27 31 21 31 17 33Z', K.cream),
+		// A long pike with an ice-blue head and a frost sparkle.
+		'troop.pikemen': stick('M7 45L34 10', K.wood, 3) + p('M41 1L38.5 12.5L35 10L31.5 7.5Z', '#9fe3ff') + line('M38 4.5L34.5 9.5', '#4f9fc8', 1.2) +
+			p('M26 23C29 21 33 23 33 26C31 27 28 26 26 23Z', K.cream) + spark(14, 13, 5, '#bff1ff') + spark(38, 30, 3.4, K.white),
+		// A giant's stone-headed club bound with a jade band.
+		'troop.goliaths': stick('M8 45L26 22', K.wood, 4.6) + c(31, 15, 11, '#9a948a') + line('M23 11C28 7 36 9 39 14', '#2f9a72', 3.6) +
+			c(26, 19, 1.6, '#6e695f', 'stroke="none"') + c(35, 18, 2, '#6e695f', 'stroke="none"') + hi('M24 12C26 8.5 30 7 33 7.5'),
+		// A black panther's head with green eyes and a drop of venom on the fang.
+		'troop.panthers': p('M10 7L17 15C21 13.5 27 13.5 31 15L38 7L39 21C42 25 41 33 36 37C32 40.5 28 42 24 42C20 42 16 40.5 12 37C7 33 6 25 9 21Z', '#2a2730') +
+			p('M17 24L22 26.5L17 28Z', '#9cff6a', 'stroke-width="1"') + p('M31 24L26 26.5L31 28Z', '#9cff6a', 'stroke-width="1"') +
+			p('M21 31.5H27L24 34.5Z', '#4a4452', 'stroke-width="1"') + p('M21 36L22 40L23 36Z', K.white, 'stroke-width="0.8"') + p('M25 36L26 40L27 36Z', K.white, 'stroke-width="0.8"') +
+			drop(26, 40, 0.55, '#8fdc4f') + hi('M13 21C14 18.5 16 17 18 16.5'),
 
 		// --- Buildings ----------------------------------------------------------------------------
 		'building.castle': r(4, 18, 11, 25, 1, K.stone) + p('M3 19L9.5 6L16 19Z', K.blue) + r(33, 18, 11, 25, 1, K.stone) + p('M32 19L38.5 6L45 19Z', K.blue) +
@@ -160,6 +171,21 @@ const DotIcons = (() => {
 			p('M24 13C27 17 30 19.5 28.5 23.5C27.5 26 25.5 26.5 24 26.5C21 26.5 19.5 25 19.8 22.5C20 20 22 19 22.5 17C23.5 19.5 24.5 20 25 20.5C24.5 18 23.5 16 24 13Z', K.fireY, 'stroke="none"') +
 			p('M9 26H39C39 32.5 33 37 24 37C15 37 9 32.5 9 26Z', '#c58f43') + r(7.5, 24, 33, 4, 2, '#e0aa55') +
 			r(21, 36.5, 6, 4, 0.5, '#8d6a3a') + r(14, 40, 20, 4.5, 2, K.stoneD),
+		// Envoy councils: a sun palace, a frost longhouse, a jade pagoda and a marsh stilt hut.
+		'building.council_sunreach': RAYS + p('M13 22C13 13 18 9 24 9C30 9 35 13 35 22Z', K.gold) + line('M24 9V4', INK, 1.6) + c(24, 3.5, 1.8, K.gold) +
+			r(9, 22, 30, 21, 1, '#ecd09a') + r(5, 17, 5, 26, 1, '#d8b578') + r(38, 17, 5, 26, 1, '#d8b578') + c(7.5, 16, 3, K.gold) + c(40.5, 16, 3, K.gold) +
+			p('M20 43V34C20 29 28 29 28 34V43Z', '#7a3a1c') + line('M12 27H36', K.goldD, 1.3) + hi('M16 18C17 14 20 12 23 11.5'),
+		'building.council_rimeheim': p('M4 25L24 8L44 25Z', '#4f7fa8') + p('M4 25L24 8L44 25L40 25L24 12L8 25Z', '#f4f8fb', 'stroke="none"') +
+			p('M4 25L24 8L44 25Z', 'none') + line('M9 21L5 15M39 21L43 15', INK, 2) + r(8, 25, 32, 18, 0.5, '#7a5634') +
+			line('M8 31H40M8 37H40', '#5b3e24', 1.2) + p('M20 43V33H28V43Z', '#4a3220') + p('M33 33L35.5 27L38 33L35.5 39Z', '#bfe8ff', 'stroke-width="1.2"') +
+			spark(12, 6, 3.6, '#bff1ff'),
+		'building.council_jade': p('M6 21C12 21 16 18 18 14H30C32 18 36 21 42 21Z', '#2f9a72') + r(14, 21, 20, 8, 0.5, '#b83a2e') +
+			p('M3 33C10 33 14 31 16 28H32C34 31 38 33 45 33Z', '#2f9a72') + r(11, 33, 26, 11, 0.5, '#b83a2e') + p('M20 44V37H28V44Z', '#5e2018') +
+			p('M21 14L24 4L27 14Z', K.gold) + line('M8 33.5L4 37M40 33.5L44 37', INK, 1.4) + hi('M9 20.5H17M7 32.5H15'),
+		'building.council_mistmoor': c(37, 9, 5.5, '#dfffc0') + c(35, 7.5, 5, '#3e6a5a', 'stroke="none"') +
+			line('M12 44V30M36 44V30M18 44V33M30 44V33', '#4e3a26', 2.4) + p('M3 44C10 41 38 41 45 44Z', '#3f6a4a') +
+			p('M10 31H38V22H10Z', '#7a5b3a') + p('M6 23L24 7L42 23Z', '#caa458') + line('M12 18L24 9.5L36 18', '#9b7c3a', 1.2) +
+			p('M21 31V25H27V31Z', '#1d1a22') + c(8, 34, 1.6, '#9cff6a', 'stroke="none"') + c(41, 30, 1.4, '#9cff6a', 'stroke="none"') + c(15, 38, 1.2, '#9cff6a', 'stroke="none"'),
 		'building.adventurers_guild': p('M5 13L16.5 9L31.5 13L43 9V36L31.5 40L16.5 36L5 40Z', '#f0dfb2') + line('M16.5 9V36M31.5 13V40', '#b89a62', 1.3) +
 			line('M9 33C14 27 19 31 23 25C27 19 32 23 36 17', '#c0392b', 1.8, 'stroke-dasharray="2.5 2.5"') + line('M34 11.5L39 16.5M39 11.5L34 16.5', K.red, 2.2) +
 			c(12.5, 19, 4.5, K.cream) + p('M12.5 15.5L13.9 19L12.5 22.5L11.1 19Z', K.red, 'stroke-width="1"'),

@@ -10,7 +10,7 @@ both compiled with Emscripten; no game rules live in JavaScript.
 | `page.html` | Markup and styles of the page and HUD |
 | `icons.js` | Hand-drawn SVG icons (troops, buildings, spells, relics, titan classes, altars, lands, menu) shared by both screens; also cached as images for the island overlay |
 | `app.js` | Battle: Three.js view, procedural titan animation, touch/mouse/keyboard gestures, HUD logic, modes |
-| `kingdom.js` | Kingdom: floating island, procedural building and land models, overlay, shop, panels, lands (gold, farm, victory-point, ruins), season sheet, Barracks, Armoury, army, Hall of Titans, Relic Temple, relic inventory and repair, Spell Forge, Arcane Tower, land guards, battle preparation, saves (browser and claude.ai `db`) |
+| `kingdom.js` | Kingdom: floating island, procedural building and land models, overlay, shop, panels, lands (gold, farm, victory-point, ruins), season sheet, Barracks, Armoury, envoy councils, army, Hall of Titans, Relic Temple, relic inventory and repair, Spell Forge, Arcane Tower, land guards, battle preparation, saves (browser and claude.ai `db`) |
 | `bundle.py` | Inlines `icons.js`, `app.js`, `kingdom.js` and `Content/Data` into `dist/index.html` (standalone) and `dist/artifact.html` (body only) |
 | `make_content.py` | Writes `Content/Data` as one JSON file (handy for tools) |
 

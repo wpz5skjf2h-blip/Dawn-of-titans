@@ -31,13 +31,13 @@ const SOLDIER_SCALE = 1.25;
 const RU = {
 	troop: { 'troop.militia': 'Ополчение', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копейщики', 'troop.archers': 'Лучники',
 		'troop.outriders': 'Всадники', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренадеры',
-		'troop.chainbreakers': 'Цепеломы', 'troop.priests': 'Боевые жрецы' },
+		'troop.chainbreakers': 'Цепеломы', 'troop.priests': 'Боевые жрецы', 'troop.pikemen': 'Пикинёры', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры' },
 	troopShort: { 'troop.militia': 'Ополч.', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копья', 'troop.archers': 'Лучники',
 		'troop.outriders': 'Конница', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренад.',
-		'troop.chainbreakers': 'Цепи', 'troop.priests': 'Жрецы' },
+		'troop.chainbreakers': 'Цепи', 'troop.priests': 'Жрецы', 'troop.pikemen': 'Пики', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры' },
 	troopOf: { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
 		'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.skeleton': 'скелеты', 'troop.grenadiers': 'гренадеры',
-		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы' },
+		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры' },
 	titan: { 'titan.thor': 'Тор', 'titan.talos': 'Талос', 'titan.minotaur': 'Минотавр', 'titan.cyclops': 'Циклоп', 'titan.perun': 'Перун',
 		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида' },
 	abil: { 'ability.talos.molten_ichor': 'Ихор', 'ability.talos.bronze_bulwark': 'Оплот', 'ability.thor.hammer_throw': 'Молот',
@@ -362,6 +362,12 @@ const C_RUST = 0x8a5a3a;
 const C_IRON = 0x4a4f57;
 const C_ROBE = 0xeee6d2;
 const C_GOLD = 0xd9b45a;
+const C_FUR = 0xd6cfc0;
+const C_ICE = 0x9fdcff;
+const C_JADE = 0x2f9a72;
+const C_GIANT = 0xb98a68;
+const C_PANTHER = 0x1f1d24;
+const C_VENOM = 0x9cff6a;
 const lowCyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
 const lowSph = new THREE.SphereGeometry(0.5, 8, 6);
 const lowCone = new THREE.ConeGeometry(0.5, 1, 8);
@@ -432,6 +438,44 @@ function troopModel(id) {
 		gear.push(part(lowCone, C_ROBE, 0, 1.72, 0.04, 0.46, 0.46, 0.46));
 		gear.push(part(GEO.box, C_WOOD, 0.38, 1.25, -0.1, 0.06, 2.4, 0.06));
 		gear.push(part(lowSph, C_GOLD, 0.38, 2.5, -0.1, 0.3, 0.3, 0.3));
+	} else if (id === 'troop.pikemen') {
+		// Northern pikemen: a fur cloak over the house colour, a fur-trimmed helm and a long pike with an ice-blue head.
+		body.push(part(lowCyl, W, 0, 0.62, 0, 0.6, 1.24, 0.6));
+		infantryHead(true);
+		gear.push(part(lowCyl, C_FUR, 0, 1.53, 0, 0.46, 0.08, 0.46));
+		gear.push(part(GEO.box, C_FUR, 0, 0.9, 0.3, 0.5, 0.8, 0.08));
+		gear.push(part(GEO.box, C_WOOD, 0.34, 1.35, -0.9, 0.06, 0.06, 4.4, rad(8), 0, 0));
+		gear.push(part(lowCone, C_ICE, 0.34, 1.7, -3.32, 0.14, 0.5, 0.14, rad(-82), 0, 0));
+	} else if (id === 'troop.goliaths') {
+		// Hill giants about two and a half times a man's height: a kilt and shoulder strap in the house colour, a jade
+		// pauldron and a stone-headed club. Built big here, the sim gives them a wide footprint too.
+		for (const lx of [-0.3, 0.3]) gear.push(part(GEO.box, C_GIANT, lx, 0.6, 0, 0.38, 1.2, 0.42));
+		body.push(part(lowCyl, W, 0, 1.35, 0, 1.15, 0.6, 0.8));
+		gear.push(part(GEO.box, C_GIANT, 0, 2.1, 0, 1.15, 1.0, 0.72));
+		body.push(part(GEO.box, W, 0, 2.15, 0, 1.18, 0.22, 0.75, 0, 0, rad(40)));
+		gear.push(part(lowSph, C_GIANT, 0, 2.86, -0.05, 0.56, 0.6, 0.56));
+		gear.push(part(lowSph, 0x4a3a2a, 0, 3.02, 0.06, 0.6, 0.36, 0.56));
+		gear.push(part(lowSph, C_JADE, -0.62, 2.55, 0, 0.52, 0.34, 0.6));
+		gear.push(part(GEO.box, C_GIANT, -0.72, 1.85, 0, 0.3, 1.15, 0.32));
+		gear.push(part(GEO.box, C_GIANT, 0.72, 2.1, -0.3, 0.3, 0.32, 0.9));
+		gear.push(part(lowCyl, C_WOOD, 0.75, 2.05, -1.1, 0.2, 1.5, 0.2, rad(-70), 0, 0));
+		gear.push(part(lowSph, 0x8f8a80, 0.75, 2.35, -1.9, 0.62, 0.55, 0.62));
+		const big = new THREE.Matrix4().makeScale(1.35, 1.35, 1.35);
+		for (const q of body.concat(gear)) q.m.premultiply(big);
+	} else if (id === 'troop.panthers') {
+		// A black marsh panther with glowing eyes and a light rider in the house colour.
+		gear.push(part(GEO.box, C_PANTHER, 0, 0.78, 0, 0.56, 0.5, 1.6));
+		gear.push(part(GEO.box, C_PANTHER, 0, 0.95, -0.95, 0.46, 0.42, 0.5));
+		gear.push(part(GEO.box, C_PANTHER, 0, 0.88, -1.25, 0.3, 0.22, 0.3));
+		for (const ex of [-0.12, 0.12]) gear.push(part(GEO.box, C_VENOM, ex, 1.04, -1.21, 0.07, 0.05, 0.04));
+		for (const ex of [-0.15, 0.15]) gear.push(part(lowCone, C_PANTHER, ex, 1.24, -0.88, 0.12, 0.18, 0.12));
+		for (const [lx, lz] of [[-0.2, -0.6], [0.2, -0.6], [-0.2, 0.6], [0.2, 0.6]]) gear.push(part(GEO.box, C_PANTHER, lx, 0.3, lz, 0.14, 0.6, 0.16));
+		gear.push(part(GEO.box, C_PANTHER, 0, 1.05, 1.15, 0.08, 0.08, 0.9, rad(-35), 0, 0));
+		body.push(part(GEO.box, W, 0, 1.08, 0.15, 0.6, 0.12, 0.7));
+		body.push(part(lowCyl, W, 0, 1.5, 0.2, 0.42, 0.7, 0.42));
+		gear.push(part(lowSph, C_SKIN, 0, 1.98, 0.2, 0.32, 0.34, 0.32));
+		gear.push(part(lowCone, 0x3b5a2e, 0, 2.18, 0.24, 0.42, 0.42, 0.42));
+		gear.push(part(GEO.box, C_STEEL, 0.32, 1.55, -0.35, 0.05, 0.05, 1.2, rad(-25), 0, 0));
 	} else if (id === 'troop.skeleton') {
 		// Raised dead: a tattered tabard in the caster's colour over bare bones, a rusty blade.
 		body.push(part(GEO.box, W, 0, 0.95, 0, 0.5, 0.55, 0.22));
@@ -699,7 +743,7 @@ function buildUnits(st, soldiers) {
 }
 
 const TROOP_TINT = { 'troop.militia': 1.15, 'troop.swordsmen': 0.85, 'troop.spearmen': 1.0, 'troop.archers': 1.3, 'troop.outriders': 0.95, 'troop.knights': 0.7, 'troop.skeleton': 0.55,
-	'troop.grenadiers': 1.1, 'troop.chainbreakers': 0.8, 'troop.priests': 1.25 };
+	'troop.grenadiers': 1.1, 'troop.chainbreakers': 0.8, 'troop.priests': 1.25, 'troop.pikemen': 1.05, 'troop.goliaths': 0.75, 'troop.panthers': 0.9 };
 function makeTroopGroup(st, side, troop, n) {
 	const id = st.troops[troop].id;
 	const model = troopModel(id);

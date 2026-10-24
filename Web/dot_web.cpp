@@ -1028,6 +1028,11 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	{
 		O.Raw(I ? "," : "").Int(Km->ArmyCount(static_cast<int>(I)));
 	}
+	O.Raw("],").Key("lvCap").Raw("[");
+	for (size_t I = 0; I < C.troops.size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->TroopLevelCap(static_cast<int>(I)));
+	}
 	O.Raw("],").Key("total").Int(Km->ArmyTotal()).Comma().Key("cap").Int(Km->ArmyCapacity()).Comma().Key("slots").Int(Km->BattleSlots()).Comma();
 	O.Key("qcap").Int(Km->QueueCapacity()).Comma().Key("queue").Raw("[");
 	for (size_t I = 0; I < Km->TrainQueue().size(); ++I)
