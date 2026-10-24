@@ -38,7 +38,7 @@ const K = {
 	place: null, // placement or move mode
 	sheet: null, // open sheet: { render, live, key }
 	armed: null, // gem spend waiting for a second tap: { act, until }
-	floaters: [], hits: [], lastStateAt: 0, lastStateSec: 0, lastSave: 0, ready: false,
+	floaters: [], hits: [], lastStateAt: 0, lastStateSec: 0, lastSave: 0, ready: false, reported: new Set(),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -211,7 +211,8 @@ const clock = { offset: 0, scale: 1, last: 0 };
 function nowF() { return Date.now() / 1000 + clock.offset; }
 function nowSec() { clock.last = Math.max(clock.last, Math.floor(nowF())); return clock.last; }
 
-const saver = { timer: 0, savedAt: 0 };
+// loaded: this page opened a saved kingdom (not a new one); loadedAt: when that save was made.
+const saver = { timer: 0, savedAt: 0, loaded: false, loadedAt: 0 };
 function readLocal() {
 	try {
 		const r = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -230,7 +231,35 @@ function persist() {
 function persistSoon() { clearTimeout(saver.timer); saver.timer = setTimeout(persist, 400); }
 
 // Cloud copy in the viewer's private claude.ai storage (artifact `db` capability), when available.
-const cloud = { ref: null, state: 'off', busy: false, next: null, sentText: '', lastWrite: 0, backoffUntil: 0 };
+// "kingdom" is the live copy; "kingdom-prev" keeps another kingdom of the same account (the one not shown after
+// two browsers disagreed, or the one before "start again"), so the menu can switch back to it.
+const cloud = { ref: null, prevRef: null, prev: null, state: 'off', busy: false, next: null, sentText: '', lastWrite: 0, backoffUntil: 0 };
+/** The kingdom's seed: set when it is founded and kept for its whole life, so equal seeds mean the same kingdom. */
+function seedOf(text) { const m = /"seed":\s*"?(\d+)/.exec(text || ''); return m ? m[1] : ''; }
+/** How far a saved kingdom has gone: building and titan levels, lands and expansions. */
+function progressOf(text) {
+	try {
+		const s = JSON.parse(text);
+		let n = 5 * ((s.lands || []).length + (s.expansions || 1));
+		for (const b of s.buildings || []) n += b.level || 0;
+		for (const t of s.titans || []) n += t.level || 0;
+		return n;
+	} catch (e) { return -1; }
+}
+/** "Замок 4, 3 земли" for a saved kingdom. */
+function summaryOf(text) {
+	try {
+		const s = JSON.parse(text);
+		const c = (s.buildings || []).find((b) => b.def === 'castle');
+		const n = (s.lands || []).length;
+		return 'Замок ' + (c ? c.level : 1) + ', ' + n + ' ' + plural(n, 'земля', 'земли', 'земель');
+	} catch (e) { return 'королевство'; }
+}
+async function keepPrev(rec) {
+	if (!cloud.prevRef || !rec || typeof rec.save !== 'string') return;
+	const doc = { v: rec.v || 1, save: rec.save, offset: +rec.offset || 0, savedAt: +rec.savedAt || Date.now() };
+	try { await cloud.prevRef.set(doc); cloud.prev = doc; } catch (e) { console.warn('Kingdom backup not saved:', e); }
+}
 async function cloudConnect() {
 	const c = window.claude;
 	if (!c || typeof c.use !== 'function') return;
@@ -239,12 +268,25 @@ async function cloudConnect() {
 		if (!db || !user) return;
 		const id = await user.id();
 		if (!id) return;
-		cloud.ref = db.collection('data/users/' + id).doc('kingdom');
-		const snap = await cloud.ref.get();
+		const col = db.collection('data/users/' + id);
+		cloud.ref = col.doc('kingdom');
+		cloud.prevRef = col.doc('kingdom-prev');
+		const [snap, prevSnap] = await Promise.all([cloud.ref.get(), cloud.prevRef.get().catch(() => null)]);
+		const pd = prevSnap && prevSnap.exists ? prevSnap.data() : null;
+		cloud.prev = pd && typeof pd.save === 'string' ? pd : null;
 		const d = snap.exists ? snap.data() : null;
 		if (d && typeof d.save === 'string') {
 			cloud.sentText = d.save;
-			if ((+d.savedAt || 0) > saver.savedAt && adopt(d)) toast('Королевство загружено из вашего аккаунта', 'gold');
+			const ours = { v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() };
+			if (d.save !== ours.save) {
+				// The account copy wins when this browser had no kingdom yet, when it is the same kingdom saved later
+				// (played on another device), or when it is another kingdom that has gone at least as far. The kingdom
+				// not shown is kept as "kingdom-prev" before the live copy is overwritten.
+				const same = seedOf(d.save) === seedOf(ours.save);
+				const take = !saver.loaded || (same ? (+d.savedAt || 0) > saver.loadedAt : progressOf(d.save) >= progressOf(ours.save));
+				if (!same && saver.loaded) await keepPrev(take ? ours : d);
+				if (take && adopt(d)) toast('Королевство загружено из вашего аккаунта', 'gold');
+			}
 		}
 		cloud.state = 'on';
 		persist();
@@ -298,6 +340,7 @@ function adopt(rec) {
 	K.bridge.advance(nowSec());
 	K.sel = null;
 	cancelPlace();
+	if (K.sheet) closeSheet();
 	refresh(true);
 	return true;
 }
@@ -1788,6 +1831,14 @@ function toast(text, kind) {
 	while (box.children.length > (Math.min(K.app.viewW, K.app.viewH) < 500 ? 2 : 3)) box.removeChild(box.firstChild);
 	setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 3400);
 }
+/** Logs an error of the kingdom screen and shows its text once, so the screen keeps running and the text can be passed on. */
+function report(where, e) {
+	const text = where + ': ' + ((e && e.message) || e);
+	if (K.reported.has(text)) return;
+	K.reported.add(text);
+	console.error('Kingdom ' + where + ' failed:', e);
+	try { toast('Ошибка королевства (' + text + ')', 'bad'); } catch (e2) { /* the toast box itself is broken */ }
+}
 function missingText(cost) {
 	const st = K.st;
 	const parts = [];
@@ -1966,7 +2017,8 @@ function updatePanel() {
 	const el = $('kPanel');
 	const s = K.sel;
 	const wide = K.app.viewW >= 900;
-	const r = s && !K.place ? (s.kind === 'b' ? buildingPanel(s.id) : landPanel(s.id)) : null;
+	let r = null;
+	try { r = s && !K.place ? (s.kind === 'b' ? buildingPanel(s.id) : landPanel(s.id)) : null; } catch (e) { report('панель', e); }
 	if (r && K.sheet) { el.hidden = true; return; }
 	if (!r) {
 		if (s && !K.place) K.sel = null;
@@ -2265,6 +2317,10 @@ function onAct(e) {
 		if (!isArmed('reset')) arm('reset');
 		else resetKingdom();
 		break;
+	case 'swap-kingdom':
+		if (!isArmed('swap')) arm('swap');
+		else swapKingdom();
+		break;
 	case 'welcome-ok': closeSheet(); try { localStorage.setItem(HINT_KEY, '1'); } catch (err) { /* ignore */ } break;
 	case 'help': openWelcome(); break;
 	case 'builders': openBuilders(); break;
@@ -2335,6 +2391,7 @@ function doUpgrade(id, gems) {
 }
 function resetKingdom() {
 	K.armed = null;
+	if (cloud.state === 'on') keepPrev({ v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() }); // the menu can bring it back
 	try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
 	clock.offset = 0;
 	clock.scale = 1;
@@ -2539,7 +2596,8 @@ function closeSheet() {
 }
 function refreshSheet(force) {
 	if (!K.sheet) return;
-	const r = K.sheet.render();
+	let r = null;
+	try { r = K.sheet.render(); } catch (e) { report('окно', e); }
 	if (!r) { closeSheet(); return; }
 	const panel = $('kSheetPanel');
 	if (force || r.key !== K.sheet.key) {
@@ -2835,6 +2893,20 @@ function openExpansion() {
 		return { key: ['exp', st.expansions, ck.err, ck.g, isArmed('expand')].join('|'), html };
 	});
 }
+/** The account's second kingdom ("kingdom-prev"), when it is not the one on screen. */
+function otherKingdom() {
+	return cloud.prev && seedOf(cloud.prev.save) !== seedOf(K.bridge.save()) ? cloud.prev : null;
+}
+function swapKingdom() {
+	const other = otherKingdom();
+	K.armed = null;
+	if (!other) return;
+	const cur = { v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() };
+	if (!adopt(other)) { toast('Это королевство не открылось', 'bad'); return; }
+	keepPrev(cur);
+	persist();
+	toast('Открыто другое королевство: ' + summaryOf(other.save), 'gold');
+}
 function cloudText() {
 	if (cloud.state === 'on') return 'Копия хранится в вашем аккаунте claude.ai и откроется на другом устройстве.';
 	if (cloud.state === 'error') return 'Копия в аккаунте сейчас недоступна, прогресс хранится в этом браузере.';
@@ -2845,16 +2917,21 @@ function openMenu() {
 	select(null);
 	openSheet(() => {
 		const scales = [1, 10, 100, 1000];
+		const other = otherKingdom();
+		const otherHtml = other ? '<p class="fine">В аккаунте сохранено и другое королевство: ' + esc(summaryOf(other.save)) + ', от ' + new Date(+other.savedAt || 0).toLocaleString('ru-RU') +
+			'. Можно перейти в него, а это останется вторым.</p><div class="actions"><button class="btn' + (isArmed('swap') ? ' danger' : '') + '" data-act="swap-kingdom">' +
+			(isArmed('swap') ? 'Точно перейти?' : 'Перейти в другое королевство') + '</button></div>' : '';
 		const html = '<h2 id="kSheetTitle">Королевство</h2>' +
 			'<p>Остров, постройки, ресурсы, строители, армия, титаны, камни портала и земли работают по правилам оригинала Dawn of Titans. Таймеры идут и когда страница закрыта.</p>' +
 			'<div class="actions"><button class="btn primary" data-act="training">Тренировочные бои</button><button class="btn" data-act="help">Как играть</button></div>' +
 			'<h3>Ускорение времени</h3><p class="fine">Для проверки: стройки, добыча и камни идут быстрее. В оригинале такого нет.</p>' +
 			'<div class="seg">' + scales.map((s) => '<button class="' + (clock.scale === s ? 'on' : '') + '" data-act="time" data-scale="' + s + '">×' + s + '</button>').join('') + '</div>' +
-			'<h3>Сохранение</h3><p class="fine">' + cloudText() + '</p>' +
-			'<p class="fine">Экономика считается той же детерминированной C++-библиотекой, что войдёт в Unreal-клиент и сервер. Хэш состояния <code>' + esc(K.st.hash) + '</code>.</p>' +
+			'<h3>Сохранение</h3><p class="fine">' + cloudText() + '</p>' + otherHtml +
+			'<p class="fine">Экономика считается той же детерминированной C++-библиотекой, что войдёт в Unreal-клиент и сервер. Хэш состояния <code data-live="hash"></code>.</p>' +
 			'<p class="fine">Фанатский прототип по мотивам Dawn of Titans (NaturalMotion, 2015), не связан с правообладателями. Цифры из вики оригинала помечены в окнах улучшения; остальное — наши оценки.</p>' +
 			'<div class="actions"><button class="btn' + (isArmed('reset') ? ' danger' : '') + '" data-act="reset">' + (isArmed('reset') ? 'Точно начать заново?' : 'Начать королевство заново') + '</button>' + closeBtn + '</div>';
-		return { key: ['menu', clock.scale, cloud.state, isArmed('reset'), K.st.hash].join('|'), html };
+		// The hash changes every second, so it is filled in live and the buttons are not rebuilt under the finger.
+		return { key: ['menu', clock.scale, cloud.state, isArmed('reset'), isArmed('swap'), other ? other.savedAt : 0].join('|'), html, live(el) { live(el, 'hash', K.st.hash); } };
 	});
 }
 function openWelcome() {
@@ -3478,8 +3555,14 @@ function openPrepare(wid, capture) {
 // ---------------------------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------------------------
+// Each part of a frame is guarded: an error shows once and the island keeps being drawn.
 function frame(dt, t) {
 	if (!K.ready) return;
+	try { frameUpdate(dt, t); } catch (e) { report('кадр', e); }
+	try { K.app.renderer.render(scene, cam); } catch (e) { report('рисунок', e); }
+	try { drawOverlay(t); } catch (e) { report('значки', e); }
+}
+function frameUpdate(dt, t) {
 	const app = K.app;
 	// Real elapsed time (the loop's dt is capped), at most a second per frame.
 	const real = K.lastT ? clamp((t - K.lastT) / 1000, 0, 1) : dt;
@@ -3516,8 +3599,6 @@ function frame(dt, t) {
 		world.ghost.group.position.y = 0.2 + Math.abs(Math.sin(ts * 4)) * 0.25;
 		for (const u of world.ghost.upd) u(ts);
 	}
-	r.render(scene, cam);
-	drawOverlay(t);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3548,6 +3629,8 @@ function init(app) {
 				clock.offset = 0;
 			} else saver.savedAt = +local.savedAt || 0;
 		}
+		saver.loaded = loaded;
+		saver.loadedAt = saver.savedAt;
 		if (!loaded) K.bridge.newGame(nowSec(), Math.floor(Math.random() * 2147483647));
 		K.bridge.advance(nowSec());
 		const st = K.bridge.state();
@@ -3590,6 +3673,7 @@ function init(app) {
 	} catch (e) {
 		console.error('Kingdom screen failed to start:', e);
 		K.ready = false;
+		window.dotKingdom.error = (e && e.message) || String(e);
 		return false;
 	}
 }
