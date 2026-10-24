@@ -1433,6 +1433,27 @@ int Kingdom::MaxTroopLevel() const
 	return L ? static_cast<int>(std::max<int64_t>(1, L->maxTroopLevel)) : 1;
 }
 
+int Kingdom::CouncilLevel(int Troop) const
+{
+	if (Troop < 0 || Troop >= static_cast<int>(C.troops.size()) || C.troops[static_cast<size_t>(Troop)].council < 0)
+	{
+		return -1;
+	}
+	const LevelDef* L = BuildingLevel(C.troops[static_cast<size_t>(Troop)].council);
+	return L ? L->level : 0;
+}
+
+int Kingdom::TroopLevelCap(int Troop) const
+{
+	int Cap = MaxTroopLevel();
+	if (CouncilLevel(Troop) >= 0)
+	{
+		const LevelDef* L = BuildingLevel(C.troops[static_cast<size_t>(Troop)].council);
+		Cap = L && L->maxTroopLevel > 0 ? std::min<int>(Cap, static_cast<int>(L->maxTroopLevel)) : (L ? Cap : 1);
+	}
+	return Cap;
+}
+
 int Kingdom::SurvivalPct() const
 {
 	const LevelDef* L = BuildingLevel(C.medicalSchool);
@@ -1504,6 +1525,12 @@ Check Kingdom::CheckTrain(int Troop) const
 	{
 		Out.error = Error::Locked;
 		Out.castle = T.unlockCastle;
+		return Out;
+	}
+	if (T.council >= 0 && CouncilLevel(Troop) < T.councilLevel)
+	{
+		Out.error = Error::NeedRequirement;
+		Out.missing = {T.council, T.councilLevel, 1};
 		return Out;
 	}
 	if (QueueCapacity() <= 0)
@@ -1649,6 +1676,21 @@ Check Kingdom::CheckTroopUpgrade(int Troop) const
 	{
 		Out.error = Error::Locked;
 		Out.castle = T.unlockCastle;
+		return Out;
+	}
+	if (T.council >= 0 && Level + 1 > TroopLevelCap(Troop) && Level + 1 <= MaxTroopLevel() && BuildingLevel(C.armoury))
+	{
+		// The council level that allows the next troop level.
+		Out.error = Error::NeedRequirement;
+		Out.missing = {T.council, std::max(T.councilLevel, CouncilLevel(Troop) + 1), 1};
+		for (const LevelDef& A : C.buildings[static_cast<size_t>(T.council)].levels)
+		{
+			if (A.maxTroopLevel >= Level + 1)
+			{
+				Out.missing.level = std::max(T.councilLevel, A.level);
+				break;
+			}
+		}
 		return Out;
 	}
 	if (!BuildingLevel(C.armoury) || Level + 1 > MaxTroopLevel())

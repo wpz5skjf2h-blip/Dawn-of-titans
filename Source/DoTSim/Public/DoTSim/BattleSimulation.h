@@ -48,6 +48,8 @@ struct Soldier
 	int32_t stunTicks = 0;
 	int32_t burnTicks = 0;
 	Fix64 burnDps;
+	int32_t poisonTicks = 0;
+	Fix64 poisonDps;
 	int32_t lastAttackTick = -100000;
 	int32_t deathTick = -1;
 	int32_t lastTrampledTick = -100000;
@@ -439,6 +441,8 @@ private:
 	void PairMelee(Squad& Sq);
 	void UpdateSoldierAttacks();
 	void SoldierAttack(int Index);
+	/** Element effects of a landed melee hit: frost, poison and the goliath's sweep. */
+	void ApplyMeleeOnHit(int Index, int TargetIndex);
 	void FireRanged(int Index, Squad& Sq, int32_t TargetUnit);
 	void UpdateProjectiles();
 	Fix64 ComputeTroopDamage(const Squad& Attacker, const Soldier& AttackerSoldier, const Soldier& Defender, const Squad& DefenderSquad, bool bRanged, Fix64 ExtraMult);

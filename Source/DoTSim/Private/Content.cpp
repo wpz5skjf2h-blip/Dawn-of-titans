@@ -317,6 +317,7 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 		T.critChance = J.GetFix("critChance", fx::Pct(5));
 		T.critDamage = J.GetFix("critDamage", fx::Milli(1500));
 		T.spacing = J.GetFix("spacing", fx::Milli(1400));
+		T.maxAttackers = J.GetInt("maxAttackers", 0);
 		if (const JsonValue* R = J.Find("ranged"))
 		{
 			T.ranged = true;
@@ -385,6 +386,28 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 				T.auraMoralePerSec = V->GetFix("moralePerSec", fx::Int(3));
 				T.auraArmor = V->GetFix("armor", fx::Pct(10));
 				T.keepAway = V->GetFix("keepAway", fx::Int(8));
+			}
+			if (const JsonValue* V = S->Find("frost"))
+			{
+				T.frost = true;
+				T.frostMoveSlow = V->GetFix("moveSlow", fx::Pct(20));
+				T.frostAttackSlow = V->GetFix("attackSlow", fx::Pct(15));
+				T.frostTicks = SecToTicks(V->GetDouble("duration", 3.0));
+				T.frostTitanMult = V->GetFix("titanMult", fx::Pct(25));
+			}
+			if (const JsonValue* V = S->Find("cleave"))
+			{
+				T.cleave = true;
+				T.cleaveRadius = V->GetFix("radius", fx::Milli(2500));
+				T.cleaveMult = V->GetFix("mult", fx::Pct(60));
+				T.cleaveTargets = V->GetInt("maxTargets", 4);
+				T.cleaveKnockdownTicks = SecToTicks(V->GetDouble("knockdown", 0.8));
+			}
+			if (const JsonValue* V = S->Find("poison"))
+			{
+				T.poison = true;
+				T.poisonDps = V->GetFix("dps", fx::Int(6));
+				T.poisonTicks = SecToTicks(V->GetDouble("duration", 5.0));
 			}
 		}
 		if (const JsonValue* F = J.Find("formations"))

@@ -104,6 +104,25 @@ struct TroopDef
 	Fix64 auraMoralePerSec;
 	Fix64 auraArmor;
 	Fix64 keepAway;
+	// Envoy council troops carry the original's elements as on-hit effects.
+	// Pikemen (ice): a melee hit chills the target squad (or titan, at frostTitanMult) for frostTicks.
+	bool frost = false;
+	Fix64 frostMoveSlow;
+	Fix64 frostAttackSlow;
+	int frostTicks = 0;
+	Fix64 frostTitanMult = fx::Pct(25);
+	// Goliaths (earth): the club also hits soldiers around the target and knocks them down.
+	bool cleave = false;
+	Fix64 cleaveRadius;
+	Fix64 cleaveMult = fx::Pct(60);
+	int cleaveTargets = 4;
+	int cleaveKnockdownTicks = 0;
+	// Panthers (poison): a melee hit poisons the soldier for poisonTicks.
+	bool poison = false;
+	Fix64 poisonDps;
+	int poisonTicks = 0;
+	/** How many enemy soldiers may fight one soldier of this troop at once (0 = rules.maxAttackersPerSoldier). */
+	int maxAttackers = 0;
 	uint32_t formationMask = 0;
 	Stance defaultStance = Stance::Aggressive;
 	std::vector<TroopTierDef> tiers;

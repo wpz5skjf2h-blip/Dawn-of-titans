@@ -91,6 +91,16 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 		T.id = TJ.GetString("id");
 		T.name = TJ.GetString("name", T.id);
 		T.unlockCastle = TJ.GetInt("unlockCastle", 1);
+		if (TJ.Has("council"))
+		{
+			T.council = Out.FindBuilding(TJ.GetString("council"));
+			if (T.council < 0)
+			{
+				Error = "troop '" + T.id + "': unknown council '" + TJ.GetString("council") + "'";
+				return false;
+			}
+			T.councilLevel = std::max(1, TJ.GetInt("councilLevel", 1));
+		}
 		if (const JsonValue* Levels = TJ.Find("levels"))
 		{
 			for (size_t K = 0; K < Levels->Size(); ++K)

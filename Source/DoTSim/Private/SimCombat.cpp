@@ -13,6 +13,34 @@ const Fix64 kCos60 = Fix64::Half();
 // Status sources that are not abilities.
 constexpr int32_t kChainSource = -2;
 constexpr int32_t kSanctuarySource = -3;
+constexpr int32_t kFrostSource = -4;
+
+/** Frost refreshes instead of stacking: the strongest chill and the latest end win. */
+void ApplyFrost(std::vector<StatusEffect>& Statuses, Fix64 MoveSlow, Fix64 AttackSlow, int32_t EndTick)
+{
+	bool bMove = false;
+	bool bAttack = false;
+	for (StatusEffect& E : Statuses)
+	{
+		if (E.sourceAbility != kFrostSource)
+		{
+			continue;
+		}
+		const bool bIsMove = E.stat == StatType::MoveSpeedPct;
+		E.magnitude = fx::Min(E.magnitude, bIsMove ? -MoveSlow : -AttackSlow);
+		E.endTick = std::max(E.endTick, EndTick);
+		bMove = bMove || bIsMove;
+		bAttack = bAttack || !bIsMove;
+	}
+	if (!bMove)
+	{
+		Statuses.push_back({StatType::MoveSpeedPct, -MoveSlow, EndTick, kFrostSource});
+	}
+	if (!bAttack)
+	{
+		Statuses.push_back({StatType::AttackSpeedPct, -AttackSlow, EndTick, kFrostSource});
+	}
+}
 } // namespace
 
 // --- Engagement -----------------------------------------------------------------
@@ -155,7 +183,8 @@ void BattleSimulation::PairMelee(Squad& Sq)
 			for (const int32_t Candidate : SquadsList[static_cast<size_t>(E)].members)
 			{
 				const Soldier& C = SoldiersList[static_cast<size_t>(Candidate)];
-				if (!C.Alive() || C.attackers >= R.maxAttackersPerSoldier)
+				const int Cap = TroopOf(SquadsList[static_cast<size_t>(E)]).maxAttackers;
+				if (!C.Alive() || C.attackers >= (Cap > 0 ? Cap : R.maxAttackersPerSoldier))
 				{
 					continue;
 				}
@@ -266,6 +295,10 @@ void BattleSimulation::SoldierAttack(int Index)
 		S.lastAttackTick = Tick;
 		S.attackCooldown = Cooldown + Random.RangeInt(0, 3);
 		DamageSoldier(TargetIndex, Damage, Sq.side, -1);
+		if (!TD.ranged)
+		{
+			ApplyMeleeOnHit(Index, TargetIndex);
+		}
 		return;
 	}
 
@@ -285,6 +318,10 @@ void BattleSimulation::SoldierAttack(int Index)
 		const Fix64 Damage = ComputeTroopVsTitanDamage(Sq, T, false);
 		S.lastAttackTick = Tick;
 		S.attackCooldown = Cooldown + Random.RangeInt(0, 3);
+		if (TD.frost)
+		{
+			ApplyFrost(T.statuses, TD.frostMoveSlow * TD.frostTitanMult, TD.frostAttackSlow * TD.frostTitanMult, Tick + TD.frostTicks);
+		}
 		DamageTitan(S.targetTitan, Damage, Damage * R.poiseFactorTroops, S.pos, -1);
 		return;
 	}
@@ -296,6 +333,67 @@ void BattleSimulation::SoldierAttack(int Index)
 		{
 			FireRanged(Index, Sq, Target);
 		}
+	}
+}
+
+void BattleSimulation::ApplyMeleeOnHit(int Index, int TargetIndex)
+{
+	const RulesDef& R = ContentRef.rules;
+	const Soldier& S = SoldiersList[static_cast<size_t>(Index)];
+	Squad& Sq = SquadsList[static_cast<size_t>(S.squad)];
+	const TroopDef& TD = TroopOf(Sq);
+	Soldier& T = SoldiersList[static_cast<size_t>(TargetIndex)];
+	Squad& TSq = SquadsList[static_cast<size_t>(T.squad)];
+	if (TD.frost)
+	{
+		ApplyFrost(TSq.statuses, TD.frostMoveSlow, TD.frostAttackSlow, Tick + TD.frostTicks);
+	}
+	if (TD.poison && T.Alive())
+	{
+		// The venom grows with the troop's level like its bite.
+		const Fix64 Dps = TD.poisonDps * Sq.atk / fx::Max(TD.atk, Fix64::One());
+		T.poisonTicks = std::max(T.poisonTicks, TD.poisonTicks);
+		T.poisonDps = fx::Max(T.poisonDps, Dps);
+	}
+	if (!TD.cleave)
+	{
+		return;
+	}
+	// A sweep of the club: the target and the soldiers around it go down unless they are mounted, in Square or giants themselves.
+	auto Topple = [&](int N, const Squad& VSq)
+	{
+		const TroopDef& VTD = TroopOf(VSq);
+		if (TD.cleaveKnockdownTicks > 0 && !VTD.IsCavalry() && !VTD.cleave && VSq.formation != Formation::Square)
+		{
+			KnockDown(N, TD.cleaveKnockdownTicks);
+		}
+	};
+	const FixVec2 Center = T.pos;
+	Topple(TargetIndex, TSq);
+	QuerySoldiers(Center, TD.cleaveRadius, QueryScratch);
+	const std::vector<int32_t> Near = QueryScratch;
+	int Hits = 0;
+	for (const int32_t N : Near)
+	{
+		if (Hits >= TD.cleaveTargets)
+		{
+			break;
+		}
+		const Soldier& V = SoldiersList[static_cast<size_t>(N)];
+		if (N == TargetIndex || !V.Alive() || V.side == Sq.side || V.state == SoldierState::Airborne)
+		{
+			continue;
+		}
+		const Squad& VSq = SquadsList[static_cast<size_t>(V.squad)];
+		Fix64 Mult = TD.cleaveMult;
+		if (VSq.formation == Formation::Loose)
+		{
+			Mult = Mult * R.looseAreaDamageMult;
+		}
+		const Fix64 Damage = ComputeTroopDamage(Sq, S, V, VSq, false, Mult);
+		++Hits;
+		Topple(N, VSq);
+		DamageSoldier(N, Damage, Sq.side, -1);
 	}
 }
 
@@ -666,6 +764,7 @@ void BattleSimulation::UpdateSanctuaries()
 				{
 					S.hp = fx::Min(S.maxHp, S.hp + S.maxHp * TD.auraHealPctPerSec);
 					S.burnTicks = 0;
+					S.poisonTicks = 0;
 				}
 			}
 			ChangeMorale(A, TD.auraMoralePerSec);
@@ -943,6 +1042,15 @@ void BattleSimulation::UpdateSoldierStatus()
 		{
 			--S.burnTicks;
 			DamageSoldier(static_cast<int>(I), S.burnDps / kTicksPerSecond, Opponent(S.side), -1);
+		}
+		if (S.poisonTicks > 0 && S.Alive())
+		{
+			--S.poisonTicks;
+			DamageSoldier(static_cast<int>(I), S.poisonDps / kTicksPerSecond, Opponent(S.side), -1);
+			if (S.poisonTicks == 0)
+			{
+				S.poisonDps = Fix64::Zero();
+			}
 		}
 	}
 }

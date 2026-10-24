@@ -295,6 +295,28 @@ building("alliance_camp", "Лагерь альянса", "troops", "other", [3, 
          stats={"reinforcements": {1: E(1), 10: E(10)}}, time_from_cost=True,
          desc="Сюда союзники присылают подкрепления. Улучшение увеличивает их число.")
 
+# --- Envoy councils -----------------------------------------------------------------------
+# The original has four buildings of other peoples, one per people (wiki: Troops; Unak Citadel, Elithen Palace, ...):
+# Unak grenadiers (fire), Elithen pikemen (ice), Ragnar goliaths (earth), Mossmane panthers (poison). Every troop still
+# trains in the Barracks; a people's troop needs its building. Panthers open at Castle 8 (wiki, Panthers).
+# The peoples and names here are ours: the regions of the master prompt with the same elements. Castle levels for the
+# other councils, prices, times and the troop level cap per council level (2 x level + 1) are our estimates.
+COUNCILS = [
+    ("council_sunreach", "Совет Солнечного Предела", 5, 20000,
+     "Посланники пустынных городов-храмов. Их гренадеры бросают огненные горшки; с 3-го уровня Совета приходят боевые жрецы."),
+    ("council_rimeheim", "Совет Римхейма", 6, 35000,
+     "Посланники ледяного севера. Их пикинеры бьют морозной сталью и замедляют врага; с 3-го уровня приходят цепеломы."),
+    ("council_jade", "Совет Нефритовых Пиков", 7, 55000,
+     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг."),
+    ("council_mistmoor", "Совет Туманных Топей", 8, 80000,
+     "Посланники лесных племён. Их пантеры — самые быстрые войска, укус оставляет яд."),
+]
+for cid, cname, cunlock, ccost, cdesc in COUNCILS:
+    building(cid, cname, "councils", "other", [4, 4], cunlock, [[cunlock, 1]], 10,
+             {1: E(ccost), 10: E(6000000)}, {}, lambda lv, u=cunlock: min(25, u + 2 * (lv - 1)),
+             stats={"maxTroopLevel": {lv: E(min(21, 2 * lv + 1)) for lv in range(1, 11)}}, time_from_cost=True,
+             reqs={1: [("barracks", 3, 1)]}, desc=cdesc)
+
 # --- Spells -------------------------------------------------------------------------------
 building("arcane_tower", "Магическая башня", "spells", "other", [2, 2], 6, [[6, 1]], 18,
          {1: 57200, 17: 6009300, 18: 6708500}, {},
@@ -361,7 +383,7 @@ def tier_of(level):
     return 1 if level <= 2 else 2 if level <= 5 else 3 if level <= 9 else 4 if level <= 14 else 5
 
 
-def troop(id, name, unlock, train, cost1, up1, scale_src):
+def troop(id, name, unlock, train, cost1, up1, scale_src, council=None, council_level=1):
     train_t, train_est = fill(train, TROOP_LEVELS, round_to=5)
     levels = []
     for i in range(TROOP_LEVELS):
@@ -375,22 +397,28 @@ def troop(id, name, unlock, train, cost1, up1, scale_src):
             src = "wiki" if scale_src and not mil_cost_est[i] and (i >= TROOP_LEVELS - 1 or not mil_up_est[i]) else "est"
         levels.append({"level": lv, "cost": cost, "trainSec": train_t[i], "upgradeCost": up if lv < TROOP_LEVELS else 0,
                        "upgradeSec": up_time[i] if lv < TROOP_LEVELS else 0, "tier": tier_of(lv), "src": src})
-    return {"id": id, "name": name, "unlockCastle": unlock, "levels": levels}
+    council_keys = {"council": council, "councilLevel": council_level} if council else {}
+    return {"id": id, "name": name, "unlockCastle": unlock, **council_keys, "levels": levels}
 
 
 TROOPS = [
     troop("troop.militia", "Ополчение", 1, {1: 60, 8: 60, 10: 80}, 135, 3500, True),
     troop("troop.archers", "Лучники", 1, {1: E(180)}, 200, 8800, False),
     troop("troop.spearmen", "Копейщики", 3, {1: 300}, 145, 6600, False),
-    # Beyond the original's three human troops: the rest of the battle roster (master prompt 4.9). The original gave other
-    # peoples' troops through envoy councils (grenadiers among them); here the Barracks train them, opening with the Castle.
+    # Beyond the original's three human troops: the human rest of the battle roster (master prompt 4.9), opening with the Castle.
     # Costs and times are ours, scaled from the master prompt's training table against the Militia.
     troop("troop.swordsmen", "Мечники", 4, {1: E(120)}, 230, 9000, False),
-    troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 12000, False),
     troop("troop.outriders", "Всадники", 6, {1: E(150)}, 330, 11000, False),
-    troop("troop.priests", "Боевые жрецы", 8, {1: E(200)}, 280, 10000, False),
-    troop("troop.chainbreakers", "Цепеломы", 9, {1: E(200)}, 320, 12000, False),
     troop("troop.knights", "Рыцари", 11, {1: E(240)}, 480, 16000, False),
+    # Envoy council troops (see COUNCILS). The original's four peoples' troops cost about twice the Militia to upgrade
+    # (guide: 822 000 vs 411 000 at level 10, 7 785 000 vs 3 892 000 at 25), so their upgrades start at 2 x 3 500.
+    # War priests and chainbreakers are the master prompt's own troops; here two councils send them from level 3.
+    troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 7000, False, "council_sunreach"),
+    troop("troop.priests", "Боевые жрецы", 9, {1: E(200)}, 280, 10000, False, "council_sunreach", 3),
+    troop("troop.chainbreakers", "Цепеломы", 10, {1: E(200)}, 320, 12000, False, "council_rimeheim", 3),
+    troop("troop.pikemen", "Пикинеры", 6, {1: E(240)}, 320, 7000, False, "council_rimeheim"),
+    troop("troop.goliaths", "Голиафы", 7, {1: E(420)}, 600, 7000, False, "council_jade"),
+    troop("troop.panthers", "Пантеры", 8, {1: E(300)}, 450, 7000, False, "council_mistmoor"),
 ]
 # Titans: the original sorts them by rarity R1-R4 (stars) and class; max level 10 + 10 x stars (wiki, version 1.8).
 # The names are ours (mythology); the original roster has its own characters.
