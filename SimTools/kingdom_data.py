@@ -494,10 +494,10 @@ ARMY = {
             {"id": "xp", "name": "опыт титана", "stat": "xpPct", "base": [20, 30, 40, 60, 80]},
             {"id": "produce", "name": "добыча", "stat": "producePct", "base": [5, 8, 12, 16, 20]},
             {"id": "store", "name": "вместимость", "stat": "storePct", "base": [10, 15, 20, 30, 40]},
-            {"id": "train", "name": "быстрее обучение", "stat": "trainPct", "base": [5, 8, 12, 16, 20], "cap": 50},
-            {"id": "craft", "name": "быстрее создание заклинаний", "stat": "craftPct", "base": [5, 8, 12, 16, 20], "cap": 50},
-            {"id": "research", "name": "быстрее улучшения", "stat": "researchPct", "base": [5, 8, 12, 16, 20], "cap": 50},
-            {"id": "rest", "name": "короче отдых титанов", "stat": "restPct", "base": [10, 15, 20, 30, 40], "cap": 60},
+            {"id": "train", "name": "время обучения", "stat": "trainPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "craft", "name": "время создания заклинаний", "stat": "craftPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "research", "name": "время улучшений", "stat": "researchPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "rest", "name": "отдых титанов", "stat": "restPct", "base": [10, 15, 20, 30, 40], "cap": 60},
         ],
         # Kinds: the first three keep their ids from before (saves); names and the catalogue are ours.
         "kinds": [

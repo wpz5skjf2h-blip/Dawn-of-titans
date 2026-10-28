@@ -1088,14 +1088,25 @@ estimates `"src": "est"`.
   troops' level at 2 × level + 1 (ours); pikes slow, goliaths cleave and knock down, panthers poison (numbers ours).
 - **Titans (original rules; supersedes 5.x where they differ):** rarity R1–R4 (stars) sets the max level 20/30/40/50;
   titans earn XP in battles and rest after battles once above level 10. The Relic Temple gives a free relic every day and
-  has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan.
+  has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan. The Altar of
+  Power sells a relic (R2–R5) for 1,000 Gems.
   Fusion unlocks at Castle 7, costs Food and moves sacrificed titans' strength into the chosen titan. Classes follow the original
   (Berserker, Champion, Guardian, Sorcerer, Ranger…); names and looks are ours.
-- **Relic items (original rules):** relics equip on titans and raise damage, health or armor. A titan starts with one relic
-  slot; more open at titan levels 20, 30, 40, 50. Rarity R1–R5. Relics wear out with battles (a broken relic gives
-  nothing until repaired). From Castle 8 a relic is repaired for Food by sacrificing other relics: each sacrifice adds
-  a chance that depends on both rarities (two of the same rarity always succeed); sacrifices are lost either way.
-  Bonuses reach the battle through `TitanSetup.hpPct/atkPct/armorPct` (armor capped at 75%).
+- **Relic items (original 1.8 rules):** combat relics are worn by titans, economy relics sit on buildings. A titan starts with
+  one relic slot; more open at titan levels 20, 30, 40, 50 and with ascension. Rarity R1–R5. A relic has one to three
+  effects; locked ones open through repair (how many start open is ours: R1–R3 one, R4 two, R5 three). Combat relics wear
+  out per battle (R1 20, R2 16, R3 12, R4 8 battles; XP relics 2; R5 6 is ours); a broken relic gives nothing until
+  repaired, and a titan can't wear two relics of the same kind. Combat effects: titan damage, health, armor, crit chance,
+  armor piercing, army damage and health, XP. Economy relics work for a time on a fitting building (24–96 h by rarity and
+  a stopped clock while detached are ours): mine and farm production and storage, Barracks and council training,
+  Spell Forge crafting, Armoury and Arcane Tower research, Hall of Titans rest. The catalogue (15 kinds), names and
+  numbers are ours. From Castle 8 a relic is repaired for Food by sacrificing other relics: each sacrifice adds a chance
+  from the original's rarity table (R1–R4 wiki, R5 ours); sacrifices are lost either way. A whole relic can be repaired
+  for the improvement roll: a success may raise one effect a level (4 levels, +15% of the first each) or, with a
+  sacrifice of at least the target's rarity, open the next locked effect (80% → 40% by rarity, ours). Won land battles
+  drop one relic per star (rarity by land level, ours); the inventory holds 200. Bonuses reach the battle through
+  `TitanSetup.hpPct/atkPct/armorPct/critPct/piercePct` (armor capped at 75%, piercing at 75%) and
+  `SideSetup.troopHpPct/troopAtkPct`.
 - **Spells (original rules; supersede the valor-only spells of 4.12 for land battles):** the original's spells are
   Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud and Raise Dead (Raise Dead comes later). The Spell Forge
   crafts them into stock for Gold (queue 2 → 10 and capacity 10 → 65 by Forge level, Castle 5 → 21); each cast in battle

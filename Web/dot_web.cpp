@@ -1078,7 +1078,13 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		{
 			O.Raw(K ? "," : "").Int(T.relics[K]);
 		}
-		O.Raw("],").Key("bonus").Raw("[").Int(Km->TitanBonusPct(T.id, 0)).Comma().Int(Km->TitanBonusPct(T.id, 1)).Comma().Int(Km->TitanBonusPct(T.id, 2)).Raw("]}");
+		// Relic bonuses in tenths of a percent: damage, health, armor, crit, piercing, army damage, army health, XP.
+		O.Raw("],").Key("bonus").Raw("[");
+		for (int B = 0; B <= static_cast<int>(dot::kingdom::RelicStat::Xp); ++B)
+		{
+			O.Raw(B ? "," : "").Int(Km->TitanRelicBonus(T.id, static_cast<dot::kingdom::RelicStat>(B)));
+		}
+		O.Raw("]}");
 	}
 	O.Raw("],").Key("tcap").Int(Km->TitanCapacity()).Comma().Key("relicAt").Int(Km->RelicFreeAt()).Comma().Key("altars").Raw("[");
 	for (size_t I = 0; I < C.altars.size(); ++I)
@@ -1131,24 +1137,26 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->PendingSpells()[I]);
 	}
 	O.Raw("]},");
-	// Relic items: kind, rarity, durability, which titan wears it.
+	// Relic items: kind, rarity, durability left (battles, or seconds for economy relics), the titan or building
+	// it is on, effect levels (0 = locked) and their values in tenths of a percent.
 	O.Key("relics").Raw("[");
 	bFirst = true;
 	for (const RelicItem& R : Km->Relics())
 	{
-		int32_t On = 0;
-		for (const TitanState& T : Km->Titans())
-		{
-			for (const int32_t Id : T.relics)
-			{
-				On = Id == R.id ? T.id : On;
-			}
-		}
 		O.Raw(bFirst ? "" : ",");
 		bFirst = false;
-		O.Raw("{").Key("id").Int(R.id).Comma().Key("kind").Int(R.kind).Comma().Key("r").Int(R.rarity).Comma().Key("dur").Int(R.durability).Comma();
-		O.Key("max").Int(C.relicDurability[static_cast<size_t>(R.rarity - 1)]).Comma().Key("on").Int(On).Comma();
-		O.Key("pct").Raw("[").Int(Km->RelicStatPct(R, 0)).Comma().Int(Km->RelicStatPct(R, 1)).Comma().Int(Km->RelicStatPct(R, 2)).Raw("]}");
+		O.Raw("{").Key("id").Int(R.id).Comma().Key("kind").Int(R.kind).Comma().Key("r").Int(R.rarity).Comma().Key("dur").Int(Km->RelicLeft(R)).Comma();
+		O.Key("max").Int(Km->RelicMax(R)).Comma().Key("on").Int(Km->RelicTitan(R.id)).Comma().Key("b").Int(R.building).Comma().Key("lv").Raw("[");
+		for (size_t S = 0; S < R.levels.size(); ++S)
+		{
+			O.Raw(S ? "," : "").Int(R.levels[S]);
+		}
+		O.Raw("],").Key("v").Raw("[");
+		for (size_t S = 0; S < R.levels.size(); ++S)
+		{
+			O.Raw(S ? "," : "").Int(Km->RelicEffectValue(R, static_cast<int>(S)));
+		}
+		O.Raw("]}");
 	}
 	O.Raw("],").Key("repairCastle").Int(C.relicRepairCastle).Comma().Key("repairFood").Raw("[");
 	for (size_t I = 0; I < C.relicRepairFood.size(); ++I)
@@ -1244,7 +1252,12 @@ EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int 
 	O.Key("vp").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Vp))]).Comma();
 	O.Key("land").Int(R.landId).Comma().Key("lost").Int(R.squadsLost).Comma().Key("back").Int(R.squadsBack).Comma();
 	O.Key("titan").Int(R.titanId).Comma().Key("xp").Int(R.titanXp).Comma().Key("levels").Int(R.titanLevels).Comma();
-	O.Key("broken").Int(R.relicsBroken).Raw("}");
+	O.Key("broken").Int(R.relicsBroken).Comma().Key("relicsLost").Int(R.relicsLost).Comma().Key("relics").Raw("[");
+	for (size_t I = 0; I < R.relics.size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(R.relics[I]);
+	}
+	O.Raw("]}");
 	return G().Text.c_str();
 }
 
@@ -1318,6 +1331,11 @@ EMSCRIPTEN_KEEPALIVE int dk_equip(int TitanId, int RelicId)
 	return K() ? static_cast<int>(K()->EquipRelic(TitanId, RelicId)) : -1;
 }
 
+EMSCRIPTEN_KEEPALIVE int dk_attach(int BuildingId, int RelicId)
+{
+	return K() ? static_cast<int>(K()->AttachRelic(BuildingId, RelicId)) : -1;
+}
+
 EMSCRIPTEN_KEEPALIVE int dk_unequip(int RelicId)
 {
 	return K() ? static_cast<int>(K()->UnequipRelic(RelicId)) : -1;
@@ -1334,13 +1352,21 @@ EMSCRIPTEN_KEEPALIVE int dk_repair_chance(int Target, const char* Sacrifices)
 	return K() ? K()->RepairChancePct(Target, std::vector<int32_t>(Ids.begin(), Ids.end())) : 0;
 }
 
+/** 1 when the target's next locked effect may open with these sacrifices. */
+EMSCRIPTEN_KEEPALIVE int dk_repair_unlock(int Target, const char* Sacrifices)
+{
+	const std::vector<int> Ids = ParseInts(Sacrifices);
+	return K() && K()->CanUnlockWith(Target, std::vector<int32_t>(Ids.begin(), Ids.end())) ? 1 : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE const char* dk_repair(int Target, const char* Sacrifices)
 {
 	const std::vector<int> Ids = ParseInts(Sacrifices);
-	bool bOk = false;
-	const dot::kingdom::Error E = K() ? K()->RepairRelic(Target, std::vector<int32_t>(Ids.begin(), Ids.end()), &bOk) : dot::kingdom::Error::BadId;
+	dot::kingdom::RepairResult R;
+	const dot::kingdom::Error E = K() ? K()->RepairRelic(Target, std::vector<int32_t>(Ids.begin(), Ids.end()), &R) : dot::kingdom::Error::BadId;
 	Out O(G().Text);
-	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("ok").Int(bOk ? 1 : 0).Raw("}");
+	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("ok").Int(R.repaired ? 1 : 0).Comma().Key("slot").Int(R.slot).Comma();
+	O.Key("unlocked").Int(R.unlocked ? 1 : 0).Raw("}");
 	return G().Text.c_str();
 }
 

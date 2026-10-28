@@ -1,7 +1,7 @@
 'use strict';
 // Game icons: hand-drawn SVG glyphs (48 x 48, ink outline) shared by the kingdom screen and the battle HUD.
 // The tile behind a glyph (colour by category) comes from CSS (.ico ...), so the same glyph works on any background.
-// Names: troop.<id>, building.<id>, spell.<id>, relic.<atk|hp|armor>[.broken], class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins>, ui.<name>.
+// Names: troop.<id>, building.<id>, spell.<id>, relic.<kind id>, class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins>, ui.<name>.
 
 const DotIcons = (() => {
 	const INK = '#26180c';
@@ -229,6 +229,31 @@ const DotIcons = (() => {
 			hi('M15.5 21C15.5 19 17 18 18.5 18'),
 		'relic.armor': p('M24 9L40 14V26C40 35 32 41 24 44C16 41 8 35 8 26V14Z', K.gold) +
 			p('M24 14L35 17.5V26C35 32 30 36.5 24 39C18 36.5 13 32 13 26V17.5Z', '#4f8dff') + line('M24 14V39M13 25H35', '#2a4fa8', 1) + hi('M16 19L21 17'),
+		'relic.eye': c(24, 25, 16, K.gold) + p('M9 25C14 16.5 34 16.5 39 25C34 33.5 14 33.5 9 25Z', K.cream) + c(24, 25, 6.5, '#5fbf4a') +
+			c(24, 25, 2.8, INK, 'stroke="none"') + c(21.8, 22.8, 1.3, K.white, 'stroke="none"') + hi('M13 17C15 14 18 12.5 21 12'),
+		'relic.fang': r(13, 5, 22, 7, 2.5, K.gold) + p('M15 12C21 13.5 28 13.5 33 12C33 25 28 36 21 45C20 33 18 22 15 12Z', K.bone) +
+			line('M18.5 15C20 24 21 32 21.5 39', '#c9b98f', 1.2) + drop(31, 30, 1.2, '#7ad94a') + c(18, 8.5, 1.6, '#ff4a4a', 'stroke-width="1"') + c(30, 8.5, 1.6, '#ff4a4a', 'stroke-width="1"'),
+		'relic.banner': stick('M12 3V45', K.woodD, 3) + c(12, 3.5, 2.4, K.gold) + p('M14 7H39L33 16L39 25H14Z', K.red) +
+			c(24, 16, 4.2, K.gold) + line('M24 12.5V19.5M20.5 16H27.5', K.goldD, 1.2) + hi('M16.5 10H31'),
+		'relic.amulet': line('M12 5C13 15 19 20 24 20.5C29 20 35 15 36 5', INK, 4.4) + line('M12 5C13 15 19 20 24 20.5C29 20 35 15 36 5', K.goldD, 2.2) +
+			c(24, 31, 12, K.gold) + c(24, 31, 7, '#ff4a4a') + p('M24 26L26.5 31L24 36L21.5 31Z', '#ffb0a8', 'stroke-width="1"') + hi('M16.5 27C17.5 24.5 19.5 23 22 22.5'),
+		'relic.scroll': r(12, 9, 24, 30, 1.5, K.cream) + r(8.5, 6, 31, 6.5, 3.2, K.woodL) + r(8.5, 35.5, 31, 6.5, 3.2, K.woodL) +
+			STAR(24, 23.5, 7.5, K.gold) + line('M16 32H32', '#c9b98f', 1.2),
+		'relic.pickaxe': stick('M13 43L31 13', K.wood, 3.2) + p('M15 12C22 4.5 35 4.5 44 13C35 10 27 10.5 21 15Z', K.steel) + hi('M19 10C24 7 31 6.5 36 8') +
+			p('M6 35L11 31L16 34L14 40L8 41Z', K.gold) + spark(8, 29, 2.4, K.white),
+		'relic.plough': stick('M7 9L25 27', K.woodD, 3) + stick('M18 20L13 27', K.woodD, 2.4) + p('M23 25L40 27L36 41L19 37Z', K.steel) + hi('M25 28L36 29.5') +
+			stick('M37 4V16', '#9a7a3e', 1.2) + '<ellipse cx="37" cy="5" rx="2.4" ry="4" fill="' + K.gold + '"/>',
+		'relic.bugle': p('M7 21C19 21 29 15 35 7L41 9C38.5 20 38.5 30 41 41L35 43C29 35 19 29 7 29Z', K.gold) + r(4, 20, 5.5, 10, 2, K.goldD) +
+			line('M35 7.5C33 19 33 31 35 42.5', K.goldD, 1.4) + line('M13 29C16 35 22 37 28 34', K.red, 2.2) + hi('M12 23.5C19 23.5 25 20 30 15'),
+		'relic.seal': p('M16 30L12 45L18 41L21 46L24 33Z', K.red) + p('M32 30L36 45L30 41L27 46L24 33Z', K.red) +
+			p('M24 6L28 9L33 8L34 13L38.5 16L36.5 21L38.5 26L34 29L33 34L28 33L24 36L20 33L15 34L14 29L9.5 26L11.5 21L9.5 16L14 13L15 8L20 9Z', '#c4322a') +
+			c(24, 21, 7.5, '#a22d22', 'stroke-width="1.2"') + STAR(24, 21, 5.2, K.gold),
+		'relic.hammer': rot(-35, HAMMER) + spark(38, 9, 3.4, '#c48bff') + spark(9, 12, 2.4, '#c48bff') + spark(40, 27, 2, K.white),
+		'relic.tome': p('M8 10C14 8 20 9 24 12C28 9 34 8 40 10V39C34 37 28 38 24 41C20 38 14 37 8 39Z', '#7d4f27') +
+			p('M11 12.5C15.5 11 20 12 23 14.5V37C20 35 15.5 34.5 11 35.5Z', K.cream, 'stroke-width="1.2"') +
+			p('M37 12.5C32.5 11 28 12 25 14.5V37C28 35 32.5 34.5 37 35.5Z', K.cream, 'stroke-width="1.2"') + STAR(31, 24, 4.5, K.gold) + line('M14 20H20M14 25H20M14 30H20', '#c9b98f', 1.2),
+		'relic.chalice': p('M12 7H36C36 20 31 27 24 27C17 27 12 20 12 7Z', K.gold) + p('M14.5 9.5H33.5C33 13 32 15 31 16.5H17C16 15 15 13 14.5 9.5Z', '#5cc6ff', 'stroke-width="1.2"') +
+			stick('M24 27V37', K.goldD, 2.8) + r(14, 37, 20, 6, 2.5, K.gold) + hi('M16 18C17 21 19 23 21 24'),
 
 		// --- Titan classes ------------------------------------------------------------------------
 		'class.Berserker': stick('M24 46V8', K.woodD, 3.2) + p('M22 10C14 6 7 10 6 18C7 25 13 28 22 25Z', K.steel) + p('M26 10C34 6 41 10 42 18C41 25 35 28 26 25Z', K.steel) +
@@ -245,6 +270,7 @@ const DotIcons = (() => {
 			p('M24 15C18 6 11 9 15 14Z', K.gold) + p('M24 15C30 6 37 9 33 14Z', K.gold),
 		'altar.silver': at(-6, -3, 1.25, RAYS + GEM('#e6eef6', '#7d8a99')),
 		'altar.gold': at(-6, -3, 1.25, RAYS + GEM('#ffd257', '#b0801c')),
+		'altar.power': at(-6, -3, 1.25, RAYS + GEM('#ff6b9a', '#a8224f')),
 		'land.gold': ISLAND + COIN(19, 15) + COIN(29, 13) + spark(37, 6, 3.2, K.white),
 		'land.food': ISLAND + stick('M17 22V10M24 22V7M31 22V10', '#9a7a3e', 1.3) +
 			'<ellipse cx="17" cy="9" rx="2.4" ry="4" fill="' + K.gold + '"/><ellipse cx="24" cy="6" rx="2.4" ry="4" fill="' + K.gold + '"/><ellipse cx="31" cy="9" rx="2.4" ry="4" fill="' + K.gold + '"/>',

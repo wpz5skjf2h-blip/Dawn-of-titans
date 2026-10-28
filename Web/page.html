@@ -409,6 +409,7 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .ico.bld.councils { background: radial-gradient(circle at 40% 35%, #7fd6c4, #1f5f62); }
 .ico.bld.other, .ico.altar { background: radial-gradient(circle at 40% 35%, #e6bd7e, #7a5226); }
 .ico.altar.silver { background: radial-gradient(circle at 40% 35%, #c3ceda, #4a5868); }
+.ico.altar.power { background: radial-gradient(circle at 40% 35%, #d2a6ff, #5b2f9e); }
 .ico.titan { background: radial-gradient(circle at 40% 35%, #7d8fae, #2a364d); }
 .landCard > .ico { width: 56px; height: 56px; border-radius: 12px; }
 .ico.land { display: grid; place-items: center; }
@@ -437,6 +438,10 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
 .troopRow > .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .troopRow > .row .btn { height: 36px; font-size: 13px; padding: 0 10px; }
 .troopRow .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+.troopRow .info .effs { display: flex; flex-wrap: wrap; gap: 1px 10px; }
+.troopRow .info .eff { color: var(--parch); }
+.troopRow .info .eff i { font-style: normal; color: var(--dim); }
+.troopRow .info .eff.locked { color: var(--dim); opacity: 0.75; }
 @media (max-width: 600px) {
   .troopRow { grid-template-columns: 40px 1fr; }
   .troopRow > .btn, .troopRow > .stepper, .troopRow > .count, .troopRow > .row { grid-column: 1 / -1; justify-self: stretch; }
