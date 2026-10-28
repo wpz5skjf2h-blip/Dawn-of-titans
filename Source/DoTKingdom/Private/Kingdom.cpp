@@ -238,6 +238,10 @@ int Kingdom::BusyBuilders() const
 	{
 		Busy += B.upgrading ? 1 : 0;
 	}
+	for (const Land& L : LandList)
+	{
+		Busy += L.upgrading ? 1 : 0;
+	}
 	return Busy;
 }
 
@@ -357,6 +361,82 @@ int64_t Kingdom::RaidLoot(const WorldLand& W) const
 int64_t Kingdom::VictoryVp(int LandLevel) const
 {
 	return C.victoryVp.empty() ? 0 : C.victoryVp[static_cast<size_t>(std::max(1, std::min<int>(LandLevel, static_cast<int>(C.victoryVp.size()))) - 1)];
+}
+
+int Kingdom::LandBandLow(int Castle) const
+{
+	const int MaxLevel = static_cast<int>(C.raidLoot.size());
+	return std::max(1, std::min(MaxLevel, (Castle + 1) / 3));
+}
+
+int Kingdom::LandBandTop(int Castle) const
+{
+	const int Lo = LandBandLow(Castle);
+	return std::max(Lo, std::min(static_cast<int>(C.raidLoot.size()), Lo + 2));
+}
+
+int Kingdom::MaxLandLevel() const
+{
+	return LandBandTop(CastleLevel());
+}
+
+Check Kingdom::CheckLandUpgrade(int32_t Id) const
+{
+	Check Out;
+	const Land* L = FindLand(Id);
+	if (!L)
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (L->upgrading)
+	{
+		Out.error = Error::Busy;
+		return Out;
+	}
+	const LandTypeDef& T = C.landTypes[static_cast<size_t>(L->type)];
+	const size_t Next = static_cast<size_t>(L->level); // index of the next level
+	// A level that would produce no more is not offered (ruins make one shard a day at every level).
+	if (Next >= T.produce.size() || Next >= C.landUpgradeGold.size() || Next >= C.landUpgradeSec.size() || T.produce[Next] <= T.produce[Next - 1])
+	{
+		Out.error = Error::MaxLevel;
+		return Out;
+	}
+	const size_t Gold = static_cast<size_t>(ResIndex(Res::Gold));
+	Out.cost[Gold] = C.landUpgradeGold[Next];
+	Out.timeSec = C.landUpgradeSec[Next];
+	if (L->level + 1 > MaxLandLevel())
+	{
+		Out.error = Error::CastleTooLow;
+		for (int Cl = CastleLevel() + 1; Cl <= C.buildings[static_cast<size_t>(C.castle)].MaxLevel(); ++Cl)
+		{
+			if (LandBandTop(Cl) > L->level)
+			{
+				Out.castle = Cl;
+				break;
+			}
+		}
+		return Out;
+	}
+	if (BusyBuilders() >= Builders())
+	{
+		Out.error = Error::NoBuilder;
+		return Out;
+	}
+	if (Amount(Res::Gold) < Out.cost[Gold])
+	{
+		Out.error = Error::NotEnough;
+		ResArray Missing{};
+		Missing[Gold] = Out.cost[Gold] - Amount(Res::Gold);
+		Out.gemsForMissing = GemsForResources(Missing);
+	}
+	return Out;
+}
+
+int64_t Kingdom::LandSkipCost(int32_t Id) const
+{
+	const Land* L = FindLand(Id);
+	return L && L->upgrading ? GemsForSeconds(std::max<int64_t>(0, L->finishAt - Time)) : 0;
 }
 
 int64_t Kingdom::ProductionPerHour(Res R) const
@@ -627,6 +707,14 @@ void Kingdom::Complete(Building& B, int64_t At)
 	B.carry = 0;
 }
 
+void Kingdom::CompleteLand(Land& L, int64_t At)
+{
+	// A land keeps producing while it is upgraded: at the old level until now, at the new one from now on.
+	SettleLand(L, At);
+	L.upgrading = false;
+	L.level = std::min(L.level + 1, static_cast<int>(C.landTypes[static_cast<size_t>(L.type)].produce.size()));
+}
+
 void Kingdom::RegenStones(int64_t Until)
 {
 	int64_t& Stones = Res_[static_cast<size_t>(ResIndex(Res::Stones))];
@@ -671,6 +759,15 @@ void Kingdom::Advance(int64_t Now)
 				NextB = &B;
 			}
 		}
+		// Land upgrades come after buildings on a tie.
+		Land* NextL = nullptr;
+		for (Land& L : LandList)
+		{
+			if (L.upgrading && L.finishAt <= Now && (!NextL || L.finishAt < NextL->finishAt || (L.finishAt == NextL->finishAt && L.id < NextL->id)))
+			{
+				NextL = &L;
+			}
+		}
 		const bool bResearch = Research >= 0 && ResearchUntil <= Now;
 		int Lab = -1;
 		for (size_t I = 0; I < SpellLabs.size(); ++I)
@@ -682,6 +779,7 @@ void Kingdom::Advance(int64_t Now)
 		}
 		const int64_t InfT = std::numeric_limits<int64_t>::max();
 		const int64_t TB = NextB ? NextB->finishAt : InfT;
+		const int64_t TL = NextL ? NextL->finishAt : InfT;
 		const int64_t TR = bResearch ? ResearchUntil : InfT;
 		const int64_t TS = Lab >= 0 ? SpellLabs[static_cast<size_t>(Lab)].until : InfT;
 		// The end of a season is an event too: its league reward may add portal stones.
@@ -696,15 +794,15 @@ void Kingdom::Advance(int64_t Now)
 			}
 		}
 		const int64_t TX = Spent ? Spent->since + Spent->durability : InfT;
-		if (TB == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT)
+		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(std::min(TB, TR), std::min(TS, TN)), TX);
+		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(TN, TX));
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
-		if (TX == At && TB != At && TR != At && TS != At && TN != At)
+		if (TX == At && TB != At && TL != At && TR != At && TS != At && TN != At)
 		{
 			for (Building& B : BuildingList)
 			{
@@ -731,11 +829,15 @@ void Kingdom::Advance(int64_t Now)
 			Level = std::min(Level + 1, std::max(Level, MaxSpellLevel()));
 			SpellLabs.erase(SpellLabs.begin() + Lab);
 		}
-		else
+		else if (TB == At)
 		{
 			Complete(*NextB, At);
 			UnblockQueue(At); // a finished Army Camp may have room now
 			UnblockCraft(At); // and a finished Spell Forge
+		}
+		else
+		{
+			CompleteLand(*NextL, At);
 		}
 	}
 	ProcessQueue(Now);
@@ -1070,9 +1172,66 @@ Error Kingdom::AbandonLand(int32_t Id)
 	{
 		if (LandList[I].id == Id)
 		{
+			if (LandList[I].upgrading)
+			{
+				return Error::Busy; // the gold for the upgrade would be lost
+			}
 			LandList.erase(LandList.begin() + static_cast<std::ptrdiff_t>(I));
 			return Error::None;
 		}
+	}
+	return Error::BadId;
+}
+
+Error Kingdom::UpgradeLand(int32_t Id, bool UseGems)
+{
+	const Check Ck = CheckLandUpgrade(Id);
+	if (Ck.error != Error::None && !(Ck.error == Error::NotEnough && UseGems))
+	{
+		return Ck.error;
+	}
+	if (!Pay(Ck.cost, UseGems))
+	{
+		return Error::NotEnough;
+	}
+	for (Land& L : LandList)
+	{
+		if (L.id == Id)
+		{
+			SettleLand(L, Time);
+			L.upgrading = true;
+			L.startAt = Time;
+			L.finishAt = Time + Ck.timeSec;
+			if (Ck.timeSec <= 0)
+			{
+				CompleteLand(L, Time);
+			}
+		}
+	}
+	return Error::None;
+}
+
+Error Kingdom::SpeedupLand(int32_t Id)
+{
+	for (Land& L : LandList)
+	{
+		if (L.id != Id)
+		{
+			continue;
+		}
+		if (!L.upgrading)
+		{
+			return Error::NotBusy;
+		}
+		const int64_t Gems = LandSkipCost(Id);
+		int64_t& Have = Res_[static_cast<size_t>(ResIndex(Res::Gems))];
+		if (Have < Gems)
+		{
+			return Error::NotEnough;
+		}
+		Have -= Gems;
+		CompleteLand(L, Time);
+		return Error::None;
 	}
 	return Error::BadId;
 }
@@ -1744,9 +1903,8 @@ WorldLand Kingdom::MakeWorldLand()
 		Pick -= T.weight;
 	}
 	// Land levels follow the Castle: a band of three levels that rises with it.
-	const int MaxLevel = static_cast<int>(C.raidLoot.size());
-	const int Lo = std::max(1, std::min(MaxLevel, (Castle + 1) / 3));
-	const int Hi = std::max(Lo, std::min(MaxLevel, Lo + 2));
+	const int Lo = LandBandLow(Castle);
+	const int Hi = LandBandTop(Castle);
 	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
 	return W;
 }
@@ -3856,6 +4014,12 @@ std::string Kingdom::Save() const
 		W.Int(L.lastAt);
 		W.Key("titan");
 		W.Int(L.titanId);
+		W.Key("upgrading");
+		W.Bool(L.upgrading);
+		W.Key("startAt");
+		W.Int(L.startAt);
+		W.Key("finishAt");
+		W.Int(L.finishAt);
 		W.EndObject();
 	}
 	W.EndArray();
@@ -4102,8 +4266,12 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.carry = LJ.GetInt64("carry", 0) * (Version < 4 ? 100 : 1);
 			L.lastAt = LJ.GetInt64("lastAt", 0);
 			L.titanId = static_cast<int32_t>(LJ.GetInt64("titan", 0));
+			L.startAt = LJ.GetInt64("startAt", 0);
+			L.finishAt = LJ.GetInt64("finishAt", 0);
 			if (L.type >= 0)
 			{
+				// Land upgrades are optional fields of format 4: older saves have none.
+				L.upgrading = LJ.GetBool("upgrading", false) && L.level < static_cast<int>(C.landTypes[static_cast<size_t>(L.type)].produce.size());
 				NewLands.push_back(L);
 			}
 		}
@@ -4610,6 +4778,16 @@ uint64_t Kingdom::Hash() const
 		}
 		W.I32(R.building);
 		W.I64(R.since);
+	}
+	// Land upgrades (only lands being upgraded, so states without them hash as before).
+	for (const Land& L : LandList)
+	{
+		if (L.upgrading)
+		{
+			W.I32(L.id);
+			W.I64(L.startAt);
+			W.I64(L.finishAt);
+		}
 	}
 	return W.Hash();
 }

@@ -151,6 +151,8 @@ class KingdomBridge {
 	refillStones() { return this.M._dk_refill_stones(); }
 	collectLand(id) { return JSON.parse(this.str(this.M._dk_collect_land(id))); }
 	abandonLand(id) { return this.M._dk_abandon_land(id); }
+	upgradeLand(id, gems) { return this.M._dk_land_upgrade(id, gems ? 1 : 0); }
+	speedupLand(id) { return this.M._dk_land_speedup(id); }
 	attackStart(worldId, capture, squads, titan, spells, reinforce) {
 		return this.M.ccall('dk_attack_start', 'number', ['number', 'number', 'string', 'number', 'string', 'number'],
 			[worldId, capture ? 1 : 0, (squads || []).join(','), titan || 0, (spells || []).join(','), reinforce ? 1 : 0]);
@@ -1405,6 +1407,11 @@ function makeLandView(L, slot) {
 		k.cyl(0.25, 1.1, x, 0, z, mat(0x6b4a2b), 6).cone(1.1, 1.8, x, 1.0, z, mat(0x447f37), 8).cone(0.75, 1.4, x, 2.1, z, mat(0x4f9640), 8);
 	}
 	k.flag(-6.2, 0, 2.5, 4.2);
+	if (L.up) {
+		// Being upgraded: a builder at work by a stack of planks.
+		k.box(1.6, 0.22, 0.7, -3.4, 0, 4.6, mat(PAL.wood), 0.3).box(1.4, 0.22, 0.6, -3.4, 0.22, 4.6, mat(PAL.woodD), 0.5);
+		builder(k, -2.2, 3.9);
+	}
 	if (L.titan) {
 		// A titan guards the land: a golden statue on a plinth.
 		const g = mat(PAL.gold, GOLD);
@@ -1515,7 +1522,7 @@ function syncViews() {
 	const seenL = new Set();
 	st.lands.forEach((L, i) => {
 		seenL.add(L.id);
-		const key = L.type + '|' + L.lv + '|' + i + '|' + (L.titan ? 1 : 0);
+		const key = L.type + '|' + L.lv + '|' + i + '|' + (L.titan ? 1 : 0) + '|' + L.up;
 		let v = world.lands.get(L.id);
 		if (!v || v.key !== key) {
 			if (v) removeLandView(v);
@@ -1847,7 +1854,8 @@ function drawOverlay(t) {
 		if (!project(v.anchor, pt)) continue;
 		const L = v.L;
 		const kind = landType(L.type).resource;
-		if (L.st >= Math.max(1, L.cap * 0.08)) bubble(c, pt.x, pt.y - 4, kind, L.st / L.cap, t / 1000, () => collectLand(L.id));
+		if (L.up) pill(c, pt.x, pt.y, fmtDur(L.f - nf), K.sel && K.sel.kind === 'land' && K.sel.id === L.id ? landType(L.type).name : '', 1 - (L.f - nf) / Math.max(1, L.f - L.s), landGlyph(L.type));
+		else if (L.st >= Math.max(1, L.cap * 0.08)) bubble(c, pt.x, pt.y - 4, kind, L.st / L.cap, t / 1000, () => collectLand(L.id));
 		else pill(c, pt.x, pt.y, 'ур. ' + L.lv + ' · ' + fmtShort(L.rate) + ((landType(L.type).periodHours || 1) >= 24 ? '/сут' : '/ч'));
 	}
 	drawExpansionSign(c, pt);
@@ -1941,7 +1949,7 @@ function errText(code, ck, ctx) {
 	case E.NoBuilder: return 'Все строители заняты';
 	case E.NotEnough: return ck ? missingText(ck.cost) : 'Не хватает ресурсов';
 	case E.BadPlacement: return 'Здесь нельзя строить';
-	case E.Busy: return ctx === 'arcane' ? 'Заклинание уже улучшается' : 'Постройка уже улучшается';
+	case E.Busy: return ctx === 'arcane' ? 'Заклинание уже улучшается' : ctx === 'land' ? 'Земля улучшается: дождитесь конца или ускорьте' : 'Постройка уже улучшается';
 	case E.NotBusy: return 'Сейчас здесь ничего не строится';
 	case E.Nothing: return 'Пока нечего собирать';
 	case E.StorageFull: return 'Хранилище заполнено';
@@ -2025,6 +2033,16 @@ function announce(prev, st) {
 			const d = defOf(now.def);
 			toast((b.lv === 0 ? 'Построено: ' : 'Улучшено: ') + d.name + (now.lv > 1 ? ', уровень ' + now.lv : ''), 'gold');
 			const v = world.views.get(now.id);
+			if (v) floatText(v.anchor, 'Готово', '#f2c14e');
+			done = true;
+		}
+	}
+	for (const L of prev.lands) {
+		if (!L.up) continue;
+		const now = st.lands.find((x) => x.id === L.id);
+		if (now && !now.up) {
+			toast('Земля улучшена: ' + landType(now.type).name + ', уровень ' + now.lv, 'gold');
+			const v = world.lands.get(now.id);
 			if (v) floatText(v.anchor, 'Готово', '#f2c14e');
 			done = true;
 		}
@@ -2264,20 +2282,33 @@ function landPanel(id) {
 	if (!L) return null;
 	const ty = landType(L.type);
 	const armedA = isArmed('abandon:' + id);
+	const armedSkip = isArmed('lskip:' + id);
 	const guard = L.titan ? K.st.titans.find((t) => t.id === L.titan) : null;
+	let up;
+	if (L.up) up = '<button class="btn tall primary" data-act="land-skip" data-id="' + id + '">' + (armedSkip ? 'Подтвердить' : 'Ускорить') + '<span class="sub" data-live="skip"></span></button>';
+	else if (L.nx.err === E.MaxLevel) up = L.lv < ty.produce.length ? '<button class="btn tall" disabled>Не улучшается<span class="sub">добыча не растёт</span></button>' : '<button class="btn tall" disabled>Макс. уровень<span class="sub">' + L.lv + '</span></button>';
+	else up = '<button class="btn tall" data-act="land-upgrade" data-id="' + id + '">Улучшить<span class="sub">' + (L.nx.err === E.CastleTooLow && L.nx.c ? 'Замок ' + L.nx.c : 'до уровня ' + (L.lv + 1)) + '</span></button>';
 	const html = '<div class="head">' + landIcon(L.type, L.lv) + '<h3>' + esc(ty.name) + '</h3><span class="lvl">уровень ' + L.lv + '</span><button class="btn x" data-act="close" aria-label="Закрыть">✕</button></div>' +
 		'<div class="stats"><span>Добыча <b>' + landRateText(L.type, L.rate) + '</b></span><span>Копит до <b>' + resAmount(ty.resource, L.cap) + '</b></span><span>Накоплено <b data-live="st"></b></span><span>полна за ' + L.fill + ' ч</span></div>' +
 		(ty.resource === 'vp' ? '<p class="fine">Земля очков победы: очки идут в счёт сезона (кнопка ОП вверху).</p>' : ty.resource === 'shards' ? '<p class="fine">Руины дают осколки: на них возвышают титанов в Зале титанов.</p>' : '') +
-		'<div class="row"><button class="btn tall primary" data-act="land-collect" data-id="' + id + '">Собрать<span class="sub" data-live="stc"></span></button>' +
+		(L.up ? '<div class="uprow"><span>Улучшение до уровня ' + (L.lv + 1) + ', добыча идёт</span><b data-live="left"></b></div><div class="progress"><i data-live="bar"></i></div>' : '') +
+		'<div class="row"><button class="btn tall primary" data-act="land-collect" data-id="' + id + '">Собрать<span class="sub" data-live="stc"></span></button>' + up +
 		'<button class="btn tall" data-act="land-guard" data-id="' + id + '">' + (guard ? 'Страж: ' + esc(titanName(guard)) : 'Поставить титана') + '<span class="sub">' + (guard ? '+' + guard.lv + '% добычи' : '+1% за уровень') + '</span></button>' +
-		'<button class="btn tall' + (armedA ? ' danger' : '') + '" data-act="land-abandon" data-id="' + id + '">' + (armedA ? 'Точно покинуть?' : 'Покинуть землю') + '<span class="sub">место освободится</span></button></div>';
+		'<button class="btn tall' + (armedA ? ' danger' : '') + '" data-act="land-abandon" data-id="' + id + '"' + (L.up ? ' disabled' : '') + '>' + (armedA ? 'Точно покинуть?' : 'Покинуть землю') + '<span class="sub">' + (L.up ? 'идёт улучшение' : 'место освободится') + '</span></button></div>';
 	return {
-		key: ['land', id, L.lv, armedA, L.titan, guard ? guard.lv : 0, L.rate].join('|'), html,
+		key: ['land', id, L.lv, armedA, armedSkip, L.titan, guard ? guard.lv : 0, L.rate, L.up, L.nx.err, L.nx.c].join('|'), html,
 		live(el) {
 			const LL = K.st.lands.find((x) => x.id === id);
 			if (!LL) return;
 			live(el, 'st', fmt(LL.st));
 			live(el, 'stc', LL.st > 0 ? '+' + resAmount(landType(LL.type).resource, LL.st) : 'пусто');
+			if (LL.up) {
+				const left = LL.f - nowF();
+				live(el, 'left', fmtDur(left));
+				liveBar(el, 'bar', 1 - left / Math.max(1, LL.f - LL.s));
+				const n = el.querySelector('[data-live="skip"]');
+				if (n) n.innerHTML = gemSpan(LL.skip);
+			}
 		},
 	};
 }
@@ -2466,6 +2497,21 @@ function onAct(e) {
 	case 'land-guard': openLandGuard(id); break;
 	case 'assign': run(K.bridge.assign(+el.dataset.land, id), 'Титан охраняет землю'); break;
 	case 'recall': run(K.bridge.recall(id), 'Страж отозван'); break;
+	case 'land-upgrade': openLandUpgrade(id); break;
+	case 'do-land-upgrade': doLandUpgrade(id, false); break;
+	case 'do-land-upgrade-gems': gemAction('lup:' + id, +el.dataset.gems, () => doLandUpgrade(id, true)); break;
+	case 'land-skip': {
+		const L = K.st.lands.find((x) => x.id === id);
+		if (L) gemAction('lskip:' + id, L.skip, () => run(K.bridge.speedupLand(id), 'Земля улучшена: ' + landType(L.type).name + ', уровень ' + (L.lv + 1), null, 'land'));
+		break;
+	}
+	case 'goto-land': {
+		closeSheet();
+		const v = world.lands.get(id);
+		if (v) focusOn(v.anchor.x, v.anchor.z);
+		select({ kind: 'land', id });
+		break;
+	}
 	case 'prep-spell': {
 		const p = K.prep;
 		if (!p) break;
@@ -2556,6 +2602,16 @@ function doUpgrade(id, gems) {
 	closeSheet();
 	const t = b.nx.t;
 	toast(t > 0 ? 'Улучшение началось: ' + d.name + ' · ' + fmtDur(t) : 'Готово: ' + d.name + ', уровень ' + (b.lv + 1), 'gold');
+	persist();
+	refresh(true);
+}
+function doLandUpgrade(id, gems) {
+	const L = K.st.lands.find((x) => x.id === id);
+	if (!L) return;
+	const code = K.bridge.upgradeLand(id, gems);
+	if (code !== E.None) { toast(errText(code, L.nx, 'land'), 'bad'); refresh(true); return; }
+	closeSheet();
+	toast('Улучшение земли началось: ' + landType(L.type).name + ' · ' + fmtDur(L.nx.t), 'gold');
 	persist();
 	refresh(true);
 }
@@ -2829,6 +2885,38 @@ function openUpgrade(id) {
 		return { key: ['up', id, ck.err, ck.g, armedU, st.res[0] >= ck.cost[0], st.res[1] >= ck.cost[1]].join('|'), html };
 	});
 }
+function openLandUpgrade(id) {
+	openSheet(() => {
+		const st = K.st;
+		const L = st.lands.find((x) => x.id === id);
+		if (!L || L.up || L.nx.err === E.MaxLevel) return null;
+		const ty = landType(L.type);
+		const ck = L.nx;
+		// The next level's numbers the way the kingdom counts them: a guard adds 1% per titan level.
+		const guard = L.titan ? st.titans.find((t) => t.id === L.titan) : null;
+		const pct = 100 + (guard ? guard.lv : 0);
+		const fills = ty.fillHours || K.rules.lands.fillHours;
+		const fill = fills[Math.min(L.lv + 1, fills.length) - 1];
+		const rate = Math.floor(ty.produce[L.lv] * pct / 100);
+		const cap = Math.floor(ty.produce[L.lv] * pct * fill / (100 * (ty.periodHours || 1)));
+		const rows = [['Добыча', landRateText(L.type, L.rate), landRateText(L.type, rate)], ['Копит до', resAmount(ty.resource, L.cap), resAmount(ty.resource, cap)],
+			['Полна за', L.fill + ' ч', fill + ' ч']].map((r) => '<span class="k">' + r[0] + '</span><span class="v">' + r[1] + '</span><span class="n">' + (r[2] !== r[1] ? '→ ' + r[2] : '') + '</span>');
+		const armedU = isArmed('lup:' + id);
+		let main;
+		if (ck.err === E.None) main = '<button class="btn primary" data-act="do-land-upgrade" data-id="' + id + '">Улучшить</button>';
+		else if (ck.err === E.NotEnough && ck.g > 0) main = '<button class="btn primary" data-act="do-land-upgrade-gems" data-id="' + id + '" data-gems="' + ck.g + '">' + (armedU ? 'Подтвердить ' : 'Докупить и улучшить ') + gemSpan(ck.g) + '</button>';
+		else if (ck.err === E.NoBuilder) main = '<button class="btn primary" data-act="builders">Ускорить стройку</button>';
+		else main = '<button class="btn" disabled>' + esc(errText(ck.err, ck, 'land')) + '</button>';
+		const html = sheetTitle(landIcon(L.type, L.lv), esc(ty.name)) + '<p>Уровень ' + L.lv + ' → ' + (L.lv + 1) + '. Улучшение занимает строителя, а земля всё это время добывает.</p>' +
+			'<div class="cmp">' + rows.join('') + '</div>' +
+			'<div class="costline"><span>Стоимость</span>' + costHtml(ck.cost, st.res) + '<span>Время</span><b>' + fmtDur(ck.t) + '</b></div>' +
+			(ck.err !== E.None ? '<p class="note">' + esc(errText(ck.err, ck, 'land')) + (ck.err === E.NotEnough && ck.g > 0 ? '. Недостающее золото можно купить за самоцветы.' : '') + '</p>' : '') +
+			'<p class="fine">В оригинале захваченные земли улучшали, чтобы они больше давали; цен гайды не называют, поэтому цена и время здесь наша оценка. ' +
+			'Земля растёт до верхнего уровня земель, которые Замок открывает на карте мира (сейчас ' + st.landMaxLv + ').</p>' +
+			'<div class="actions">' + main + closeBtn + '</div>';
+		return { key: ['lup', id, ck.err, ck.g, armedU, st.res[0] >= ck.cost[0], st.busy, st.builders, L.rate, L.cap].join('|'), html };
+	});
+}
 function openInfo(id) {
 	openSheet(() => {
 		const b = K.st.b.find((x) => x.id === id);
@@ -3034,20 +3122,23 @@ function openBuilders() {
 	openSheet(() => {
 		const st = K.st;
 		const busy = st.b.filter((b) => b.up);
+		const busyL = st.lands.filter((L) => L.up);
 		const yard = st.b.find((b) => defOf(b.def).role === 'builders');
 		const rows = busy.map((b) => {
 			const d = defOf(b.def);
 			return '<div class="landCard">' + buildingIcon(b.def) + '<div class="info"><b>' + esc(d.name) + (b.lv ? ' → ур. ' + (b.lv + 1) : ' · стройка') + '</b>' +
 				'<span data-live="t' + b.id + '"></span></div><div class="row"><button class="btn" data-act="goto" data-id="' + b.id + '">Показать</button>' +
 				'<button class="btn primary" data-act="skip" data-id="' + b.id + '">' + (isArmed('skip:' + b.id) ? 'Подтвердить ' : 'Ускорить ') + '<span data-live="g' + b.id + '"></span></button></div></div>';
-		});
+		}).concat(busyL.map((L) => '<div class="landCard">' + landIcon(L.type, L.lv) + '<div class="info"><b>' + esc(landType(L.type).name) + ' → ур. ' + (L.lv + 1) + '</b>' +
+			'<span data-live="t' + L.id + '"></span></div><div class="row"><button class="btn" data-act="goto-land" data-id="' + L.id + '">Показать</button>' +
+			'<button class="btn primary" data-act="land-skip" data-id="' + L.id + '">' + (isArmed('lskip:' + L.id) ? 'Подтвердить ' : 'Ускорить ') + '<span data-live="g' + L.id + '"></span></button></div></div>'));
 		const html = sheetTitle(buildingIconById('builders_yard'), 'Строители') + '<p>Свободно ' + (st.builders - st.busy) + ' из ' + st.builders + '. Каждый строитель ведёт одну стройку; новых нанимают за самоцветы в Дворе строителей (до 5, как в оригинале).</p>' +
 			(rows.length ? rows.join('') : '<p class="fine">Сейчас никто не занят.</p>') +
 			'<div class="actions">' + (yard ? '<button class="btn" data-act="goto" data-id="' + yard.id + '">Двор строителей</button>' : '') + closeBtn + '</div>';
 		return {
-			key: ['builders', busy.map((b) => b.id + ':' + isArmed('skip:' + b.id)).join(), st.builders].join('|'), html,
+			key: ['builders', busy.map((b) => b.id + ':' + isArmed('skip:' + b.id)).join(), busyL.map((L) => L.id + ':' + isArmed('lskip:' + L.id)).join(), st.builders].join('|'), html,
 			live(el) {
-				for (const b of K.st.b) {
+				for (const b of K.st.b.concat(K.st.lands)) {
 					if (!b.up) continue;
 					live(el, 't' + b.id, 'осталось ' + fmtDur(b.f - nowF()));
 					const n = el.querySelector('[data-live="g' + b.id + '"]');
@@ -3342,10 +3433,12 @@ function relicIcon(r) {
 	return '<div class="ico relic r' + r.r + (broken ? ' broken' : '') + '">' + DotIcons.svg('relic.' + K.army.relics.kinds[r.kind].id) + (broken ? DotIcons.svg('ui.crack', 'crack') : '') + '</div>';
 }
 /** Icon tile of a land type (tile colour by its resource) with the level badge. */
+function landGlyph(type) {
+	const glyph = { gold_land: 'land.gold', farm_land: 'land.food' }[landType(type).id] || 'land.' + landType(type).id;
+	return DotIcons.has(glyph) ? glyph : 'land.gold';
+}
 function landIcon(type, lv) {
-	const ty = landType(type);
-	const glyph = { gold_land: 'land.gold', farm_land: 'land.food' }[ty.id] || 'land.' + ty.id;
-	return '<div class="ico ' + ty.resource + ' land">' + DotIcons.svg(DotIcons.has(glyph) ? glyph : 'land.gold') + '<i class="lvb">' + lv + '</i></div>';
+	return '<div class="ico ' + landType(type).resource + ' land">' + DotIcons.svg(landGlyph(type)) + '<i class="lvb">' + lv + '</i></div>';
 }
 /** Sheet heading with an icon tile in front. */
 const sheetTitle = (icon, text) => '<h2 id="kSheetTitle" class="ti">' + icon + '<span>' + text + '</span></h2>';

@@ -1061,9 +1061,12 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		bFirst = false;
 		O.Raw("{").Key("id").Int(L.id).Comma().Key("type").Int(L.type).Comma().Key("lv").Int(L.level).Comma().Key("titan").Int(L.titanId).Comma();
 		O.Key("st").Int(Km->UncollectedLand(L)).Comma().Key("cap").Int(Km->LandStoreCap(L)).Comma().Key("rate").Int(Km->LandRate(L)).Comma();
-		O.Key("fill").Int(Km->LandFillHours(L)).Raw("}");
+		O.Key("fill").Int(Km->LandFillHours(L)).Comma().Key("up").Int(L.upgrading ? 1 : 0).Comma().Key("s").Int(L.startAt).Comma();
+		O.Key("f").Int(L.finishAt).Comma().Key("skip").Int(Km->LandSkipCost(L.id)).Comma().Key("nx");
+		WriteCheck(O, Km->CheckLandUpgrade(L.id));
+		O.Raw("}");
 	}
-	O.Raw("],").Key("world").Raw("[");
+	O.Raw("],").Key("landMaxLv").Int(Km->MaxLandLevel()).Comma().Key("world").Raw("[");
 	bFirst = true;
 	for (const WorldLand& W : Km->World())
 	{
@@ -1292,6 +1295,16 @@ EMSCRIPTEN_KEEPALIVE const char* dk_collect_land(int Id)
 EMSCRIPTEN_KEEPALIVE int dk_abandon_land(int Id)
 {
 	return K() ? static_cast<int>(K()->AbandonLand(Id)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_land_upgrade(int Id, int UseGems)
+{
+	return K() ? static_cast<int>(K()->UpgradeLand(Id, UseGems != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_land_speedup(int Id)
+{
+	return K() ? static_cast<int>(K()->SpeedupLand(Id)) : -1;
 }
 
 /** Squads are troop indices separated by commas (one per squad); TitanId 0 means no titan; Reinforce 1 takes the

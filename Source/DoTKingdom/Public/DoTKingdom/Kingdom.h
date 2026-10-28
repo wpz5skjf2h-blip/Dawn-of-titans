@@ -81,6 +81,10 @@ struct Land
 	int64_t stored = 0;
 	int64_t carry = 0; // remainder in units x 100 x seconds (the titan bonus is a percentage)
 	int64_t lastAt = 0;
+	// Upgrading to the next level (a builder works on it; the land keeps producing at its level).
+	bool upgrading = false;
+	int64_t startAt = 0;
+	int64_t finishAt = 0;
 };
 
 /** A neutral land on the world map that can be raided or captured. */
@@ -261,6 +265,10 @@ public:
 	/** Raid loot of the land's own resource at three stars; VP for winning there (both before the stars). */
 	int64_t RaidLoot(const WorldLand& W) const;
 	int64_t VictoryVp(int LandLevel) const;
+	/** The highest land level the Castle allows: the top of the level band it opens on the world map. */
+	int MaxLandLevel() const;
+	Check CheckLandUpgrade(int32_t Id) const;
+	int64_t LandSkipCost(int32_t Id) const;
 	Check CheckBuild(int Def) const;
 	Check CheckUpgrade(int32_t Id) const;
 	Check CheckExpansion() const;
@@ -401,6 +409,9 @@ public:
 	Error RefillStones();
 	Error CollectLand(int32_t Id, int64_t* OutAmount = nullptr);
 	Error AbandonLand(int32_t Id);
+	/** Raises a captured land by one level for gold; a builder works on it for a while. Missing gold can be bought with gems. */
+	Error UpgradeLand(int32_t Id, bool UseGems);
+	Error SpeedupLand(int32_t Id);
 	/** Spends portal stones for a raid (3) or capture (6) of a world land; the battle runs elsewhere. */
 	Error StartAttack(int32_t WorldId, bool Capture);
 	/** The same with the army that goes: squads (troop indices, one per squad) and a titan (0 for none). */
@@ -467,6 +478,10 @@ private:
 	void Settle(Building& B, int64_t At) const;
 	void SettleLand(Land& L, int64_t At) const;
 	void Complete(Building& B, int64_t At);
+	void CompleteLand(Land& L, int64_t At);
+	/** The level band of world lands at this Castle level: three levels from the low end (capped at the last level). */
+	int LandBandLow(int Castle) const;
+	int LandBandTop(int Castle) const;
 	void RegenStones(int64_t Until);
 	void AddResource(Res R, int64_t Amount);
 	void RollSeason(int64_t At);

@@ -723,6 +723,12 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 		ReadInts(Lands->Find("victoryVp"), Out.victoryVp);
+		ReadInts(Lands->Find("upgradeGold"), Out.landUpgradeGold);
+		ReadInts(Lands->Find("upgradeHours"), Out.landUpgradeSec);
+		for (int64_t& Sec : Out.landUpgradeSec)
+		{
+			Sec *= 3600;
+		}
 		if (const JsonValue* Types = Lands->Find("types"))
 		{
 			for (size_t I = 0; I < Types->Size(); ++I)

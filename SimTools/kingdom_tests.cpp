@@ -1,6 +1,6 @@
 // SimTools/kingdom_tests.cpp
 // Tests for the kingdom economy (Source/DoTKingdom): content numbers from the original game,
-// timers, production, limits, requirements, portal stones, lands (ruins and victory-point lands too), seasons,
+// timers, production, limits, requirements, portal stones, lands (ruins, victory-point lands, upgrades), seasons,
 // army, titans (ascension too), relic items (combat and economy, effects, repair), alliances with their leagues and
 // reinforcements, and save/load determinism.
 #include "ToolCommon.h"
@@ -985,6 +985,67 @@ void TestAscension()
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == A.Hash() && M.Save() == Saved && M.FindTitan(Talos)->ascended);
 }
+
+void TestLandUpgrades()
+{
+	const KingdomContent& Ct = Content();
+	KD_CHECK(Ct.landUpgradeGold.size() == 9 && Ct.landUpgradeSec.size() == 9 && Ct.landUpgradeSec[2] == 2 * Hour);
+	Kingdom K(Content());
+	K.NewGame(T0, 53);
+	KD_CHECK(K.MaxLandLevel() == 3); // Castle 1: the world map offers levels 1-3
+	// Castle 6 (map band 2-4) with a level 2 gold land and level 2 ruins.
+	const std::string Lands = "\"lands\":[{\"id\":800,\"type\":\"gold_land\",\"level\":2,\"stored\":0,\"carry\":0,\"lastAt\":" + std::to_string(T0) +
+		",\"titan\":0},{\"id\":801,\"type\":\"ruins\",\"level\":2,\"stored\":0,\"carry\":0,\"lastAt\":" + std::to_string(T0) + ",\"titan\":0}]";
+	std::string Save = Replace(K.Save(), "\"lands\":[]", Lands);
+	Save = Replace(Save, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6");
+	Save = Replace(Save, "\"gold\":2500", "\"gold\":20000");
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	KD_CHECK(L.MaxLandLevel() == 4);
+	// Ruins make one shard a day at every level: nothing to gain, so no upgrade.
+	KD_CHECK(L.CheckLandUpgrade(801).error == Error::MaxLevel);
+	Check Ck = L.CheckLandUpgrade(800);
+	KD_CHECK(Ck.error == Error::None && Ck.cost[static_cast<size_t>(ResIndex(Res::Gold))] == Ct.landUpgradeGold[2] && Ck.timeSec == 2 * Hour);
+	KD_CHECK(L.UpgradeLand(800, false) == Error::None);
+	KD_CHECK(L.Amount(Res::Gold) == 20000 - Ct.landUpgradeGold[2]);
+	// A builder works on it: the city has to wait, the land cannot be upgraded twice or abandoned meanwhile.
+	KD_CHECK(L.BusyBuilders() == 1 && L.CheckUpgrade(FindId(L, "gold_mine")).error == Error::NoBuilder);
+	KD_CHECK(L.CheckLandUpgrade(800).error == Error::Busy && L.AbandonLand(800) == Error::Busy);
+	KD_CHECK(L.SpeedupLand(801) == Error::NotBusy);
+	// It keeps producing at level 2 (230/h) until the upgrade is done, then at level 3 (300/h).
+	L.Advance(T0 + Hour);
+	KD_CHECK(L.FindLand(800)->level == 2 && L.UncollectedLand(*L.FindLand(800)) == 230);
+	L.Advance(T0 + 2 * Hour);
+	KD_CHECK(L.FindLand(800)->level == 3 && !L.FindLand(800)->upgrading && L.BusyBuilders() == 0);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(800)) == 460);
+	L.Advance(T0 + 3 * Hour);
+	KD_CHECK(L.UncollectedLand(*L.FindLand(800)) == 760 && L.LandRate(*L.FindLand(800)) == 300);
+	// Missing gold can be bought with gems; the rest of the time too.
+	Ck = L.CheckLandUpgrade(800);
+	KD_CHECK(Ck.error == Error::NotEnough && Ck.gemsForMissing > 0 && Ck.timeSec == 4 * Hour);
+	KD_CHECK(L.UpgradeLand(800, false) == Error::NotEnough);
+	const int64_t Gems = L.Amount(Res::Gems);
+	KD_CHECK(L.UpgradeLand(800, true) == Error::None);
+	KD_CHECK(L.Amount(Res::Gems) == Gems - Ck.gemsForMissing && L.Amount(Res::Gold) == 0);
+	// A save in the middle of an upgrade loads to the same state and goes on the same way.
+	L.Advance(L.Now() + Hour);
+	const std::string Mid = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Mid, Error) && M.Hash() == L.Hash() && M.Save() == Mid && M.FindLand(800)->upgrading);
+	const int64_t Skip = L.LandSkipCost(800);
+	KD_CHECK(Skip == (3 * Hour + Ct.skipSecPerGem - 1) / Ct.skipSecPerGem);
+	KD_CHECK(L.SpeedupLand(800) == Error::None && L.FindLand(800)->level == 4 && L.Amount(Res::Gems) == Gems - Ck.gemsForMissing - Skip);
+	M.Advance(M.Now() + 3 * Hour);
+	KD_CHECK(M.FindLand(800)->level == 4 && M.LandRate(*M.FindLand(800)) == 390);
+	// Level 4 is the top of Castle 6's band; Castle 8 opens level 5.
+	Ck = L.CheckLandUpgrade(800);
+	KD_CHECK(Ck.error == Error::CastleTooLow && Ck.castle == 8);
+	Kingdom N(Content());
+	KD_CHECK(N.Load(Replace(L.Save(), "\"def\":\"castle\",\"level\":6", "\"def\":\"castle\",\"level\":8"), Error));
+	KD_CHECK(N.CheckLandUpgrade(800).error == Error::NotEnough && N.CheckLandUpgrade(800).castle == 0);
+	KD_CHECK(N.AbandonLand(800) == Error::None && N.Lands().size() == 1);
+}
 } // namespace
 
 /** A kingdom of this seed with this much VP this season. */
@@ -1269,6 +1330,7 @@ int main()
 		{"Seasons", TestSeasons},
 		{"Ascension", TestAscension},
 		{"Alliances", TestAlliances},
+		{"LandUpgrades", TestLandUpgrades},
 	};
 	for (const auto& T : Tests)
 	{

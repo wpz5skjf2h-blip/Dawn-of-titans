@@ -47,7 +47,13 @@
     // VP for any won land battle by land level, scaled by stars like loot (wiki: VP for almost all victories;
     // the amounts are estimates).
     "victoryVp": [4, 6, 8, 10, 13, 16, 20, 25, 30],
-    "worldSize": 8
+    "worldSize": 8,
+    // Upgrading a captured land (guides: upgrade lands to raise their output). The original's prices are unknown;
+    // these are estimates. Gold and hours by the level reached. A builder works on it, the land keeps producing at its
+    // old level meanwhile, and it goes no higher than the top of the level band the Castle opens on the world map.
+    // A level that would produce no more (ruins) is not offered.
+    "upgradeGold": [0, 4000, 9000, 25000, 60000, 130000, 260000, 480000, 800000],
+    "upgradeHours": [0, 1, 2, 4, 8, 12, 18, 24, 36]
   },
 
   // Seasons (wiki, Leagues): VP ranks players and alliances; at the end of a season everyone's VP returns to zero

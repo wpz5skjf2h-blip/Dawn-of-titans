@@ -311,6 +311,9 @@ struct KingdomContent
 	/** VP for any won land battle, by land level (scaled by stars like loot). */
 	std::vector<int64_t> victoryVp;
 	int worldSize = 6;
+	/** Upgrading a captured land: gold and seconds by the level reached (index L - 1, so the first entry is unused). */
+	std::vector<int64_t> landUpgradeGold;
+	std::vector<int64_t> landUpgradeSec;
 	/** Seasons: VP resets to zero at the end of each one and the reached league pays its reward. */
 	int64_t seasonEpoch = 0;
 	int64_t seasonSec = 7 * 86400;

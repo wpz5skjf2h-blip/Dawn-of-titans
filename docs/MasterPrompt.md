@@ -1077,6 +1077,8 @@ estimates `"src": "est"`.
 - **Castle requirements** repeat in a three-level cycle: Garrison + Army Camp → Armoury + Hall of Titans → Arcane Tower + Portal.
 - **Lands:** gold and farm lands around the kingdom; raid (loot) or capture (permanent income, docks to the kingdom).
   Fill time 6 h (L1) → 15 h (L5) → 24 h (L9+); land limit 3–15 by Castle level, up to 30 with Gems; a titan on a land adds 1% per titan level.
+  Captured lands are upgraded one level at a time for Gold by a builder, and keep producing meanwhile; a land goes no
+  higher than the top of the level band the Castle opens on the world map; ruins are not upgraded (prices are ours).
 - **Army (original rules; supersedes 6.x where they differ):** the human line trains Militia, Archers and Spearmen in the
   Barracks for Food, one unit (squad) at a time, queue 6 → 20 by Barracks level (wiki: Militia 135 Food at L1, 1 min; Spearmen
   145 Food, 5 min; Archers 200 Food). Trained units wait in the Army Camp (capacity 10 → 225; battle slots 3 → 14).
