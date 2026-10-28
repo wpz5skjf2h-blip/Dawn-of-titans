@@ -1,7 +1,7 @@
 // SimTools/kingdom_tests.cpp
 // Tests for the kingdom economy (Source/DoTKingdom): content numbers from the original game,
 // timers, production, limits, requirements, portal stones, lands (ruins and victory-point lands too), seasons,
-// army, titans (ascension too) and save/load determinism.
+// army, titans (ascension too), relic items (combat and economy, effects, repair) and save/load determinism.
 #include "ToolCommon.h"
 
 #include "DoTKingdom/Kingdom.h"
@@ -314,7 +314,7 @@ void TestArmyContent()
 	KD_CHECK(C.titans.size() == 10);
 	KD_CHECK(C.titans[static_cast<size_t>(C.FindTitan("titan.thor"))].MaxLevel() == 50);
 	KD_CHECK(C.titans[static_cast<size_t>(C.FindTitan("titan.talos"))].MaxLevel() == 20);
-	KD_CHECK(C.altars.size() == 3 && C.altars[0].cooldownSec == 86400 && C.altars[1].gems == 1000 && C.altars[2].gems == 4000);
+	KD_CHECK(C.altars.size() == 4 && C.altars[0].cooldownSec == 86400 && C.altars[1].gems == 1000 && C.altars[2].gems == 4000);
 	KD_CHECK(C.altars[0].weights[3] == 0); // R4 only from the paid altars
 	KD_CHECK(C.fusionCastle == 7);
 }
@@ -589,11 +589,13 @@ void TestSpellsRelicsLandTitans()
 	Save = Replace(Save, "\"relics\":[],\"relicAt\"",
 		"\"relics\":[{\"id\":800,\"kind\":\"hp\",\"rarity\":3,\"durability\":1},{\"id\":801,\"kind\":\"atk\",\"rarity\":1,\"durability\":10},"
 		"{\"id\":802,\"kind\":\"atk\",\"rarity\":1,\"durability\":10},{\"id\":803,\"kind\":\"armor\",\"rarity\":3,\"durability\":18},"
-		"{\"id\":804,\"kind\":\"armor\",\"rarity\":3,\"durability\":18}],\"relicAt\"");
+		"{\"id\":804,\"kind\":\"armor\",\"rarity\":3,\"durability\":18},{\"id\":805,\"kind\":\"armor\",\"rarity\":3,\"durability\":18}],\"relicAt\"");
 	Kingdom L(Content());
 	std::string Error;
 	KD_CHECK(L.Load(Save, Error));
-	KD_CHECK(L.Relics().size() == 5 && L.SpellCapacity() > 10);
+	KD_CHECK(L.Relics().size() == 6 && L.SpellCapacity() > 10);
+	// Relics from before format 5: the effects a new relic of their rarity has, durability within the new table.
+	KD_CHECK(L.FindRelic(800)->levels == std::vector<int>({1, 0, 0}) && L.FindRelic(803)->durability == 12);
 	// Crafting: queue by Forge level, one spell after another, into the stock.
 	const int Fire = SpellIx("spell.fireball");
 	KD_CHECK(L.CheckCraft(SpellIx("spell.lightning")).error == Error::NeedRequirement); // Lightning from Forge 3 (estimate)
@@ -613,10 +615,10 @@ void TestSpellsRelicsLandTitans()
 	L.Advance(L.Now() + 30 * 24 * Hour);
 	KD_CHECK(L.SpellLevel(Fire) == 2 && L.SpellResearch().empty());
 	KD_CHECK(L.CheckCraft(Fire).cost[0] == Craft1 * 115 / 100);
-	// Relics: one slot at level 5; an R3 health relic gives +8% health and +4% armor.
+	// Relics: one slot at level 5; an R3 health relic gives +8% health (tenths of a percent), its other effects locked.
 	KD_CHECK(L.EquipRelic(Perun, 800) == Error::None);
 	KD_CHECK(L.EquipRelic(Perun, 801) == Error::LimitReached);
-	KD_CHECK(L.TitanBonusPct(Perun, 1) == 8 && L.TitanBonusPct(Perun, 2) == 4 && L.TitanBonusPct(Perun, 0) == 0);
+	KD_CHECK(L.TitanRelicBonus(Perun, RelicStat::Hp) == 80 && L.TitanRelicBonus(Perun, RelicStat::Armor) == 0 && L.TitanRelicBonus(Perun, RelicStat::Atk) == 0);
 	// A battle with a spell: the cast comes out of the stock and the relic wears out.
 	const int64_t Stock = L.SpellStock(Fire);
 	const WorldLand W = L.World()[0];
@@ -624,15 +626,22 @@ void TestSpellsRelicsLandTitans()
 	KD_CHECK(L.StartAttack(W.id, true, {}, Perun, {Fire}) == Error::None);
 	Reward R;
 	KD_CHECK(L.FinishAttack(W.id, true, 2, {}, {1}, &R) == Error::None);
-	KD_CHECK(L.SpellStock(Fire) == Stock - 1 && R.relicsBroken == 1 && L.TitanBonusPct(Perun, 1) == 0);
-	// Repair (Castle 8) costs food (wiki): two relics of the same rarity always succeed.
-	KD_CHECK(L.RepairChancePct(800, {801, 802}) == 28);
-	bool bRepaired = false;
+	KD_CHECK(L.SpellStock(Fire) == Stock - 1 && R.relicsBroken == 1 && L.TitanRelicBonus(Perun, RelicStat::Hp) == 0);
+	// The won battle (two stars) dropped two relics (the original since 1.8: one to three per victory).
+	KD_CHECK(R.relics.size() == 2 && R.relicsLost == 0 && L.Relics().size() == 8);
+	// Repair (Castle 8) costs food (wiki); each sacrifice adds by the wiki's table: R1 for an R3 relic 10%, R3 40%.
+	KD_CHECK(L.RepairChancePct(800, {801, 802}) == 20 && L.RepairChancePct(800, {803, 804}) == 80);
+	RepairResult Rep;
 	const int64_t Food = L.Amount(Res::Food);
 	KD_CHECK(Food >= Ct.relicRepairFood[2]);
-	KD_CHECK(L.RepairRelic(800, {803, 804}, &bRepaired) == Error::None && bRepaired);
+	KD_CHECK(L.RepairChancePct(800, {803, 804, 805}) == 100 && L.CanUnlockWith(800, {803, 804, 805}) && !L.CanUnlockWith(800, {801}));
+	KD_CHECK(L.RepairRelic(800, {803, 804, 805}, &Rep) == Error::None && Rep.repaired);
 	KD_CHECK(L.Amount(Res::Food) == Food - Ct.relicRepairFood[2]);
-	KD_CHECK(L.FindRelic(800)->durability == 18 && !L.FindRelic(803) && L.TitanBonusPct(Perun, 1) == 8);
+	// A success may improve the health effect or open the next one (R3 sacrifices may open it).
+	const RelicItem& Fixed = *L.FindRelic(800);
+	const int64_t HpNow = Rep.slot == 0 ? 92 : 80;
+	KD_CHECK(Fixed.durability == 12 && !L.FindRelic(803) && L.TitanRelicBonus(Perun, RelicStat::Hp) == HpNow);
+	KD_CHECK(Rep.slot < 0 || (Rep.slot == 0 && Fixed.levels[0] == 2) || (Rep.slot == 1 && Rep.unlocked && Fixed.levels[1] == 1));
 	// A titan on a land adds 1% per titan level (wiki).
 	KD_CHECK(R.landId != 0);
 	const int64_t Base = L.LandRate(*L.FindLand(R.landId));
@@ -647,6 +656,153 @@ void TestSpellsRelicsLandTitans()
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved);
 }
+/** A relic item in a save (format 5). */
+std::string RelicJson(int Id, const char* Kind, int Rarity, int64_t Durability, const char* Levels)
+{
+	return "{\"id\":" + std::to_string(Id) + ",\"kind\":\"" + Kind + "\",\"rarity\":" + std::to_string(Rarity) + ",\"durability\":" +
+		std::to_string(Durability) + ",\"levels\":" + Levels + "}";
+}
+
+void TestComplexRelics()
+{
+	const KingdomContent& Ct = Content();
+	// The original's relics since 1.8: combat relics for titans, economy relics for buildings, one to three effects,
+	// durability R1 20 / R2 16 / R3 12 / R4 8 battles, the repair table per sacrificed relic, an inventory of 200.
+	KD_CHECK(Ct.relicKinds.size() == 15 && Ct.relicEffects.size() == 14 && Ct.maxRelics == 200);
+	KD_CHECK(Ct.relicDurability[0] == 20 && Ct.relicDurability[1] == 16 && Ct.relicDurability[2] == 12 && Ct.relicDurability[3] == 8);
+	KD_CHECK(Ct.relicRepairPct[0][0] == 50 && Ct.relicRepairPct[1][2] == 80 && Ct.relicRepairPct[3][2] == 20 && Ct.relicRepairPct[3][3] == 40);
+	const int Pickaxe = Ct.FindRelicKind("pickaxe");
+	KD_CHECK(Pickaxe >= 0 && Ct.relicKinds[static_cast<size_t>(Pickaxe)].economy && Ct.relicKinds[static_cast<size_t>(Ct.FindRelicKind("scroll"))].battles == 2);
+	KD_CHECK(Ct.altars.size() == 4 && Ct.altars[3].relics && Ct.altars[3].gems == 1000 && Ct.altars[3].weights[0] == 0);
+
+	Kingdom K(Content());
+	K.NewGame(T0, 41);
+	const int32_t Perun = K.Titans()[0].id;
+	const int32_t Talos = K.Titans()[1].id;
+	std::string Save = WithBuilding(K.Save(), "relic_temple", 1, 34);
+	// An empty level-10 Gold Mine.
+	Save = Replace(Save, "\"buildings\":[", "\"buildings\":[{\"id\":930,\"def\":\"gold_mine\",\"level\":10,\"x\":30,\"y\":30,\"lastAt\":" + std::to_string(T0) + "},");
+	Save = Replace(Save, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":8");
+	Save = Replace(Save, "\"gems\":500", "\"gems\":60000");
+	Save = Replace(Save, "\"food\":2500", "\"food\":900000");
+	Save = Replace(Save, "\"def\":\"titan.perun\",\"level\":5", "\"def\":\"titan.perun\",\"level\":20");
+	std::string Relics = RelicJson(700, "pickaxe", 3, 3600, "[1,0]") + "," + RelicJson(701, "atk", 1, 20, "[1]") + "," + RelicJson(702, "atk", 1, 20, "[1]") +
+		"," + RelicJson(703, "hp", 1, 20, "[1]") + "," + RelicJson(704, "scroll", 3, 2, "[1]") + "," + RelicJson(705, "bugle", 2, 100000, "[1]") +
+		"," + RelicJson(706, "hp", 2, 16, "[1,0]") + "," + RelicJson(707, "hp", 2, 16, "[4,4]") + "," + RelicJson(708, "hp", 2, 16, "[4,0]");
+	for (int I = 0; I < 30; ++I)
+	{
+		Relics += "," + RelicJson(710 + I, "armor", 1, 20, "[1]"); // R1 fodder
+	}
+	for (int I = 0; I < 12; ++I)
+	{
+		Relics += "," + RelicJson(750 + I, "eye", 2, 16, "[1,0]"); // R2 fodder
+	}
+	Save = Replace(Save, "\"relics\":[],\"relicAt\"", "\"relics\":[" + Relics + "],\"relicAt\"");
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	KD_CHECK(L.Relics().size() == 51 && L.FindTitan(Perun)->level == 20 && L.RelicSlots(*L.FindTitan(Perun)) == 2);
+	const int32_t Mine = 930;
+	const int32_t Farm = FindId(L, "farm");
+	const int32_t Barracks = FindId(L, "barracks");
+
+	// Economy relics attach to the buildings of their kind only, combat relics to titans only.
+	KD_CHECK(L.AttachRelic(Farm, 700) == Error::WrongRelic && L.AttachRelic(Mine, 701) == Error::WrongRelic);
+	KD_CHECK(L.EquipRelic(Perun, 700) == Error::WrongRelic);
+	// A pickaxe (R3, +12% production) on a level-10 Gold Mine (895 an hour, wiki) for its last hour, then without it.
+	const int64_t Before = L.ProductionPerHour(Res::Gold);
+	KD_CHECK(L.Uncollected(*L.Find(Mine)) == 0);
+	KD_CHECK(L.AttachRelic(Mine, 700) == Error::None && L.BuildingRelic(Mine)->id == 700);
+	KD_CHECK(L.ProductionPerHour(Res::Gold) == Before - 895 + 895 * 1120 / 1000);
+	L.Advance(L.Now() + 3 * Hour);
+	KD_CHECK(L.RelicLeft(*L.FindRelic(700)) == 0 && L.ProductionPerHour(Res::Gold) == Before);
+	KD_CHECK(L.Uncollected(*L.Find(Mine)) == 895 * 1120 / 1000 + 2 * 895);
+
+	// A titan cannot wear two identical relics (the original); two different ones fit two slots at level 20.
+	KD_CHECK(L.EquipRelic(Perun, 701) == Error::None && L.EquipRelic(Perun, 702) == Error::SameRelic && L.EquipRelic(Perun, 703) == Error::None);
+	KD_CHECK(L.TitanRelicBonus(Perun, RelicStat::Atk) == 30 && L.TitanRelicBonus(Perun, RelicStat::Hp) == 30);
+
+	// An XP relic (two battles) adds its share to the titan's battle XP; the victory drops one relic per star.
+	KD_CHECK(L.EquipRelic(Talos, 704) == Error::None);
+	const WorldLand W = L.World()[0];
+	KD_CHECK(L.StartAttack(W.id, false, {}, Talos) == Error::None);
+	Reward R;
+	KD_CHECK(L.FinishAttack(W.id, false, 3, {}, &R) == Error::None);
+	const int64_t BaseXp = Ct.titanBattleXp[static_cast<size_t>(W.level - 1)] * Ct.titanStarsPct[3] / 100;
+	KD_CHECK(R.titanXp == BaseXp * 1400 / 1000 && L.FindRelic(704)->durability == 1);
+	KD_CHECK(R.relics.size() == 3 && L.Relics().size() == 54);
+
+	// A relic on the Barracks trains every troop faster (R2: 8%).
+	const int Mil = Troop("troop.militia");
+	KD_CHECK(L.CheckTrain(Mil).timeSec == 60);
+	KD_CHECK(L.AttachRelic(Barracks, 705) == Error::None && L.CheckTrain(Mil).timeSec == 56);
+
+	// Repair by the wiki's table: an R1 sacrifice adds 20% for an R2 relic, an R2 one 40%.
+	KD_CHECK(L.RepairChancePct(706, {710, 711}) == 40 && L.RepairChancePct(706, {750}) == 40 && L.RepairChancePct(706, {750, 751, 752}) == 100);
+	KD_CHECK(L.EnhanceChancePct(706) == 70);
+	// At its best and whole, a relic cannot be repaired; a locked effect needs a sacrifice of at least its rarity.
+	KD_CHECK(L.RepairRelic(707, {710}) == Error::Nothing && L.RepairRelic(708, {710}) == Error::Nothing);
+	KD_CHECK(!L.CanUnlockWith(706, {710}) && L.CanUnlockWith(706, {750}));
+	// A whole relic can be repaired for the improvement (the original). R1 sacrifices only raise the open effect,
+	// and once it is at its best they cannot do anything more.
+	int Improved = 0;
+	int G = 0;
+	for (; G < 6 && L.FindRelic(706)->levels[0] < Ct.relicLevels; ++G)
+	{
+		std::vector<int32_t> Group;
+		for (int I = 0; I < 5; ++I)
+		{
+			Group.push_back(710 + 5 * G + I);
+		}
+		RepairResult Rep;
+		const std::vector<int> LevelsBefore = L.FindRelic(706)->levels;
+		KD_CHECK(L.RepairRelic(706, Group, &Rep) == Error::None && Rep.repaired && !Rep.unlocked);
+		const std::vector<int>& Now = L.FindRelic(706)->levels;
+		KD_CHECK(Now[1] == 0 && (Rep.slot < 0 ? Now == LevelsBefore : Now[0] == LevelsBefore[0] + 1));
+		Improved += Rep.slot >= 0 ? 1 : 0;
+	}
+	KD_CHECK(L.FindRelic(706)->levels[0] == 1 + Improved && L.FindRelic(706)->levels[0] == Ct.relicLevels);
+	KD_CHECK(L.TitanRelicBonus(Perun, RelicStat::Hp) == 30 && L.RelicEffectValue(*L.FindRelic(706), 0) == 50 * 145 / 100);
+	KD_CHECK(G == 6 || L.RepairRelic(706, {710 + 5 * G}) == Error::Nothing);
+	// R2 sacrifices can open the second effect.
+	bool bOpened = false;
+	for (int Q = 0; Q < 4; ++Q)
+	{
+		RepairResult Rep;
+		KD_CHECK(L.RepairRelic(706, {750 + 3 * Q, 751 + 3 * Q, 752 + 3 * Q}, &Rep) == Error::None && Rep.repaired);
+		bOpened = bOpened || Rep.unlocked;
+	}
+	KD_CHECK(bOpened == (L.FindRelic(706)->levels[1] > 0));
+
+	// The Altar of Power sells a relic item for 1 000 gems (1.8).
+	int32_t Titan = 0;
+	int32_t Relic = 0;
+	const int64_t Gems = L.Amount(Res::Gems);
+	KD_CHECK(L.OpenAltar(3, &Titan, &Relic) == Error::None && Titan == 0 && Relic != 0 && L.FindRelic(Relic)->rarity >= 2);
+	KD_CHECK(L.Amount(Res::Gems) == Gems - 1000);
+
+	// Round trip keeps attached relics, effect levels and the time an economy relic has left.
+	const std::string Saved = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved);
+	KD_CHECK(M.BuildingRelic(Barracks) && M.CheckTrain(Mil).timeSec == 56);
+
+	// A full inventory: no altar relics, and the battle's drops are lost.
+	std::string Many = RelicJson(1000, "atk", 1, 20, "[1]");
+	for (int I = 1; I < Ct.maxRelics; ++I)
+	{
+		Many += "," + RelicJson(1000 + I, "atk", 1, 20, "[1]");
+	}
+	const std::string Full = Replace(K.Save(), "\"relics\":[],\"relicAt\"", "\"relics\":[" + Many + "],\"relicAt\"");
+	Kingdom N(Content());
+	KD_CHECK(N.Load(WithBuilding(Full, "relic_temple", 1, 34), Error) && static_cast<int>(N.Relics().size()) == Ct.maxRelics);
+	KD_CHECK(N.CheckAltar(3).error == Error::InventoryFull);
+	const WorldLand W2 = N.World()[0];
+	KD_CHECK(N.StartAttack(W2.id, false, {}, N.Titans()[0].id) == Error::None);
+	Reward R2;
+	KD_CHECK(N.FinishAttack(W2.id, false, 2, {}, &R2) == Error::None && R2.relics.empty() && R2.relicsLost == 2);
+}
+
 int LandTypeIx(const char* Id)
 {
 	const KingdomContent& C = Content();
@@ -768,7 +924,7 @@ void TestSeasons()
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved && M.LastSeason().league == 1);
 	// A version 3 save (before seasons, shards and VP) starts in the current season with nothing to pay.
-	std::string V3 = Replace(K.Save(), "\"formatVersion\":4", "\"formatVersion\":3");
+	std::string V3 = Replace(K.Save(), "\"formatVersion\":5", "\"formatVersion\":3");
 	const size_t S0 = V3.find("\"season\":");
 	const size_t S1 = V3.find("\"resources\":");
 	KD_CHECK(S0 != std::string::npos && S1 > S0);
@@ -776,7 +932,7 @@ void TestSeasons()
 	V3 = Replace(V3, ",\"shards\":0,\"vp\":0", "");
 	Kingdom O(Content());
 	KD_CHECK(O.Load(V3, Error) && O.Season() == Season && O.LastSeason().season == -1 && O.Amount(Res::Vp) == 0);
-	KD_CHECK(O.Save().find("\"formatVersion\":4") != std::string::npos && O.Hash() == K.Hash());
+	KD_CHECK(O.Save().find("\"formatVersion\":5") != std::string::npos && O.Hash() == K.Hash());
 }
 
 void TestAscension()
@@ -850,6 +1006,7 @@ int main()
 		{"CasualtiesTitansRelicsFusion", TestCasualtiesTitansRelicsFusion},
 		{"ArmySaveAndMigration", TestArmySaveAndMigration},
 		{"SpellsRelicsLandTitans", TestSpellsRelicsLandTitans},
+		{"ComplexRelics", TestComplexRelics},
 		{"RuinsAndVictoryPointLands", TestRuinsAndVictoryPointLands},
 		{"Seasons", TestSeasons},
 		{"Ascension", TestAscension},

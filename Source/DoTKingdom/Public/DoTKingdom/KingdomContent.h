@@ -1,5 +1,5 @@
 // Source/DoTKingdom/Public/DoTKingdom/KingdomContent.h
-// Kingdom content (Content/Data/kingdom): building level tables, expansions, lands, seasons, army, titans, start state.
+// Kingdom content (Content/Data/kingdom): building level tables, expansions, lands, seasons, army, titans, relics, start state.
 // Numbers follow the original game where known (docs/Original_Reference.md).
 #pragma once
 
@@ -163,7 +163,9 @@ struct AltarDef
 	std::string name;
 	int64_t gems = 0;
 	int64_t cooldownSec = 0;
-	std::array<int64_t, 4> weights{}; // R1..R4
+	/** The Altar of Power (1.8) sells relic items instead of titans; its odds run R1..R5. */
+	bool relics = false;
+	std::array<int64_t, 5> weights{}; // R1..R4 for titans, R1..R5 for relics
 };
 
 /** A spell the Spell Forge crafts into stock (battle content id). */
@@ -176,11 +178,54 @@ struct SpellType
 	int64_t craftSec = 60;
 };
 
+/** What a relic effect raises. Titan effects reach the battle; building effects work in the kingdom. */
+enum class RelicStat : uint8_t
+{
+	Atk, // titan damage
+	Hp, // titan health
+	Armor, // titan armor
+	Crit, // titan critical hit chance, percentage points
+	Pierce, // share of the target's armor the titan ignores
+	TroopAtk, // damage of the titan's army
+	TroopHp, // health of the titan's army
+	Xp, // titan XP from battles
+	Produce, // production of the building (Gold Mine, Farm)
+	Store, // what the producer holds before it must be collected
+	Train, // shorter training (Barracks: every troop; an envoy council: its own troops)
+	Craft, // shorter spell crafting (Spell Forge)
+	Research, // shorter research (Armoury, Arcane Tower)
+	Rest, // shorter titan rest after battles (Hall of Titans)
+	Count
+};
+constexpr int kRelicStatCount = static_cast<int>(RelicStat::Count);
+DOTKINGDOM_API const char* ToString(RelicStat S);
+DOTKINGDOM_API bool ParseRelicStat(const std::string& S, RelicStat& Out);
+
+/** One relic effect: its stat and the value at level 1 by rarity, in tenths of a percent. */
+struct RelicEffectDef
+{
+	std::string id;
+	std::string name;
+	RelicStat stat = RelicStat::Atk;
+	std::array<int64_t, 5> base{};
+	/** The most all of a titan's (or building's) relics may add to the stat, tenths of a percent; 0 = no cap. */
+	int64_t cap = 0;
+};
+
+/** A relic item kind (the original 1.8 has combat relics for titans and economy relics for buildings). */
 struct RelicKind
 {
 	std::string id;
 	std::string name;
-	int stat = 0; // 0 damage, 1 health, 2 armor
+	/** Economy relics attach to buildings and last a time; combat relics are worn by titans and last battles. */
+	bool economy = false;
+	/** Effect slots in order (RelicEffectDef indices); the first ones open first. */
+	std::vector<int> effects;
+	/** Economy relics: the buildings (defs) that take them. */
+	std::vector<int> buildings;
+	/** Battles a combat relic lasts, overriding the rarity table (XP relics: 2); 0 = the table. */
+	int battles = 0;
+	int64_t weight = 10; // how often drops and altars give this kind
 };
 
 struct StartTitan
@@ -261,16 +306,29 @@ struct KingdomContent
 	int64_t spellSecGrowthPct = 145;
 	int64_t spellCraftPctPerLevel = 15;
 	int battleSpellKinds = 3;
+	std::vector<RelicEffectDef> relicEffects;
 	std::vector<RelicKind> relicKinds;
-	std::array<int64_t, 5> relicBonusPct{{3, 5, 8, 12, 16}};
-	std::array<int64_t, 5> relicDurability{{10, 14, 18, 24, 30}};
+	/** Effect levels 1..relicLevels; every level above 1 adds relicStepPct of the level-1 value. */
+	int relicLevels = 4;
+	int64_t relicStepPct = 15;
+	/** Effects open on a new relic and at most, by rarity (capped by the kind's slots). */
+	std::array<int, 5> relicStartEffects{{1, 1, 1, 2, 3}};
+	std::array<int, 5> relicMaxEffects{{1, 2, 3, 3, 3}};
+	std::array<int64_t, 5> relicDurability{{20, 16, 12, 8, 6}}; // battles, combat relics
+	std::array<int64_t, 5> relicHours{{24, 36, 48, 72, 96}}; // time, economy relics
 	std::vector<int> relicSlotLevels{1, 20, 30, 40, 50};
 	int relicRepairCastle = 8;
-	std::array<int64_t, 5> relicRepairWeight{{10, 20, 35, 50, 70}};
+	/** Repair chance each sacrificed relic adds, percent: [target rarity - 1][sacrifice rarity - 1]. */
+	std::array<std::array<int64_t, 5>, 5> relicRepairPct{};
+	/** Chance that a successful repair also improves an effect (or opens a locked one), by the target's rarity. */
+	std::array<int64_t, 5> relicEnhancePct{{80, 70, 60, 50, 40}};
 	std::array<int64_t, 5> relicRepairFood{{1000, 2500, 6000, 15000, 30000}}; // by the repaired relic's rarity
-	int maxRelics = 100;
+	int maxRelics = 200;
 	int64_t dailyRelicPct = 60;
 	std::array<int64_t, 5> dailyRelicRarity{{60, 35, 5, 0, 0}};
+	/** Won land battles drop up to this many relics (one per star), rarity odds by land level. */
+	int relicDropMax = 3;
+	std::vector<std::array<int64_t, 5>> relicDropRarity;
 	int64_t landTitanPctPerLevel = 1;
 	int64_t skipSecPerGem = 60;
 	std::vector<int64_t> startArmy; // units by troop
@@ -280,6 +338,7 @@ struct KingdomContent
 	DOTKINGDOM_API int FindTroop(const std::string& Id) const;
 	DOTKINGDOM_API int FindTitan(const std::string& Id) const;
 	DOTKINGDOM_API int FindSpell(const std::string& Id) const;
+	DOTKINGDOM_API int FindRelicKind(const std::string& Id) const;
 };
 
 /** Loads kingdom/kingdom.json, kingdom/buildings.json and kingdom/army.json. */

@@ -1446,7 +1446,20 @@ function stepSim(dt) {
 }
 
 let lastT = performance.now();
+// The next frame is requested even when this one fails, so one error cannot freeze the game (its text shows once).
 function loop(t) {
+	try {
+		drawFrame(t);
+	} catch (e) {
+		if (!game.frameError) {
+			game.frameError = true;
+			console.error('Frame failed:', e);
+			toast('Ошибка кадра: ' + ((e && e.message) || e), 'bad');
+		}
+	}
+	requestAnimationFrame(loop);
+}
+function drawFrame(t) {
 	const dt = Math.min(0.1, Math.max(0, (t - lastT) / 1000));
 	lastT = t;
 	if (dt > 0) game.fps = game.fps * 0.94 + (1 / dt) * 0.06;
@@ -1477,7 +1490,6 @@ function loop(t) {
 		drawOverlay(rt);
 		updateHud(rt);
 	}
-	requestAnimationFrame(loop);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2682,6 +2694,8 @@ async function boot() {
 		if (!app.kingdomReady) {
 			game.firstMenu = true;
 			openMenu();
+			const err = window.dotKingdom && window.dotKingdom.error;
+			if (err) toast('Королевство не запустилось: ' + err, 'bad');
 		}
 		$('btnClose').addEventListener('click', () => {
 			if (isTouch && window.innerHeight > window.innerWidth) toast('Совет: поверните телефон горизонтально, так поле видно лучше', '');

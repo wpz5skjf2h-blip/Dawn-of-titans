@@ -535,6 +535,35 @@ void TestSpellChargesRelicsMorale()
 	const double Hp = A.Titans()[0].maxHp.ToDouble();
 	DOT_CHECK(Near(B.Titans()[0].maxHp.ToDouble(), Hp * 1.2, Hp * 0.001));
 	DOT_CHECK(Near(B.Titans()[0].atk.ToDouble(), A.Titans()[0].atk.ToDouble() * 1.1, A.Titans()[0].atk.ToDouble() * 0.001));
+	// Complex relics: +6 points of critical chance, 15% armor piercing, and +8% health / +5% damage for the whole army.
+	BattleSetup Rich = Plain;
+	Rich.sides[0].titan.critPct = 6;
+	Rich.sides[0].titan.piercePct = 15;
+	Rich.sides[0].troopHpPct = 8;
+	Rich.sides[0].troopAtkPct = 5;
+	BattleSimulation Rc(Content());
+	DOT_CHECK(Rc.Init(Rich, Error));
+	DOT_CHECK(Rc.Titans()[0].critChance == A.Titans()[0].critChance + fx::Pct(6) && Rc.Titans()[0].pierce == fx::Pct(15) && A.Titans()[0].pierce == Fix64::Zero());
+	DOT_CHECK(Near(Rc.Squads()[0].hp.ToDouble(), A.Squads()[0].hp.ToDouble() * 1.08, 0.01) && Near(Rc.Squads()[0].atk.ToDouble(), A.Squads()[0].atk.ToDouble() * 1.05, 0.01));
+	DOT_CHECK(Rc.Squads().back().hp == A.Squads().back().hp); // the enemy army is untouched
+	JsonWriter WR;
+	WriteBattleSetup(WR, Rich);
+	JsonValue JR;
+	BattleSetup RichBack;
+	DOT_CHECK(ParseJson(WR.Result(), JR, Error) && ParseBattleSetup(JR, RichBack, Error));
+	DOT_CHECK(RichBack.sides[0].titan.critPct == 6 && RichBack.sides[0].titan.piercePct == 15 && RichBack.sides[0].troopHpPct == 8 && RichBack.sides[0].troopAtkPct == 5);
+	// The same battle twice ends the same way (relic bonuses keep the simulation deterministic).
+	Rich.sides[0].aiProfile = "veteran";
+	Rich.sides[1].aiProfile = "veteran";
+	BattleSimulation R1(Content());
+	BattleSimulation R2(Content());
+	DOT_CHECK(R1.Init(Rich, Error) && R2.Init(Rich, Error));
+	for (int I = 0; I < 60 * kTicksPerSecond && R1.Phase() != BattlePhase::Finished; ++I)
+	{
+		R1.Step();
+		R2.Step();
+	}
+	DOT_CHECK(R1.ComputeHash() == R2.ComputeHash());
 
 	// Ascension (kingdom): an ascended titan may stand ten levels above the cap of 10 + 10 per star.
 	BattleSetup High = Plain;

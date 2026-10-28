@@ -17,7 +17,8 @@ const HINT_KEY = 'dot.kingdom.welcomed';
 // Mirrors dot::kingdom::Error (Source/DoTKingdom/Public/DoTKingdom/Kingdom.h).
 const E = { None: 0, BadId: 1, MaxLevel: 2, CastleTooLow: 3, NeedRequirement: 4, NeedExpansion: 5, Locked: 6, LimitReached: 7,
 	NoBuilder: 8, NotEnough: 9, BadPlacement: 10, Busy: 11, NotBusy: 12, Nothing: 13, StorageFull: 14, NeedStones: 15, NoLandSlot: 16, NoAttack: 17,
-	QueueFull: 18, Researching: 19, TooManySquads: 20, NoTroops: 21, TitanRecovering: 22, NotReady: 23, RosterFull: 24, NotMaxLevel: 25 };
+	QueueFull: 18, Researching: 19, TooManySquads: 20, NoTroops: 21, TitanRecovering: 22, NotReady: 23, RosterFull: 24, NotMaxLevel: 25,
+	WrongRelic: 26, SameRelic: 27, InventoryFull: 28 };
 // Mirrors dot::kingdom::Res: shards come from ruins and pay for ascension; VP (victory points) rank the season.
 const RES = ['gold', 'food', 'gems', 'stones', 'shards', 'vp'];
 const RES_OF = { gold: 'золота', food: 'еды', gems: 'самоцветов', stones: 'камней портала', shards: 'осколков', vp: 'очков победы' };
@@ -38,7 +39,7 @@ const K = {
 	place: null, // placement or move mode
 	sheet: null, // open sheet: { render, live, key }
 	armed: null, // gem spend waiting for a second tap: { act, until }
-	floaters: [], hits: [], lastStateAt: 0, lastStateSec: 0, lastSave: 0, ready: false,
+	floaters: [], hits: [], lastStateAt: 0, lastStateSec: 0, lastSave: 0, ready: false, reported: new Set(),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -163,6 +164,8 @@ class KingdomBridge {
 	upgradeSpell(sp, gems) { return this.M._dk_upgrade_spell(sp, gems ? 1 : 0); }
 	skipSpell(i) { return this.M._dk_skip_spell(i); }
 	equip(titan, relic) { return this.M._dk_equip(titan, relic); }
+	attach(building, relic) { return this.M._dk_attach(building, relic); }
+	repairUnlock(target, ids) { return this.M.ccall('dk_repair_unlock', 'number', ['number', 'string'], [target, ids.join(',')]) === 1; }
 	unequip(relic) { return this.M._dk_unequip(relic); }
 	discard(relic) { return this.M._dk_discard(relic); }
 	repairChance(target, ids) { return this.M.ccall('dk_repair_chance', 'number', ['number', 'string'], [target, ids.join(',')]); }
@@ -211,7 +214,8 @@ const clock = { offset: 0, scale: 1, last: 0 };
 function nowF() { return Date.now() / 1000 + clock.offset; }
 function nowSec() { clock.last = Math.max(clock.last, Math.floor(nowF())); return clock.last; }
 
-const saver = { timer: 0, savedAt: 0 };
+// loaded: this page opened a saved kingdom (not a new one); loadedAt: when that save was made.
+const saver = { timer: 0, savedAt: 0, loaded: false, loadedAt: 0 };
 function readLocal() {
 	try {
 		const r = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -230,7 +234,35 @@ function persist() {
 function persistSoon() { clearTimeout(saver.timer); saver.timer = setTimeout(persist, 400); }
 
 // Cloud copy in the viewer's private claude.ai storage (artifact `db` capability), when available.
-const cloud = { ref: null, state: 'off', busy: false, next: null, sentText: '', lastWrite: 0, backoffUntil: 0 };
+// "kingdom" is the live copy; "kingdom-prev" keeps another kingdom of the same account (the one not shown after
+// two browsers disagreed, or the one before "start again"), so the menu can switch back to it.
+const cloud = { ref: null, prevRef: null, prev: null, state: 'off', busy: false, next: null, sentText: '', lastWrite: 0, backoffUntil: 0 };
+/** The kingdom's seed: set when it is founded and kept for its whole life, so equal seeds mean the same kingdom. */
+function seedOf(text) { const m = /"seed":\s*"?(\d+)/.exec(text || ''); return m ? m[1] : ''; }
+/** How far a saved kingdom has gone: building and titan levels, lands and expansions. */
+function progressOf(text) {
+	try {
+		const s = JSON.parse(text);
+		let n = 5 * ((s.lands || []).length + (s.expansions || 1));
+		for (const b of s.buildings || []) n += b.level || 0;
+		for (const t of s.titans || []) n += t.level || 0;
+		return n;
+	} catch (e) { return -1; }
+}
+/** "Замок 4, 3 земли" for a saved kingdom. */
+function summaryOf(text) {
+	try {
+		const s = JSON.parse(text);
+		const c = (s.buildings || []).find((b) => b.def === 'castle');
+		const n = (s.lands || []).length;
+		return 'Замок ' + (c ? c.level : 1) + ', ' + n + ' ' + plural(n, 'земля', 'земли', 'земель');
+	} catch (e) { return 'королевство'; }
+}
+async function keepPrev(rec) {
+	if (!cloud.prevRef || !rec || typeof rec.save !== 'string') return;
+	const doc = { v: rec.v || 1, save: rec.save, offset: +rec.offset || 0, savedAt: +rec.savedAt || Date.now() };
+	try { await cloud.prevRef.set(doc); cloud.prev = doc; } catch (e) { console.warn('Kingdom backup not saved:', e); }
+}
 async function cloudConnect() {
 	const c = window.claude;
 	if (!c || typeof c.use !== 'function') return;
@@ -239,12 +271,25 @@ async function cloudConnect() {
 		if (!db || !user) return;
 		const id = await user.id();
 		if (!id) return;
-		cloud.ref = db.collection('data/users/' + id).doc('kingdom');
-		const snap = await cloud.ref.get();
+		const col = db.collection('data/users/' + id);
+		cloud.ref = col.doc('kingdom');
+		cloud.prevRef = col.doc('kingdom-prev');
+		const [snap, prevSnap] = await Promise.all([cloud.ref.get(), cloud.prevRef.get().catch(() => null)]);
+		const pd = prevSnap && prevSnap.exists ? prevSnap.data() : null;
+		cloud.prev = pd && typeof pd.save === 'string' ? pd : null;
 		const d = snap.exists ? snap.data() : null;
 		if (d && typeof d.save === 'string') {
 			cloud.sentText = d.save;
-			if ((+d.savedAt || 0) > saver.savedAt && adopt(d)) toast('Королевство загружено из вашего аккаунта', 'gold');
+			const ours = { v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() };
+			if (d.save !== ours.save) {
+				// The account copy wins when this browser had no kingdom yet, when it is the same kingdom saved later
+				// (played on another device), or when it is another kingdom that has gone at least as far. The kingdom
+				// not shown is kept as "kingdom-prev" before the live copy is overwritten.
+				const same = seedOf(d.save) === seedOf(ours.save);
+				const take = !saver.loaded || (same ? (+d.savedAt || 0) > saver.loadedAt : progressOf(d.save) >= progressOf(ours.save));
+				if (!same && saver.loaded) await keepPrev(take ? ours : d);
+				if (take && adopt(d)) toast('Королевство загружено из вашего аккаунта', 'gold');
+			}
 		}
 		cloud.state = 'on';
 		persist();
@@ -298,6 +343,7 @@ function adopt(rec) {
 	K.bridge.advance(nowSec());
 	K.sel = null;
 	cancelPlace();
+	if (K.sheet) closeSheet();
 	refresh(true);
 	return true;
 }
@@ -1863,6 +1909,14 @@ function toast(text, kind) {
 	while (box.children.length > (Math.min(K.app.viewW, K.app.viewH) < 500 ? 2 : 3)) box.removeChild(box.firstChild);
 	setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 3400);
 }
+/** Logs an error of the kingdom screen and shows its text once, so the screen keeps running and the text can be passed on. */
+function report(where, e) {
+	const text = where + ': ' + ((e && e.message) || e);
+	if (K.reported.has(text)) return;
+	K.reported.add(text);
+	console.error('Kingdom ' + where + ' failed:', e);
+	try { toast('Ошибка королевства (' + text + ')', 'bad'); } catch (e2) { /* the toast box itself is broken */ }
+}
 function missingText(cost) {
 	const st = K.st;
 	const parts = [];
@@ -1896,6 +1950,9 @@ function errText(code, ck, ctx) {
 	case E.NotReady: return 'Ещё не готово';
 	case E.RosterFull: return 'Зал титанов заполнен';
 	case E.NotMaxLevel: return 'Сначала доведите титана до предела уровня';
+	case E.WrongRelic: return 'Эта реликвия сюда не подходит';
+	case E.SameRelic: return 'Такая реликвия уже надета: две одинаковые носить нельзя';
+	case E.InventoryFull: return 'Склад реликвий полон (' + K.army.relics.maxRelics + ')';
 	default: return 'Не получилось (код ' + code + ')';
 	}
 }
@@ -2041,7 +2098,8 @@ function updatePanel() {
 	const el = $('kPanel');
 	const s = K.sel;
 	const wide = K.app.viewW >= 900;
-	const r = s && !K.place ? (s.kind === 'b' ? buildingPanel(s.id) : landPanel(s.id)) : null;
+	let r = null;
+	try { r = s && !K.place ? (s.kind === 'b' ? buildingPanel(s.id) : landPanel(s.id)) : null; } catch (e) { report('панель', e); }
 	if (r && K.sheet) { el.hidden = true; return; }
 	if (!r) {
 		if (s && !K.place) K.sel = null;
@@ -2077,12 +2135,16 @@ function buildingPanel(id) {
 	const cur = levelDef(d, b.lv);
 	const nx = d.levels[b.lv];
 	const armedSkip = isArmed('skip:' + id);
-	const key = ['b', id, b.lv, b.up, b.st > 0, armedSkip, d.role === 'storage' || d.role === 'castle' || d.role === 'portal' || d.role === 'builders' ? st.res.join() + st.busy + st.builders : '',
+	const brl = buildingRelic(id);
+	const key = ['b', id, b.lv, b.up, b.st > 0, armedSkip, brl ? brl.id + ':' + (brl.dur > 0) + ':' + brl.v.join('.') : '', d.role === 'storage' || d.role === 'castle' || d.role === 'portal' || d.role === 'builders' ? st.res.join() + st.busy + st.builders : '',
 		BUILDING_ACT[d.id] ? [st.army.queue.length, st.army.total, st.army.cap, st.army.rs.t, st.titans.length, st.army.surv, st.spells.total, st.spells.queue.length, st.spells.labs.length].join() : ''].join('|');
 	const stats = [];
 	if (!cur) stats.push(esc(d.description));
 	else if (d.role === 'producer') {
-		stats.push('Добыча <b>' + fmt(cur.produce) + '/ч</b>', 'Копит до <b>' + fmt(cur.store) + '</b>');
+		const rl = buildingRelic(id);
+		const prod = Math.floor((cur.produce * (1000 + relicBonus(rl, 'producePct'))) / 1000);
+		const keep = Math.floor((cur.store * (1000 + relicBonus(rl, 'storePct'))) / 1000);
+		stats.push('Добыча <b>' + fmt(prod) + '/ч</b>' + (prod > cur.produce ? ' (реликвия +' + fmt(prod - cur.produce) + ')' : ''), 'Копит до <b>' + fmt(keep) + '</b>');
 		if (!b.up) stats.push('Накоплено <b data-live="st"></b>');
 		else stats.push('Во время улучшения добыча стоит');
 	} else if (d.role === 'storage') {
@@ -2109,6 +2171,10 @@ function buildingPanel(id) {
 		if (d.role === 'producer') btn.push('<button class="btn tall" data-act="collect" data-id="' + id + '"' + (b.st > 0 ? '' : ' disabled') + '>Собрать<span class="sub" data-live="stc"></span></button>');
 		if (nx) btn.push('<button class="btn tall primary" data-act="upgrade" data-id="' + id + '">' + (d.role === 'builders' ? 'Нанять строителя' : 'Улучшить') + '<span class="sub">до уровня ' + (b.lv + 1) + '</span></button>');
 		else btn.push('<button class="btn tall" disabled>Макс. уровень<span class="sub">' + b.lv + ' из ' + d.levels.length + '</span></button>');
+	}
+	if (b.lv > 0 && relicKindsFor(d.id).length) {
+		const rl = buildingRelic(id);
+		btn.push('<button class="btn tall" data-act="building-relic" data-id="' + id + '">Реликвия<span class="sub">' + (rl ? esc(relicName(rl)) + (rl.dur > 0 ? '' : ', время вышло') : 'нет') + '</span></button>');
 	}
 	const extra = b.lv > 0 && (BUILDING_ACT[d.id] || (d.category === 'councils' && ['council', 'Посланники']));
 	if (extra) btn.unshift('<button class="btn tall primary" data-act="' + extra[0] + '"' + (extra[0] === 'council' ? ' data-id="' + b.def + '"' : '') + '>' + extra[1] + '<span class="sub" data-live="extra"></span></button>');
@@ -2288,6 +2354,19 @@ function onAct(e) {
 	case 'titan-relics': openTitanRelics(id); break;
 	case 'relic-inv': K.repair = null; openRelicInventory(); break;
 	case 'equip': run(K.bridge.equip(+el.dataset.titan, id), 'Реликвия надета'); break;
+	case 'attach': run(K.bridge.attach(+el.dataset.building, id), 'Реликвия на постройке'); break;
+	case 'building-relic': openBuildingRelic(id); break;
+	case 'relic-tab': K.relicTab = el.dataset.tab; refreshSheet(true); break;
+	case 'discard-r1': {
+		if (!isArmed('discard-r1')) { arm('discard-r1'); break; }
+		K.armed = null;
+		const ids = K.st.relics.filter((r) => r.r === 1 && !r.on && !r.b && relicTabHas(r)).map((r) => r.id);
+		ids.forEach((rid) => K.bridge.discard(rid));
+		toast('Выброшено реликвий: ' + ids.length, '');
+		persist();
+		refresh(true);
+		break;
+	}
 	case 'unequip': run(K.bridge.unequip(id), 'Реликвия снята'); break;
 	case 'discard':
 		if (!isArmed('discard:' + id)) arm('discard:' + id);
@@ -2311,8 +2390,12 @@ function onAct(e) {
 		if (!isArmed('repair')) { arm('repair'); break; }
 		K.armed = null;
 		const r = K.bridge.repair(rp.target, rp.picks);
-		if (r.err !== E.None) toast(errText(r.err), 'bad');
-		else toast(r.ok ? 'Реликвия починена' : 'Починка не удалась, жертвы потеряны', r.ok ? 'gold' : 'bad');
+		const fixed = K.bridge.state().relics.find((x) => x.id === rp.target);
+		if (r.err === E.Nothing) toast('Реликвия цела и уже в лучшем виде', '');
+		else if (r.err !== E.None) toast(errText(r.err), 'bad');
+		else if (!r.ok) toast('Починка не удалась, жертвы потеряны', 'bad');
+		else if (r.slot >= 0 && fixed) toast((r.unlocked ? 'Открыто новое свойство: ' : 'Свойство усилено: ') + effectDef(fixed, r.slot).name, 'gold');
+		else toast('Реликвия починена', 'gold');
 		K.repair = null;
 		persist();
 		refresh(true);
@@ -2341,6 +2424,10 @@ function onAct(e) {
 	case 'reset':
 		if (!isArmed('reset')) arm('reset');
 		else resetKingdom();
+		break;
+	case 'swap-kingdom':
+		if (!isArmed('swap')) arm('swap');
+		else swapKingdom();
 		break;
 	case 'welcome-ok': closeSheet(); try { localStorage.setItem(HINT_KEY, '1'); } catch (err) { /* ignore */ } break;
 	case 'help': openWelcome(); break;
@@ -2412,6 +2499,7 @@ function doUpgrade(id, gems) {
 }
 function resetKingdom() {
 	K.armed = null;
+	if (cloud.state === 'on') keepPrev({ v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() }); // the menu can bring it back
 	try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
 	clock.offset = 0;
 	clock.scale = 1;
@@ -2616,7 +2704,8 @@ function closeSheet() {
 }
 function refreshSheet(force) {
 	if (!K.sheet) return;
-	const r = K.sheet.render();
+	let r = null;
+	try { r = K.sheet.render(); } catch (e) { report('окно', e); }
 	if (!r) { closeSheet(); return; }
 	const panel = $('kSheetPanel');
 	if (force || r.key !== K.sheet.key) {
@@ -2912,6 +3001,20 @@ function openExpansion() {
 		return { key: ['exp', st.expansions, ck.err, ck.g, isArmed('expand')].join('|'), html };
 	});
 }
+/** The account's second kingdom ("kingdom-prev"), when it is not the one on screen. */
+function otherKingdom() {
+	return cloud.prev && seedOf(cloud.prev.save) !== seedOf(K.bridge.save()) ? cloud.prev : null;
+}
+function swapKingdom() {
+	const other = otherKingdom();
+	K.armed = null;
+	if (!other) return;
+	const cur = { v: 1, save: K.bridge.save(), offset: clock.offset, savedAt: Date.now() };
+	if (!adopt(other)) { toast('Это королевство не открылось', 'bad'); return; }
+	keepPrev(cur);
+	persist();
+	toast('Открыто другое королевство: ' + summaryOf(other.save), 'gold');
+}
 function cloudText() {
 	if (cloud.state === 'on') return 'Копия хранится в вашем аккаунте claude.ai и откроется на другом устройстве.';
 	if (cloud.state === 'error') return 'Копия в аккаунте сейчас недоступна, прогресс хранится в этом браузере.';
@@ -2922,16 +3025,21 @@ function openMenu() {
 	select(null);
 	openSheet(() => {
 		const scales = [1, 10, 100, 1000];
+		const other = otherKingdom();
+		const otherHtml = other ? '<p class="fine">В аккаунте сохранено и другое королевство: ' + esc(summaryOf(other.save)) + ', от ' + new Date(+other.savedAt || 0).toLocaleString('ru-RU') +
+			'. Можно перейти в него, а это останется вторым.</p><div class="actions"><button class="btn' + (isArmed('swap') ? ' danger' : '') + '" data-act="swap-kingdom">' +
+			(isArmed('swap') ? 'Точно перейти?' : 'Перейти в другое королевство') + '</button></div>' : '';
 		const html = '<h2 id="kSheetTitle">Королевство</h2>' +
 			'<p>Остров, постройки, ресурсы, строители, армия, титаны, камни портала и земли работают по правилам оригинала Dawn of Titans. Таймеры идут и когда страница закрыта.</p>' +
 			'<div class="actions"><button class="btn primary" data-act="training">Тренировочные бои</button><button class="btn" data-act="help">Как играть</button></div>' +
 			'<h3>Ускорение времени</h3><p class="fine">Для проверки: стройки, добыча и камни идут быстрее. В оригинале такого нет.</p>' +
 			'<div class="seg">' + scales.map((s) => '<button class="' + (clock.scale === s ? 'on' : '') + '" data-act="time" data-scale="' + s + '">×' + s + '</button>').join('') + '</div>' +
-			'<h3>Сохранение</h3><p class="fine">' + cloudText() + '</p>' +
-			'<p class="fine">Экономика считается той же детерминированной C++-библиотекой, что войдёт в Unreal-клиент и сервер. Хэш состояния <code>' + esc(K.st.hash) + '</code>.</p>' +
+			'<h3>Сохранение</h3><p class="fine">' + cloudText() + '</p>' + otherHtml +
+			'<p class="fine">Экономика считается той же детерминированной C++-библиотекой, что войдёт в Unreal-клиент и сервер. Хэш состояния <code data-live="hash"></code>.</p>' +
 			'<p class="fine">Фанатский прототип по мотивам Dawn of Titans (NaturalMotion, 2015), не связан с правообладателями. Цифры из вики оригинала помечены в окнах улучшения; остальное — наши оценки.</p>' +
 			'<div class="actions"><button class="btn' + (isArmed('reset') ? ' danger' : '') + '" data-act="reset">' + (isArmed('reset') ? 'Точно начать заново?' : 'Начать королевство заново') + '</button>' + closeBtn + '</div>';
-		return { key: ['menu', clock.scale, cloud.state, isArmed('reset'), K.st.hash].join('|'), html };
+		// The hash changes every second, so it is filled in live and the buttons are not rebuilt under the finger.
+		return { key: ['menu', clock.scale, cloud.state, isArmed('reset'), isArmed('swap'), other ? other.savedAt : 0].join('|'), html, live(el) { live(el, 'hash', K.st.hash); } };
 	});
 }
 function openWelcome() {
@@ -2989,7 +3097,10 @@ function landScenario(w, prep) {
 	const mine = prep.titan ? K.st.titans.find((t) => t.id === prep.titan) : null;
 	if (mine) {
 		att.titan = { id: K.army.titans[mine.def].id, level: mine.lv, stars: K.army.titans[mine.def].stars, ascended: !!mine.asc, abilityLevels: [1, 1], pos: [120, 26], facingDeg: 0,
-			bonus: { atkPct: mine.bonus[0], hpPct: mine.bonus[1], armorPct: mine.bonus[2] } };
+			bonus: { atkPct: Math.floor(mine.bonus[0] / 10), hpPct: Math.floor(mine.bonus[1] / 10), armorPct: Math.floor(mine.bonus[2] / 10),
+				critPct: Math.floor(mine.bonus[3] / 10), piercePct: Math.floor(mine.bonus[4] / 10) } };
+		// Relics on the titan that strengthen the whole army.
+		att.troopBonus = { atkPct: Math.floor(mine.bonus[5] / 10), hpPct: Math.floor(mine.bonus[6] / 10) };
 	} else delete att.titan;
 	// Spells from the Spell Forge stock: every charge goes along, at its Arcane Tower level.
 	const sp = K.st.spells;
@@ -3076,6 +3187,9 @@ function onBattleEnd(ctx, stars, retreat) {
 			const cast = used.reduce((x, y) => x + y, 0);
 			if (cast) parts.push('заклинаний потрачено ' + cast);
 			if (r.broken) parts.push('сломано реликвий ' + r.broken);
+			const got = (r.relics || []).map((rid) => K.bridge.state().relics.find((x) => x.id === rid)).filter(Boolean);
+			if (got.length) parts.push('реликвии: ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
+			if (r.relicsLost) parts.push('склад реликвий полон, пропало ' + r.relicsLost);
 			if (parts.length) toast(parts.join(' · ').replace(/^./, (c) => c.toUpperCase()), r.lost ? 'bad' : 'gold');
 		}
 		persist();
@@ -3361,7 +3475,9 @@ function openRelics() {
 		const st = K.st;
 		const cards = K.army.altars.map((a, i) => {
 			const ck = st.altars[i];
-			const odds = a.weights.map((w, k) => (w ? '★'.repeat(k + 1) + ' ' + w + '%' : '')).filter(Boolean).join(' · ');
+			const stars = (ws) => ws.map((w, k) => (w ? '★'.repeat(k + 1) + ' ' + w + '%' : '')).filter(Boolean).join(' · ');
+			const R = K.army.relics;
+			const odds = a.relics ? 'реликвия: ' + stars(a.weights) : a.cooldownSec > 0 ? 'реликвия ' + R.dailyRelicPct + '% (' + stars(R.dailyRarity) + '), иначе титан: ' + stars(a.weights) : 'титан: ' + stars(a.weights);
 			let btn;
 			if (ck.err === E.None) btn = a.gems ? '<button class="btn primary" data-act="altar" data-id="' + i + '" data-gems="' + a.gems + '">' + (isArmed('altar:' + i) ? 'Подтвердить ' : 'Открыть ') + gemSpan(a.gems) + '</button>'
 				: '<button class="btn primary" data-act="altar" data-id="' + i + '">Открыть бесплатно</button>';
@@ -3372,8 +3488,8 @@ function openRelics() {
 		const last = K.lastSummon ? st.titans.find((t) => t.id === K.lastSummon) : null;
 		const lastRelic = K.lastRelic ? st.relics.find((r) => r.id === K.lastRelic) : null;
 		const html = sheetTitle(buildingIconById('relic_temple'), 'Храм реликвий') +
-			'<p class="fine">Раз в день — бесплатная реликвия, как в оригинале: это реликвия-предмет для титана или сам титан. Алтари за 1 000 и 4 000 самоцветов призывают редких титанов, четыре звезды только там. ' +
-			'Шансы — наша оценка.</p>' +
+			'<p class="fine">Как в оригинале, раз в день здесь бесплатная награда: реликвия или титан. Алтари за 1 000 и 4 000 самоцветов призывают редких титанов, четыре звезды только там. ' +
+			'Алтарь силы за 1 000 самоцветов даёт реликвию от ★2 до ★5, как Altar of Power в оригинале. Ещё реликвии приносят победы в боях: по одной за звезду, на дальних землях чаще редкие. Шансы — наша оценка.</p>' +
 			(last ? '<div class="costline"><span>Получен титан</span><b>' + mini(titanGlyph(last)) + esc(titanName(last)) + '</b>' + starsHtml(K.army.titans[last.def].stars) + '<span>' + esc(K.army.titans[last.def].classRu) + '</span></div>' : '') +
 			(lastRelic ? '<div class="costline"><span>Получена реликвия</span><b>' + mini('relic.' + K.army.relics.kinds[lastRelic.kind].id) + esc(relicName(lastRelic)) + '</b>' + starsHtml5(lastRelic.r) + '<span>' + esc(relicStats(lastRelic)) + '</span></div>' : '') +
 			cards.join('') + '<div class="actions"><button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
@@ -3383,18 +3499,64 @@ function openRelics() {
 		};
 	});
 }
-// Relic helpers: the original's rarities R1..R5, one main stat (a second one from R3).
-const STAT_RU = ['урон', 'здоровье', 'броня'];
-function relicName(r) { return K.army.relics.kinds[r.kind].name; }
-function relicStats(r) { return r.pct.map((v, i) => (v ? '+' + v + '% ' + STAT_RU[i] : '')).filter(Boolean).join(', '); }
-const starsHtml5 = (n) => '<span class="stars">' + '★'.repeat(n) + '<i>' + '★'.repeat(5 - n) + '</i></span>';
-function relicRow(r, buttons) {
-	const broken = r.dur <= 0;
-	const on = r.on ? K.st.titans.find((t) => t.id === r.on) : null;
-	return '<div class="troopRow">' + relicIcon(r) + '<div class="info"><b>' + esc(relicName(r)) + ' ' + starsHtml5(r.r) + '</b>' +
-		'<span>' + esc(relicStats(r)) + ' · ' + (broken ? 'сломана' : 'прочность ' + r.dur + ' из ' + r.max + ' боёв') + (on ? ' · на ' + esc(titanName(on)) : '') + '</span>' +
-		'<div class="progress thin"><i style="width:' + Math.round((100 * r.dur) / Math.max(1, r.max)) + '%"></i></div></div><div class="row">' + buttons + '</div></div>';
+// Relic helpers. As in the original: rarities R1..R5; combat relics are worn by titans and wear out in
+// battles, economy relics sit on a building and work for a time; one to three effects, the locked ones
+// open through repair, and a repair can also raise an effect's level.
+function relicKind(r) { return K.army.relics.kinds[r.kind]; }
+const isEconomy = (r) => relicKind(r).type === 'economy';
+function relicName(r) { return relicKind(r).name; }
+function effectDef(r, i) { const id = relicKind(r).effects[i]; return K.army.relics.effects.find((e) => e.id === id); }
+/** Tenths of a percent as text: 92 → "9,2". */
+const fmtPm = (v) => (v % 10 ? (v / 10).toFixed(1).replace('.', ',') : String(v / 10));
+// These effects shorten a time; the rest add to a value.
+const LESS_TIME = ['trainPct', 'craftPct', 'researchPct', 'restPct'];
+function effectText(r, i) { const e = effectDef(r, i); return (LESS_TIME.includes(e.stat) ? '−' : '+') + fmtPm(r.v[i]) + '% ' + e.name; }
+/** Open effects as text (toasts, short lines). */
+function relicStats(r) { return r.lv.map((l, i) => (l ? effectText(r, i) : '')).filter(Boolean).join(', '); }
+/** Effects with their levels; locked ones greyed out. */
+function relicEffects(r) {
+	const max = K.army.relics.levels;
+	return r.lv.map((l, i) => (l ? '<span class="eff">' + esc(effectText(r, i)) + ' <i>ур. ' + l + '/' + max + '</i></span>'
+		: '<span class="eff locked">закрыто: ' + esc(effectDef(r, i).name) + '</span>')).join('');
 }
+const starsHtml5 = (n) => '<span class="stars">' + '★'.repeat(n) + '<i>' + '★'.repeat(5 - n) + '</i></span>';
+/** An economy relic at work: its time runs, the sheet ticks it in place. */
+const liveRelic = (r) => isEconomy(r) && r.b && r.dur > 0;
+/** Sheet key part of a relic; working economy relics tick in place instead of re-rendering. */
+const relicKey = (r) => r.id + ':' + r.on + ':' + r.b + ':' + (liveRelic(r) ? 'live' : r.dur) + ':' + r.lv.join('.');
+function relicDur(r) {
+	if (!isEconomy(r)) return r.dur > 0 ? 'прочность ' + r.dur + ' из ' + r.max + ' ' + plural(r.max, 'боя', 'боёв', 'боёв') : 'сломана';
+	if (r.dur <= 0) return 'время вышло';
+	return liveRelic(r) ? 'работает ещё <span data-live="rl' + r.id + '">' + fmtDur(r.dur) + '</span>' : 'время ' + fmtDur(r.dur) + ' из ' + fmtDur(r.max);
+}
+function relicPlace(r) {
+	const t = r.on ? K.st.titans.find((x) => x.id === r.on) : null;
+	if (t) return ' · на ' + esc(titanName(t));
+	const b = r.b ? K.st.b.find((x) => x.id === r.b) : null;
+	return b ? ' · ' + esc(defOf(b.def).name) : '';
+}
+function relicRow(r, buttons) {
+	return '<div class="troopRow">' + relicIcon(r) + '<div class="info"><b>' + esc(relicName(r)) + ' ' + starsHtml5(r.r) + '</b>' +
+		'<span class="effs">' + relicEffects(r) + '</span><span>' + relicDur(r) + relicPlace(r) + '</span>' +
+		'<div class="progress thin"><i' + (liveRelic(r) ? ' data-live="rlb' + r.id + '"' : '') + ' style="width:' + Math.round((100 * Math.max(0, r.dur)) / Math.max(1, r.max)) + '%"></i></div></div>' +
+		'<div class="row">' + buttons + '</div></div>';
+}
+/** Ticks the working economy relics shown in a sheet. */
+function liveRelics(el) {
+	const now = nowF();
+	for (const r of K.st.relics) {
+		if (!liveRelic(r)) continue;
+		const left = K.st.now + r.dur - now;
+		live(el, 'rl' + r.id, fmtDur(left));
+		liveBar(el, 'rlb' + r.id, left / Math.max(1, r.max));
+	}
+}
+const buildingRelic = (bid) => K.st.relics.find((r) => r.b === bid) || null;
+/** A building relic's bonus to one stat, tenths of a percent (0 when its time ran out). */
+function relicBonus(r, stat) { return r && r.dur > 0 ? r.lv.reduce((s, l, i) => s + (l && effectDef(r, i).stat === stat ? r.v[i] : 0), 0) : 0; }
+/** Economy relic kinds that fit a building. */
+const relicKindsFor = (defId) => K.army.relics.kinds.filter((k) => k.type === 'economy' && (k.buildings || []).includes(defId));
+function relicTabHas(r) { const t = K.relicTab || 'all'; return t === 'all' || (t === 'building') === isEconomy(r); }
 
 function openForge() {
 	cancelPlace();
@@ -3455,7 +3617,8 @@ function openArcane() {
 		};
 	});
 }
-/** One titan: its relic slots, worn relics and the relics it can wear. */
+/** One titan: its relic slots, worn relics and the combat relics it can wear. */
+const BONUS_RU = ['урон', 'здоровье', 'броня', 'шанс крита', 'пробитие брони', 'урон войск', 'здоровье войск', 'опыт'];
 function openTitanRelics(id) {
 	cancelPlace();
 	select(null);
@@ -3465,57 +3628,116 @@ function openTitanRelics(id) {
 		if (!t) return null;
 		const d = K.army.titans[t.def];
 		const worn = st.relics.filter((r) => r.on === t.id);
-		const free = st.relics.filter((r) => r.on !== t.id).sort((a, b) => b.r - a.r || b.dur - a.dur);
+		const kinds = worn.map((r) => r.kind);
+		const free = st.relics.filter((r) => !isEconomy(r) && r.on !== t.id).sort((a, b) => b.r - a.r || b.dur - a.dur);
 		const full = t.relics.length >= t.slots;
 		const nextSlot = K.army.relics.slotLevels.find((l) => l > t.lv);
 		const abil = K.app && K.app.titanAbilities ? K.app.titanAbilities(d.id) : [];
+		const bonus = t.bonus.map((v, i) => (v ? '+' + fmtPm(v) + '% ' + BONUS_RU[i] : '')).filter(Boolean);
+		const wearBtn = (r) => {
+			const same = kinds.includes(r.kind);
+			const off = full || same || r.dur <= 0;
+			return '<button class="btn' + (off ? '' : ' primary') + '" data-act="equip" data-id="' + r.id + '" data-titan="' + t.id + '"' + (off ? ' disabled' : '') + '>' +
+				(same ? 'Такая уже надета' : r.dur <= 0 ? 'Сломана' : 'Надеть') + '</button>';
+		};
 		const html = sheetTitle(titanIcon(t), esc(d.name) + ' ' + starsHtml(d.stars)) +
-			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. Бонус реликвий: урон +' + t.bonus[0] + '%, здоровье +' + t.bonus[1] + '%, броня +' + t.bonus[2] + '%.</p>' +
+			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. ' + (bonus.length ? 'Бонус реликвий: ' + bonus.join(', ') + '.' : 'Бонусов от реликвий нет.') + '</p>' +
 			(abil.length ? '<p>Способности в бою: <b>' + abil.map(esc).join('</b>, <b>') + '</b>.</p>' : '') +
 			'<h3>Реликвии: ' + t.relics.length + ' из ' + t.slots + '</h3>' +
 			(worn.length ? worn.map((r) => relicRow(r, '<button class="btn" data-act="unequip" data-id="' + r.id + '">Снять</button>')).join('') : '<p class="fine">Ничего не надето.</p>') +
-			'<p class="fine">Как в оригинале, сначала у титана один слот, новые открываются с уровнем' + (nextSlot ? ' (следующий на ' + nextSlot + '-м)' : '') + '. Реликвии изнашиваются в боях; сломанная не действует, пока её не починят.</p>' +
+			'<p class="fine">Как в оригинале: сначала у титана один слот, новые открываются с уровнем' + (nextSlot ? ' (следующий на ' + nextSlot + '-м)' : '') + '. ' +
+			'Боевая реликвия изнашивается в боях (★1 хватает на 20 боёв, ★4 на 8, свиток опыта на 2); сломанная не действует, пока её не починят. Две одинаковые реликвии на одного титана не надеть.</p>' +
 			'<h3>Можно надеть</h3>' +
-			(free.length ? free.map((r) => relicRow(r, '<button class="btn' + (full ? '' : ' primary') + '" data-act="equip" data-id="' + r.id + '" data-titan="' + t.id + '"' + (full ? ' disabled' : '') + '>Надеть</button>')).join('')
-				: '<p class="fine">Свободных реликвий нет. Их даёт ежедневная реликвия в Храме.</p>') +
+			(free.length ? free.map((r) => relicRow(r, wearBtn(r))).join('') : '<p class="fine">Свободных боевых реликвий нет. Их дают Храм реликвий и победы в боях.</p>') +
 			'<div class="actions"><button class="btn" data-act="relic-inv">Все реликвии</button><button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
-		return { key: ['trel', id, t.lv, t.relics.join(), st.relics.map((r) => r.id + ':' + r.on + ':' + r.dur).join()].join('|'), html };
+		return { key: ['trel', id, t.lv, t.slots, t.relics.join(), t.bonus.join(), st.relics.map(relicKey).join()].join('|'), html };
 	});
 }
-/** All relics: repair (from Castle 8) by sacrificing others, or throw away. */
+/** All relics in tabs: repair or improve (from Castle 8) by sacrificing others, or throw away. */
 function openRelicInventory() {
 	cancelPlace();
 	select(null);
-	if (!K.repair) K.repair = null;
 	openSheet(() => {
 		const st = K.st;
+		const RL = K.army.relics;
 		const rp = K.repair;
+		const tab = K.relicTab || 'all';
 		const canRepair = st.castle >= st.repairCastle;
-		const list = st.relics.slice().sort((a, b) => b.r - a.r || a.dur - b.dur);
+		const raisable = (r) => r.lv.some((l) => l > 0 && l < RL.levels);
+		const count = (k) => st.relics.filter((r) => k === 'all' || (k === 'building') === isEconomy(r)).length;
+		const tabs = [['all', 'Все'], ['titan', 'Для титанов'], ['building', 'Для построек']]
+			.map(([k, n]) => '<button class="' + (k === tab ? 'on' : '') + '" data-act="relic-tab" data-tab="' + k + '">' + n + ' · ' + count(k) + '</button>').join('');
+		const target = rp ? st.relics.find((r) => r.id === rp.target) : null;
 		let head = '';
-		if (rp) {
-			const target = st.relics.find((r) => r.id === rp.target);
-			const chance = target ? K.bridge.repairChance(rp.target, rp.picks) : 0;
-			const food = target ? st.repairFood[target.r - 1] : 0;
-			const short = st.res[1] < food;
-			head = '<div class="costline"><span>Починка</span><b>' + esc(target ? relicName(target) : '') + '</b><span>жертв</span><b>' + rp.picks.length + '</b><span>шанс</span><b>' + chance + '%</b>' + costHtml([0, food, 0, 0], st.res) + '</div>' +
-				'<div class="actions"><button class="btn primary" data-act="repair-go"' + (rp.picks.length && !short ? '' : ' disabled') + '>' + (short ? 'Не хватает еды' : isArmed('repair') ? 'Точно чинить?' : 'Чинить') + '</button><button class="btn" data-act="repair-cancel">Отмена</button></div>';
+		let foodOk = true;
+		if (target) {
+			const chance = K.bridge.repairChance(rp.target, rp.picks);
+			const unlock = rp.picks.length > 0 && K.bridge.repairUnlock(rp.target, rp.picks);
+			const raise = raisable(target);
+			const whole = target.dur >= target.max;
+			const nothing = whole && !raise && !unlock;
+			const food = st.repairFood[target.r - 1];
+			foodOk = st.res[1] >= food;
+			const what = raise && unlock ? 'усилить свойство или открыть закрытое' : raise ? 'усилить одно из свойств' : unlock ? 'открыть закрытое свойство' : '';
+			const hint = (what ? 'При успехе ' + RL.enhancePct[target.r - 1] + '% шанс ' + what + '. ' : '') +
+				(target.lv.includes(0) && !unlock ? 'Закрытое свойство откроется, только если в жертву идёт реликвия от ' + target.r + '★. ' : '');
+			head = '<h3>' + (whole ? 'Улучшение' : 'Починка') + '</h3>' + relicRow(target, '') +
+				'<div class="costline"><span>жертв</span><b>' + rp.picks.length + '</b><span>шанс успеха</span><b>' + chance + '%</b>' + costHtml([0, food, 0, 0], st.res) + '</div>' +
+				(hint ? '<p class="fine">' + hint + '</p>' : '') +
+				'<div class="actions"><button class="btn primary" data-act="repair-go"' + (rp.picks.length && foodOk && !nothing ? '' : ' disabled') + '>' +
+				(!foodOk ? 'Не хватает еды' : nothing && rp.picks.length ? 'Нечего улучшать' : isArmed('repair') ? 'Точно?' : whole ? 'Улучшить' : 'Чинить') + '</button>' +
+				'<button class="btn" data-act="repair-cancel">Отмена</button></div><h3>Выберите жертвы</h3>';
 		}
+		const list = st.relics.filter((r) => relicTabHas(r) && (!target || r.id !== target.id)).sort((a, b) => b.r - a.r || a.kind - b.kind || a.dur - b.dur);
 		const rows = list.map((r) => {
 			let b = '';
-			if (rp) b = r.id === rp.target ? '<span class="tag">чиним</span>' : '<button class="btn' + (rp.picks.includes(r.id) ? ' primary' : '') + '" data-act="repair-pick" data-id="' + r.id + '">' + (rp.picks.includes(r.id) ? 'Выбрана' : 'В жертву') + '</button>';
-			else {
-				if (canRepair && r.dur < r.max) b += '<button class="btn" data-act="repair-start" data-id="' + r.id + '">Починить</button>';
+			if (target) {
+				const on = rp.picks.includes(r.id);
+				b = '<button class="btn' + (on ? ' primary' : '') + '" data-act="repair-pick" data-id="' + r.id + '">' + (on ? 'Выбрана' : 'В жертву +' + RL.repairPct[target.r - 1][r.r - 1] + '%') + '</button>';
+			} else {
+				if (canRepair && (r.dur < r.max || raisable(r) || r.lv.includes(0))) b += '<button class="btn" data-act="repair-start" data-id="' + r.id + '">' + (r.dur < r.max ? 'Починить' : 'Улучшить') + '</button>';
 				b += '<button class="btn' + (isArmed('discard:' + r.id) ? ' danger' : '') + '" data-act="discard" data-id="' + r.id + '">' + (isArmed('discard:' + r.id) ? 'Точно?' : 'Выбросить') + '</button>';
 			}
 			return relicRow(r, b);
 		});
+		const junk = st.relics.filter((r) => r.r === 1 && !r.on && !r.b && relicTabHas(r)).length;
 		const html = sheetTitle(icoHtml('relic.armor', 'relic r5'), 'Реликвии') +
-			'<p class="fine">' + (canRepair ? 'Починка, как в оригинале: стоит еду, жертвуйте другие реликвии, каждая добавляет шанс; две реликвии той же редкости чинят наверняка. Жертвы пропадают в любом случае. Сколько еды — наша оценка.'
-				: 'Починка откроется на Замке ' + st.repairCastle + ', как в оригинале.') + '</p>' +
-			head + (rows.length ? rows.join('') : '<p class="fine">Реликвий пока нет. Ежедневная реликвия в Храме иногда даёт реликвию вместо титана.</p>') +
-			'<div class="actions"><button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
-		return { key: ['inv', st.relics.map((r) => r.id + ':' + r.dur + ':' + r.on + ':' + isArmed('discard:' + r.id)).join(), rp ? rp.target + '>' + rp.picks.join('.') + '>' + st.res[1] : '', isArmed('repair')].join('|'), html };
+			'<p class="fine">Всего ' + st.relics.length + ' из ' + RL.maxRelics + '. ' + (canRepair
+				? 'Починка, как в оригинале: стоит еду, а в жертву идут другие реликвии; шанс каждой зависит от её редкости и редкости чинимой (таблица оригинала, для ★5 наша оценка). Жертвы пропадают в любом случае. Успех возвращает прочность и с шансом усиливает свойство или открывает закрытое, поэтому чинить можно и целую реликвию. Цена в еде — наша оценка.'
+				: 'Починка и улучшение откроются на Замке ' + st.repairCastle + ', как в оригинале.') +
+			' Реликвии построек прикрепляются в окне постройки, кнопка «Реликвия».</p>' +
+			head + '<div class="shopTabs">' + tabs + '</div>' +
+			(rows.length ? rows.join('') : '<p class="fine">' + (st.relics.length ? 'В этом разделе пусто.' : 'Реликвий пока нет. Их дают Храм реликвий и победы в боях.') + '</p>') +
+			'<div class="actions">' + (junk && !target ? '<button class="btn' + (isArmed('discard-r1') ? ' danger' : '') + '" data-act="discard-r1">' + (isArmed('discard-r1') ? 'Точно выбросить ' + junk + '?' : 'Выбросить свободные ★1 · ' + junk) + '</button>' : '') +
+			'<button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
+		return {
+			key: ['inv', tab, st.relics.map((r) => relicKey(r) + ':' + isArmed('discard:' + r.id)).join(), rp ? rp.target + '>' + rp.picks.join('.') + '>' + foodOk : '', isArmed('repair'), isArmed('discard-r1'), st.castle >= st.repairCastle].join('|'), html,
+			live: liveRelics,
+		};
+	});
+}
+/** The relic slot of a building: one economy relic of a fitting kind works on it for a time. */
+function openBuildingRelic(bid) {
+	cancelPlace();
+	openSheet(() => {
+		const st = K.st;
+		const b = st.b.find((x) => x.id === bid);
+		if (!b) return null;
+		const d = defOf(b.def);
+		const kinds = relicKindsFor(d.id);
+		const cur = buildingRelic(bid);
+		const fits = st.relics.filter((r) => kinds.includes(relicKind(r)) && r.b !== bid).sort((a, x) => x.r - a.r || x.dur - a.dur);
+		const hours = K.army.relics.hours;
+		const html = sheetTitle(buildingIcon(b.def), esc(d.name)) +
+			'<p class="fine">Сюда подходит ' + kinds.map((k) => mini('relic.' + k.id) + esc(k.name)).join(', ') + '. Как в оригинале, реликвия постройки работает ограниченное время, у редких оно дольше ' +
+			'(от ' + hours[0] + ' ч у ★1 до ' + hours[hours.length - 1] + ' ч у ★5, часы — наша оценка). Время идёт, только пока реликвия на постройке, её можно снять и вернуть позже (наше упрощение). На постройке одна реликвия.</p>' +
+			'<h3>Сейчас</h3>' + (cur ? relicRow(cur, '<button class="btn" data-act="unequip" data-id="' + cur.id + '">Снять</button>') : '<p class="fine">Реликвии нет.</p>') +
+			'<h3>Можно прикрепить</h3>' +
+			(fits.length ? fits.map((r) => relicRow(r, '<button class="btn' + (r.dur > 0 ? ' primary' : '') + '" data-act="attach" data-id="' + r.id + '" data-building="' + bid + '"' + (r.dur > 0 ? '' : ' disabled') + '>' +
+				(r.dur <= 0 ? 'Время вышло' : cur ? 'Заменить' : 'Прикрепить') + '</button>')).join('')
+				: '<p class="fine">Подходящих реликвий нет. Их дают Храм реликвий, Алтарь силы и победы в боях.</p>') +
+			'<div class="actions"><button class="btn" data-act="relic-inv">Все реликвии</button>' + closeBtn + '</div>';
+		return { key: ['brel', bid, b.lv, st.relics.map(relicKey).join()].join('|'), html, live: liveRelics };
 	});
 }
 /** Pick the titan that guards a land (+1% production per titan level). */
@@ -3593,8 +3815,14 @@ function openPrepare(wid, capture) {
 // ---------------------------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------------------------
+// Each part of a frame is guarded: an error shows once and the island keeps being drawn.
 function frame(dt, t) {
 	if (!K.ready) return;
+	try { frameUpdate(dt, t); } catch (e) { report('кадр', e); }
+	try { K.app.renderer.render(scene, cam); } catch (e) { report('рисунок', e); }
+	try { drawOverlay(t); } catch (e) { report('значки', e); }
+}
+function frameUpdate(dt, t) {
 	const app = K.app;
 	// Real elapsed time (the loop's dt is capped), at most a second per frame.
 	const real = K.lastT ? clamp((t - K.lastT) / 1000, 0, 1) : dt;
@@ -3631,8 +3859,6 @@ function frame(dt, t) {
 		world.ghost.group.position.y = 0.2 + Math.abs(Math.sin(ts * 4)) * 0.25;
 		for (const u of world.ghost.upd) u(ts);
 	}
-	r.render(scene, cam);
-	drawOverlay(t);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3663,6 +3889,8 @@ function init(app) {
 				clock.offset = 0;
 			} else saver.savedAt = +local.savedAt || 0;
 		}
+		saver.loaded = loaded;
+		saver.loadedAt = saver.savedAt;
 		if (!loaded) K.bridge.newGame(nowSec(), Math.floor(Math.random() * 2147483647));
 		K.bridge.advance(nowSec());
 		const st = K.bridge.state();
@@ -3705,6 +3933,7 @@ function init(app) {
 	} catch (e) {
 		console.error('Kingdom screen failed to start:', e);
 		K.ready = false;
+		window.dotKingdom.error = (e && e.message) || String(e);
 		return false;
 	}
 }

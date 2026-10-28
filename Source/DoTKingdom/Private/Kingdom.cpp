@@ -70,6 +70,12 @@ uint64_t Mix(uint64_t Seed, uint64_t Counter)
 	uint64_t Data[2] = {Seed, Counter};
 	return XXHash64(Data, sizeof(Data), 0x6b696e67646f6dULL);
 }
+
+/** A time shortened by a relic bonus in tenths of a percent (rounded up, never below one second). */
+int64_t Shorten(int64_t Sec, int64_t Bonus)
+{
+	return Bonus > 0 && Sec > 0 ? std::max<int64_t>(1, CeilDiv(Sec * (1000 - std::min<int64_t>(Bonus, 1000)), 1000)) : Sec;
+}
 } // namespace
 
 const char* ToString(Error E)
@@ -77,7 +83,7 @@ const char* ToString(Error E)
 	static const char* const Names[] = {"none", "bad_id", "max_level", "castle_too_low", "need_requirement", "need_expansion", "locked",
 		"limit_reached", "no_builder", "not_enough", "bad_placement", "busy", "not_busy", "nothing", "storage_full", "need_stones",
 		"no_land_slot", "no_attack", "queue_full", "researching", "too_many_squads", "no_troops", "titan_recovering", "not_ready",
-		"roster_full", "not_max_level"};
+		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full"};
 	const int I = static_cast<int>(E);
 	return I >= 0 && I < static_cast<int>(Error::Count) ? Names[I] : "?";
 }
@@ -298,13 +304,14 @@ int64_t Kingdom::ProducerRate(const Building& B) const
 {
 	const BuildingDef& D = C.buildings[static_cast<size_t>(B.def)];
 	const LevelDef* L = CurrentLevel(B);
-	return (D.role == Role::Producer && L && !B.upgrading) ? L->produce : 0;
+	// An economy relic on the producer adds to its output (the original's pickaxes and ploughs).
+	return (D.role == Role::Producer && L && !B.upgrading) ? L->produce * (1000 + BuildingRelicBonus(B, RelicStat::Produce)) / 1000 : 0;
 }
 
 int64_t Kingdom::ProducerCap(const Building& B) const
 {
 	const LevelDef* L = CurrentLevel(B);
-	return L ? L->store : 0;
+	return L ? L->store * (1000 + BuildingRelicBonus(B, RelicStat::Store)) / 1000 : 0;
 }
 
 /** Production per period in hundredths of a unit: the titan bonus is a percentage. */
@@ -575,7 +582,8 @@ void Kingdom::Settle(Building& B, int64_t At) const
 	{
 		const int64_t Cap = ProducerCap(B);
 		const int64_t Gained = Rate * (At - B.lastAt) + B.carry;
-		B.stored = std::min(Cap, B.stored + Gained / kSecondsPerHour);
+		// What was stored stays even above the cap (a relic's extra room may have run out since).
+		B.stored = std::max(B.stored, std::min(Cap, B.stored + Gained / kSecondsPerHour));
 		B.carry = B.stored >= Cap ? 0 : Gained % kSecondsPerHour;
 	}
 	B.lastAt = std::max(B.lastAt, At);
@@ -677,15 +685,37 @@ void Kingdom::Advance(int64_t Now)
 		const int64_t TS = Lab >= 0 ? SpellLabs[static_cast<size_t>(Lab)].until : InfT;
 		// The end of a season is an event too: its league reward may add portal stones.
 		const int64_t TN = SeasonOf(Now) > SeasonNo ? std::max(Time, SeasonStart(SeasonNo + 1)) : InfT;
-		if (TB == InfT && TR == InfT && TS == InfT && TN == InfT)
+		// So is an economy relic running out: its building works without it from then on.
+		RelicItem* Spent = nullptr;
+		for (RelicItem& Rl : RelicList)
+		{
+			if (Rl.building != 0 && Rl.durability > 0 && Rl.since + Rl.durability <= Now && (!Spent || Rl.since + Rl.durability < Spent->since + Spent->durability))
+			{
+				Spent = &Rl;
+			}
+		}
+		const int64_t TX = Spent ? Spent->since + Spent->durability : InfT;
+		if (TB == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(TB, TR), std::min(TS, TN));
+		const int64_t At = std::min(std::min(std::min(TB, TR), std::min(TS, TN)), TX);
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
-		if (TN == At)
+		if (TX == At && TB != At && TR != At && TS != At && TN != At)
+		{
+			for (Building& B : BuildingList)
+			{
+				if (B.id == Spent->building)
+				{
+					Settle(B, At);
+				}
+			}
+			Spent->durability = 0;
+			Spent->since = At;
+		}
+		else if (TN == At)
 		{
 			RollSeason(At);
 		}
@@ -1289,6 +1319,8 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 			{
 				continue;
 			}
+			// XP relics count for the battle they were worn in.
+			const int64_t XpBonus = TitanRelicBonus(T.id, RelicStat::Xp);
 			// Every working relic on the titan wears by one battle.
 			for (const int32_t RelicId : T.relics)
 			{
@@ -1303,11 +1335,12 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 			const int LandLevel = Index < WorldList.size() ? WorldList[Index].level : 1;
 			const int64_t Base = C.titanBattleXp[static_cast<size_t>(std::min<int>(LandLevel, static_cast<int>(C.titanBattleXp.size())) - 1)];
 			R.titanId = T.id;
-			R.titanXp = Base * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100;
+			R.titanXp = Base * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100 * (1000 + XpBonus) / 1000;
 			AddTitanXp(T, R.titanXp, &R.titanLevels);
 			if (T.level > C.titanRecoveryFromLevel)
 			{
-				T.recoverUntil = Time + (T.level - C.titanRecoveryFromLevel) * C.titanRecoverySecPerLevel;
+				// A relic on the Hall of Titans shortens the rest.
+				T.recoverUntil = Time + Shorten((T.level - C.titanRecoveryFromLevel) * C.titanRecoverySecPerLevel, DefRelicBonus(C.hallOfTitans, RelicStat::Rest));
 			}
 		}
 	}
@@ -1349,6 +1382,25 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 		const int64_t Vp = Scaled(VictoryVp(W.level));
 		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
 		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		// And relics: the original (1.8) drops one to three per won battle, better ones as the player goes on.
+		// Here one per star; the rarity odds by land level are ours.
+		if (!C.relicDropRarity.empty())
+		{
+			const std::array<int64_t, 5>& Odds = C.relicDropRarity[static_cast<size_t>(std::max(1, std::min<int>(W.level, static_cast<int>(C.relicDropRarity.size()))) - 1)];
+			for (int K = 0; K < std::min(std::min(Stars, 3), C.relicDropMax); ++K)
+			{
+				const uint64_t H = Mix(Seed ^ 0x64726f70ULL, RelicCounter++);
+				const int32_t Id = AddRelic(RollRelicKind(H >> 32), RollRarity(Odds, H));
+				if (Id)
+				{
+					R.relics.push_back(Id);
+				}
+				else
+				{
+					++R.relicsLost;
+				}
+			}
+		}
 		// A beaten land leaves the map; a new one appears.
 		WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Index));
 		FillWorld();
@@ -1463,7 +1515,10 @@ int Kingdom::SurvivalPct() const
 int64_t Kingdom::TrainSec(int Troop) const
 {
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
-	return T.levels[static_cast<size_t>(std::max(1, std::min(TroopLevel(Troop), T.MaxLevel())) - 1)].trainSec;
+	const int64_t Sec = T.levels[static_cast<size_t>(std::max(1, std::min(TroopLevel(Troop), T.MaxLevel())) - 1)].trainSec;
+	// A relic on the Barracks speeds up every troop; one on an envoy council, that council's troops.
+	const int64_t Bonus = DefRelicBonus(C.barracks, RelicStat::Train) + (T.council >= 0 ? DefRelicBonus(T.council, RelicStat::Train) : 0);
+	return Shorten(Sec, CapBonus(RelicStat::Train, Bonus));
 }
 
 int64_t Kingdom::QueueHeadFinish() const
@@ -1520,7 +1575,7 @@ Check Kingdom::CheckTrain(int Troop) const
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
 	const TroopLevelDef& L = T.levels[static_cast<size_t>(std::max(1, TroopLevel(Troop)) - 1)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = L.cost;
-	Out.timeSec = L.trainSec;
+	Out.timeSec = TrainSec(Troop);
 	if (CastleLevel() < T.unlockCastle)
 	{
 		Out.error = Error::Locked;
@@ -1671,7 +1726,7 @@ Check Kingdom::CheckTroopUpgrade(int Troop) const
 	}
 	const TroopLevelDef& L = T.levels[static_cast<size_t>(Level - 1)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = L.upgradeCost;
-	Out.timeSec = L.upgradeSec;
+	Out.timeSec = Shorten(L.upgradeSec, DefRelicBonus(C.armoury, RelicStat::Research));
 	if (CastleLevel() < T.unlockCastle)
 	{
 		Out.error = Error::Locked;
@@ -1943,7 +1998,12 @@ Check Kingdom::CheckAltar(int Altar) const
 		Out.missing = {C.relicTemple, 1, 1};
 		return Out;
 	}
-	if (static_cast<int>(TitanList.size()) >= TitanCapacity())
+	if (A.relics && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		Out.error = Error::InventoryFull;
+		return Out;
+	}
+	if (!A.relics && static_cast<int>(TitanList.size()) >= TitanCapacity())
 	{
 		Out.error = Error::RosterFull;
 		return Out;
@@ -1980,33 +2040,19 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 	{
 		*OutRelicId = 0;
 	}
-	// The free daily relic is either a relic item or a titan (the original's daily bonus).
-	if (A.cooldownSec > 0 && static_cast<int64_t>((H >> 40) % 100) < C.dailyRelicPct && static_cast<int>(RelicList.size()) < C.maxRelics)
+	// The free daily relic is either a relic item or a titan (the original's daily bonus);
+	// the Altar of Power always gives a relic item (the original's 1.8).
+	const bool bDailyRelic = A.cooldownSec > 0 && static_cast<int64_t>((H >> 40) % 100) < C.dailyRelicPct && static_cast<int>(RelicList.size()) < C.maxRelics;
+	if (A.relics || bDailyRelic)
 	{
-		int64_t Total = 0;
-		for (const int64_t W : C.dailyRelicRarity)
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), RollRarity(A.relics ? A.weights : C.dailyRelicRarity, H >> 8));
+		if (A.cooldownSec > 0)
 		{
-			Total += W;
+			RelicAt = Time + A.cooldownSec;
 		}
-		int64_t Roll = Total > 0 ? static_cast<int64_t>((H >> 8) % static_cast<uint64_t>(Total)) : 0;
-		RelicItem Rl;
-		Rl.id = NextId++;
-		Rl.kind = static_cast<int>((H >> 52) % static_cast<uint64_t>(C.relicKinds.size()));
-		for (int K = 0; K < 5; ++K)
-		{
-			if (Roll < C.dailyRelicRarity[static_cast<size_t>(K)])
-			{
-				Rl.rarity = K + 1;
-				break;
-			}
-			Roll -= C.dailyRelicRarity[static_cast<size_t>(K)];
-		}
-		Rl.durability = static_cast<int>(C.relicDurability[static_cast<size_t>(Rl.rarity - 1)]);
-		RelicList.push_back(Rl);
-		RelicAt = Time + A.cooldownSec;
 		if (OutRelicId)
 		{
-			*OutRelicId = Rl.id;
+			*OutRelicId = Id;
 		}
 		return Error::None;
 	}
@@ -2207,7 +2253,7 @@ int Kingdom::MaxSpellLevel() const
 
 int64_t Kingdom::CraftSec(int Spell) const
 {
-	return C.spells[static_cast<size_t>(Spell)].craftSec;
+	return Shorten(C.spells[static_cast<size_t>(Spell)].craftSec, DefRelicBonus(C.spellForge, RelicStat::Craft));
 }
 
 int64_t Kingdom::CraftGold(int Spell) const
@@ -2263,7 +2309,7 @@ Check Kingdom::CheckCraft(int Spell) const
 	}
 	const SpellType& S = C.spells[static_cast<size_t>(Spell)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Gold))] = CraftGold(Spell);
-	Out.timeSec = S.craftSec;
+	Out.timeSec = CraftSec(Spell);
 	const LevelDef* Forge = BuildingLevel(C.spellForge);
 	if (!Forge || Forge->level < S.forge)
 	{
@@ -2379,7 +2425,7 @@ Check Kingdom::CheckSpellUpgrade(int Spell) const
 		Sec = Sec * C.spellSecGrowthPct / 100;
 	}
 	Out.cost[static_cast<size_t>(ResIndex(Res::Gold))] = Gold;
-	Out.timeSec = Sec;
+	Out.timeSec = Shorten(Sec, DefRelicBonus(C.arcaneTower, RelicStat::Research));
 	const SpellType& S = C.spells[static_cast<size_t>(Spell)];
 	const LevelDef* Forge = BuildingLevel(C.spellForge);
 	if (!Forge || Forge->level < S.forge)
@@ -2485,6 +2531,18 @@ const RelicItem* Kingdom::FindRelic(int32_t Id) const
 	return nullptr;
 }
 
+RelicItem* Kingdom::MutableRelic(int32_t Id)
+{
+	for (RelicItem& R : RelicList)
+	{
+		if (R.id == Id)
+		{
+			return &R;
+		}
+	}
+	return nullptr;
+}
+
 int Kingdom::RelicSlots(const TitanState& T) const
 {
 	int Slots = T.ascended ? C.ascendRelicSlots : 0;
@@ -2495,19 +2553,66 @@ int Kingdom::RelicSlots(const TitanState& T) const
 	return Slots;
 }
 
-int64_t Kingdom::RelicStatPct(const RelicItem& R, int Stat) const
+int Kingdom::RelicSlotCount(const RelicItem& R) const
 {
-	const int64_t Main = C.relicBonusPct[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)];
-	const int MainStat = C.relicKinds[static_cast<size_t>(R.kind)].stat;
-	if (Stat == MainStat)
-	{
-		return Main;
-	}
-	// From rarity 3 a relic also carries half its bonus on the next stat.
-	return R.rarity >= 3 && Stat == (MainStat + 1) % 3 ? Main / 2 : 0;
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	return std::min(static_cast<int>(K.effects.size()), C.relicMaxEffects[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)]);
 }
 
-int64_t Kingdom::TitanBonusPct(int32_t TitanId, int Stat) const
+int64_t Kingdom::RelicMax(const RelicItem& R) const
+{
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	const size_t Rr = static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1);
+	if (K.economy)
+	{
+		return C.relicHours[Rr] * kSecondsPerHour;
+	}
+	return K.battles > 0 ? K.battles : C.relicDurability[Rr];
+}
+
+int64_t Kingdom::RelicLeft(const RelicItem& R) const
+{
+	return R.building != 0 ? std::max<int64_t>(0, R.durability - std::max<int64_t>(0, Time - R.since)) : R.durability;
+}
+
+int64_t Kingdom::RelicEffectValue(const RelicItem& R, int Slot) const
+{
+	if (Slot < 0 || Slot >= static_cast<int>(R.levels.size()) || R.levels[static_cast<size_t>(Slot)] <= 0)
+	{
+		return 0;
+	}
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	const RelicEffectDef& E = C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(Slot)])];
+	const int64_t Base = E.base[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)];
+	// Each level above the first adds a share of the first level's value (the original: up to 30-75% more).
+	return Base * (100 + C.relicStepPct * (R.levels[static_cast<size_t>(Slot)] - 1)) / 100;
+}
+
+int64_t Kingdom::CapBonus(RelicStat Stat, int64_t Value) const
+{
+	for (const RelicEffectDef& E : C.relicEffects)
+	{
+		if (E.stat == Stat && E.cap > 0)
+		{
+			Value = std::min(Value, E.cap);
+		}
+	}
+	return Value;
+}
+
+int32_t Kingdom::RelicTitan(int32_t RelicId) const
+{
+	for (const TitanState& T : TitanList)
+	{
+		if (std::find(T.relics.begin(), T.relics.end(), RelicId) != T.relics.end())
+		{
+			return T.id;
+		}
+	}
+	return 0;
+}
+
+int64_t Kingdom::TitanRelicBonus(int32_t TitanId, RelicStat Stat) const
 {
 	const TitanState* T = FindTitan(TitanId);
 	int64_t Total = 0;
@@ -2518,11 +2623,140 @@ int64_t Kingdom::TitanBonusPct(int32_t TitanId, int Stat) const
 			const RelicItem* R = FindRelic(Id);
 			if (R && R->durability > 0)
 			{
-				Total += RelicStatPct(*R, Stat);
+				const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+				for (int S = 0; S < static_cast<int>(R->levels.size()); ++S)
+				{
+					if (C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(S)])].stat == Stat)
+					{
+						Total += RelicEffectValue(*R, S);
+					}
+				}
+			}
+		}
+	}
+	return CapBonus(Stat, Total);
+}
+
+const RelicItem* Kingdom::BuildingRelic(int32_t BuildingId) const
+{
+	for (const RelicItem& R : RelicList)
+	{
+		if (R.building == BuildingId)
+		{
+			return &R;
+		}
+	}
+	return nullptr;
+}
+
+int64_t Kingdom::BuildingRelicBonus(const Building& B, RelicStat Stat) const
+{
+	const RelicItem* R = BuildingRelic(B.id);
+	int64_t Total = 0;
+	if (R && RelicLeft(*R) > 0)
+	{
+		const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+		for (int S = 0; S < static_cast<int>(R->levels.size()); ++S)
+		{
+			if (C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(S)])].stat == Stat)
+			{
+				Total += RelicEffectValue(*R, S);
 			}
 		}
 	}
 	return Total;
+}
+
+int64_t Kingdom::DefRelicBonus(int Def, RelicStat Stat) const
+{
+	int64_t Total = 0;
+	for (const Building& B : BuildingList)
+	{
+		if (B.def == Def && B.level > 0)
+		{
+			Total += BuildingRelicBonus(B, Stat);
+		}
+	}
+	return CapBonus(Stat, Total);
+}
+
+int Kingdom::RollRelicKind(uint64_t H) const
+{
+	int64_t Total = 0;
+	for (const RelicKind& K : C.relicKinds)
+	{
+		Total += K.weight;
+	}
+	int64_t Roll = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
+	for (size_t I = 0; I < C.relicKinds.size(); ++I)
+	{
+		if (Roll < C.relicKinds[I].weight)
+		{
+			return static_cast<int>(I);
+		}
+		Roll -= C.relicKinds[I].weight;
+	}
+	return 0;
+}
+
+int Kingdom::RollRarity(const std::array<int64_t, 5>& Weights, uint64_t H) const
+{
+	int64_t Total = 0;
+	for (const int64_t W : Weights)
+	{
+		Total += W;
+	}
+	int64_t Roll = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
+	for (int K = 0; K < 5; ++K)
+	{
+		if (Roll < Weights[static_cast<size_t>(K)])
+		{
+			return K + 1;
+		}
+		Roll -= Weights[static_cast<size_t>(K)];
+	}
+	return 1;
+}
+
+int32_t Kingdom::AddRelic(int Kind, int Rarity)
+{
+	if (static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return 0;
+	}
+	RelicItem R;
+	R.id = NextId++;
+	R.kind = Kind;
+	R.rarity = std::max(1, std::min(5, Rarity));
+	R.durability = RelicMax(R);
+	R.levels.assign(static_cast<size_t>(RelicSlotCount(R)), 0);
+	for (int S = 0; S < std::min(static_cast<int>(R.levels.size()), C.relicStartEffects[static_cast<size_t>(R.rarity - 1)]); ++S)
+	{
+		R.levels[static_cast<size_t>(S)] = 1;
+	}
+	if (!R.levels.empty() && R.levels[0] == 0)
+	{
+		R.levels[0] = 1; // the first effect is always open
+	}
+	RelicList.push_back(R);
+	return R.id;
+}
+
+void Kingdom::TouchRelic(RelicItem& R)
+{
+	if (R.building == 0)
+	{
+		return;
+	}
+	for (Building& B : BuildingList)
+	{
+		if (B.id == R.building)
+		{
+			Settle(B, Time);
+		}
+	}
+	R.durability = RelicLeft(R);
+	R.since = Time;
 }
 
 void Kingdom::UnequipEverywhere(int32_t RelicId)
@@ -2531,13 +2765,24 @@ void Kingdom::UnequipEverywhere(int32_t RelicId)
 	{
 		T.relics.erase(std::remove(T.relics.begin(), T.relics.end(), RelicId), T.relics.end());
 	}
+	if (RelicItem* R = MutableRelic(RelicId))
+	{
+		TouchRelic(*R);
+		R->building = 0;
+		R->since = 0;
+	}
 }
 
 Error Kingdom::EquipRelic(int32_t TitanId, int32_t RelicId)
 {
-	if (!FindRelic(RelicId))
+	const RelicItem* R = FindRelic(RelicId);
+	if (!R)
 	{
 		return Error::BadId;
+	}
+	if (C.relicKinds[static_cast<size_t>(R->kind)].economy)
+	{
+		return Error::WrongRelic;
 	}
 	for (TitanState& T : TitanList)
 	{
@@ -2553,11 +2798,58 @@ Error Kingdom::EquipRelic(int32_t TitanId, int32_t RelicId)
 		{
 			return Error::LimitReached;
 		}
+		for (const int32_t Other : T.relics)
+		{
+			const RelicItem* O = FindRelic(Other);
+			if (O && O->kind == R->kind)
+			{
+				return Error::SameRelic; // the original: "Can not use identical relics"
+			}
+		}
 		UnequipEverywhere(RelicId);
 		T.relics.push_back(RelicId);
 		return Error::None;
 	}
 	return Error::BadId;
+}
+
+Error Kingdom::AttachRelic(int32_t BuildingId, int32_t RelicId)
+{
+	RelicItem* R = MutableRelic(RelicId);
+	const Building* B = Find(BuildingId);
+	if (!R || !B)
+	{
+		return Error::BadId;
+	}
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+	if (!K.economy || std::find(K.buildings.begin(), K.buildings.end(), B->def) == K.buildings.end())
+	{
+		return Error::WrongRelic;
+	}
+	if (B->level <= 0)
+	{
+		return Error::NotReady; // still being built
+	}
+	if (R->building == BuildingId)
+	{
+		return Error::None;
+	}
+	if (const RelicItem* Old = BuildingRelic(BuildingId))
+	{
+		UnequipEverywhere(Old->id);
+	}
+	UnequipEverywhere(RelicId);
+	for (Building& Target : BuildingList)
+	{
+		if (Target.id == BuildingId)
+		{
+			Settle(Target, Time); // it produced without the relic until now
+		}
+	}
+	R = MutableRelic(RelicId);
+	R->building = BuildingId;
+	R->since = Time;
+	return Error::None;
 }
 
 Error Kingdom::UnequipRelic(int32_t RelicId)
@@ -2588,25 +2880,49 @@ int Kingdom::RepairChancePct(int32_t Target, const std::vector<int32_t>& Sacrifi
 	{
 		return 0;
 	}
+	// The original's table: every sacrificed relic adds a chance set by its rarity and the target's.
 	int64_t Sum = 0;
 	for (const int32_t Id : Sacrifices)
 	{
 		const RelicItem* R = FindRelic(Id);
 		if (R && Id != Target)
 		{
-			Sum += C.relicRepairWeight[static_cast<size_t>(std::max(1, std::min(5, R->rarity)) - 1)];
+			Sum += C.relicRepairPct[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)][static_cast<size_t>(std::max(1, std::min(5, R->rarity)) - 1)];
 		}
 	}
-	// Two relics of the target's rarity always do it; lower rarities add less.
-	const int64_t Need = 2 * C.relicRepairWeight[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)];
-	return static_cast<int>(std::min<int64_t>(100, Need > 0 ? Sum * 100 / Need : 100));
+	return static_cast<int>(std::min<int64_t>(100, Sum));
 }
 
-Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, bool* OutRepaired)
+int Kingdom::EnhanceChancePct(int32_t Target) const
 {
-	if (OutRepaired)
+	const RelicItem* T = FindRelic(Target);
+	return T ? static_cast<int>(C.relicEnhancePct[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)]) : 0;
+}
+
+bool Kingdom::CanUnlockWith(int32_t Target, const std::vector<int32_t>& Sacrifices) const
+{
+	const RelicItem* T = FindRelic(Target);
+	if (!T || std::find(T->levels.begin(), T->levels.end(), 0) == T->levels.end())
 	{
-		*OutRepaired = false;
+		return false;
+	}
+	// The original: the second and third effects usually need higher-star relics in the repair.
+	for (const int32_t Id : Sacrifices)
+	{
+		const RelicItem* R = FindRelic(Id);
+		if (R && Id != Target && R->rarity >= T->rarity)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, RepairResult* Out)
+{
+	if (Out)
+	{
+		*Out = RepairResult();
 	}
 	const RelicItem* T = FindRelic(Target);
 	if (!T || Sacrifices.empty())
@@ -2617,7 +2933,13 @@ Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifice
 	{
 		return Error::CastleTooLow;
 	}
-	if (T->durability >= C.relicDurability[static_cast<size_t>(T->rarity - 1)])
+	// A whole relic can still be repaired for the chance to improve it (the original), unless it is at its best.
+	bool bCanImprove = CanUnlockWith(Target, Sacrifices);
+	for (const int L : T->levels)
+	{
+		bCanImprove = bCanImprove || (L > 0 && L < C.relicLevels);
+	}
+	if (RelicLeft(*T) >= RelicMax(*T) && !bCanImprove)
 	{
 		return Error::Nothing;
 	}
@@ -2636,25 +2958,50 @@ Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifice
 	}
 	Pay(Cost, false);
 	const int Chance = RepairChancePct(Target, Sacrifices);
+	const bool bUnlock = CanUnlockWith(Target, Sacrifices);
 	const uint64_t H = Mix(Seed ^ 0x726570616972ULL, RelicCounter++);
 	const bool bOk = static_cast<int>(H % 100) < Chance;
 	for (const int32_t Id : Sacrifices)
 	{
 		DiscardRelic(Id);
 	}
+	RepairResult Result;
+	Result.repaired = bOk;
 	if (bOk)
 	{
-		for (RelicItem& R : RelicList)
+		RelicItem& R = *MutableRelic(Target);
+		TouchRelic(R);
+		R.durability = RelicMax(R);
+		// A success may also improve one effect or open the next locked one (chance by the target's rarity).
+		if (static_cast<int64_t>((H >> 16) % 100) < C.relicEnhancePct[static_cast<size_t>(R.rarity - 1)])
 		{
-			if (R.id == Target)
+			std::vector<int> Choices;
+			bool bLockedAdded = false;
+			for (int S = 0; S < static_cast<int>(R.levels.size()); ++S)
 			{
-				R.durability = static_cast<int>(C.relicDurability[static_cast<size_t>(R.rarity - 1)]);
+				const int L = R.levels[static_cast<size_t>(S)];
+				if (L > 0 && L < C.relicLevels)
+				{
+					Choices.push_back(S);
+				}
+				else if (L == 0 && bUnlock && !bLockedAdded)
+				{
+					Choices.push_back(S);
+					bLockedAdded = true;
+				}
+			}
+			if (!Choices.empty())
+			{
+				const int S = Choices[static_cast<size_t>((H >> 32) % Choices.size())];
+				Result.slot = S;
+				Result.unlocked = R.levels[static_cast<size_t>(S)] == 0;
+				R.levels[static_cast<size_t>(S)] += 1;
 			}
 		}
 	}
-	if (OutRepaired)
+	if (Out)
 	{
-		*OutRepaired = bOk;
+		*Out = Result;
 	}
 	return Error::None;
 }
@@ -2713,7 +3060,7 @@ std::string Kingdom::Save() const
 	JsonWriter W;
 	W.BeginObject();
 	W.Key("formatVersion");
-	W.Int(4);
+	W.Int(5);
 	W.Key("contentHash");
 	W.String(C.hash);
 	W.Key("time");
@@ -2965,6 +3312,21 @@ std::string Kingdom::Save() const
 		W.Int(R.rarity);
 		W.Key("durability");
 		W.Int(R.durability);
+		// Effect levels and the building of an economy relic (format 5).
+		W.Key("levels");
+		W.BeginArray();
+		for (const int L : R.levels)
+		{
+			W.Int(L);
+		}
+		W.EndArray();
+		if (R.building != 0)
+		{
+			W.Key("building");
+			W.Int(R.building);
+			W.Key("since");
+			W.Int(R.since);
+		}
 		W.EndObject();
 	}
 	W.EndArray();
@@ -2984,7 +3346,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		return false;
 	}
 	const int Version = J.GetInt("formatVersion", 0);
-	if (Version < 1 || Version > 4)
+	if (Version < 1 || Version > 5)
 	{
 		OutError = "unsupported kingdom save version";
 		return false;
@@ -3242,24 +3604,55 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				const JsonValue& RJ = (*List)[I];
 				RelicItem R;
 				R.id = static_cast<int32_t>(RJ.GetInt64("id", 0));
-				R.kind = -1;
-				for (size_t K = 0; K < C.relicKinds.size(); ++K)
-				{
-					R.kind = C.relicKinds[K].id == RJ.GetString("kind") ? static_cast<int>(K) : R.kind;
-				}
+				R.kind = C.FindRelicKind(RJ.GetString("kind"));
 				R.rarity = std::max(1, std::min(5, RJ.GetInt("rarity", 1)));
-				R.durability = std::max(0, RJ.GetInt("durability", 0));
-				if (R.kind >= 0)
+				if (R.kind < 0)
 				{
-					RelicList.push_back(R);
+					continue;
 				}
+				R.durability = std::max<int64_t>(0, std::min(RelicMax(R), RJ.GetInt64("durability", 0)));
+				// Relics from before format 5 get the effects a new relic of their rarity has.
+				R.levels.assign(static_cast<size_t>(RelicSlotCount(R)), 0);
+				const JsonValue* Levels = RJ.Find("levels");
+				for (int S = 0; S < static_cast<int>(R.levels.size()); ++S)
+				{
+					const int Start = S == 0 || S < C.relicStartEffects[static_cast<size_t>(R.rarity - 1)] ? 1 : 0;
+					R.levels[static_cast<size_t>(S)] = Levels ? std::max(0, std::min(C.relicLevels, (S < static_cast<int>(Levels->Size()) ? (*Levels)[static_cast<size_t>(S)].AsInt(0) : 0))) : Start;
+				}
+				if (!R.levels.empty())
+				{
+					R.levels[0] = std::max(1, R.levels[0]);
+				}
+				R.building = static_cast<int32_t>(RJ.GetInt64("building", 0));
+				R.since = R.building ? RJ.GetInt64("since", Time) : 0;
+				RelicList.push_back(R);
 			}
 		}
 	}
-	// Drop references to relics or titans that are gone.
+	// Drop references to relics or titans that are gone, and relics on the wrong titan or building.
 	for (TitanState& T : TitanList)
 	{
-		T.relics.erase(std::remove_if(T.relics.begin(), T.relics.end(), [this](int32_t Id) { return !FindRelic(Id); }), T.relics.end());
+		T.relics.erase(std::remove_if(T.relics.begin(), T.relics.end(), [this](int32_t Id)
+			{
+				const RelicItem* R = FindRelic(Id);
+				return !R || C.relicKinds[static_cast<size_t>(R->kind)].economy;
+			}), T.relics.end());
+	}
+	for (size_t I = 0; I < RelicList.size(); ++I)
+	{
+		RelicItem& R = RelicList[I];
+		const Building* B = R.building ? Find(R.building) : nullptr;
+		const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+		bool bTaken = false;
+		for (size_t Prev = 0; Prev < I; ++Prev)
+		{
+			bTaken = bTaken || RelicList[Prev].building == R.building;
+		}
+		if (R.building && (!B || !K.economy || bTaken || std::find(K.buildings.begin(), K.buildings.end(), B->def) == K.buildings.end()))
+		{
+			R.building = 0;
+			R.since = 0;
+		}
 	}
 	for (Land& L : LandList)
 	{
@@ -3387,7 +3780,13 @@ uint64_t Kingdom::Hash() const
 		W.I32(R.id);
 		W.I32(R.kind);
 		W.I32(R.rarity);
-		W.I32(R.durability);
+		W.I64(R.durability);
+		for (const int L : R.levels)
+		{
+			W.I32(L);
+		}
+		W.I32(R.building);
+		W.I64(R.since);
 	}
 	return W.Hash();
 }

@@ -40,6 +40,9 @@ struct TitanSetup
 	int hpPct = 0;
 	int atkPct = 0;
 	int armorPct = 0;
+	/** Relics: extra critical hit chance (percentage points) and the share of the target's armor ignored. */
+	int critPct = 0;
+	int piercePct = 0;
 	FixVec2 position;
 	FixVec2 facing = FixVec2(Fix64::Zero(), Fix64::One());
 };
@@ -59,6 +62,9 @@ struct SideSetup
 	std::string aiProfile;
 	/** Player option: resolve this side's Clash exchanges with the Veteran profile. */
 	bool autoClash = false;
+	/** Relics on the side's titan that strengthen its whole army, percent. */
+	int troopHpPct = 0;
+	int troopAtkPct = 0;
 };
 
 struct BattleSetup
