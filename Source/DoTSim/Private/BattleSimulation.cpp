@@ -174,8 +174,9 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		T.stepLength = SD.stepLength;
 		T.sweepRadius = CD.sweepRadius;
 		T.sweepHalfArcCos = CD.sweepHalfArcCos;
-		T.critChance = CD.critChance;
+		T.critChance = fx::Min(Fix64::One(), CD.critChance + fx::Pct(std::max(0, SS.titan.critPct)));
 		T.critDamage = CD.critDamage;
+		T.pierce = fx::Pct(std::max(0, std::min(75, SS.titan.piercePct)));
 		const Fix64 TurnPerTick = fx::DegToRad(CD.turnRateDeg / kTicksPerSecond);
 		T.turnCos = fx::Cos(TurnPerTick);
 		T.turnSin = fx::Sin(TurnPerTick);
@@ -208,6 +209,13 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		Sq.id = static_cast<int32_t>(SquadsList.size()) + 1;
 		Sq.side = S;
 		InitSquadStats(Sq, TroopIndex, Q.tier);
+		if (SS.troopHpPct > 0 || SS.troopAtkPct > 0)
+		{
+			// Relics on the titan that strengthen the whole army.
+			Sq.hp = Sq.hp * fx::Pct(100 + SS.troopHpPct);
+			Sq.atk = Sq.atk * fx::Pct(100 + SS.troopAtkPct);
+			Sq.powerPerSoldier = ComputePower(Sq.hp, Sq.armor, Sq.atk, Sq.interval, 1);
+		}
 		Sq.formation = TD.AllowsFormation(Q.formation) ? Q.formation : Formation::Line;
 		Sq.stance = Q.stanceSet ? Q.stance : TD.defaultStance;
 		const int Count = Q.count > 0 ? Q.count : TD.squadSize;

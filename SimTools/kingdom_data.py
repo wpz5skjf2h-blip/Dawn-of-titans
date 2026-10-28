@@ -445,10 +445,12 @@ ARMY = {
     "fusion": {"castle": 7, "foodPerStar": 2000, "xpPerStarSq": 150, "keepXpPct": 50},
     # Relic Temple: a free relic every day (wiki); altars for 1 000 and 4 000 gems (wiki); R4 only from altars (wiki).
     # Odds by rarity R1..R4 are estimates. The daily altar may give a relic item instead (see "relics").
+    # The Altar of Power sells relic items for 1 000 gems (wiki, Announcements 1.8); its odds R1..R5 are estimates.
     "altars": [
         {"id": "daily", "name": "Ежедневная реликвия", "gems": 0, "cooldownSec": 86400, "weights": [70, 25, 5, 0]},
         {"id": "silver", "name": "Серебряный алтарь", "gems": 1000, "cooldownSec": 0, "weights": [0, 60, 35, 5]},
         {"id": "gold", "name": "Золотой алтарь", "gems": 4000, "cooldownSec": 0, "weights": [0, 0, 70, 30]},
+        {"id": "power", "name": "Алтарь силы", "gems": 1000, "cooldownSec": 0, "relics": True, "weights": [0, 50, 35, 13, 2]},
     ],
     # The original's spells (wiki: Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud, Raise Dead).
     # The Spell Forge crafts them into stock (queue and capacity by level, wiki) and each cast uses one.
@@ -468,16 +470,69 @@ ARMY = {
     "spellResearch": {"goldBase": 20000, "goldGrowth": 1.55, "secBase": 7200, "secGrowth": 1.45, "craftPctPerLevel": 15},
     # Spells a battle can take (distinct kinds); every charge in stock goes along.
     "battleSpellKinds": 3,
-    # Relics (wiki: they raise a titan's damage, health, armor; one slot at first, more as the titan levels up;
-    # they wear out with use; repair by sacrificing relics with a chance, from Castle 8; rarity R1-R5).
-    # Repair also costs food (wiki: food goes to troops, relic repair and fusion). New slots at titan levels 20, 30, 40, 50
-    # (guide). Bonus, durability, repair weights, repair food and drop odds are estimates.
+    # Relics, as in the original since 1.8 (wiki: Relics, Relic Repair, Strategy "Relics 101", Announcements 1.8):
+    # - combat relics are worn by titans and last a number of battles (R1 20, R2 16, R3 12, R4 8; R5 is ours);
+    #   economy relics ("pickaxes, ploughs") attach to buildings, raise production or cut training times and last a time;
+    # - a relic has one to three effects; the later ones are locked (from 2-star relics) until a repair opens them,
+    #   usually with higher-star relics as sacrifices; every effect has a base value and grows with repairs
+    #   ("the max level is often 30-75% greater than the base"); a titan cannot wear two identical relics;
+    # - repair from Castle 8: each sacrificed relic adds a chance by its rarity and the target's (table below, wiki);
+    #   a whole relic can be repaired too, for the improvement; the improvement chance depends on the target's rarity;
+    # - won battles drop one to three relics, better as the player goes on; the inventory starts at 200.
+    # Our estimates: effect values, levels (4, +15% of the base each), caps, economy durations, effects open per rarity,
+    # improvement chances, the R5 row and column of the repair table, drop odds, repair food, the effect catalogue.
+    # Repair also costs food (wiki: food goes to troops, relic repair and fusion). New slots at titan levels 20, 30, 40, 50 (guide).
     "relics": {
-        "kinds": [{"id": "atk", "name": "Реликвия ярости", "stat": "atkPct"}, {"id": "hp", "name": "Реликвия стойкости", "stat": "hpPct"},
-                  {"id": "armor", "name": "Реликвия брони", "stat": "armorPct"}],
-        "bonusPct": [3, 5, 8, 12, 16], "durability": [10, 14, 18, 24, 30], "slotLevels": [1, 20, 30, 40, 50],
-        "repairCastle": 8, "repairWeight": [10, 20, 35, 50, 70], "repairFood": [1000, 2500, 6000, 15000, 30000], "maxRelics": 100,
+        "effects": [
+            {"id": "atk", "name": "урон титана", "stat": "atkPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "hp", "name": "здоровье титана", "stat": "hpPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "armor", "name": "броня титана", "stat": "armorPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "crit", "name": "шанс крита", "stat": "critPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "pierce", "name": "пробитие брони", "stat": "piercePct", "base": [4, 6, 9, 13, 17], "cap": 50},
+            {"id": "troop_atk", "name": "урон войск", "stat": "troopAtkPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "troop_hp", "name": "здоровье войск", "stat": "troopHpPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "xp", "name": "опыт титана", "stat": "xpPct", "base": [20, 30, 40, 60, 80]},
+            {"id": "produce", "name": "добыча", "stat": "producePct", "base": [5, 8, 12, 16, 20]},
+            {"id": "store", "name": "вместимость", "stat": "storePct", "base": [10, 15, 20, 30, 40]},
+            {"id": "train", "name": "быстрее обучение", "stat": "trainPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "craft", "name": "быстрее создание заклинаний", "stat": "craftPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "research", "name": "быстрее улучшения", "stat": "researchPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "rest", "name": "короче отдых титанов", "stat": "restPct", "base": [10, 15, 20, 30, 40], "cap": 60},
+        ],
+        # Kinds: the first three keep their ids from before (saves); names and the catalogue are ours.
+        "kinds": [
+            {"id": "atk", "name": "Реликвия ярости", "type": "combat", "effects": ["atk", "crit", "pierce"], "weight": 12},
+            {"id": "hp", "name": "Реликвия стойкости", "type": "combat", "effects": ["hp", "troop_hp", "armor"], "weight": 12},
+            {"id": "armor", "name": "Реликвия брони", "type": "combat", "effects": ["armor", "hp", "troop_atk"], "weight": 12},
+            {"id": "eye", "name": "Око охотника", "type": "combat", "effects": ["crit", "atk"], "weight": 8},
+            {"id": "fang", "name": "Клык змея", "type": "combat", "effects": ["pierce", "atk"], "weight": 8},
+            {"id": "banner", "name": "Знамя легиона", "type": "combat", "effects": ["troop_atk", "troop_hp"], "weight": 8},
+            {"id": "amulet", "name": "Амулет вождя", "type": "combat", "effects": ["troop_hp", "troop_atk", "hp"], "weight": 6},
+            # XP relics are good for two battles (t50 guide).
+            {"id": "scroll", "name": "Свиток опыта", "type": "combat", "effects": ["xp"], "battles": 2, "weight": 6},
+            {"id": "pickaxe", "name": "Кирка рудокопа", "type": "economy", "effects": ["produce", "store"], "buildings": ["gold_mine"], "weight": 8},
+            {"id": "plough", "name": "Плуг пахаря", "type": "economy", "effects": ["produce", "store"], "buildings": ["farm"], "weight": 8},
+            {"id": "bugle", "name": "Горн вербовщика", "type": "economy", "effects": ["train"], "buildings": ["barracks"], "weight": 5},
+            # The original's council training relics (e.g. the Unak Training Relic, one effect).
+            {"id": "seal", "name": "Печать посланника", "type": "economy", "effects": ["train"],
+             "buildings": ["council_sunreach", "council_rimeheim", "council_jade", "council_mistmoor"], "weight": 5},
+            {"id": "hammer", "name": "Молот чародея", "type": "economy", "effects": ["craft"], "buildings": ["spell_forge"], "weight": 4},
+            {"id": "tome", "name": "Книга мастера", "type": "economy", "effects": ["research"], "buildings": ["armoury", "arcane_tower"], "weight": 4},
+            {"id": "chalice", "name": "Чаша покоя", "type": "economy", "effects": ["rest"], "buildings": ["hall_of_titans"], "weight": 4},
+        ],
+        "levels": 4, "stepPct": 15,
+        "startEffects": [1, 1, 1, 2, 3], "maxEffects": [1, 2, 3, 3, 3],
+        "durability": [20, 16, 12, 8, 6], "hours": [24, 36, 48, 72, 96], "slotLevels": [1, 20, 30, 40, 50],
+        "repairCastle": 8,
+        # Chance per sacrificed relic, percent: rows are the repaired relic's rarity, columns the sacrifice's (wiki, R1-R4).
+        "repairPct": [[50, 100, 100, 100, 100], [20, 40, 80, 100, 100], [10, 20, 40, 80, 100], [5, 10, 20, 40, 80], [3, 5, 10, 20, 40]],
+        "enhancePct": [80, 70, 60, 50, 40],
+        "repairFood": [1000, 2500, 6000, 15000, 30000], "maxRelics": 200,
         "dailyRelicPct": 60, "dailyRarity": [60, 35, 5, 0, 0],
+        # Won land battles: one relic per star, rarity odds by land level 1..9.
+        "dropMax": 3,
+        "dropRarity": [[85, 15, 0, 0, 0], [80, 20, 0, 0, 0], [72, 25, 3, 0, 0], [65, 30, 5, 0, 0], [55, 35, 10, 0, 0],
+                       [45, 40, 14, 1, 0], [38, 42, 18, 2, 0], [30, 44, 22, 4, 0], [25, 43, 26, 6, 0]],
     },
     # A titan on a land adds 1% production per titan level (wiki).
     "landTitanPctPerLevel": 1,

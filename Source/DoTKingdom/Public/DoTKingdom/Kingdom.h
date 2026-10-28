@@ -1,8 +1,8 @@
 // Source/DoTKingdom/Public/DoTKingdom/Kingdom.h
 // The player's kingdom: city buildings, builders, timers, resources, expansions, lands (gold, farm, ruins and
 // victory-point lands), portal stones, seasons of victory points, the army (training, troop levels, casualties),
-// spells (Spell Forge stock, Arcane Tower levels) and the titan roster (XP, relic items, fusion, ascension,
-// titans guarding lands).
+// spells (Spell Forge stock, Arcane Tower levels), the titan roster (XP, fusion, ascension, titans guarding lands)
+// and relic items (combat relics on titans, economy relics on buildings; effects that open and grow with repairs).
 // Deterministic and engine-free like the battle simulation: integer math only, time is passed in
 // explicitly (seconds), so a server can replay the same actions and reach the same state.
 #pragma once
@@ -44,6 +44,9 @@ enum class Error : uint8_t
 	NotReady,
 	RosterFull,
 	NotMaxLevel,
+	WrongRelic, // an economy relic on a titan, a combat relic on a building, or a building that does not take it
+	SameRelic, // the original: a titan cannot wear two identical relics
+	InventoryFull,
 	Count
 };
 DOTKINGDOM_API const char* ToString(Error E);
@@ -95,13 +98,28 @@ struct TitanState
 	std::vector<int32_t> relics; // equipped relic ids
 };
 
-/** A relic item: raises one of a titan's stats (two from rarity 3), wears out with every battle. */
+/** A relic item (the original since 1.8): one to three effects, the later ones locked until a repair opens them.
+ *  A combat relic is worn by a titan and wears out by one every battle; an economy relic is attached to a building
+ *  and lasts a time. A worn-out relic does nothing until it is repaired. */
 struct RelicItem
 {
 	int32_t id = 0;
 	int kind = 0;
 	int rarity = 1; // R1..R5
-	int durability = 0; // battles left; 0 = broken until repaired
+	/** Combat: battles left. Economy: seconds left, counted from `since` while attached to a building. */
+	int64_t durability = 0;
+	/** Level of each effect slot the relic has (kind slots capped by rarity): 0 = locked. */
+	std::vector<int> levels;
+	int32_t building = 0; // economy relics: the building it is attached to
+	int64_t since = 0;
+};
+
+/** What a repair did. */
+struct RepairResult
+{
+	bool repaired = false;
+	int slot = -1; // the effect that improved, -1 for none
+	bool unlocked = false; // the improvement opened a locked effect
 };
 
 /** One Arcane Tower research slot. */
@@ -132,6 +150,8 @@ struct Reward
 	int64_t titanXp = 0;
 	int titanLevels = 0;
 	int relicsBroken = 0;
+	std::vector<int32_t> relics; // relic items the victory dropped
+	int relicsLost = 0; // drops that did not fit in the inventory
 };
 
 /** Result of checking an action before doing it (for the UI). */
@@ -260,10 +280,25 @@ public:
 	const std::vector<RelicItem>& Relics() const { return RelicList; }
 	const RelicItem* FindRelic(int32_t Id) const;
 	int RelicSlots(const TitanState& T) const;
-	int64_t RelicStatPct(const RelicItem& R, int Stat) const;
-	/** Bonus percent from a titan's working relics: Stat 0 damage, 1 health, 2 armor. */
-	int64_t TitanBonusPct(int32_t TitanId, int Stat) const;
+	/** Full durability: battles for a combat relic, seconds for an economy relic. */
+	int64_t RelicMax(const RelicItem& R) const;
+	/** Durability left now (an attached economy relic runs down). */
+	int64_t RelicLeft(const RelicItem& R) const;
+	/** An effect's value in tenths of a percent (0 while locked). */
+	int64_t RelicEffectValue(const RelicItem& R, int Slot) const;
+	/** The titan wearing a relic (0 for none). */
+	int32_t RelicTitan(int32_t RelicId) const;
+	/** What a titan's working relics add to a stat, tenths of a percent (capped per effect). */
+	int64_t TitanRelicBonus(int32_t TitanId, RelicStat Stat) const;
+	/** What the working relic on a building adds to a stat, tenths of a percent. */
+	int64_t BuildingRelicBonus(const Building& B, RelicStat Stat) const;
+	const RelicItem* BuildingRelic(int32_t BuildingId) const;
+	/** Repair chance in percent: each sacrifice adds by its rarity and the target's (the original's table). */
 	int RepairChancePct(int32_t Target, const std::vector<int32_t>& Sacrifices) const;
+	/** Chance in percent that a successful repair also improves an effect (the target's rarity decides). */
+	int EnhanceChancePct(int32_t Target) const;
+	/** Whether the next locked effect can open with these sacrifices: one must be at least the target's rarity. */
+	bool CanUnlockWith(int32_t Target, const std::vector<int32_t>& Sacrifices) const;
 
 	// --- Titans (Hall of Titans, Relic Temple, fusion) ---
 	const std::vector<TitanState>& Titans() const { return TitanList; }
@@ -311,10 +346,14 @@ public:
 	Error UpgradeSpell(int Spell, bool UseGems);
 	Error SkipSpellResearch(int Index);
 	Error EquipRelic(int32_t TitanId, int32_t RelicId);
+	/** Attaches an economy relic to a building that takes it (one per building; the old one comes off). */
+	Error AttachRelic(int32_t BuildingId, int32_t RelicId);
+	/** Takes a relic off its titan or building. */
 	Error UnequipRelic(int32_t RelicId);
 	Error DiscardRelic(int32_t RelicId);
-	/** Sacrifices relics for a chance to restore the target's durability (from Castle 8). */
-	Error RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, bool* OutRepaired = nullptr);
+	/** Sacrifices relics for a chance to restore the target's durability (from Castle 8); a success may also
+	 *  improve one effect or open a locked one. A relic at full durability can be repaired for the improvement. */
+	Error RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, RepairResult* Out = nullptr);
 	Error AssignTitan(int32_t LandId, int32_t TitanId);
 	Error RecallTitan(int32_t LandId);
 
@@ -367,6 +406,17 @@ private:
 	void UnblockCraft(int64_t At);
 	void SettleLands();
 	void UnequipEverywhere(int32_t RelicId);
+	RelicItem* MutableRelic(int32_t Id);
+	/** Counts an attached economy relic's time up to now and settles its building (before anything changes). */
+	void TouchRelic(RelicItem& R);
+	/** A new relic item at full durability with its first effects open; 0 when the inventory is full. */
+	int32_t AddRelic(int Kind, int Rarity);
+	int RollRelicKind(uint64_t H) const;
+	int RollRarity(const std::array<int64_t, 5>& Weights, uint64_t H) const;
+	int RelicSlotCount(const RelicItem& R) const;
+	/** Time cut by a relic stat on buildings of a def, tenths of a percent (capped). */
+	int64_t DefRelicBonus(int Def, RelicStat Stat) const;
+	int64_t CapBonus(RelicStat Stat, int64_t Value) const;
 
 	const KingdomContent& C;
 	int64_t Time = 0;

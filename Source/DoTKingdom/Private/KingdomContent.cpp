@@ -144,9 +144,10 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 			A.name = AJ.GetString("name", A.id);
 			A.gems = AJ.GetInt64("gems", 0);
 			A.cooldownSec = AJ.GetInt64("cooldownSec", 0);
+			A.relics = AJ.GetBool("relics", false);
 			if (const JsonValue* W = AJ.Find("weights"))
 			{
-				for (size_t K = 0; K < W->Size() && K < 4; ++K)
+				for (size_t K = 0; K < W->Size() && K < (A.relics ? 5u : 4u); ++K)
 				{
 					A.weights[K] = std::max<int64_t>(0, (*W)[K].AsInt64(0));
 				}
@@ -218,18 +219,80 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 	Out.battleSpellKinds = std::max(0, J.GetInt("battleSpellKinds", 3));
 	if (const JsonValue* R = J.Find("relics"))
 	{
+		// Values are percents in the data (decimals allowed) and tenths of a percent in memory.
+		auto Tenths = [](const JsonValue& V) { return static_cast<int64_t>(V.AsDouble(0) * 10 + (V.AsDouble(0) < 0 ? -0.5 : 0.5)); };
+		if (const JsonValue* Effects = R->Find("effects"))
+		{
+			for (size_t I = 0; I < Effects->Size(); ++I)
+			{
+				const JsonValue& EJ = (*Effects)[I];
+				RelicEffectDef E;
+				E.id = EJ.GetString("id");
+				E.name = EJ.GetString("name", E.id);
+				if (!ParseRelicStat(EJ.GetString("stat"), E.stat))
+				{
+					Error = "relic effect '" + E.id + "': unknown stat '" + EJ.GetString("stat") + "'";
+					return false;
+				}
+				if (const JsonValue* B = EJ.Find("base"))
+				{
+					for (size_t K = 0; K < B->Size() && K < 5; ++K)
+					{
+						E.base[K] = Tenths((*B)[K]);
+					}
+				}
+				if (const JsonValue* Cap = EJ.Find("cap"))
+				{
+					E.cap = Tenths(*Cap);
+				}
+				Out.relicEffects.push_back(E);
+			}
+		}
 		if (const JsonValue* Kinds = R->Find("kinds"))
 		{
-			static const char* const Stats[] = {"atkPct", "hpPct", "armorPct"};
 			for (size_t I = 0; I < Kinds->Size(); ++I)
 			{
+				const JsonValue& KJ = (*Kinds)[I];
 				RelicKind K;
-				K.id = (*Kinds)[I].GetString("id");
-				K.name = (*Kinds)[I].GetString("name", K.id);
-				const std::string Stat = (*Kinds)[I].GetString("stat");
-				for (int S = 0; S < 3; ++S)
+				K.id = KJ.GetString("id");
+				K.name = KJ.GetString("name", K.id);
+				K.economy = KJ.GetString("type", "combat") == "economy";
+				K.battles = std::max(0, KJ.GetInt("battles", 0));
+				K.weight = std::max<int64_t>(0, KJ.GetInt64("weight", 10));
+				if (const JsonValue* Effects = KJ.Find("effects"))
 				{
-					K.stat = Stat == Stats[S] ? S : K.stat;
+					for (size_t E = 0; E < Effects->Size(); ++E)
+					{
+						int Found = -1;
+						for (size_t D = 0; D < Out.relicEffects.size(); ++D)
+						{
+							Found = Out.relicEffects[D].id == (*Effects)[E].AsString() ? static_cast<int>(D) : Found;
+						}
+						if (Found < 0)
+						{
+							Error = "relic kind '" + K.id + "': unknown effect '" + (*Effects)[E].AsString() + "'";
+							return false;
+						}
+						K.effects.push_back(Found);
+					}
+				}
+				if (const JsonValue* Buildings = KJ.Find("buildings"))
+				{
+					for (size_t B = 0; B < Buildings->Size(); ++B)
+					{
+						const int Def = Out.FindBuilding((*Buildings)[B].AsString());
+						if (Def < 0)
+						{
+							Error = "relic kind '" + K.id + "': unknown building '" + (*Buildings)[B].AsString() + "'";
+							return false;
+						}
+						K.buildings.push_back(Def);
+					}
+				}
+				if (K.effects.empty() || K.effects.size() > 3 || K.economy == K.buildings.empty())
+				{
+					Error = "relic kind '" + K.id + "' needs 1-3 effects, and buildings exactly when it is an economy relic";
+					return false;
 				}
 				Out.relicKinds.push_back(K);
 			}
@@ -244,11 +307,45 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 				}
 			}
 		};
-		Read5("bonusPct", Out.relicBonusPct);
+		auto Read5i = [R](const char* Key, std::array<int, 5>& Dest)
+		{
+			if (const JsonValue* L = R->Find(Key))
+			{
+				for (size_t K = 0; K < L->Size() && K < 5; ++K)
+				{
+					Dest[K] = std::max(0, std::min(3, (*L)[K].AsInt(1)));
+				}
+			}
+		};
 		Read5("durability", Out.relicDurability);
-		Read5("repairWeight", Out.relicRepairWeight);
+		Read5("hours", Out.relicHours);
+		Read5("enhancePct", Out.relicEnhancePct);
 		Read5("repairFood", Out.relicRepairFood);
 		Read5("dailyRarity", Out.dailyRelicRarity);
+		Read5i("startEffects", Out.relicStartEffects);
+		Read5i("maxEffects", Out.relicMaxEffects);
+		if (const JsonValue* T = R->Find("repairPct"))
+		{
+			for (size_t A = 0; A < T->Size() && A < 5; ++A)
+			{
+				for (size_t B = 0; B < (*T)[A].Size() && B < 5; ++B)
+				{
+					Out.relicRepairPct[A][B] = std::max<int64_t>(0, (*T)[A][B].AsInt64(0));
+				}
+			}
+		}
+		if (const JsonValue* D = R->Find("dropRarity"))
+		{
+			for (size_t A = 0; A < D->Size(); ++A)
+			{
+				std::array<int64_t, 5> W{};
+				for (size_t B = 0; B < (*D)[A].Size() && B < 5; ++B)
+				{
+					W[B] = std::max<int64_t>(0, (*D)[A][B].AsInt64(0));
+				}
+				Out.relicDropRarity.push_back(W);
+			}
+		}
 		if (const JsonValue* L = R->Find("slotLevels"))
 		{
 			Out.relicSlotLevels.clear();
@@ -257,9 +354,12 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 				Out.relicSlotLevels.push_back((*L)[K].AsInt(1));
 			}
 		}
+		Out.relicLevels = std::max(1, R->GetInt("levels", 4));
+		Out.relicStepPct = std::max<int64_t>(0, R->GetInt64("stepPct", 15));
 		Out.relicRepairCastle = R->GetInt("repairCastle", 8);
-		Out.maxRelics = R->GetInt("maxRelics", 100);
+		Out.maxRelics = R->GetInt("maxRelics", 200);
 		Out.dailyRelicPct = R->GetInt64("dailyRelicPct", 60);
+		Out.relicDropMax = std::max(0, R->GetInt("dropMax", 3));
 	}
 	if (Out.relicKinds.empty())
 	{
@@ -318,6 +418,27 @@ const char* ToString(Res R)
 	}
 }
 
+const char* ToString(RelicStat S)
+{
+	static const char* const Names[] = {"atkPct", "hpPct", "armorPct", "critPct", "piercePct", "troopAtkPct", "troopHpPct", "xpPct",
+		"producePct", "storePct", "trainPct", "craftPct", "researchPct", "restPct"};
+	const int I = static_cast<int>(S);
+	return I >= 0 && I < kRelicStatCount ? Names[I] : "?";
+}
+
+bool ParseRelicStat(const std::string& S, RelicStat& Out)
+{
+	for (int I = 0; I < kRelicStatCount; ++I)
+	{
+		if (S == ToString(static_cast<RelicStat>(I)))
+		{
+			Out = static_cast<RelicStat>(I);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ParseRes(const std::string& S, Res& Out)
 {
 	for (int I = 0; I < kResCount; ++I)
@@ -373,6 +494,18 @@ int KingdomContent::FindSpell(const std::string& Id) const
 	for (size_t I = 0; I < spells.size(); ++I)
 	{
 		if (spells[I].id == Id)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+int KingdomContent::FindRelicKind(const std::string& Id) const
+{
+	for (size_t I = 0; I < relicKinds.size(); ++I)
+	{
+		if (relicKinds[I].id == Id)
 		{
 			return static_cast<int>(I);
 		}

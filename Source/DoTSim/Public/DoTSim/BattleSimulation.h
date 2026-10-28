@@ -156,6 +156,7 @@ struct Titan
 	Fix64 sweepHalfArcCos;
 	Fix64 critChance;
 	Fix64 critDamage;
+	Fix64 pierce; // share of the target's armor ignored (relics)
 	Fix64 turnCos;
 	Fix64 turnSin;
 	Fix64 attackRange;

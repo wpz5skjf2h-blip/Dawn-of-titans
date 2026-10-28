@@ -493,7 +493,7 @@ Fix64 BattleSimulation::TitanDamageToSoldier(const Titan& T, const Soldier& S, F
 	{
 		Armor += R.wedgeArmorAdd;
 	}
-	Armor = fx::Clamp(Armor, Fix64::Zero(), fx::Pct(75));
+	Armor = fx::Clamp(Armor, Fix64::Zero(), fx::Pct(75)) * (Fix64::One() - T.pierce);
 	if (bArea && Sq.formation == Formation::Loose)
 	{
 		Mult = Mult * R.looseAreaDamageMult;
@@ -562,7 +562,7 @@ void BattleSimulation::TitanApplyAttackHit(Titan& T, int Index)
 				{
 					Mult = Mult * T.critDamage;
 				}
-				const Fix64 Damage = T.atk * Mult * (Fix64::One() - TitanEffectiveArmor(Other, T.rangedAttack)) * TitanDamageTakenMult(Other);
+				const Fix64 Damage = T.atk * Mult * (Fix64::One() - TitanEffectiveArmor(Other, T.rangedAttack) * (Fix64::One() - T.pierce)) * TitanDamageTakenMult(Other);
 				DamageTitan(OtherIndex, Damage, Damage * R.poiseFactorTitans, T.pos, Index);
 			}
 		}
@@ -1083,8 +1083,8 @@ void BattleSimulation::ResolveClashExchange()
 
 	if (Grade[0] == 1 && Grade[1] == 1)
 	{
-		const Fix64 DamageToB = A.atk * R.titanVsTitanMult * R.clashBothMissCoef * (Fix64::One() - TitanEffectiveArmor(B, false));
-		const Fix64 DamageToA = B.atk * R.titanVsTitanMult * R.clashBothMissCoef * (Fix64::One() - TitanEffectiveArmor(A, false));
+		const Fix64 DamageToB = A.atk * R.titanVsTitanMult * R.clashBothMissCoef * (Fix64::One() - TitanEffectiveArmor(B, false) * (Fix64::One() - A.pierce));
+		const Fix64 DamageToA = B.atk * R.titanVsTitanMult * R.clashBothMissCoef * (Fix64::One() - TitanEffectiveArmor(A, false) * (Fix64::One() - B.pierce));
 		const FixVec2 Dir = (B.pos - A.pos).Normalized();
 		A.pos = Nav.ClampToWorld(A.pos - Dir * (R.clashPushback / 2), fx::Int(5));
 		B.pos = Nav.ClampToWorld(B.pos + Dir * (R.clashPushback / 2), fx::Int(5));
@@ -1117,8 +1117,8 @@ void BattleSimulation::ResolveClashExchange()
 	const int WinnerIndex = C.titan[Winner];
 	const int LoserIndex = C.titan[1 - Winner];
 	const Fix64 WinCoef = Grade[Winner] == 3 ? R.clashWinPerfectCoef : R.clashWinCoef;
-	const Fix64 ToLoser = W.atk * R.titanVsTitanMult * WinCoef * (Fix64::One() - TitanEffectiveArmor(L, false)) * TitanDamageTakenMult(L);
-	const Fix64 ToWinner = L.atk * R.titanVsTitanMult * R.clashLoseCoef * (Fix64::One() - TitanEffectiveArmor(W, false)) * TitanDamageTakenMult(W);
+	const Fix64 ToLoser = W.atk * R.titanVsTitanMult * WinCoef * (Fix64::One() - TitanEffectiveArmor(L, false) * (Fix64::One() - W.pierce)) * TitanDamageTakenMult(L);
+	const Fix64 ToWinner = L.atk * R.titanVsTitanMult * R.clashLoseCoef * (Fix64::One() - TitanEffectiveArmor(W, false) * (Fix64::One() - L.pierce)) * TitanDamageTakenMult(W);
 	L.poiseDamage += L.maxPoise * R.clashPoisePct;
 	Emit(SimEventType::ClashExchange, Side::Attacker, Grade[0], Grade[1], Mid, Winner);
 	const bool bBreak = L.poiseDamage >= L.maxPoise;
@@ -1610,7 +1610,8 @@ void BattleSimulation::ApplyEffects(int AbilityIdx, Side S, int CasterTitan, Fix
 						{
 							Raw += Caster->atk * E.coef * R.titanVsTitanMult;
 						}
-						const Fix64 Damage = Raw * LevelMult * (Fix64::One() - TitanEffectiveArmor(T, false)) * TitanDamageTakenMult(T);
+						const Fix64 Pierce = Caster ? Caster->pierce : Fix64::Zero();
+						const Fix64 Damage = Raw * LevelMult * (Fix64::One() - TitanEffectiveArmor(T, false) * (Fix64::One() - Pierce)) * TitanDamageTakenMult(T);
 						const Fix64 Poise = E.poiseDamage * LevelMult + (Caster ? Damage * R.poiseFactorTitans : Fix64::Zero());
 						DamageTitan(static_cast<int>(I), Damage, Poise, Caster ? Caster->pos : Point, CasterTitan);
 					}
