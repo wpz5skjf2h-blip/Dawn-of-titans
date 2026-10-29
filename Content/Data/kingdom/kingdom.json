@@ -37,7 +37,7 @@
       { "id": "lake", "name": "Озеро", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
         "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.lake_01", "field": "Зеркальное озеро", "fieldNote": "глубокая вода посередине, через неё один брод", "swap": { "troop.outriders": "troop.archers", "troop.panthers": "troop.pikemen" } },
       { "id": "mountain", "name": "Гора", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
-        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen", "troop.panthers": "troop.goliaths" } },
+        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen", "troop.panthers": "troop.goliaths", "troop.grenadiers": "troop.ballista" } },
       { "id": "ruins", "name": "Руины", "resource": "shards", "castle": 5, "weight": 10, "periodHours": 24, "produce": [1, 1, 1, 1, 1, 1, 1, 1, 1], "fillHours": [72],
         "raidLoot": [1, 1, 1, 1, 2, 2, 2, 3, 3], "map": "map.ruins_01", "field": "Павший город", "fieldNote": "в развалинах стрелки получают меньше урона", "swap": { "troop.militia": "troop.archers" } }
     ],

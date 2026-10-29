@@ -420,7 +420,8 @@ bool BattleSimulation::TitanTryAutoActions(Titan& T, int Index)
 		for (const int32_t N : QueryScratch)
 		{
 			const Soldier& S = SoldiersList[static_cast<size_t>(N)];
-			if (S.side == T.side || !S.Alive() || !TroopOf(SquadsList[static_cast<size_t>(S.squad)]).IsCavalry())
+			const TroopDef& STD = TroopOf(SquadsList[static_cast<size_t>(S.squad)]);
+			if (S.side == T.side || !S.Alive() || (!STD.IsCavalry() && !STD.siege))
 			{
 				continue;
 			}

@@ -1773,6 +1773,204 @@
    ]
   },
   {
+   "id": "troop.ballista",
+   "name": "Расчёт баллисты",
+   "unlockCastle": 11,
+   "council": "council_jade",
+   "councilLevel": 3,
+   "levels": [
+    {
+     "level": 1,
+     "cost": 560,
+     "trainSec": 300,
+     "upgradeCost": 12000,
+     "upgradeSec": 1800,
+     "tier": 1,
+     "src": "est"
+    },
+    {
+     "level": 2,
+     "cost": 890,
+     "trainSec": 300,
+     "upgradeCost": 33600,
+     "upgradeSec": 2700,
+     "tier": 1,
+     "src": "est"
+    },
+    {
+     "level": 3,
+     "cost": 2240,
+     "trainSec": 300,
+     "upgradeCost": 42900,
+     "upgradeSec": 4080,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 4,
+     "cost": 3775,
+     "trainSec": 300,
+     "upgradeCost": 61700,
+     "upgradeSec": 6120,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 5,
+     "cost": 6615,
+     "trainSec": 300,
+     "upgradeCost": 159100,
+     "upgradeSec": 9240,
+     "tier": 2,
+     "src": "est"
+    },
+    {
+     "level": 6,
+     "cost": 9955,
+     "trainSec": 300,
+     "upgradeCost": 249600,
+     "upgradeSec": 13860,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 7,
+     "cost": 10950,
+     "trainSec": 300,
+     "upgradeCost": 382300,
+     "upgradeSec": 20820,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 8,
+     "cost": 11885,
+     "trainSec": 300,
+     "upgradeCost": 555100,
+     "upgradeSec": 31320,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 9,
+     "cost": 12590,
+     "trainSec": 300,
+     "upgradeCost": 732300,
+     "upgradeSec": 47160,
+     "tier": 3,
+     "src": "est"
+    },
+    {
+     "level": 10,
+     "cost": 13085,
+     "trainSec": 300,
+     "upgradeCost": 892100,
+     "upgradeSec": 70920,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 11,
+     "cost": 13420,
+     "trainSec": 300,
+     "upgradeCost": 1018300,
+     "upgradeSec": 106620,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 12,
+     "cost": 13605,
+     "trainSec": 300,
+     "upgradeCost": 1102300,
+     "upgradeSec": 160380,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 13,
+     "cost": 13670,
+     "trainSec": 300,
+     "upgradeCost": 1144500,
+     "upgradeSec": 241200,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 14,
+     "cost": 13670,
+     "trainSec": 300,
+     "upgradeCost": 1150300,
+     "upgradeSec": 344520,
+     "tier": 4,
+     "src": "est"
+    },
+    {
+     "level": 15,
+     "cost": 13585,
+     "trainSec": 300,
+     "upgradeCost": 1128300,
+     "upgradeSec": 448860,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 16,
+     "cost": 13460,
+     "trainSec": 300,
+     "upgradeCost": 1087200,
+     "upgradeSec": 541680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 17,
+     "cost": 13315,
+     "trainSec": 300,
+     "upgradeCost": 1034400,
+     "upgradeSec": 613980,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 18,
+     "cost": 13150,
+     "trainSec": 300,
+     "upgradeCost": 976100,
+     "upgradeSec": 661680,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 19,
+     "cost": 12985,
+     "trainSec": 300,
+     "upgradeCost": 916800,
+     "upgradeSec": 685260,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 20,
+     "cost": 12795,
+     "trainSec": 300,
+     "upgradeCost": 859200,
+     "upgradeSec": 688200,
+     "tier": 5,
+     "src": "est"
+    },
+    {
+     "level": 21,
+     "cost": 12630,
+     "trainSec": 300,
+     "upgradeCost": 0,
+     "upgradeSec": 0,
+     "tier": 5,
+     "src": "est"
+    }
+   ]
+  },
+  {
    "id": "troop.pikemen",
    "name": "Пикинеры",
    "unlockCastle": 6,

@@ -326,7 +326,7 @@ void TestEnvoyCouncils()
 	struct Expect { const char* Troop; const char* Council; int Level; int Castle; };
 	const Expect Table[] = {{"troop.grenadiers", "council_sunreach", 1, 5}, {"troop.priests", "council_sunreach", 3, 9},
 		{"troop.pikemen", "council_rimeheim", 1, 6}, {"troop.chainbreakers", "council_rimeheim", 3, 10},
-		{"troop.goliaths", "council_jade", 1, 7}, {"troop.panthers", "council_mistmoor", 1, 8}};
+		{"troop.goliaths", "council_jade", 1, 7}, {"troop.ballista", "council_jade", 3, 11}, {"troop.panthers", "council_mistmoor", 1, 8}};
 	for (const Expect& E : Table)
 	{
 		const TroopType& T = C.troops[static_cast<size_t>(Troop(E.Troop))];
@@ -403,9 +403,9 @@ void TestTrainingQueue()
 	KD_CHECK(K.ArmyCount(Mil) == 3 && K.ArmyTotal() == 4 && K.ArmyCapacity() == 10 && K.BattleSlots() == 3);
 	KD_CHECK(K.QueueCapacity() == 6 && K.SurvivalPct() == 100 && K.MaxTroopLevel() == 1);
 	KD_CHECK(K.CheckTrain(Troop("troop.spearmen")).error == Error::Locked); // Spearmen from Castle 3 (estimate)
-	KD_CHECK(Content().troops.size() == 12);
+	KD_CHECK(Content().troops.size() == 13);
 	for (const char* Id : {"troop.swordsmen", "troop.grenadiers", "troop.outriders", "troop.priests", "troop.chainbreakers", "troop.knights",
-			 "troop.pikemen", "troop.goliaths", "troop.panthers"})
+			 "troop.pikemen", "troop.goliaths", "troop.panthers", "troop.ballista"})
 	{
 		const int T = Troop(Id);
 		KD_CHECK(T >= 0 && Content().troops[static_cast<size_t>(T)].unlockCastle > 3);

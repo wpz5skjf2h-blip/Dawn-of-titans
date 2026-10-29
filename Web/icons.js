@@ -109,6 +109,11 @@ const DotIcons = (() => {
 			p('M17 24L22 26.5L17 28Z', '#9cff6a', 'stroke-width="1"') + p('M31 24L26 26.5L31 28Z', '#9cff6a', 'stroke-width="1"') +
 			p('M21 31.5H27L24 34.5Z', '#4a4452', 'stroke-width="1"') + p('M21 36L22 40L23 36Z', K.white, 'stroke-width="0.8"') + p('M25 36L26 40L27 36Z', K.white, 'stroke-width="0.8"') +
 			drop(26, 40, 0.55, '#8fdc4f') + hi('M13 21C14 18.5 16 17 18 16.5'),
+		// A bolt-thrower seen from the side: two wheels, the stock, the bow arms with their string and a steel-headed bolt.
+		'troop.ballista': stick('M7 39L30 17', K.wood, 4.4) + c(11, 40, 5.2, K.woodD) + c(11, 40, 1.8, K.iron) + c(25, 41, 5.2, K.woodD) + c(25, 41, 1.8, K.iron) +
+			'<g fill="none">' + stick('M19 6Q24 22 41 28', K.woodL, 3) + line('M19 6L21 26L41 28', K.cream, 1.3) + '</g>' +
+			stick('M21 26L39 8', K.woodD, 2.2) + p('M45 2L42.5 11L36.5 5Z', K.steel) + p('M20 23L24 27L20 30L16 26Z', K.red, 'stroke-width="1"') +
+			hi('M11 33L26 18'),
 
 		// --- Buildings ----------------------------------------------------------------------------
 		'building.castle': r(4, 18, 11, 25, 1, K.stone) + p('M3 19L9.5 6L16 19Z', K.blue) + r(33, 18, 11, 25, 1, K.stone) + p('M32 19L38.5 6L45 19Z', K.blue) +

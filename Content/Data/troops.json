@@ -101,8 +101,8 @@
         { "name": "Deathless", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
     },
-    // Master prompt 4.9, troops 7, 9 and 10 (Ballista Crew comes later). In the kingdom they come from the envoy councils:
-    // grenadiers and war priests from the Council of Sunreach, chainbreakers from the Council of Rimeheim.
+    // Master prompt 4.9, troops 7 to 10. In the kingdom they come from the envoy councils: grenadiers and war priests
+    // from the Council of Sunreach, chainbreakers from the Council of Rimeheim, the ballista crew from the Council of Jade Peaks.
     {
       "id": "troop.grenadiers", "name": "Grenadiers", "short": "GRN", "class": "Ranged", "move": "Infantry", "counterRow": "grenadiers",
       "squadSize": 12, "hp": 100, "armor": 0.05, "atk": 40, "attackInterval": 3.5, "range": 22, "minRange": 4, "moveSpeed": 3.2,
@@ -116,6 +116,28 @@
         { "name": "Alchemists", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
         { "name": "Pyromancers", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
         { "name": "Sunfire Grenadiers", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
+      ]
+    },
+    // Ballista Crew: three engines with three crewmen each (4.2, 4.9). A bolt goes through up to three soldiers in a line
+    // and pins a titan it hits; an engine fires only after standing still for two seconds; each crewman lost slows the
+    // reload. 4.9 gives ATK 180, range 55, a 1 s setup and x2.5 vs titans: that crew won 60% of dot_harness battles, so
+    // ATK, range, setup and the titan multiplier (counters.json) are lowered to bring it to the other troops.
+    {
+      "id": "troop.ballista", "name": "Ballista Crew", "short": "BAL", "class": "Siege", "move": "Siege", "counterRow": "ballista",
+      "squadSize": 3, "hp": 600, "armor": 0.20, "atk": 150, "attackInterval": 4.5, "range": 42, "minRange": 8, "moveSpeed": 1.6,
+      "collisionRadius": 1.5, "spacing": 4.0, "knockbackMult": 0.0, "critChance": 0.05, "critDamage": 1.5, "maxAttackers": 6,
+      "poiseFactor": 0.15,
+      "ranged": { "projectileSpeed": 45, "accuracyNear": 0.80, "accuracyFar": 0.50, "accuracyNearRange": 20, "accuracyVsTitan": 0.95,
+        "meleeMult": 0.1 },
+      "specials": { "siege": { "pierce": 3, "pierceWidth": 0.5, "setup": 2.0, "pinMoveSlow": 0.10, "pinDuration": 3, "pinMaxStacks": 3,
+        "crew": 3, "topple": 4 } },
+      "formations": ["Line", "Column", "Loose"], "defaultStance": "Aggressive",
+      "tiers": [
+        { "name": "Scorpion", "hpMult": 1.0, "atkMult": 1.0, "armorAdd": 0.0 },
+        { "name": "Ballista", "hpMult": 1.35, "atkMult": 1.35, "armorAdd": 0.02 },
+        { "name": "Heavy Ballista", "hpMult": 1.8, "atkMult": 1.8, "armorAdd": 0.04 },
+        { "name": "Siege Lance", "hpMult": 2.4, "atkMult": 2.4, "armorAdd": 0.06 },
+        { "name": "Titanbane Ballista", "hpMult": 3.2, "atkMult": 3.2, "armorAdd": 0.08 }
       ]
     },
     {

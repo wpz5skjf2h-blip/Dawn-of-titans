@@ -307,7 +307,7 @@ COUNCILS = [
     ("council_rimeheim", "Совет Римхейма", 6, 35000,
      "Посланники ледяного севера. Их пикинеры бьют морозной сталью и замедляют врага; с 3-го уровня приходят цепеломы."),
     ("council_jade", "Совет Нефритовых Пиков", 7, 55000,
-     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг."),
+     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг; с 3-го уровня приходят расчёты баллист."),
     ("council_mistmoor", "Совет Туманных Топей", 8, 80000,
      "Посланники лесных племён. Их пантеры — самые быстрые войска, укус оставляет яд."),
 ]
@@ -412,10 +412,13 @@ TROOPS = [
     troop("troop.knights", "Рыцари", 11, {1: E(240)}, 480, 16000, False),
     # Envoy council troops (see COUNCILS). The original's four peoples' troops cost about twice the Militia to upgrade
     # (guide: 822 000 vs 411 000 at level 10, 7 785 000 vs 3 892 000 at 25), so their upgrades start at 2 x 3 500.
-    # War priests and chainbreakers are the master prompt's own troops; here two councils send them from level 3.
+    # War priests, chainbreakers and the ballista crew are the master prompt's own troops; three councils send them from
+    # level 3. The ballista costs about four militia (master prompt 6.2: 500 food + 500 gold against 240 food) and is the
+    # slowest to train.
     troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 7000, False, "council_sunreach"),
     troop("troop.priests", "Боевые жрецы", 9, {1: E(200)}, 280, 10000, False, "council_sunreach", 3),
     troop("troop.chainbreakers", "Цепеломы", 10, {1: E(200)}, 320, 12000, False, "council_rimeheim", 3),
+    troop("troop.ballista", "Расчёт баллисты", 11, {1: E(300)}, 560, 12000, False, "council_jade", 3),
     troop("troop.pikemen", "Пикинеры", 6, {1: E(240)}, 320, 7000, False, "council_rimeheim"),
     troop("troop.goliaths", "Голиафы", 7, {1: E(420)}, 600, 7000, False, "council_jade"),
     troop("troop.panthers", "Пантеры", 8, {1: E(300)}, 450, 7000, False, "council_mistmoor"),
