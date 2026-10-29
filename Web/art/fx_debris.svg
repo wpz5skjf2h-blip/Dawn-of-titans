@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: flying rock and earth chunk (titan smashes, stomps, meteor). Grey, tinted in the game. -->
+<path d="M30 46L58 18L96 30L112 66L92 104L50 112L20 84Z" fill="#c8c4bc"/>
+<path d="M58 18L96 30L112 66L70 62Z" fill="#eeebe4"/>
+<path d="M20 84L50 112L92 104L70 62L30 46Z" fill="#8c877e"/>
+<path d="M70 62L58 18M70 62L30 46M70 62L92 104" stroke="#5e5a54" stroke-width="2" fill="none"/>
+</svg>

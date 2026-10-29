@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<!-- Dawn of Titans: weathered stone with cracks and lichen, tiles seamlessly. Rocky ground and ruins. -->
+<defs>
+<filter id="tone" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+<feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4" seed="8" stitchTiles="stitch"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.62 0 0 0 0 0.6 0 0 0 0 0.56 2.6 0 0 0 -1.1"/>
+</filter>
+<filter id="crack" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+<feTurbulence type="turbulence" baseFrequency="0.028" numOctaves="2" seed="15" stitchTiles="stitch"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.22 0 0 0 0 0.21 0 0 0 0 0.2 -16 0 0 0 1.5"/>
+</filter>
+<filter id="lichen" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+<feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" seed="27" stitchTiles="stitch"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.48 0 0 0 0 0.52 0 0 0 0 0.34 0 4 0 0 -2.6"/>
+</filter>
+<filter id="grain" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="6" stitchTiles="stitch"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.9 0 0 0 0 0.9 0 0 0 0 0.88 3.5 0 0 0 -2.2"/>
+</filter>
+</defs>
+<rect width="256" height="256" fill="#7a756c"/>
+<rect width="256" height="256" filter="url(#tone)"/>
+<rect width="256" height="256" filter="url(#lichen)"/>
+<rect width="256" height="256" filter="url(#grain)"/>
+<rect width="256" height="256" filter="url(#crack)"/>
+</svg>
