@@ -547,9 +547,25 @@ async function copyText(t, what) {
 		render();
 	}
 }
-function download(name, t) {
+/** Offers a file: through claude.ai's `downloads` capability inside the artifact viewer, else a plain browser download. */
+async function download(name, t) {
+	toast('Готовлю файл ' + name + '…', '');
+	let dl = null;
+	try { dl = window.claude && typeof window.claude.use === 'function' ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+	if (dl) {
+		try {
+			await dl.save({ filename: name, data: t });
+			toast('Файл ' + name + ' сохранён', 'gold');
+		} catch (e) {
+			const code = e && e.code;
+			if (code === 'declined') toast('Сохранение файла отменено', '');
+			else if (code === 'rate_limited') toast('Окно сохранения уже открыто, попробуйте чуть позже', 'bad');
+			else toast('Файл здесь не сохраняется (' + (code || e.message || e) + '): скопируйте текст', 'bad');
+		}
+		return;
+	}
 	try {
-		const url = URL.createObjectURL(new Blob([t], { type: 'application/json' }));
+		const url = URL.createObjectURL(new Blob([t], { type: name.endsWith('.json') ? 'application/json' : 'text/plain' }));
 		const el = document.createElement('a');
 		el.href = url;
 		el.download = name;
@@ -562,6 +578,7 @@ function download(name, t) {
 		toast('Скачивание недоступно: ' + (e.message || e), 'bad');
 	}
 }
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 function kingdomSummary() {
 	const d = kd();
 	if (!d) {
@@ -839,7 +856,7 @@ function renderTab(tab) {
 	case 'save': return renderSave();
 	case 'log': {
 		const items = log.items.filter((x) => !admin.logErrorsOnly || x.l === 'error').slice().reverse();
-		let h = '<div class="actions">' + b('copy-report', 'Скопировать отчёт для разработчика', { s: 1 }, 'primary') + b('copy-report', 'Отчёт без сохранения', { s: 0 }) +
+		let h = '<div class="actions">' + b('copy-report', 'Скопировать отчёт для разработчика', { s: 1 }, 'primary') + b('copy-report', 'Отчёт без сохранения', { s: 0 }) + b('dl-report', 'Скачать отчёт .txt') +
 			b('log-clear', 'Очистить лог', null, 'danger') + b('log-test', 'Тестовая ошибка') + '</div>' +
 			'<p class="fine">Лог пишется всегда, даже когда режим админа выключен, и переживает перезагрузку (до ' + LOG_MAX + ' записей). Отчёт можно вставить в чат проекта: в нём браузер, экран, королевство, последние записи и сохранение.</p>' +
 			seg('log-filter', [[0, 'Все записи (' + log.items.length + ')'], [1, 'Только ошибки']], admin.logErrorsOnly ? 1 : 0);
@@ -1093,7 +1110,7 @@ function act(a, el, n, id, i) {
 	case 'monkey-keep': admin.keepMonkey = el.dataset.v === '1'; render(); break;
 	// Save and backup
 	case 'save-copy': copyText(d.K.bridge.save(), 'Текст сохранения'); break;
-	case 'save-dl': download('dawn-of-titans-kingdom-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json', d.K.bridge.save()); break;
+	case 'save-dl': download('dawn-of-titans-kingdom-' + stamp() + '.json', d.K.bridge.save()); break;
 	case 'save-show': admin.showSave = !admin.showSave; render(); break;
 	case 'save-load': loadSaveText(inputVal('save-in')); admin.typed['save-in'] = ''; render(); break;
 	case 'bk-restore': {
@@ -1112,6 +1129,7 @@ function act(a, el, n, id, i) {
 	case 'rej-drop': lsSet(SAVE_KEY + '.rejected', null); render(); break;
 	// Log
 	case 'copy-report': copyText(report(el.dataset.s === '1'), 'Отчёт'); break;
+	case 'dl-report': download('dawn-of-titans-report-' + stamp() + '.txt', report(true)); break;
 	case 'log-clear': log.items = []; log.seen = 0; saveLog(); render(); updateButton(); break;
 	case 'log-test': setTimeout(() => { throw new Error('Тестовая ошибка из режима админа'); }, 0); setTimeout(render, 50); break;
 	case 'log-filter': admin.logErrorsOnly = el.dataset.v === '1'; render(); break;

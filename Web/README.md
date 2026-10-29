@@ -38,4 +38,5 @@ minutes, resources, limits, building placement, relics, guards, the season). "С
 actions through the regular `dk_*` calls (battles with random results, time jumps), checks the invariants after every
 action, reports the first action that broke each one and restores the kingdom. The log records page errors, rejected
 promises, console errors and warnings and files that failed to load; "Скопировать отчёт" puts the browser, screen,
-kingdom summary, the last 60 entries and the save on the clipboard.
+kingdom summary, the last 60 entries and the save on the clipboard (or in a .txt file; inside claude.ai files are offered
+through the artifact's `downloads` capability, so the page is published with `downloads` besides `db` and `user`).
