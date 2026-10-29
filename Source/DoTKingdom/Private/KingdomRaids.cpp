@@ -218,9 +218,12 @@ void Kingdom::RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, S
 		Defense.titan.stars = Type.stars;
 		Defense.titan.level = T->level;
 		Defense.titan.ascended = T->ascended;
-		Defense.titan.atkPct = static_cast<int>(TitanBonusPct(T->id, 0));
-		Defense.titan.hpPct = static_cast<int>(TitanBonusPct(T->id, 1));
-		Defense.titan.armorPct = static_cast<int>(TitanBonusPct(T->id, 2));
+		// Relic bonuses are in tenths of a percent, the sim takes whole percents (as the battle page does).
+		Defense.titan.atkPct = static_cast<int>(TitanRelicBonus(T->id, RelicStat::Atk) / 10);
+		Defense.titan.hpPct = static_cast<int>(TitanRelicBonus(T->id, RelicStat::Hp) / 10);
+		Defense.titan.armorPct = static_cast<int>(TitanRelicBonus(T->id, RelicStat::Armor) / 10);
+		Defense.titan.critPct = static_cast<int>(TitanRelicBonus(T->id, RelicStat::Crit) / 10);
+		Defense.titan.piercePct = static_cast<int>(TitanRelicBonus(T->id, RelicStat::Pierce) / 10);
 	}
 	if (OutSquads)
 	{

@@ -1169,7 +1169,7 @@ void TestRaids()
 	KD_CHECK(D.Load(Replace(Replace(Base, "\"def\":\"titan.perun\",\"level\":5", "\"def\":\"titan.perun\",\"level\":30"),
 		"\"def\":\"castle\",\"level\":6", "\"def\":\"castle\",\"level\":3"), Error));
 	D.SetBattleContent(&Battle());
-	KD_CHECK(D.SetGarrison({Mil, Mil, Arc}, Perun) == Error::None && D.Forecast(0).holdPct >= 95);
+	KD_CHECK(D.SetGarrison({Mil, Mil, Arc}, Perun) == Error::None && D.Forecast(0).holdPct >= 90);
 	D.Advance(T0 + 24 * Hour);
 	KD_CHECK(D.Raids().size() == 1 && D.Raids()[0].stars == 0 && D.Raids()[0].titanId == Perun && D.Raids()[0].squads == 3);
 	KD_CHECK(D.Raids()[0].vp == D.VictoryVp(D.Raids()[0].level) * 50 / 100 && D.Amount(Res::Vp) == 1000 + D.Raids()[0].vp);
