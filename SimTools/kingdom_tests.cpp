@@ -1,11 +1,13 @@
 // SimTools/kingdom_tests.cpp
 // Tests for the kingdom economy (Source/DoTKingdom): content numbers from the original game,
 // timers, production, limits, requirements, portal stones, lands (ruins and victory-point lands too), seasons,
-// army, titans (ascension too), relic items (combat and economy, effects, repair) and save/load determinism.
+// army, titans (ascension too), relic items (combat and economy, effects, repair), alliances with their leagues and
+// reinforcements, and save/load determinism.
 #include "ToolCommon.h"
 
 #include "DoTKingdom/Kingdom.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -924,7 +926,7 @@ void TestSeasons()
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved && M.LastSeason().league == 1);
 	// A version 3 save (before seasons, shards and VP) starts in the current season with nothing to pay.
-	std::string V3 = Replace(K.Save(), "\"formatVersion\":5", "\"formatVersion\":3");
+	std::string V3 = Replace(K.Save(), "\"formatVersion\":6", "\"formatVersion\":3");
 	const size_t S0 = V3.find("\"season\":");
 	const size_t S1 = V3.find("\"resources\":");
 	KD_CHECK(S0 != std::string::npos && S1 > S0);
@@ -932,7 +934,7 @@ void TestSeasons()
 	V3 = Replace(V3, ",\"shards\":0,\"vp\":0", "");
 	Kingdom O(Content());
 	KD_CHECK(O.Load(V3, Error) && O.Season() == Season && O.LastSeason().season == -1 && O.Amount(Res::Vp) == 0);
-	KD_CHECK(O.Save().find("\"formatVersion\":5") != std::string::npos && O.Hash() == K.Hash());
+	KD_CHECK(O.Save().find("\"formatVersion\":6") != std::string::npos && O.Hash() == K.Hash());
 }
 
 void TestAscension()
@@ -985,6 +987,262 @@ void TestAscension()
 }
 } // namespace
 
+/** A kingdom of this seed with this much VP this season. */
+Kingdom WithVp(uint64_t Seed, int64_t Vp, const std::string& Extra = std::string())
+{
+	Kingdom K(Content());
+	K.NewGame(T0, Seed);
+	std::string Save = Replace(K.Save(), "\"shards\":0,\"vp\":0", "\"shards\":0,\"vp\":" + std::to_string(Vp));
+	if (!Extra.empty())
+	{
+		Save = WithBuilding(Save, Extra.c_str(), 3, 2);
+	}
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	return L;
+}
+
+int LeagueSize(const Kingdom& K, int Tier) { return static_cast<int>(K.LeagueTable(Tier).size()); }
+
+void TestAlliances()
+{
+	const KingdomContent& Ct = Content();
+	const AllianceRules& A = Ct.alliances;
+	// The original: alliances open at 1 000 VP; ours: 6 leagues of 8 alliances, 100 gems to found one.
+	KD_CHECK(A.joinVp == 1000 && A.createGems == 100 && A.leagues.size() == 6 && A.names.size() == 48 && A.groupSize == 8);
+	KD_CHECK(A.memberNames.size() == 79 && A.minMembers == 8 && A.maxMembers == 30 && A.promote == 2);
+	KD_CHECK(A.leagues[0].crystal == 1 && A.leagues[5].crystal == 4); // rarity 4 crystals only at the top
+	const BuildingDef& Camp = Ct.buildings[static_cast<size_t>(Def("alliance_camp"))];
+	KD_CHECK(Ct.allianceCamp == Def("alliance_camp") && Camp.levels[0].reinforcements == 1 && Camp.levels[9].reinforcements == 10);
+
+	// A new kingdom is in no alliance; every league starts with eight computer alliances.
+	Kingdom K(Content());
+	K.NewGame(T0, 61);
+	KD_CHECK(K.MyAlliance() == -1 && K.AllianceCount() == 48);
+	for (int T = 0; T < 6; ++T)
+	{
+		KD_CHECK(LeagueSize(K, T) == 8);
+	}
+	std::vector<std::string> Seen;
+	for (int I = 0; I < K.AllianceCount(); ++I)
+	{
+		const AllianceInfo Info = K.Alliance(I);
+		KD_CHECK(Info.members >= 8 && Info.members <= 30 && !Info.name.empty() && !Info.tag.empty() && !Info.own);
+		KD_CHECK(Info.joinVp >= 1000 && Info.joinVp <= 8000 && Info.joinVp % 500 == 0);
+		KD_CHECK(std::find(Seen.begin(), Seen.end(), Info.name) == Seen.end());
+		Seen.push_back(Info.name);
+		// Names never repeat inside an alliance.
+		const std::vector<AllianceMember> M = K.Members(I);
+		KD_CHECK(static_cast<int>(M.size()) == Info.members && M[0].role == 0);
+		for (size_t X = 0; X < M.size(); ++X)
+		{
+			for (size_t Y = X + 1; Y < M.size(); ++Y)
+			{
+				KD_CHECK(M[X].name != M[Y].name);
+			}
+		}
+	}
+	// Another seed meets other neighbours.
+	Kingdom Other(Content());
+	Other.NewGame(T0, 62);
+	KD_CHECK(Other.Alliance(0).name != K.Alliance(0).name || Other.Alliance(1).name != K.Alliance(1).name);
+	// Members play through the week: VP only grow, and the season's start is quiet.
+	const int64_t Season = K.Season();
+	const int64_t Start = K.SeasonStart(Season);
+	const int64_t End = K.SeasonStart(Season + 1);
+	KD_CHECK(K.Alliance(47).vp >= 0);
+	Kingdom Mid(Content());
+	std::string Error;
+	KD_CHECK(Mid.Load(K.Save(), Error));
+	Mid.Advance(Start + (End - Start) / 2);
+	Kingdom Late(Content());
+	KD_CHECK(Late.Load(K.Save(), Error));
+	Late.Advance(End - 60);
+	KD_CHECK(Late.Alliance(47).vp > Mid.Alliance(47).vp && Mid.Alliance(47).vp > 0);
+	// Stronger leagues gather more VP over a week than weaker ones (on average).
+	int64_t Low = 0;
+	int64_t High = 0;
+	for (const int I : Late.LeagueTable(0))
+	{
+		Low += Late.Alliance(I).vp;
+	}
+	for (const int I : Late.LeagueTable(5))
+	{
+		High += Late.Alliance(I).vp;
+	}
+	KD_CHECK(High > 5 * Low);
+
+	// Below 1 000 VP nothing opens.
+	KD_CHECK(K.CheckJoin(0).error == Error::NeedVp && K.CheckCreate().error == Error::NeedVp && K.JoinAlliance(0) == Error::NeedVp);
+	KD_CHECK(K.CheckReinforce().error == Error::NoAlliance && K.LeaveAlliance() == Error::NoAlliance);
+	// At 1 000 VP the alliances that ask 1 000 take the player.
+	Kingdom L = WithVp(61, 1000);
+	int Easy = -1;
+	int Strong = -1;
+	int Full = -1;
+	for (int I = 0; I < L.AllianceCount(); ++I)
+	{
+		const AllianceInfo Info = L.Alliance(I);
+		if (Easy < 0 && Info.joinVp == 1000 && Info.members < 30 && Info.tier == 0)
+		{
+			Easy = I;
+		}
+		Strong = Info.joinVp > 1000 ? I : Strong;
+		Full = Info.members == 30 ? I : Full;
+	}
+	KD_CHECK(Easy >= 0 && Strong >= 0);
+	KD_CHECK(L.CheckJoin(Strong).error == Error::NeedVp && L.CheckJoin(Strong).cost[static_cast<size_t>(ResIndex(Res::Vp))] == L.Alliance(Strong).joinVp);
+	if (Full >= 0)
+	{
+		Kingdom Rich = WithVp(61, 8000);
+		KD_CHECK(Rich.CheckJoin(Full).error == Error::AllianceFull);
+	}
+	const int Before = L.Alliance(Easy).members;
+	const int64_t VpBefore = L.Alliance(Easy).vp;
+	KD_CHECK(L.JoinAlliance(Easy) == Error::None && L.MyAlliance() == Easy && L.AllianceSince() == T0);
+	KD_CHECK(L.Alliance(Easy).members == Before + 1 && L.Alliance(Easy).vp == VpBefore + 1000); // the player's VP count too
+	KD_CHECK(L.Members(Easy).back().name.empty() && L.Members(Easy).back().vp == 1000);
+	KD_CHECK(L.CheckJoin(0).error == Error::InAlliance && L.CheckCreate().error == Error::InAlliance);
+	// Last week's VP open alliances too: the season can end with fewer VP than it started.
+	KD_CHECK(L.AllianceRating() == 1000);
+
+	// The season ends: every league is ranked, two go up and two come down, the alliance pays its members.
+	const int Tier = L.Alliance(Easy).tier;
+	std::vector<int> TiersBefore;
+	for (int I = 0; I < L.AllianceCount(); ++I)
+	{
+		TiersBefore.push_back(L.Alliance(I).tier);
+	}
+	L.Advance(End - 1);
+	const std::vector<int> Table = L.LeagueTable(Tier);
+	int Place = 0;
+	for (size_t P = 0; P < Table.size(); ++P)
+	{
+		Place = Table[P] == Easy ? static_cast<int>(P) + 1 : Place;
+	}
+	const SeasonResult Expect = L.LeagueReward(Tier, Place, 8);
+	const int64_t Gems = L.Amount(Res::Gems);
+	const size_t Titans = L.Titans().size();
+	const size_t Relics = L.Relics().size();
+	L.Advance(End);
+	const SeasonResult& R = L.LastSeason();
+	KD_CHECK(R.season == Season && R.alliance == Easy && R.allianceTier == Tier && R.place == Place && R.groupSize == 8 && R.vp == 1000);
+	KD_CHECK(R.gems == Expect.gems && R.gems == A.leagues[static_cast<size_t>(Tier)].gems * std::max(30, 100 - 10 * (Place - 1)) / 100);
+	KD_CHECK(R.crystal == A.leagues[static_cast<size_t>(Tier)].crystal);
+	KD_CHECK((R.crystalTitan != 0) + (R.crystalRelic != 0) + (R.crystalGems != 0) == 1);
+	KD_CHECK(L.Titans().size() == Titans + (R.crystalTitan ? 1 : 0) && L.Relics().size() == Relics + (R.crystalRelic ? 1 : 0));
+	KD_CHECK(L.Amount(Res::Gems) == Gems + R.gems + R.crystalGems); // the personal league does not pay as well
+	if (R.crystalTitan)
+	{
+		KD_CHECK(Ct.titans[static_cast<size_t>(L.FindTitan(R.crystalTitan)->def)].stars == R.crystal);
+	}
+	if (R.crystalRelic)
+	{
+		KD_CHECK(L.FindRelic(R.crystalRelic)->rarity == R.crystal);
+	}
+	KD_CHECK(R.move == (Place <= 2 && Tier < 5 ? 1 : (Place >= 7 && Tier > 0 ? -1 : 0)));
+	KD_CHECK(L.Alliance(Easy).tier == Tier + R.move && L.Amount(Res::Vp) == 0 && L.AllianceRating() == 1000);
+	int Moved = 0;
+	for (int I = 0; I < L.AllianceCount(); ++I)
+	{
+		Moved += L.Alliance(I).tier != TiersBefore[static_cast<size_t>(I)] ? 1 : 0;
+	}
+	KD_CHECK(Moved == 2 * 2 * 5); // five borders, two each way
+	for (int T = 0; T < 6; ++T)
+	{
+		KD_CHECK(LeagueSize(L, T) == 8);
+	}
+	// A save keeps the alliance, its league and every other alliance's.
+	const std::string Saved = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved && M.MyAlliance() == Easy && M.LastSeason().alliance == Easy);
+	// The same actions give the same leagues.
+	Kingdom N = WithVp(61, 1000);
+	N.JoinAlliance(Easy);
+	N.Advance(End);
+	KD_CHECK(N.Hash() == L.Hash());
+
+	// Joining in the last day: the personal league pays this time (Gold league for 1 000 VP).
+	Kingdom J = WithVp(61, 1000);
+	J.Advance(End - 3600);
+	KD_CHECK(J.JoinAlliance(Easy) == Error::None);
+	const int64_t JGems = J.Amount(Res::Gems);
+	J.Advance(End);
+	KD_CHECK(J.LastSeason().alliance == -1 && J.LastSeason().league == 2 && J.Amount(Res::Gems) == JGems + Ct.leagues[2].gems);
+	KD_CHECK(J.MyAlliance() == Easy); // still a member for the next season
+
+	// An own alliance: 100 gems, the lowest league, a recruit every 6 hours.
+	Kingdom O = WithVp(63, 1200);
+	KD_CHECK(O.CreateAlliance("", "ТЕСТ") == Error::BadId && O.CreateAlliance("Слишком длинное имя альянса, чтобы его принять", "Т") == Error::BadId);
+	KD_CHECK(O.CreateAlliance("Дом", "Слишком") == Error::BadId);
+	const int64_t OGems = O.Amount(Res::Gems);
+	KD_CHECK(O.CreateAlliance("  Дом Рассвета ", "ДОМ") == Error::None && O.Amount(Res::Gems) == OGems - 100);
+	const int Own = O.MyAlliance();
+	KD_CHECK(Own == 48 && O.AllianceCount() == 49 && LeagueSize(O, 0) == 9);
+	AllianceInfo Mine = O.Alliance(Own);
+	KD_CHECK(Mine.own && Mine.name == "Дом Рассвета" && Mine.tag == "ДОМ" && Mine.tier == 0 && Mine.members == 1 && Mine.vp == 1200);
+	KD_CHECK(O.Members(Own).size() == 1 && O.Members(Own)[0].role == 0);
+	O.Advance(T0 + 6 * Hour);
+	KD_CHECK(O.Alliance(Own).members == 2);
+	O.Advance(T0 + 30 * Hour);
+	KD_CHECK(O.Alliance(Own).members == 6 && O.Members(Own).size() == 6);
+	const std::string OSave = O.Save();
+	Kingdom P(Content());
+	KD_CHECK(P.Load(OSave, Error) && P.Hash() == O.Hash() && P.Save() == OSave && P.Alliance(Own).name == "Дом Рассвета");
+	KD_CHECK(O.LeaveAlliance() == Error::None && O.MyAlliance() == -1 && O.AllianceCount() == 48 && LeagueSize(O, 0) == 8);
+
+	// Reinforcements: the Alliance Camp (level 3 holds two squads) and an alliance.
+	Kingdom Q = WithVp(64, 1000, "alliance_camp");
+	KD_CHECK(Q.ReinforceCapacity() == 2 && Q.CheckReinforce().error == Error::NoAlliance);
+	int Pick = -1;
+	for (int I = 0; I < Q.AllianceCount() && Pick < 0; ++I)
+	{
+		Pick = Q.CheckJoin(I).error == Error::None ? I : -1;
+	}
+	KD_CHECK(Pick >= 0 && Q.JoinAlliance(Pick) == Error::None);
+	KD_CHECK(Q.CheckReinforce().error == Error::None && Q.RequestReinforcements() == Error::None);
+	KD_CHECK(Q.Reinforcements().size() == 2 && Q.ReinforcementsReady() == 0 && Q.CheckReinforce().error == Error::StorageFull);
+	for (const Reinforcement& Rf : Q.Reinforcements())
+	{
+		KD_CHECK(Ct.troops[static_cast<size_t>(Rf.troop)].unlockCastle <= Q.CastleLevel());
+		KD_CHECK(Rf.level == std::min(A.leagues[static_cast<size_t>(Q.Alliance(Pick).tier)].troopLevel, Q.MaxTroopLevel()));
+		KD_CHECK(Rf.from >= 0 && Rf.from < Q.Alliance(Pick).members - 1);
+	}
+	KD_CHECK(Q.Reinforcements()[0].at == T0 + 60 && Q.Reinforcements()[1].at == T0 + 120);
+	Q.Advance(T0 + 90);
+	KD_CHECK(Q.ReinforcementsReady() == 1);
+	// Squads that have arrived go to battle once; the one on its way stays.
+	KD_CHECK(Q.StartAttack(Q.World()[0].id, false, {}, Q.Titans()[0].id, {}, true) == Error::None);
+	KD_CHECK(Q.PendingReinforcements().size() == 1 && Q.Reinforcements().size() == 1);
+	const std::string During = Q.Save();
+	Kingdom S(Content());
+	KD_CHECK(S.Load(During, Error) && S.Hash() == Q.Hash() && S.PendingReinforcements().size() == 1);
+	Reward Rw;
+	KD_CHECK(Q.FinishAttack(Q.World()[0].id, false, 3, {}, &Rw) == Error::None && Rw.reinforcements == 1 && Q.PendingReinforcements().empty());
+	// The camp has room again, but a request waits 20 minutes after the last one.
+	Q.Advance(T0 + 600);
+	KD_CHECK(Q.CheckReinforce().error == Error::NotReady && Q.CheckReinforce().timeSec == 600);
+	Q.Advance(T0 + 1200);
+	KD_CHECK(Q.CheckReinforce().error == Error::None && Q.RequestReinforcements() == Error::None && Q.Reinforcements().size() == 2);
+	// The newcomer queues behind the squad already on its way... which arrived at T0 + 120.
+	KD_CHECK(Q.Reinforcements()[1].at == T0 + 1200 + 60);
+	// Leaving: allies take their squads back.
+	KD_CHECK(Q.LeaveAlliance() == Error::None && Q.Reinforcements().empty());
+	// An own alliance without recruits has nobody to send troops yet.
+	Kingdom U = WithVp(65, 1000, "alliance_camp");
+	KD_CHECK(U.CreateAlliance("Одиночки", "ОДН") == Error::None && U.CheckReinforce().error == Error::Nothing);
+
+	// A save from before alliances (format 5) starts outside any alliance.
+	std::string V5 = Replace(K.Save(), "\"formatVersion\":6", "\"formatVersion\":5");
+	const size_t A0 = V5.find(",\"alliance\":{");
+	const size_t A1 = V5.find(",\"resources\":");
+	KD_CHECK(A0 != std::string::npos && A1 > A0);
+	V5.erase(A0, A1 - A0);
+	Kingdom V(Content());
+	KD_CHECK(V.Load(V5, Error) && V.MyAlliance() == -1 && V.AllianceCount() == 48 && V.Hash() == K.Hash());
+}
+
 int main()
 {
 	struct
@@ -1010,6 +1268,7 @@ int main()
 		{"RuinsAndVictoryPointLands", TestRuinsAndVictoryPointLands},
 		{"Seasons", TestSeasons},
 		{"Ascension", TestAscension},
+		{"Alliances", TestAlliances},
 	};
 	for (const auto& T : Tests)
 	{

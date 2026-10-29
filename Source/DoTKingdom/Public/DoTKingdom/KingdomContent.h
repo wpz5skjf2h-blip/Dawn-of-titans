@@ -63,6 +63,7 @@ struct LevelDef
 	int64_t titans = 0; // hall of titans: roster size
 	int64_t spellSlots = 0; // arcane tower: spell researches at once
 	int64_t maxSpellLevel = 0; // arcane tower
+	int64_t reinforcements = 0; // alliance camp: squads allies may send
 	bool estimated = false;
 };
 
@@ -117,6 +118,55 @@ struct LeagueDef
 	int64_t vp = 0;
 	int64_t gems = 0;
 	int64_t stones = 0;
+};
+
+/** An alliance league: how strong its computer alliances are, what it pays by place and what its allies send. */
+struct AllianceLeagueDef
+{
+	std::string id;
+	std::string name;
+	/** Weekly VP of a computer member: alliances of this league start with a strength in this range. */
+	int64_t memberVpMin = 0;
+	int64_t memberVpMax = 0;
+	/** First place's reward to every member; each lower place gets placeStepPct less (down to minPlacePct). */
+	int64_t gems = 0;
+	int64_t stones = 0;
+	/** Rarity of the crystal every member gets (a relic, or a titan by chance). */
+	int crystal = 1;
+	/** The crystal's titan chance in percent at first and at last place (linear between). */
+	int titanPctFirst = 0;
+	int titanPctLast = 0;
+	/** Level of the troops allies of this league send to the Alliance Camp (capped by the player's Armoury). */
+	int troopLevel = 1;
+};
+
+/** Alliances and their leagues (kingdom.json "alliances"). */
+struct AllianceRules
+{
+	/** VP a player needs to join or create one (the original's 1 000) and the most a strong alliance asks. */
+	int64_t joinVp = 1000;
+	int64_t joinVpMax = 8000;
+	int64_t createGems = 100;
+	int minMembers = 8;
+	int maxMembers = 30;
+	int groupSize = 8;
+	/** Alliances that go up from each league (and as many that come down from the one above). */
+	int promote = 2;
+	/** Time in the alliance before the season ends for its reward to be paid; else the personal league pays. */
+	int64_t memberSec = 86400;
+	/** An own alliance: one recruit joins every recruitSec, up to `recruits`. */
+	int64_t recruitSec = 6 * 3600;
+	int recruits = 24;
+	int placeStepPct = 10;
+	int minPlacePct = 30;
+	/** Gems instead of a crystal's relic when the relic inventory is full, by rarity. */
+	std::vector<int64_t> crystalGems;
+	int64_t reinforceCooldownSec = 1200;
+	int64_t reinforceArriveSec = 60;
+	std::vector<AllianceLeagueDef> leagues;
+	/** Computer alliances: name and tag. */
+	std::vector<std::pair<std::string, std::string>> names;
+	std::vector<std::string> memberNames;
 };
 
 /** One level of a troop type (the original's Militia, Archers, Spearmen). Costs are Food. */
@@ -265,6 +315,7 @@ struct KingdomContent
 	int64_t seasonEpoch = 0;
 	int64_t seasonSec = 7 * 86400;
 	std::vector<LeagueDef> leagues;
+	AllianceRules alliances;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};
@@ -280,6 +331,7 @@ struct KingdomContent
 	int relicTemple = -1;
 	int spellForge = -1;
 	int arcaneTower = -1;
+	int allianceCamp = -1;
 
 	// Army and titans (kingdom/army.json).
 	std::vector<TroopType> troops;

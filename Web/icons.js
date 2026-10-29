@@ -284,6 +284,12 @@ const DotIcons = (() => {
 		'ui.attack': rot(40, SWORD) + rot(-40, SWORD),
 		'ui.army': HELMET,
 		'ui.build': rot(-30, HAMMER),
+		// Two crossed alliance banners.
+		'ui.alliance': rot(-14, stick('M24 45V6', K.woodD, 2.4) + c(24, 4.5, 2.4, K.gold) + p('M24 8H10V27L17 23L24 27Z', K.red) + spark(17, 15.5, 3.6, K.cream), 24, 45) +
+			rot(14, stick('M24 45V6', K.woodD, 2.4) + c(24, 4.5, 2.4, K.gold) + p('M24 8H38V27L31 23L24 27Z', K.blue) + spark(31, 15.5, 3.6, K.cream), 24, 45),
+		// A league crystal (the original's reward crystals hold a relic or a titan).
+		'ui.crystal': p('M24 3L34 13L30 43H18L14 13Z', '#b9a6ff') + p('M24 3L28 13L26 43H22L20 13Z', '#d9ceff', 'stroke-width="1.2"') +
+			line('M14 13H34', '#6b55c4', 1.4) + hi('M17 15L19.5 38') + spark(37, 7, 3.2, K.white) + spark(9, 26, 2.4, K.white),
 		'ui.crack': line('M15 7L22 19L17 25L28 36L26 45', INK, 3.4) + line('M15 7L22 19L17 25L28 36L26 45', K.white, 1.2),
 	};
 

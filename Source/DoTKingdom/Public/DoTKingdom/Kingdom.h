@@ -1,8 +1,9 @@
 // Source/DoTKingdom/Public/DoTKingdom/Kingdom.h
 // The player's kingdom: city buildings, builders, timers, resources, expansions, lands (gold, farm, ruins and
 // victory-point lands), portal stones, seasons of victory points, the army (training, troop levels, casualties),
-// spells (Spell Forge stock, Arcane Tower levels), the titan roster (XP, fusion, ascension, titans guarding lands)
-// and relic items (combat relics on titans, economy relics on buildings; effects that open and grow with repairs).
+// spells (Spell Forge stock, Arcane Tower levels), the titan roster (XP, fusion, ascension, titans guarding lands),
+// relic items (combat relics on titans, economy relics on buildings; effects that open and grow with repairs) and
+// alliances (computer alliances in weekly leagues with promotion and relegation, an own alliance, reinforcements).
 // Deterministic and engine-free like the battle simulation: integer math only, time is passed in
 // explicitly (seconds), so a server can replay the same actions and reach the same state.
 #pragma once
@@ -47,6 +48,10 @@ enum class Error : uint8_t
 	WrongRelic, // an economy relic on a titan, a combat relic on a building, or a building that does not take it
 	SameRelic, // the original: a titan cannot wear two identical relics
 	InventoryFull,
+	NeedVp, // fewer VP than the alliance asks
+	AllianceFull,
+	InAlliance, // leave the current alliance first
+	NoAlliance, // join an alliance first
 	Count
 };
 DOTKINGDOM_API const char* ToString(Error E);
@@ -130,7 +135,8 @@ struct SpellResearchSlot
 	int64_t until = 0;
 };
 
-/** How a season ended: its VP, the league reached (-1 for none) and what that paid. */
+/** How a season ended: its VP, the league reached (-1 for none) and what that paid. In an alliance the
+ *  alliance's league pays instead: its tier, the alliance's place there, the move up or down and the crystal. */
 struct SeasonResult
 {
 	int64_t season = -1;
@@ -138,6 +144,48 @@ struct SeasonResult
 	int league = -1;
 	int64_t gems = 0;
 	int64_t stones = 0;
+	int alliance = -1; // the alliance that paid (-1: the personal league did)
+	int allianceTier = -1; // its league during the season
+	int place = 0; // 1 = first
+	int groupSize = 0;
+	int move = 0; // +1 promoted, -1 relegated
+	int64_t allianceVp = 0;
+	int crystal = 0; // rarity of the crystal (0: none)
+	int32_t crystalTitan = 0;
+	int32_t crystalRelic = 0;
+	int64_t crystalGems = 0; // when the relic did not fit in the inventory
+};
+
+/** An alliance: a computer one or the player's own. */
+struct AllianceInfo
+{
+	int index = -1;
+	std::string name;
+	std::string tag;
+	int emblem = 0;
+	int tier = 0; // its alliance league
+	int members = 0; // the player included when they are a member
+	int64_t joinVp = 0; // VP a player needs to join
+	int64_t vp = 0; // all members' VP this season so far
+	bool own = false;
+};
+
+/** A member of an alliance and their VP this season so far. */
+struct AllianceMember
+{
+	std::string name; // empty for the player
+	int role = 2; // 0 leader, 1 officer, 2 member
+	int64_t vp = 0;
+	int64_t joinedAt = 0; // recruits of an own alliance
+};
+
+/** A squad allies sent to the Alliance Camp: it fights in one battle, then it is gone. */
+struct Reinforcement
+{
+	int troop = 0;
+	int level = 1;
+	int64_t at = 0; // arrives at
+	int from = 0; // the member who sent it (index into Members())
 };
 
 struct Reward
@@ -152,6 +200,7 @@ struct Reward
 	int relicsBroken = 0;
 	std::vector<int32_t> relics; // relic items the victory dropped
 	int relicsLost = 0; // drops that did not fit in the inventory
+	int reinforcements = 0; // allies' squads that fought (they are gone now)
 };
 
 /** Result of checking an action before doing it (for the UI). */
@@ -227,6 +276,32 @@ public:
 	/** The league these VP reach (-1 for none). */
 	int League(int64_t Vp) const;
 	const SeasonResult& LastSeason() const { return Last; }
+
+	// --- Alliances and alliance leagues ---
+	/** Computer alliances plus the own one while it exists. */
+	int AllianceCount() const;
+	AllianceInfo Alliance(int Index) const;
+	/** The alliance the player is in (-1 for none). */
+	int MyAlliance() const { return AllianceIdx; }
+	int64_t AllianceSince() const { return AllianceJoinedAt; }
+	/** What alliances check to let the player in: the more of this season's and last season's VP. */
+	int64_t AllianceRating() const;
+	/** Alliances of a league, best first by this season's VP (ties by index). */
+	std::vector<int> LeagueTable(int Tier) const;
+	std::vector<AllianceMember> Members(int Index) const;
+	/** A league's reward for a place (1-based) in a group of this size: gems, stones, crystal rarity, titan chance. */
+	SeasonResult LeagueReward(int Tier, int Place, int GroupSize) const;
+	int TitanChancePct(int Tier, int Place, int GroupSize) const;
+	Check CheckJoin(int Index) const;
+	Check CheckCreate() const;
+	/** Squads the Alliance Camp holds; allies' squads sent, arriving or waiting for a battle. */
+	int ReinforceCapacity() const;
+	const std::vector<Reinforcement>& Reinforcements() const { return ReinforceList; }
+	int ReinforcementsReady() const;
+	/** When the next request may be sent (0 if never sent). */
+	int64_t ReinforceReadyAt() const;
+	Check CheckReinforce() const;
+	const std::vector<Reinforcement>& PendingReinforcements() const { return PendingReinforce; }
 
 	// --- Army (Barracks, Army Camp, Armoury, Medical School) ---
 	int TroopLevel(int Troop) const;
@@ -332,6 +407,8 @@ public:
 	Error StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId);
 	/** The same with spells from the stock (distinct spell indices; every charge in stock goes along). */
 	Error StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** The same, taking every allies' squad that has arrived in the Alliance Camp (they fight once and are gone). */
+	Error StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
 	/** Applies the battle result: loot for a raid, a new land for a capture (needs at least one star). */
 	Error FinishAttack(int32_t WorldId, bool Capture, int Stars, Reward* Out = nullptr);
 	/** The same with each squad's surviving share in percent (casualties, Medical School) and titan XP. */
@@ -373,6 +450,14 @@ public:
 	Error SkipRecovery(int32_t TitanId);
 	/** Ascends a max-level titan: ten more levels and one more relic slot. Missing Food can be bought with gems. */
 	Error Ascend(int32_t TitanId, bool UseGems);
+	/** Joins a computer alliance (enough VP, a free place, not in an alliance). */
+	Error JoinAlliance(int Index);
+	/** Founds an own alliance in the lowest league for gems; recruits join it over time. Name and tag are UTF-8. */
+	Error CreateAlliance(const std::string& Name, const std::string& Tag);
+	/** Leaves the alliance (an own one is disbanded); allies take their squads back. */
+	Error LeaveAlliance();
+	/** Asks the alliance to fill the Alliance Camp; squads arrive one by one. */
+	Error RequestReinforcements();
 
 private:
 	const LevelDef* CurrentLevel(const Building& B) const;
@@ -417,6 +502,20 @@ private:
 	/** Time cut by a relic stat on buildings of a def, tenths of a percent (capped). */
 	int64_t DefRelicBonus(int Def, RelicStat Stat) const;
 	int64_t CapBonus(RelicStat Stat, int64_t Value) const;
+	int32_t SummonTitan(int Stars, uint64_t Pick);
+	int BaseAlliances() const { return static_cast<int>(C.alliances.names.size()); }
+	bool HasOwnAlliance() const { return AllianceIdx >= 0 && AllianceIdx == BaseAlliances(); }
+	void ResetAlliances();
+	/** A computer alliance's strength: the weekly VP of its average member. */
+	int64_t AllianceStrength(int Index) const;
+	int AllianceSize(int Index) const; // computer members (recruits so far for the own one)
+	int64_t AllianceJoinVp(int Index) const;
+	int AllianceTier(int Index) const;
+	int64_t MemberVp(int Index, int Member, int64_t Season, int64_t At) const;
+	int64_t AllianceVp(int Index, int64_t Season, int64_t At) const;
+	int RecruitsAt(int64_t At) const;
+	/** Ranks every league at the end of the season, pays the player's alliance and moves alliances up and down. */
+	bool RollAllianceLeagues(int64_t End);
 
 	const KingdomContent& C;
 	int64_t Time = 0;
@@ -434,6 +533,18 @@ private:
 	bool PendingIsCapture = false;
 	int64_t SeasonNo = 0;
 	SeasonResult Last;
+	// Alliances
+	int AllianceIdx = -1;
+	int64_t AllianceJoinedAt = 0;
+	std::vector<int> AllianceTiers; // league of every computer alliance, then of the own one while it exists
+	std::vector<int> AlliancePerm; // which name each computer alliance has (from the seed; not saved)
+	std::string OwnName;
+	std::string OwnTag;
+	int64_t OwnFounded = 0;
+	std::vector<Reinforcement> ReinforceList;
+	int64_t ReinforceAt = 0;
+	bool bReinforceAsked = false;
+	std::vector<Reinforcement> PendingReinforce;
 	// Army
 	std::vector<int> TroopLevels;
 	std::vector<int64_t> Army; // units by troop, squads away in battle included

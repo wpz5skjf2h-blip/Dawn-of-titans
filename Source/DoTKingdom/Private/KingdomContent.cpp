@@ -620,6 +620,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			L.titans = LJ.GetInt64("titans", 0);
 			L.spellSlots = LJ.GetInt64("spellSlots", 0);
 			L.maxSpellLevel = LJ.GetInt64("maxSpellLevel", 0);
+			L.reinforcements = LJ.GetInt64("reinforcements", 0);
 			L.estimated = LJ.GetString("src", "est") != "wiki";
 			if (const JsonValue* Reqs = LJ.Find("requires"))
 			{
@@ -652,6 +653,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	Out.relicTemple = Out.FindBuilding("relic_temple");
 	Out.spellForge = Out.FindBuilding("spell_forge");
 	Out.arcaneTower = Out.FindBuilding("arcane_tower");
+	Out.allianceCamp = Out.FindBuilding("alliance_camp");
 	if (Out.castle < 0)
 	{
 		Error = "kingdom content has no castle";
@@ -772,6 +774,96 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				}
 				Out.leagues.push_back(L);
 			}
+		}
+	}
+	if (const JsonValue* Al = Rules.Find("alliances"))
+	{
+		AllianceRules& A = Out.alliances;
+		A.joinVp = std::max<int64_t>(0, Al->GetInt64("joinVp", A.joinVp));
+		A.joinVpMax = std::max(A.joinVp, Al->GetInt64("joinVpMax", A.joinVpMax));
+		A.createGems = std::max<int64_t>(0, Al->GetInt64("createGems", A.createGems));
+		if (const JsonValue* M = Al->Find("members"))
+		{
+			if (M->Size() == 2)
+			{
+				A.minMembers = std::max(1, (*M)[0].AsInt(A.minMembers));
+				A.maxMembers = std::max(A.minMembers, (*M)[1].AsInt(A.maxMembers));
+			}
+		}
+		A.groupSize = std::max(2, Al->GetInt("groupSize", A.groupSize));
+		A.promote = std::max(0, std::min(A.groupSize / 2, Al->GetInt("promote", A.promote)));
+		A.memberSec = std::max<int64_t>(0, Al->GetInt64("memberHours", A.memberSec / 3600) * 3600);
+		A.recruitSec = std::max<int64_t>(60, Al->GetInt64("recruitHours", A.recruitSec / 3600) * 3600);
+		A.recruits = std::max(0, std::min(A.maxMembers - 1, Al->GetInt("recruits", A.recruits)));
+		A.placeStepPct = std::max(0, Al->GetInt("placeStepPct", A.placeStepPct));
+		A.minPlacePct = std::max(0, std::min(100, Al->GetInt("minPlacePct", A.minPlacePct)));
+		A.reinforceCooldownSec = std::max<int64_t>(0, Al->GetInt64("reinforceCooldownSec", A.reinforceCooldownSec));
+		A.reinforceArriveSec = std::max<int64_t>(0, Al->GetInt64("reinforceArriveSec", A.reinforceArriveSec));
+		if (const JsonValue* G = Al->Find("crystalGems"))
+		{
+			for (size_t I = 0; I < G->Size(); ++I)
+			{
+				A.crystalGems.push_back(std::max<int64_t>(0, (*G)[I].AsInt64(0)));
+			}
+		}
+		if (const JsonValue* Leagues = Al->Find("leagues"))
+		{
+			for (size_t I = 0; I < Leagues->Size(); ++I)
+			{
+				const JsonValue& J = (*Leagues)[I];
+				AllianceLeagueDef L;
+				L.id = J.GetString("id");
+				L.name = J.GetString("name", L.id);
+				if (const JsonValue* V = J.Find("memberVp"))
+				{
+					if (V->Size() == 2)
+					{
+						L.memberVpMin = std::max<int64_t>(1, (*V)[0].AsInt64(1));
+						L.memberVpMax = std::max(L.memberVpMin, (*V)[1].AsInt64(1));
+					}
+				}
+				L.gems = std::max<int64_t>(0, J.GetInt64("gems", 0));
+				L.stones = std::max<int64_t>(0, J.GetInt64("stones", 0));
+				L.crystal = std::max(0, std::min(4, J.GetInt("crystal", 0)));
+				if (const JsonValue* P = J.Find("titanPct"))
+				{
+					if (P->Size() == 2)
+					{
+						L.titanPctFirst = std::max(0, std::min(100, (*P)[0].AsInt(0)));
+						L.titanPctLast = std::max(0, std::min(100, (*P)[1].AsInt(0)));
+					}
+				}
+				L.troopLevel = std::max(1, J.GetInt("troopLevel", 1));
+				if (L.memberVpMin <= 0)
+				{
+					Error = "kingdom/kingdom.json: alliance league '" + L.id + "' needs memberVp";
+					return false;
+				}
+				A.leagues.push_back(L);
+			}
+		}
+		if (const JsonValue* Names = Al->Find("names"))
+		{
+			for (size_t I = 0; I < Names->Size(); ++I)
+			{
+				const JsonValue& N = (*Names)[I];
+				if (N.Size() == 2)
+				{
+					A.names.emplace_back(N[0].AsString(), N[1].AsString());
+				}
+			}
+		}
+		if (const JsonValue* Members = Al->Find("memberNames"))
+		{
+			for (size_t I = 0; I < Members->Size(); ++I)
+			{
+				A.memberNames.push_back((*Members)[I].AsString());
+			}
+		}
+		if (A.leagues.empty() || A.names.empty() || static_cast<int>(A.memberNames.size()) < A.maxMembers)
+		{
+			Error = "kingdom/kingdom.json: alliances need leagues, names and at least as many member names as members";
+			return false;
 		}
 	}
 	if (const JsonValue* Gems = Rules.Find("gemsForResources"))
