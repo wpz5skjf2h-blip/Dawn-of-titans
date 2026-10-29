@@ -522,7 +522,7 @@ Rows are attackers, columns are defender classes. Troop to defender class mappin
 | **Ravager** (melee damage) | 12,000 | 220 | 25% | 1.8 | Sweep 6 m / 120° | 200 | 5.5 | 60 | 10% / 175% | Large |
 | **Warden** (army support) | 13,500 | 150 | 35% | 2.2 | Sweep 6.5 m / 140° | 250 | 5.0 | 55 | 5% / 150% | Large |
 | **Mystic** (ranged caster) | 9,500 | 200 | 15% | 2.6 | Bolt, 30 m range, 5 m splash | 150 | 5.0 | 60 | 8% / 160% | Medium or Large |
-| **Hunter** (ranged, anti-titan) | 10,000 | 190 | 20% | 1.6 | Shot, 45 m range, single target, ×2.0 vs titans | 170 | 6.5 | 70 | 12% / 180% | Medium |
+| **Hunter** (ranged, anti-titan) | 10,000 | 190 | 20% | 1.6 | Shot, 45 m range, single target, ×1.2 vs titans (was ×2.0; lowered by the titan round robin, `docs/M0_Notes.md` 5a) | 170 | 6.5 | 70 | 12% / 180% | Medium |
 
 Every Warden also has a built-in **Command Aura**: allied troops within 20 m get +8% ATK and +8% armor (scaled by the titan's ability level).
 

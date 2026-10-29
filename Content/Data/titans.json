@@ -6,7 +6,7 @@
     { "class": "Ravager",    "hp": 12000, "atk": 220, "armor": 0.25, "attackInterval": 1.8, "sweepRadius": 6,   "sweepArcDeg": 120, "poise": 200, "moveSpeed": 5.5, "turnRateDeg": 60, "critChance": 0.10, "critDamage": 1.75, "aoeFactor": 6 },
     { "class": "Warden",     "hp": 13500, "atk": 150, "armor": 0.35, "attackInterval": 2.2, "sweepRadius": 6.5, "sweepArcDeg": 140, "poise": 250, "moveSpeed": 5.0, "turnRateDeg": 55, "critChance": 0.05, "critDamage": 1.50, "aoeFactor": 6 },
     { "class": "Mystic",     "hp": 9500,  "atk": 200, "armor": 0.15, "attackInterval": 2.6, "sweepRadius": 5,   "sweepArcDeg": 120, "poise": 150, "moveSpeed": 5.0, "turnRateDeg": 60, "critChance": 0.08, "critDamage": 1.60, "rangedAttack": true, "attackRange": 30, "splashRadius": 5, "aoeFactor": 4 },
-    { "class": "Hunter",     "hp": 10000, "atk": 190, "armor": 0.20, "attackInterval": 1.6, "sweepRadius": 5,   "sweepArcDeg": 120, "poise": 170, "moveSpeed": 6.5, "turnRateDeg": 70, "critChance": 0.12, "critDamage": 1.80, "rangedAttack": true, "attackRange": 45, "splashRadius": 1.5, "vsTitanMult": 2.0, "pierce": 2, "aoeFactor": 2 }
+    { "class": "Hunter",     "hp": 10000, "atk": 190, "armor": 0.20, "attackInterval": 1.6, "sweepRadius": 5,   "sweepArcDeg": 120, "poise": 170, "moveSpeed": 6.5, "turnRateDeg": 70, "critChance": 0.12, "critDamage": 1.80, "rangedAttack": true, "attackRange": 45, "splashRadius": 1.5, "vsTitanMult": 1.2, "pierce": 2, "aoeFactor": 2 }
   ],
   "sizes": [
     { "size": "Medium",   "height": 14, "capsuleRadius": 3.0, "footRadius": 2.5, "stepLength": 7.0,  "canWadeDeepWater": false },
@@ -17,7 +17,7 @@
     {
       "id": "titan.talos", "name": "Talos", "title": "the Bronze Sentinel", "lineage": "Olympians",
       "class": "Juggernaut", "rarity": "Common", "size": "Colossal",
-      "variance": { "hp": 1.0, "atk": 1.0, "poise": 1.05 },
+      "variance": { "hp": 1.04, "atk": 1.04, "poise": 1.05 },
       "abilities": ["ability.talos.molten_ichor", "ability.talos.bronze_bulwark"],
       "passives": { "rangedArmorBonus": 0.20 }
     },
@@ -31,53 +31,55 @@
     },
     // Kingdom roster (the original's titans come in rarities R1-R4 = Common, Rare, Epic, Legendary here).
     // Each titan has two abilities of its own (abilities.json); names and numbers are ours.
+    // "variance" is tuned with the titan round robin (dot_harness --titans) so that titans of one rarity win
+    // about half of their battles against each other, at level 30 and at their kingdom level cap (docs/M0_Notes.md, 5a).
     {
       "id": "titan.minotaur", "name": "Minotaur", "title": "of the Labyrinth", "lineage": "Olympians",
       "class": "Ravager", "rarity": "Common", "size": "Large",
-      "variance": { "hp": 0.95, "atk": 1.0, "poise": 1.0 },
+      "variance": { "hp": 0.91, "atk": 0.95, "poise": 1.0 },
       "abilities": ["ability.minotaur.labyrinth_rush", "ability.minotaur.blood_frenzy"]
     },
     {
       "id": "titan.cyclops", "name": "Cyclops", "title": "the Forge-Eye", "lineage": "Olympians",
       "class": "Warden", "rarity": "Common", "size": "Colossal",
-      "variance": { "hp": 1.0, "atk": 0.95, "poise": 1.05 },
+      "variance": { "hp": 1.01, "atk": 0.96, "poise": 1.05 },
       "abilities": ["ability.cyclops.forge_gaze", "ability.cyclops.anvil_quake"]
     },
     {
       "id": "titan.perun", "name": "Perun", "title": "the Storm Oak", "lineage": "Slavs",
       "class": "Ravager", "rarity": "Rare", "size": "Large",
-      "variance": { "hp": 1.0, "atk": 1.03, "poise": 1.0 },
+      "variance": { "hp": 0.87, "atk": 0.9, "poise": 1.0 },
       "abilities": ["ability.perun.oak_splitter", "ability.perun.storm_herald"],
       "passives": { "chainLightning": { "every": 4, "targets": 3, "coef": 0.5 } }
     },
     {
       "id": "titan.atlas", "name": "Atlas", "title": "the Sky-Bearer", "lineage": "Titans",
       "class": "Warden", "rarity": "Rare", "size": "Colossal",
-      "variance": { "hp": 1.05, "atk": 0.95, "poise": 1.1 },
+      "variance": { "hp": 1.13, "atk": 1.03, "poise": 1.1 },
       "abilities": ["ability.atlas.falling_sky", "ability.atlas.weight_of_heavens"]
     },
     {
       "id": "titan.ymir", "name": "Ymir", "title": "the Frost Father", "lineage": "Jotnar",
       "class": "Juggernaut", "rarity": "Rare", "size": "Colossal",
-      "variance": { "hp": 1.04, "atk": 1.0, "poise": 1.05 },
+      "variance": { "hp": 1.08, "atk": 1.04, "poise": 1.05 },
       "abilities": ["ability.ymir.frost_breath", "ability.ymir.glacier_hide"]
     },
     {
       "id": "titan.surtr", "name": "Surtr", "title": "the Black Flame", "lineage": "Jotnar",
       "class": "Ravager", "rarity": "Epic", "size": "Large",
-      "variance": { "hp": 1.0, "atk": 1.06, "poise": 1.0 },
+      "variance": { "hp": 1.03, "atk": 1.09, "poise": 1.0 },
       "abilities": ["ability.surtr.muspell_blade", "ability.surtr.world_fire"]
     },
     {
       "id": "titan.hecate", "name": "Hecate", "title": "of the Crossroads", "lineage": "Titans",
       "class": "Mystic", "rarity": "Epic", "size": "Medium",
-      "variance": { "hp": 1.0, "atk": 1.04, "poise": 1.0 },
+      "variance": { "hp": 1.24, "atk": 1.29, "poise": 1.0 },
       "abilities": ["ability.hecate.crossroads_hex", "ability.hecate.underworld_torches"]
     },
     {
       "id": "titan.artemis", "name": "Artemis", "title": "the Huntress", "lineage": "Olympians",
       "class": "Hunter", "rarity": "Epic", "size": "Medium",
-      "variance": { "hp": 1.0, "atk": 1.04, "poise": 1.0 },
+      "variance": { "hp": 0.77, "atk": 0.8, "poise": 1.0 },
       "abilities": ["ability.artemis.silver_volley", "ability.artemis.moonshot"]
     }
   ]
