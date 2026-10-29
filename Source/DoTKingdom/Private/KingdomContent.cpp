@@ -865,6 +865,43 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 	}
+	if (const JsonValue* Sites = Rules.Find("sites"))
+	{
+		SiteRules& S = Out.sites;
+		S.cooldownSec = std::max<int64_t>(0, Sites->GetInt64("cooldownHours", S.cooldownSec / 3600)) * 3600;
+		S.stones = std::max<int64_t>(0, Sites->GetInt64("stones", S.stones));
+		if (const JsonValue* Pct = Sites->Find("shardPct"))
+		{
+			for (size_t I = 0; I < Pct->Size() && I < S.shardPct.size(); ++I)
+			{
+				S.shardPct[I] = std::max<int64_t>(0, std::min<int64_t>(100, (*Pct)[I].AsInt64(0)));
+			}
+		}
+		if (const JsonValue* SiteList = Sites->Find("list"))
+		{
+			for (size_t I = 0; I < SiteList->Size(); ++I)
+			{
+				const JsonValue& J = (*SiteList)[I];
+				SiteDef D;
+				D.id = J.GetString("id");
+				D.name = J.GetString("name", D.id);
+				D.arena = J.GetString("kind", "monument") == "arena";
+				D.level = std::max(1, std::min(static_cast<int>(Out.battles.size()), J.GetInt("level", 1)));
+				D.castle = std::max(1, J.GetInt("castle", 1));
+				D.ai = J.GetString("ai");
+				D.map = J.GetString("map");
+				D.shards = std::max<int64_t>(0, J.GetInt64("shards", 0));
+				D.xpPct = std::max<int64_t>(0, J.GetInt64("xpPct", 100));
+				D.resetGems = std::max<int64_t>(0, J.GetInt64("resetGems", 0));
+				if (D.id.empty() || Out.battles.empty())
+				{
+					Error = "kingdom/kingdom.json: sites need an id and the battles table";
+					return false;
+				}
+				Out.sites.list.push_back(D);
+			}
+		}
+	}
 	if (const JsonValue* Al = Rules.Find("alliances"))
 	{
 		AllianceRules& A = Out.alliances;

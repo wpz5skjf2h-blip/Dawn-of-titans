@@ -1047,6 +1047,90 @@ void TestLandUpgrades()
 	KD_CHECK(N.CheckLandUpgrade(800).error == Error::NotEnough && N.CheckLandUpgrade(800).castle == 0);
 	KD_CHECK(N.AbandonLand(800) == Error::None && N.Lands().size() == 1);
 }
+void TestTitanMonumentsAndXpArenas()
+{
+	const KingdomContent& Ct = Content();
+	KD_CHECK(Ct.sites.list.size() == 7 && Ct.sites.cooldownSec == 24 * Hour && Ct.sites.stones == 3);
+	KD_CHECK(Ct.sites.shardPct[0] == 40 && Ct.sites.shardPct[2] == 80);
+	const SiteDef& Bronze = Ct.sites.list[0];
+	const SiteDef& Trial = Ct.sites.list[1];
+	KD_CHECK(Bronze.id == "monument_bronze" && !Bronze.arena && Bronze.level == 3 && Bronze.castle == 5 && Bronze.shards == 1);
+	KD_CHECK(Trial.id == "arena_trial" && Trial.arena && Trial.level == 4 && Trial.ai == "warlord" && Trial.xpPct == 300);
+	Kingdom K(Content());
+	K.NewGame(T0, 61);
+	KD_CHECK(K.SiteCount() == 7 && K.CheckSite(1).error == Error::Locked && K.CheckSite(1).castle == 4);
+	KD_CHECK(K.StartSiteAttack(1, {}, 0, {}, false) == Error::Locked && K.CheckSite(7).error == Error::BadId);
+	// Castle 9 opens the first three; plenty of gems for resets.
+	std::string Save = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":9");
+	Save = Replace(Save, "\"gems\":500", "\"gems\":100000");
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error));
+	KD_CHECK(L.CheckSite(0).error == Error::None && L.CheckSite(2).error == Error::None && L.CheckSite(3).error == Error::Locked);
+	const int32_t Perun = L.Titans()[0].id;
+	const int Militia = Ct.FindTroop("troop.militia");
+	const int64_t Stones = L.Amount(Res::Stones);
+	const int64_t Vp = L.Amount(Res::Vp);
+	// A monument: fought once, it is closed for a day whatever the result.
+	KD_CHECK(L.StartSiteAttack(0, {Militia}, Perun, {}, false) == Error::None);
+	KD_CHECK(L.Amount(Res::Stones) == Stones - 3 && L.PendingSite() == 0 && L.PendingAttack() == -1);
+	KD_CHECK(L.SiteReadyAt(0) == T0 + 24 * Hour && L.CheckSite(0).error == Error::NotReady && L.CheckSite(0).timeSec == 24 * Hour);
+	KD_CHECK(L.FinishSiteAttack(1, 3, {100}, {}, nullptr) == Error::NoAttack);
+	KD_CHECK(L.FinishAttack(L.World()[0].id, false, 3, {100}, {}, nullptr) == Error::NoAttack);
+	// A save in the middle of the battle loads to the same state.
+	const std::string Mid = L.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Mid, Error) && M.Hash() == L.Hash() && M.Save() == Mid && M.PendingSite() == 0 && M.SiteReadyAt(0) == T0 + 24 * Hour);
+	Reward R;
+	KD_CHECK(L.FinishSiteAttack(0, 3, {100}, {}, &R) == Error::None && L.PendingAttack() == 0);
+	KD_CHECK(R.squadsBack == 1 && R.titanId == Perun && R.titanXp == Ct.titanBattleXp[2] * Ct.titanStarsPct[3] / 100);
+	KD_CHECK(R.res[static_cast<size_t>(ResIndex(Res::Vp))] == L.VictoryVp(3) && L.Amount(Res::Vp) == Vp + L.VictoryVp(3));
+	KD_CHECK(R.relics.empty() && (R.res[static_cast<size_t>(ResIndex(Res::Shards))] == 0 || R.res[static_cast<size_t>(ResIndex(Res::Shards))] == 1));
+	// Gems open it again before the day is over; an open site has nothing to reset.
+	KD_CHECK(L.SiteResetGems(0) == 30 && L.SiteResetGems(2) == 0 && L.ResetSite(2) == Error::Nothing);
+	const int64_t Gems = L.Amount(Res::Gems);
+	KD_CHECK(L.ResetSite(0) == Error::None && L.Amount(Res::Gems) == Gems - 30 && L.CheckSite(0).error == Error::None);
+	// Shards drop by the stars' chance: about 80% at three stars, 40% at one.
+	for (const int Stars : {3, 1})
+	{
+		int Drops = 0;
+		for (int I = 0; I < 200; ++I)
+		{
+			L.ResetSite(0);
+			L.RefillStones();
+			const int64_t Shards = L.Amount(Res::Shards);
+			KD_CHECK(L.StartSiteAttack(0, {}, 0, {}, false) == Error::None && L.FinishSiteAttack(0, Stars, {}, {}, nullptr) == Error::None);
+			Drops += L.Amount(Res::Shards) > Shards ? 1 : 0;
+			KD_CHECK(L.Amount(Res::Shards) == Shards || L.Amount(Res::Shards) == Shards + 1);
+		}
+		KD_CHECK(Stars == 3 ? Drops >= 140 && Drops <= 180 : Drops >= 60 && Drops <= 100);
+	}
+	// A lost battle gives nothing, and the site stays closed.
+	L.ResetSite(0);
+	L.RefillStones();
+	const int64_t Before = L.Amount(Res::Vp);
+	KD_CHECK(L.StartSiteAttack(0, {}, 0, {}, false) == Error::None && L.FinishSiteAttack(0, 0, {}, {}, &R) == Error::None);
+	KD_CHECK(L.Amount(Res::Vp) == Before && L.CheckSite(0).error == Error::NotReady);
+	// An XP Arena: three times a land battle's XP for the titan, no VP, shards or relics.
+	L.Advance(L.Now() + 24 * Hour);
+	L.RefillStones();
+	const int64_t Shards = L.Amount(Res::Shards);
+	const int64_t Vp2 = L.Amount(Res::Vp);
+	KD_CHECK(L.FindTitan(Perun)->recoverUntil <= L.Now());
+	KD_CHECK(L.StartSiteAttack(1, {Militia}, Perun, {}, false) == Error::None && L.FinishSiteAttack(1, 2, {100}, {}, &R) == Error::None);
+	KD_CHECK(R.titanXp == Ct.titanBattleXp[3] * 300 / 100 * Ct.titanStarsPct[2] / 100);
+	KD_CHECK(L.Amount(Res::Shards) == Shards && L.Amount(Res::Vp) == Vp2 && R.relics.empty());
+	// The titan cannot fight while it rests, and the stones must be there.
+	L.ResetSite(1);
+	Kingdom N(Content());
+	KD_CHECK(N.Load(Replace(L.Save(), "\"stones\":" + std::to_string(L.Amount(Res::Stones)), "\"stones\":2"), Error));
+	KD_CHECK(N.CheckSite(1).error == Error::NeedStones && N.StartSiteAttack(1, {}, 0, {}, false) == Error::NeedStones);
+	// An old save without sites loads with every site open.
+	Kingdom O(Content());
+	const std::string Old = Replace(Save, "\"sites\":{\"counter\":0,\"ready\":{}}", "\"x\":0");
+	KD_CHECK(Old != Save && O.Load(Old, Error) && O.CheckSite(0).error == Error::None);
+}
+
 const SimContent& Battle()
 {
 	static SimContent S;
@@ -1514,6 +1598,7 @@ int main()
 		{"Ascension", TestAscension},
 		{"Alliances", TestAlliances},
 		{"LandUpgrades", TestLandUpgrades},
+		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
 		{"Raids", TestRaids},
 	};
 	for (const auto& T : Tests)

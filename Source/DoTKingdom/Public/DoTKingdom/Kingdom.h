@@ -504,6 +504,24 @@ public:
 	/** Asks the alliance to fill the Alliance Camp; squads arrive one by one. */
 	Error RequestReinforcements();
 
+	// --- Titan Monuments and XP Arenas (the original since 1.8) ---
+	// Battles of fixed difficulty beside the world lands. Fighting one (whatever the result) closes it for a day;
+	// gems open it again. A won monument may drop shards, a won arena gives the titan extra XP and nothing else.
+	int SiteCount() const { return static_cast<int>(C.sites.list.size()); }
+	/** When the site can be fought again (0 or a past time: now). */
+	int64_t SiteReadyAt(int Site) const;
+	/** Locked (Castle too low), NotReady (cooling down), NeedStones; the cost is the portal stones. */
+	Check CheckSite(int Site) const;
+	/** Gems to fight the site again before its cooldown ends (0 when it is ready). */
+	int64_t SiteResetGems(int Site) const;
+	Error ResetSite(int Site);
+	/** Spends portal stones for a site battle with this army (as StartAttack); the battle runs elsewhere. */
+	Error StartSiteAttack(int Site, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
+	/** Applies a site battle's result: casualties, spells and titan XP as on a land, then the site's reward. */
+	Error FinishSiteAttack(int Site, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out);
+	/** The pending battle's site (-1 when the pending battle is on a world land or there is none). */
+	int PendingSite() const { return Pending < 0 ? -Pending - 1 : -1; }
+
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
 	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
@@ -592,6 +610,13 @@ private:
 	int RecruitsAt(int64_t At) const;
 	/** Ranks every league at the end of the season, pays the player's alliance and moves alliances up and down. */
 	bool RollAllianceLeagues(int64_t End);
+	/** Checks the army that goes to a battle, spends the stones and makes it the pending battle (Target: a world
+	 *  land's id, or -(site + 1)). */
+	Error BeginBattle(int32_t Target, bool Capture, int64_t Stones, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells,
+		bool Reinforce);
+	/** Brings the pending army back: casualties, spells cast, the titan's XP (XpPct of a land battle of this level),
+	 *  relic wear and rest; allies' squads leave. */
+	void EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R);
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -662,6 +687,9 @@ private:
 	std::vector<RelicItem> RelicList;
 	int64_t RelicAt = 0;
 	uint64_t RelicCounter = 0;
+	// Titan Monuments and XP Arenas: when each site opens again (by site index), and the shard drop counter.
+	std::vector<int64_t> SiteReady;
+	uint64_t SiteCounter = 0;
 	// Raids
 	const SimContent* BattleContent = nullptr;
 	int64_t NextRaid = 0;

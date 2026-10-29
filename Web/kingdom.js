@@ -161,6 +161,15 @@ class KingdomBridge {
 		return JSON.parse(this.str(this.M.ccall('dk_attack_finish', 'number', ['number', 'number', 'number', 'string', 'string'],
 			[worldId, capture ? 1 : 0, stars, (survivors || []).join(','), (used || []).join(',')])));
 	}
+	siteStart(site, squads, titan, spells, reinforce) {
+		return this.M.ccall('dk_site_start', 'number', ['number', 'string', 'number', 'string', 'number'],
+			[site, (squads || []).join(','), titan || 0, (spells || []).join(','), reinforce ? 1 : 0]);
+	}
+	siteFinish(site, stars, survivors, used) {
+		return JSON.parse(this.str(this.M.ccall('dk_site_finish', 'number', ['number', 'number', 'string', 'string'],
+			[site, stars, (survivors || []).join(','), (used || []).join(',')])));
+	}
+	siteReset(site) { return this.M._dk_site_reset(site); }
 	craft(sp) { return this.M._dk_craft(sp); }
 	cancelCraft(i) { return this.M._dk_cancel_craft(i); }
 	skipCraft() { return this.M._dk_skip_craft(); }
@@ -2395,6 +2404,8 @@ function onAct(e) {
 	case 'shop': startPlace(id); break;
 	case 'tab': K.shopTab = el.dataset.tab; refreshSheet(true); break;
 	case 'raid': startAttack(id, false); break;
+	case 'site': startSite(id); break;
+	case 'site-reset': gemAction('site-reset:' + id, +el.dataset.gems, () => run(K.bridge.siteReset(id), siteDef(id).name + ': можно снова в бой')); break;
 	case 'capture': startAttack(id, true); break;
 	case 'world': openWorld(); break;
 	case 'army': openArmy(); break;
@@ -3102,10 +3113,42 @@ function openShop() {
 	});
 }
 
-function enemyText(lv, et) {
+function enemyText(lv, et, ai) {
 	const b = K.rules.battles[Math.min(lv, K.rules.battles.length) - 1];
 	const n = b.squads.length;
-	return AI_RU[b.ai] + ': ' + n + ' ' + plural(n, 'отряд', 'отряда', 'отрядов') + (et ? ', титан ' + et.def.name + ' ур. ' + et.level : b.titan ? ', титан ур. ' + b.titan.level : ', без титана');
+	return AI_RU[ai || b.ai] + ': ' + n + ' ' + plural(n, 'отряд', 'отряда', 'отрядов') + (et ? ', титан ' + et.def.name + ' ур. ' + et.level : b.titan ? ', титан ур. ' + b.titan.level : ', без титана');
+}
+// Titan Monuments and XP Arenas (the original since 1.8): fixed battles beside the world lands, once a day each.
+// The land battle code fights them as a pseudo land { id, lv, site }.
+const SITE_ID = 900001;
+const siteDef = (i) => K.rules.sites.list[i];
+const siteTarget = (i) => ({ id: SITE_ID + i, lv: siteDef(i).level, site: i });
+/** A site's battlefield: the land type that uses the same map lends its name and note. */
+function siteField(d) {
+	const lt = K.rules.lands.types.find((t) => t.map === d.map);
+	return { name: d.name, map: d.map, swap: {}, field: lt ? lt.field : 'Долина Хайвейл', fieldNote: lt ? lt.fieldNote : 'река с двумя бродами и мостом, холмы и лес' };
+}
+function siteIcon(i) {
+	const d = siteDef(i);
+	return '<div class="ico ' + (d.kind === 'arena' ? 'vp' : 'shards') + ' land">' + DotIcons.svg('land.' + d.kind) + '<i class="lvb">' + d.level + '</i></div>';
+}
+function siteReward(d) {
+	return d.kind === 'arena' ? 'опыт титана ×' + d.xpPct / 100 + ', без добычи и реликвий'
+		: 'с шансом ' + K.rules.sites.shardPct.join(' / ') + '% (1 / 2 / 3 звезды) ' + resAmount('shards', d.shards) + ', очки победы';
+}
+function siteCards(st) {
+	if (!K.rules.sites) return [];
+	return K.rules.sites.list.map((d, i) => {
+		const s = st.sites[i];
+		let btn;
+		if (s.ck.err === E.Locked) btn = '<button class="btn" disabled>С Замка ' + s.ck.c + '</button>';
+		else if (s.ck.err === E.NotReady) btn = '<button class="btn" data-act="site-reset" data-id="' + i + '" data-gems="' + s.gems + '">' + (isArmed('site-reset:' + i) ? 'Подтвердить ' : 'Открыть сейчас ') + gemSpan(s.gems) + '</button>';
+		else btn = '<button class="btn primary" data-act="site" data-id="' + i + '"' + (s.ck.err === E.NeedStones ? ' disabled' : '') + '>В бой · ' + K.rules.sites.stones + ' ' + iconSvg('stones') + '</button>';
+		return '<div class="landCard">' + siteIcon(i) + '<div class="info"><b>' + esc(d.name) + ' · ур. ' + d.level + '</b>' +
+			'<span>' + esc(enemyText(d.level, enemyTitan(siteTarget(i)), d.ai)) + ' · поле боя: ' + esc(siteField(d).field) + '</span>' +
+			'<span>Победа: ' + siteReward(d) + (s.ck.err === E.NotReady ? ' · <b data-live="site' + i + '"></b>' : '') + '</span></div>' +
+			'<div class="row">' + btn + '</div></div>';
+	});
 }
 function openWorld() {
 	cancelPlace();
@@ -3141,13 +3184,18 @@ function openWorld() {
 			'<div class="costline"><span>Камни</span><b>' + iconSvg('stones') + st.res[3] + ' / ' + st.cap[3] + '</b><span data-live="next"></span>' +
 			(refill > 0 ? '<button class="btn" data-act="refill" data-gems="' + refill + '">' + (isArmed('refill') ? 'Подтвердить ' : 'Пополнить ') + gemSpan(refill) + '</button>' : '') + '</div>' +
 			'<h3>Можно атаковать</h3>' + cards.join('') +
+			(K.rules.sites ? '<h3>Монументы титанов и арены опыта</h3><p class="fine">Как в оригинале (версия 1.8): бои постоянной сложности. Монумент может дать осколки, арена — много опыта титану, без добычи. После боя, чем бы он ни кончился, место закрыто на сутки; открыть раньше можно за самоцветы.</p>' + siteCards(st).join('') : '') +
 			'<h3>Ваши земли: ' + st.lands.length + ' из ' + st.landCap + '</h3>' +
 			(mine.length ? mine.join('') : '<p class="fine">Пока ни одной. Захватите землю, и она будет приносить ресурсы. Мест для земель: ' + st.landCap + ' (растёт с Замком, до ' + L.maxLands + ').</p>') +
 			(slotPrice ? '<div class="actions"><button class="btn" data-act="slot" data-gems="' + slotPrice + '">' + (isArmed('slot') ? 'Подтвердить ' : 'Ещё место для земли ') + gemSpan(slotPrice) + '</button></div>' : '') +
 			'<div class="actions">' + closeBtn + '</div>';
 		return {
-			key: ['world', st.res[3], st.cap[3], st.lands.map((l) => l.id + ':' + (l.st > 0)).join(), st.world.map((w) => w.id).join(), st.landCap, isArmed('refill'), isArmed('slot')].join('|'), html,
-			live(el) { live(el, 'next', K.st.stonesNext ? 'следующий через ' + fmtClock(K.st.stonesNext - nowF()) : 'полный запас'); },
+			key: ['world', st.res[3], st.cap[3], st.lands.map((l) => l.id + ':' + (l.st > 0)).join(), st.world.map((w) => w.id).join(), st.landCap, isArmed('refill'), isArmed('slot'),
+				(st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join()].join('|'), html,
+			live(el) {
+				live(el, 'next', K.st.stonesNext ? 'следующий через ' + fmtClock(K.st.stonesNext - nowF()) : 'полный запас');
+				(K.st.sites || []).forEach((x, i) => live(el, 'site' + i, 'откроется через ' + fmtDur(x.ready - nowF())));
+			},
 		};
 	});
 }
@@ -3326,8 +3374,9 @@ function landScenario(w, prep) {
 	const slots = K.rules.battleSlots;
 	const att = sc.sides.attacker;
 	const def = sc.sides.defender;
-	const ty = landType(w.type);
-	sc.name = ty.name + ', уровень ' + w.lv;
+	const site = w.site >= 0 ? siteDef(w.site) : null;
+	const ty = site ? siteField(site) : landType(w.type);
+	sc.name = site ? site.name : ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -3357,8 +3406,8 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = 'Защитники земли';
-	def.ai = b.ai;
+	def.name = site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : 'Защитники земли';
+	def.ai = (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours).
 	const swap = ty.swap || {};
 	def.squads = b.squads.map((t0, i) => {
@@ -3378,15 +3427,22 @@ function startAttack(wid, capture) {
 	if (K.st.res[3] < (capture ? 6 : 3)) { toast(errText(E.NeedStones), 'bad'); return; }
 	openPrepare(wid, capture);
 }
+function startSite(i) {
+	const s = K.st.sites[i];
+	if (!s) return;
+	if (s.ck.err !== E.None) { toast(errText(s.ck.err, s.ck), 'bad'); return; }
+	openPrepare(0, false, i);
+}
 function launchAttack() {
 	const p = K.prep;
-	const w = p && K.st.world.find((x) => x.id === p.wid);
+	const site = p && p.site >= 0;
+	const w = site ? siteTarget(p.site) : p && K.st.world.find((x) => x.id === p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
 	if (!squads.length && !p.titan) { toast('Выберите титана или хотя бы один отряд', 'bad'); return; }
 	const spells = p.spells.filter((i) => K.st.spells.stock[i] > 0);
-	const code = K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
+	const code = site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
 	if (code !== E.None) { toast(errText(code), 'bad'); refresh(true); return; }
 	persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
@@ -3396,8 +3452,10 @@ function launchAttack() {
 	K.app.sim.addFile(path, JSON.stringify(sc));
 	closeSheet();
 	select(null);
-	K.app.startLandBattle(path, sc.sides.defender.ai, { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, squads: squads.length,
-		charges: sc.sides.attacker.spellCharges.slice() });
+	const charges = sc.sides.attacker.spellCharges.slice();
+	// A site battle is a land battle for the battle screen (retreat, stars back to the kingdom), with its site.
+	K.app.startLandBattle(path, sc.sides.defender.ai, site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
+		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, squads: squads.length, charges });
 }
 /** Each attacking squad's surviving share (%) in the order they were sent, read from the finished simulation. */
 function survivorsFromBattle(count) {
@@ -3414,15 +3472,33 @@ function survivorsFromBattle(count) {
 	while (out.length < count) out.push(0);
 	return out.slice(0, count);
 }
+/** Casts used = charges taken minus charges left in the finished battle. */
+function spellsUsed(ctx) {
+	let left = [];
+	try { left = K.app.sim.frame().sides[0].ch || []; } catch (e) { left = []; }
+	return (ctx.charges || []).map((c, i) => Math.max(0, c - (left[i] >= 0 ? left[i] : c)));
+}
+/** One message for the army after a battle (phones show two at a time). */
+function armyToast(r, used) {
+	const parts = [];
+	if (r.lost || r.back) parts.push('вернулось отрядов ' + r.back + ', погибло ' + r.lost + (r.lost && K.st && K.st.army.surv >= 100 ? ' (без Лазарета раненые гибнут)' : ''));
+	const t = r.titan && K.bridge.state().titans.find((x) => x.id === r.titan);
+	if (t) parts.push(K.army.titans[t.def].name + ' +' + fmt(r.xp) + ' опыта' + (r.levels ? ', уровень ' + t.lv : ''));
+	const cast = used.reduce((x, y) => x + y, 0);
+	if (cast) parts.push('заклинаний потрачено ' + cast);
+	if (r.broken) parts.push('сломано реликвий ' + r.broken);
+	const got = (r.relics || []).map((rid) => K.bridge.state().relics.find((x) => x.id === rid)).filter(Boolean);
+	if (got.length) parts.push('реликвии: ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
+	if (r.relicsLost) parts.push('склад реликвий полон, пропало ' + r.relicsLost);
+	if (r.reinf) parts.push('подкрепления альянса (' + r.reinf + ') ушли после боя');
+	if (parts.length) toast(parts.join(' · ').replace(/^./, (c) => c.toUpperCase()), r.lost ? 'bad' : 'gold');
+}
 function onBattleEnd(ctx, stars, retreat) {
 	if (!K.ready) return;
 	let r = null;
-	if (ctx && ctx.kind === 'land') {
+	if (ctx && ctx.kind === 'land' && !(ctx.site >= 0)) {
 		const survivors = survivorsFromBattle(ctx.squads || 0);
-		// Casts used = charges taken minus charges left in the finished battle.
-		let left = [];
-		try { left = K.app.sim.frame().sides[0].ch || []; } catch (e) { left = []; }
-		const used = (ctx.charges || []).map((c, i) => Math.max(0, c - (left[i] >= 0 ? left[i] : c)));
+		const used = spellsUsed(ctx);
 		r = K.bridge.attackFinish(ctx.worldId, ctx.capture, stars, survivors, used);
 		if (r.err === E.None) {
 			const res = landType(ctx.type).resource;
@@ -3431,21 +3507,27 @@ function onBattleEnd(ctx, stars, retreat) {
 			if (stars > 0 && ctx.capture) toast('Земля захвачена! Теперь она приносит ' + what + vpText, 'gold');
 			else if (stars > 0) toast('Набег удался: +' + resAmount(res, res === 'vp' ? r.vp : res === 'shards' ? r.shards : res === 'food' ? r.food : r.gold) + vpText, 'gold');
 			else toast((retreat ? 'Отступление' : 'Поражение') + ': камни портала потрачены, земля осталась у врага', 'bad');
-			// One message for the army (phones show two at a time).
-			const parts = [];
-			if (r.lost || r.back) parts.push('вернулось отрядов ' + r.back + ', погибло ' + r.lost + (r.lost && K.st && K.st.army.surv >= 100 ? ' (без Лазарета раненые гибнут)' : ''));
-			const t = r.titan && K.bridge.state().titans.find((x) => x.id === r.titan);
-			if (t) parts.push(K.army.titans[t.def].name + ' +' + fmt(r.xp) + ' опыта' + (r.levels ? ', уровень ' + t.lv : ''));
-			const cast = used.reduce((x, y) => x + y, 0);
-			if (cast) parts.push('заклинаний потрачено ' + cast);
-			if (r.broken) parts.push('сломано реликвий ' + r.broken);
-			const got = (r.relics || []).map((rid) => K.bridge.state().relics.find((x) => x.id === rid)).filter(Boolean);
-			if (got.length) parts.push('реликвии: ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
-			if (r.relicsLost) parts.push('склад реликвий полон, пропало ' + r.relicsLost);
-			if (r.reinf) parts.push('подкрепления альянса (' + r.reinf + ') ушли после боя');
-			if (parts.length) toast(parts.join(' · ').replace(/^./, (c) => c.toUpperCase()), r.lost ? 'bad' : 'gold');
+			armyToast(r, used);
 		}
 		persist();
+	} else if (ctx && ctx.kind === 'land') {
+		const used = spellsUsed(ctx);
+		r = K.bridge.siteFinish(ctx.site, stars, survivorsFromBattle(ctx.squads || 0), used);
+		if (r.err === E.None) {
+			const d = siteDef(ctx.site);
+			if (stars <= 0) toast((retreat ? 'Отступление' : 'Поражение') + ': ' + d.name + ' снова откроется через сутки', 'bad');
+			else if (d.kind === 'arena') toast(d.name + ' пройдена: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : ', но без титана опыта нет'), 'gold');
+			else toast(d.name + ' покорён: ' + (r.shards ? '+' + resAmount('shards', r.shards) : 'осколков на этот раз нет') + (r.vp ? ', +' + fmt(r.vp) + ' ОП' : ''), 'gold');
+			armyToast(r, used);
+		}
+		persist();
+		refresh(true);
+		if (r.err === E.None && r.shards > 0) {
+			const c = K.st.b.find((b) => b.def === K.rules.castleIndex);
+			const v = c && world.views.get(c.id);
+			if (v) floatText(v.anchor, '+' + fmt(r.shards), RES_COLOR.shards, 'shards');
+		}
+		return;
 	}
 	refresh(true);
 	if (!r || r.err !== E.None || stars <= 0) return;
@@ -4106,7 +4188,7 @@ function openRaidLog(away) {
 }
 
 /** Before a land battle: pick the titan and the squads (up to the Army Camp's battle slots). */
-function openPrepare(wid, capture) {
+function openPrepare(wid, capture, site) {
 	cancelPlace();
 	select(null);
 	const a = K.st.army;
@@ -4121,11 +4203,12 @@ function openPrepare(wid, capture) {
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: true };
+	K.prep = { wid, capture, site: site >= 0 ? site : -1, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: true };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
-		const w = st.world.find((x) => x.id === p.wid);
+		const sd = p.site >= 0 ? siteDef(p.site) : null;
+		const w = sd ? siteTarget(p.site) : st.world.find((x) => x.id === p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -4138,9 +4221,9 @@ function openPrepare(wid, capture) {
 		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + aa.lv[t] + '</b><span>в лагере ' + aa.n[t] + '</span></div>' +
 			'<div class="stepper"><button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="-1"' + (p.counts[t] > 0 ? '' : ' disabled') + '>−</button><b>' + p.counts[t] + '</b>' +
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots ? '' : ' disabled') + '>+</button></div></div>');
-		const ty = landType(w.type);
+		const ty = sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
-		const cost = p.capture ? 6 : 3;
+		const cost = sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
@@ -4149,8 +4232,9 @@ function openPrepare(wid, capture) {
 		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
-		const html = sheetTitle(landIcon(w.type, w.lv), (p.capture ? 'Захват' : 'Набег') + ': ' + esc(ty.name) + ', ур. ' + w.lv) +
-			'<p>Противник: ' + esc(enemyText(w.lv, et)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+		const html = sheetTitle(sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(ty.name) + ', ур. ' + w.lv) +
+			'<p>Противник: ' + esc(enemyText(w.lv, et, sd && sd.ai)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			(sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
 			'<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' +
 			'<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
@@ -4421,10 +4505,14 @@ function init(app) {
 		K.bridge.advance(nowSec());
 		visit();
 		const st = K.bridge.state();
-		if (st.pending) {
+		if (st.pending > 0) {
 			// The page closed during a land battle: it counts as a retreat with the army intact (stones are spent).
 			K.bridge.attackFinish(st.pending, !!st.pendingCapture, 0, st.army.away.map(() => 100), st.spells.away.map(() => 0));
 			setTimeout(() => toast('Прерванный бой за землю засчитан как отступление', 'bad'), 600);
+		} else if (st.pending < 0) {
+			// The same for a monument or an arena (it stays closed for the day, as after any battle there).
+			K.bridge.siteFinish(-st.pending - 1, 0, st.army.away.map(() => 100), st.spells.away.map(() => 0));
+			setTimeout(() => toast('Прерванный бой засчитан как отступление', 'bad'), 600);
 		}
 
 		kov = $('kov');

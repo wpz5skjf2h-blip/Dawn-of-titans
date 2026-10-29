@@ -122,6 +122,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	Res_[static_cast<size_t>(ResIndex(Res::Stones))] = std::min(Amount(Res::Stones), Capacity(Res::Stones));
 	ResetArmy();
 	ResetRaids(Now);
+	SiteReady.assign(C.sites.list.size(), 0);
+	SiteCounter = 0;
 	FillWorld();
 }
 
@@ -1957,6 +1959,12 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 	{
 		return Error::NoLandSlot;
 	}
+	return BeginBattle(WorldId, Capture, Capture ? C.captureStones : C.raidStones, Squads, TitanId, Spells, Reinforce);
+}
+
+Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells,
+	bool Reinforce)
+{
 	if (static_cast<int>(Squads.size()) > BattleSlots())
 	{
 		return Error::TooManySquads;
@@ -2001,7 +2009,6 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 			return Error::NoTroops;
 		}
 	}
-	const int64_t Cost = Capture ? C.captureStones : C.raidStones;
 	int64_t& Stones = Res_[static_cast<size_t>(ResIndex(Res::Stones))];
 	if (Stones < Cost)
 	{
@@ -2013,7 +2020,7 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 	{
 		StonesAt = Time;
 	}
-	Pending = WorldId;
+	Pending = Target;
 	PendingIsCapture = Capture;
 	PendingArmy = Squads;
 	PendingTitanId = TitanId;
@@ -2049,22 +2056,8 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	return FinishAttack(WorldId, Capture, Stars, SurvivorPct, std::vector<int>(), Out);
 }
 
-Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+void Kingdom::EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R)
 {
-	if (Pending == 0 || Pending != WorldId || PendingIsCapture != Capture)
-	{
-		return Error::NoAttack;
-	}
-	Pending = 0;
-	size_t Index = WorldList.size();
-	for (size_t I = 0; I < WorldList.size(); ++I)
-	{
-		if (WorldList[I].id == WorldId)
-		{
-			Index = I;
-		}
-	}
-	Reward R;
 	// Casualties: a squad comes back only if enough of it survived (Medical School threshold).
 	const int Survival = SurvivalPct();
 	for (size_t I = 0; I < PendingArmy.size(); ++I)
@@ -2111,10 +2104,9 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 					}
 				}
 			}
-			const int LandLevel = Index < WorldList.size() ? WorldList[Index].level : 1;
-			const int64_t Base = C.titanBattleXp[static_cast<size_t>(std::min<int>(LandLevel, static_cast<int>(C.titanBattleXp.size())) - 1)];
+			const int64_t Base = C.titanBattleXp[static_cast<size_t>(std::max(1, std::min<int>(Level, static_cast<int>(C.titanBattleXp.size()))) - 1)];
 			R.titanId = T.id;
-			R.titanXp = Base * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100 * (1000 + XpBonus) / 1000;
+			R.titanXp = Base * XpPct / 100 * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100 * (1000 + XpBonus) / 1000;
 			AddTitanXp(T, R.titanXp, &R.titanLevels);
 			if (T.level > C.titanRecoveryFromLevel)
 			{
@@ -2129,6 +2121,25 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	// Reinforcements help in one battle only (the original).
 	R.reinforcements = static_cast<int>(PendingReinforce.size());
 	PendingReinforce.clear();
+}
+
+Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Pending <= 0 || Pending != WorldId || PendingIsCapture != Capture)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	size_t Index = WorldList.size();
+	for (size_t I = 0; I < WorldList.size(); ++I)
+	{
+		if (WorldList[I].id == WorldId)
+		{
+			Index = I;
+		}
+	}
+	Reward R;
+	EndBattle(Index < WorldList.size() ? WorldList[Index].level : 1, Stars, 100, SurvivorPct, SpellsUsed, R);
 	if (Index >= WorldList.size())
 	{
 		if (Out)
@@ -2186,6 +2197,115 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 		// A beaten land leaves the map; a new one appears.
 		WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Index));
 		FillWorld();
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Titan Monuments and XP Arenas -------------------------------------------------------------------
+
+int64_t Kingdom::SiteReadyAt(int Site) const
+{
+	return Site >= 0 && Site < static_cast<int>(SiteReady.size()) ? SiteReady[static_cast<size_t>(Site)] : 0;
+}
+
+Check Kingdom::CheckSite(int Site) const
+{
+	Check Out;
+	if (Site < 0 || Site >= SiteCount())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const SiteDef& D = C.sites.list[static_cast<size_t>(Site)];
+	Out.cost[static_cast<size_t>(ResIndex(Res::Stones))] = C.sites.stones;
+	if (CastleLevel() < D.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = D.castle;
+	}
+	else if (SiteReadyAt(Site) > Time)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = SiteReadyAt(Site) - Time;
+	}
+	else if (Amount(Res::Stones) < C.sites.stones)
+	{
+		Out.error = Error::NeedStones;
+	}
+	return Out;
+}
+
+int64_t Kingdom::SiteResetGems(int Site) const
+{
+	return SiteReadyAt(Site) > Time ? C.sites.list[static_cast<size_t>(Site)].resetGems : 0;
+}
+
+Error Kingdom::ResetSite(int Site)
+{
+	if (Site < 0 || Site >= SiteCount())
+	{
+		return Error::BadId;
+	}
+	if (SiteReadyAt(Site) <= Time)
+	{
+		return Error::Nothing;
+	}
+	const int64_t Gems = SiteResetGems(Site);
+	if (Amount(Res::Gems) < Gems)
+	{
+		return Error::NotEnough;
+	}
+	Res_[static_cast<size_t>(ResIndex(Res::Gems))] -= Gems;
+	SiteReady[static_cast<size_t>(Site)] = 0;
+	return Error::None;
+}
+
+Error Kingdom::StartSiteAttack(int Site, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
+{
+	const Check Ck = CheckSite(Site);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const Error E = BeginBattle(-(Site + 1), false, C.sites.stones, Squads, TitanId, Spells, Reinforce);
+	if (E == Error::None)
+	{
+		// The original: once battled in, a monument or arena is closed for a day, whatever the result.
+		SiteReady.resize(C.sites.list.size(), 0);
+		SiteReady[static_cast<size_t>(Site)] = Time + C.sites.cooldownSec;
+	}
+	return E;
+}
+
+Error Kingdom::FinishSiteAttack(int Site, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Site < 0 || Site >= SiteCount() || Pending != -(Site + 1))
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const SiteDef& D = C.sites.list[static_cast<size_t>(Site)];
+	Reward R;
+	EndBattle(D.level, Stars, D.arena ? D.xpPct : 100, SurvivorPct, SpellsUsed, R);
+	if (Stars > 0 && !D.arena)
+	{
+		// A monument: victory points like a land of its level, and a chance of shards (the original 1.8: "a % drop
+		// of a random Shard"; the chances and amounts are ours).
+		const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
+		const int64_t Vp = VictoryVp(D.level) > 0 ? std::max<int64_t>(1, VictoryVp(D.level) * Pct / 100) : 0;
+		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		const uint64_t H = Mix(Seed ^ 0x6d6f6e75ULL, SiteCounter++);
+		if (static_cast<int64_t>(H % 100) < C.sites.shardPct[static_cast<size_t>(std::min(3, Stars) - 1)])
+		{
+			const int64_t Before = Amount(Res::Shards);
+			AddResource(Res::Shards, D.shards);
+			R.res[static_cast<size_t>(ResIndex(Res::Shards))] += Amount(Res::Shards) - Before;
+		}
 	}
 	if (Out)
 	{
@@ -4275,6 +4395,23 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Titan Monuments and XP Arenas (format 6, optional): cooldowns by site id.
+	W.Key("sites");
+	W.BeginObject();
+	W.Key("counter");
+	W.UInt(SiteCounter);
+	W.Key("ready");
+	W.BeginObject();
+	for (size_t I = 0; I < SiteReady.size() && I < C.sites.list.size(); ++I)
+	{
+		if (SiteReady[I] > 0)
+		{
+			W.Key(C.sites.list[I].id.c_str());
+			W.Int(SiteReady[I]);
+		}
+	}
+	W.EndObject();
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -4747,6 +4884,25 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	{
 		GarrisonTitanId = 0;
 	}
+	// Titan Monuments and XP Arenas (saves before them start with every site open).
+	SiteReady.assign(C.sites.list.size(), 0);
+	SiteCounter = 0;
+	if (const JsonValue* SitesJ = J.Find("sites"))
+	{
+		const JsonValue* CounterJ3 = SitesJ->Find("counter");
+		SiteCounter = CounterJ3 ? static_cast<uint64_t>(std::strtoull(CounterJ3->text.c_str(), nullptr, 10)) : 0;
+		if (const JsonValue* ReadyJ = SitesJ->Find("ready"))
+		{
+			for (size_t I = 0; I < C.sites.list.size(); ++I)
+			{
+				SiteReady[I] = std::max<int64_t>(0, ReadyJ->GetInt64(C.sites.list[I].id.c_str(), 0));
+			}
+		}
+	}
+	if (Pending < 0 && -Pending > static_cast<int32_t>(C.sites.list.size()))
+	{
+		Pending = 0; // a site the content no longer has
+	}
 	FillWorld();
 	return true;
 }
@@ -4948,6 +5104,15 @@ uint64_t Kingdom::Hash() const
 			W.I64(V);
 		}
 		W.I64(Rep.vp);
+	}
+	// Sites (only once one has been fought, so states without them hash as before).
+	if (SiteCounter != 0 || std::any_of(SiteReady.begin(), SiteReady.end(), [](int64_t T) { return T != 0; }))
+	{
+		W.U64(SiteCounter);
+		for (const int64_t T : SiteReady)
+		{
+			W.I64(T);
+		}
 	}
 	return W.Hash();
 }

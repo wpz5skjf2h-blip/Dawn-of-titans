@@ -1084,6 +1084,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma();
 		O.Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->VictoryVp(W.level)).Raw("}");
 	}
+	// Titan Monuments and XP Arenas: when each opens again, what fighting it now would say, the reset price.
+	O.Raw("],").Key("sites").Raw("[");
+	for (int I = 0; I < Km->SiteCount(); ++I)
+	{
+		O.Raw(I ? "," : "").Raw("{").Key("ready").Int(Km->SiteReadyAt(I)).Comma().Key("gems").Int(Km->SiteResetGems(I)).Comma().Key("ck");
+		WriteCheck(O, Km->CheckSite(I));
+		O.Raw("}");
+	}
 	O.Raw("],").Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
@@ -1345,10 +1353,9 @@ EMSCRIPTEN_KEEPALIVE int dk_attack_start(int WorldId, int Capture, const char* S
 }
 
 /** Survivors: each squad's surviving share in percent, in the order the squads were sent. */
-EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int Stars, const char* Survivors, const char* SpellsUsed)
+/** A finished battle's reward as JSON (lands and sites alike). */
+const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 {
-	dot::kingdom::Reward R;
-	const dot::kingdom::Error E = K() ? K()->FinishAttack(WorldId, Capture != 0, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
 	Out O(G().Text);
 	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("gold").Int(R.res[0]).Comma().Key("food").Int(R.res[1]).Comma();
 	O.Key("shards").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Shards))]).Comma();
@@ -1363,6 +1370,31 @@ EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int 
 	}
 	O.Raw("]}");
 	return G().Text.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishAttack(WorldId, Capture != 0, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** A Titan Monument or XP Arena battle: the army as for dk_attack_start. */
+EMSCRIPTEN_KEEPALIVE int dk_site_start(int Site, const char* Squads, int TitanId, const char* Spells, int Reinforce)
+{
+	return K() ? static_cast<int>(K()->StartSiteAttack(Site, ParseInts(Squads), TitanId, ParseInts(Spells), Reinforce != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_site_finish(int Site, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishSiteAttack(Site, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_site_reset(int Site)
+{
+	return K() ? static_cast<int>(K()->ResetSite(Site)) : -1;
 }
 
 EMSCRIPTEN_KEEPALIVE int dk_train(int Troop)

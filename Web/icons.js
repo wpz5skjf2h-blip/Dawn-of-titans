@@ -1,7 +1,7 @@
 'use strict';
 // Game icons: hand-drawn SVG glyphs (48 x 48, ink outline) shared by the kingdom screen and the battle HUD.
 // The tile behind a glyph (colour by category) comes from CSS (.ico ...), so the same glyph works on any background.
-// Names: troop.<id>, building.<id>, spell.<id>, relic.<kind id>, class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins>, ui.<name>.
+// Names: troop.<id>, building.<id>, spell.<id>, relic.<kind id>, class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins|monument|arena>, ui.<name>.
 
 const DotIcons = (() => {
 	const INK = '#26180c';
@@ -286,6 +286,12 @@ const DotIcons = (() => {
 			p('M26 24L33 13L40 24Z', '#7f7a6e') + STAR(39, 7, 5, K.gold),
 		'land.ruins': ISLAND + r(10, 9, 5, 15, 1, K.stone) + r(9, 7, 7, 3, 1, K.stoneD) + r(31, 14, 5, 10, 1, K.stone) +
 			p('M31 14L33 12L36 14Z', K.stone, 'stroke-width="1.2"') + p('M24 4L28.5 12L24 22L19.5 12Z', '#8fd8ff') + hi('M22 11L24 6.5') + spark(39, 6, 2.8, K.white),
+		// Titan Monument: a titan's statue on a plinth, with a shard beside it.
+		'land.monument': ISLAND + r(15, 18, 14, 5, 1, K.stoneD) + p('M17 18L18.5 10L16 6.5L19 3.5H25L28 6.5L25.5 10L27 18Z', K.stone) + c(22, 3.6, 2.6, K.stone) +
+			hi('M19.5 7L20.5 12') + p('M35 9L38 14L35 21L32 14Z', '#8fd8ff') + hi('M34 13L35 10.5'),
+		// XP Arena: a stone ring with crossed blades over it.
+		'land.arena': ISLAND + '<ellipse cx="24" cy="20" rx="14" ry="4.8" fill="' + K.stone + '"/>' + '<ellipse cx="24" cy="19.4" rx="9" ry="2.6" fill="#d9b779"/>' +
+			at(13.5, -1.5, 0.45, rot(38, SWORD) + rot(-38, SWORD)) + spark(39, 7, 3, K.white),
 		'ui.attack': rot(40, SWORD) + rot(-40, SWORD),
 		'ui.army': HELMET,
 		'ui.build': rot(-30, HAMMER),

@@ -180,6 +180,28 @@
     ]
   },
 
+  // Titan Monuments and XP Arenas (the original, version 1.8, wiki Announcements): monuments replaced the old shard
+  // lands; both have fixed difficulties; a monument gives "a % drop of a random Shard", an XP Arena raises the XP titans
+  // gain and drops no relics or rewards ("these arenas are no walk in the park"); once battled in, each is unavailable
+  // for 24 hours unless the player spends gems. Ours: the sites, their levels (a row of "battles" below), the Castle
+  // that opens them, the defenders' AI, the battlefields, the stone cost (a raid's), the shard chances by stars and
+  // amounts, the arena XP (x3 a land battle's) and the gem prices. Shards are one currency here, so "random" is the
+  // chance itself. A won monument also gives a land battle's victory points (the original's rule for almost every win).
+  "sites": {
+    "cooldownHours": 24,
+    "stones": 3,
+    "shardPct": [40, 60, 80],
+    "list": [
+      { "id": "monument_bronze", "kind": "monument", "name": "Монумент Бронзы",  "level": 3, "castle": 5,  "shards": 1, "map": "map.ruins_01",    "resetGems": 30 },
+      { "id": "arena_trial",     "kind": "arena",    "name": "Арена испытаний",  "level": 4, "castle": 4,  "ai": "warlord",   "xpPct": 300, "map": "map.highvale_01", "resetGems": 30 },
+      { "id": "monument_storm",  "kind": "monument", "name": "Монумент Бури",    "level": 5, "castle": 9,  "shards": 2, "map": "map.ruins_01",    "resetGems": 50 },
+      { "id": "arena_heroes",    "kind": "arena",    "name": "Арена героев",     "level": 6, "castle": 10, "ai": "warlord",   "xpPct": 300, "map": "map.highvale_01", "resetGems": 60 },
+      { "id": "monument_frost",  "kind": "monument", "name": "Монумент Инея",    "level": 7, "castle": 13, "shards": 3, "map": "map.mountain_01", "resetGems": 80 },
+      { "id": "arena_titans",    "kind": "arena",    "name": "Арена титанов",    "level": 8, "castle": 15, "ai": "nightmare", "xpPct": 300, "map": "map.highvale_01", "resetGems": 100 },
+      { "id": "monument_flame",  "kind": "monument", "name": "Монумент Пламени", "level": 9, "castle": 17, "shards": 4, "map": "map.ruins_01",    "resetGems": 120 }
+    ]
+  },
+
   // Gems for missing resources (estimate, piecewise linear on amount).
   "gemsForResources": [[0, 0], [100, 1], [1000, 5], [10000, 25], [100000, 125], [1000000, 600], [10000000, 3000]],
 

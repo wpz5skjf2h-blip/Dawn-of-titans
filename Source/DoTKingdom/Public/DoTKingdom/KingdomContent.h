@@ -190,6 +190,32 @@ struct AllianceLeagueDef
 	int troopLevel = 1;
 };
 
+/** A Titan Monument or an XP Arena (the original since 1.8): a battle of fixed difficulty on the world map that can be
+ *  fought once a day (or again for gems). A monument may drop shards, an arena gives the titan extra XP and nothing else. */
+struct SiteDef
+{
+	std::string id;
+	std::string name;
+	bool arena = false;
+	int level = 1; // the land battle row its defenders come from
+	int castle = 1; // Castle level that opens it
+	std::string ai; // AI profile of the defenders; empty = the row's
+	std::string map; // battlefield (read by the clients)
+	int64_t shards = 0; // monuments: shards when the drop comes
+	int64_t xpPct = 100; // arenas: titan XP in percent of a land battle's
+	int64_t resetGems = 0; // gems to fight again before the cooldown ends
+};
+
+/** Titan Monuments and XP Arenas (kingdom.json "sites"). */
+struct SiteRules
+{
+	int64_t cooldownSec = 24 * 3600;
+	int64_t stones = 3;
+	/** A monument's shard chance in percent by stars won (1, 2, 3). */
+	std::array<int64_t, 3> shardPct{{40, 60, 80}};
+	std::vector<SiteDef> list;
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -372,6 +398,7 @@ struct KingdomContent
 	int64_t seasonSec = 7 * 86400;
 	std::vector<LeagueDef> leagues;
 	AllianceRules alliances;
+	SiteRules sites;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};
