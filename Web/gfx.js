@@ -1,8 +1,8 @@
 'use strict';
 // Web/gfx.js - look of the battlefield on top of the battle view in app.js: sky, textured ground, water with ripples, grass
 // and flowers that sway, forests and hills around the field, and particles (dust, fire, sparks, frost, stars, debris),
-// lightning and scorch marks for the battle's events. The pictures are the SVG files in Web/art (bundled by bundle.py as
-// <script id="art-data">); each is rasterised once into a canvas texture. Nothing here changes the battle itself.
+// lightning and scorch marks for the battle's events. The pictures are the SVG and JPG files in Web/art (bundled by bundle.py
+// as <script id="art-data">); each is rasterised once into a canvas texture. Nothing here changes the battle itself.
 //   DotGfx.init(THREE, renderer)                      once, before anything else
 //   DotGfx.attach(scene, camera, { height, quality })  the battle scene; height(x, z) is the sim's ground height
 //   DotGfx.dressTerrain(mesh, st, CF)                  splat-textured ground for the battle's heightfield
@@ -10,6 +10,7 @@
 //   DotGfx.foliage(group, st, CF)                      grass tufts and flowers
 //   DotGfx.forest(group, items), rockGeometry()        trees (items [x, y, z, scale, r]) and rough rocks
 //   DotGfx.water(deep), worldUv(geo, x0, z0, size)     water material; world-scaled UVs for a ground-aligned geometry
+//   DotGfx.shore(geo, round, fade)                     water fading out over its last `fade` metres (needed by water())
 //   DotGfx.burst(kind, x, z, y, s0, s1, h)             effects for the battle's spawnFx kinds (sim coordinates)
 //   DotGfx.emit(kind, v3, size)                        one particle from a titan emitter (world coordinates)
 //   DotGfx.trail(kind, x, y, z)                        trail particle for projectiles (world coordinates)
@@ -38,21 +39,25 @@ const DotGfx = (() => {
 		const m = /viewBox="0 0 (\d+) (\d+)"/.exec(text);
 		return m ? [+m[1], +m[2]] : [128, 128];
 	}
-	/** Draws art[name] into a canvas of `scale` times its size; calls done(canvas) once drawn. */
+	/**
+	 * Draws art[name] into a canvas of `scale` times its size; calls done(canvas) once drawn. Photo textures (JPEG data URIs)
+	 * keep their own resolution and are never scaled up.
+	 */
 	function raster(name, scale, done) {
 		const text = art[name];
 		if (!text) return;
-		const [w, h] = svgSize(text);
-		const c = document.createElement('canvas');
-		c.width = Math.round(w * scale);
-		c.height = Math.round(h * scale);
+		const photo = text.startsWith('data:image/');
 		const img = new Image();
 		img.onload = () => {
-			const g = c.getContext('2d');
-			g.drawImage(img, 0, 0, c.width, c.height);
+			const [w, h] = photo ? [img.naturalWidth, img.naturalHeight] : svgSize(text);
+			const k = photo ? Math.min(1, scale) : scale;
+			const c = document.createElement('canvas');
+			c.width = Math.round(w * k);
+			c.height = Math.round(h * k);
+			c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
 			done(c);
 		};
-		img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+		img.src = photo ? text : 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
 	}
 	/**
 	 * RGBA bytes of a canvas with the colour of opaque texels spread into the transparent ones. A canvas keeps
@@ -180,40 +185,50 @@ const DotGfx = (() => {
 	}
 
 	let env = null;
-	/** Small sky-and-ground environment for metal and water reflections. */
+	/**
+	 * Sky-and-ground environment for metal and water reflections: a painted gradient at once, replaced in the same render
+	 * target by the photographed sky (art sky_env) when that has loaded. Both are 512 px wide so the target sizes match.
+	 */
 	function envMap() {
 		if (env) return env;
 		const c = document.createElement('canvas');
-		c.width = 256;
-		c.height = 128;
+		c.width = 512;
+		c.height = 256;
 		const g = c.getContext('2d');
-		const grd = g.createLinearGradient(0, 0, 0, 128);
+		const grd = g.createLinearGradient(0, 0, 0, 256);
 		grd.addColorStop(0, '#5f8fd0');
 		grd.addColorStop(0.42, '#cfe1ee');
 		grd.addColorStop(0.5, '#b9b49a');
 		grd.addColorStop(0.62, '#6d7a44');
 		grd.addColorStop(1, '#3c4a24');
 		g.fillStyle = grd;
-		g.fillRect(0, 0, 256, 128);
+		g.fillRect(0, 0, 512, 256);
 		g.fillStyle = 'rgba(255,248,225,0.95)';
 		g.beginPath();
-		g.arc(64, 26, 9, 0, Math.PI * 2);
+		g.arc(128, 52, 18, 0, Math.PI * 2);
 		g.fill();
-		const t = new T.CanvasTexture(c);
-		t.mapping = T.EquirectangularReflectionMapping;
-		t.encoding = T.sRGBEncoding;
-		const pm = new T.PMREMGenerator(renderer);
-		env = pm.fromEquirectangular(t).texture;
-		pm.dispose();
-		t.dispose();
+		const fromImage = (img, target) => {
+			const t = new T.CanvasTexture(img);
+			t.mapping = T.EquirectangularReflectionMapping;
+			t.encoding = T.sRGBEncoding;
+			const pm = new T.PMREMGenerator(renderer);
+			const rt = pm.fromEquirectangular(t, target);
+			pm.dispose();
+			t.dispose();
+			return rt;
+		};
+		const rt = fromImage(c, null);
+		env = rt.texture;
+		raster('sky_env', 1, (img) => { if (img.width === 512) fromImage(img, rt); });
 		return env;
 	}
 
 	// --- Ground -----------------------------------------------------------------------------------------------
 	const groundTex = () => ({ g: tex('tex_grass', { repeat: true, scale: 2 }), d: tex('tex_dirt', { repeat: true, scale: 2 }),
 		r: tex('tex_rock', { repeat: true, scale: 2 }), m: tex('tex_mud', { repeat: true, scale: 2 }) });
-	/** Lambert material that blends grass, dirt, rock and mud textures by a per-vertex `splat` (dirt, rock, mud). */
-	function splatMaterial(tile) {
+	/** Lambert material that blends grass, dirt, rock and mud textures by a per-vertex `splat` (dirt, rock, mud).
+	 *  haze (0..1, optional) caps how much of the fog colour it takes. */
+	function splatMaterial(tile, haze) {
 		const t = groundTex();
 		const mat = new T.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
 		mat.onBeforeCompile = (sh) => {
@@ -229,11 +244,16 @@ const DotGfx = (() => {
 					'vec3 rockC = texture2D(tR, vGuv * 0.8).rgb;',
 					'vec3 mudC = texture2D(tM, vGuv).rgb;',
 					'float wG = max(0.0, 1.0 - vSplat.x - vSplat.y - vSplat.z);',
-					'diffuseColor.rgb *= (grassC * wG + dirtC * vSplat.x + rockC * vSplat.y + mudC * vSplat.z) * 1.55;',
+					'diffuseColor.rgb *= (grassC * wG + dirtC * vSplat.x + rockC * vSplat.y + mudC * vSplat.z) * 1.2;',
 				].join('\n'));
+			if (haze !== undefined) sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', partialFog(haze));
 		};
+		// Same onBeforeCompile text for every haze: tell three's program cache they differ.
+		mat.customProgramCacheKey = () => 'splat' + haze;
 		return mat;
 	}
+	/** Fog that takes at most `k` of the fog colour, for far scenery that should stay readable against the sky. */
+	const partialFog = (k) => '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(fogNear, fogFar, vFogDepth) * ' + k.toFixed(2) + ');\n#endif';
 	/** Replaces the battle heightfield's flat vertex colours with textures: splat weights and tints from the sim's flags. */
 	function dressTerrain(mesh, st, CF) {
 		const g = st.grid;
@@ -281,6 +301,7 @@ const DotGfx = (() => {
 				let b = (1 - dry * 0.3) * n;
 				if (forest) { const f = 0.35 + 0.1 * (4 - forest); r *= 0.62 + f * 0.2; gg *= 0.72 + f * 0.15; b *= 0.6 + f * 0.2; }
 				if (deep) { r *= 0.55; gg *= 0.62; b *= 0.7; }
+				else if (ford) { const w = 1 - 0.07 * ford; r *= w - 0.08; gg *= w; b *= w - 0.04; } // wet, darker ford beds
 				col[k] = r * 0.82;
 				col[k + 1] = gg * 0.82;
 				col[k + 2] = b * 0.82;
@@ -308,13 +329,31 @@ const DotGfx = (() => {
 		for (let i = 0; i < p.count; i++) { uv[i * 2] = (p.getX(i) + x0) / size; uv[i * 2 + 1] = (p.getZ(i) + z0) / size; }
 		geo.setAttribute('uv', new T.BufferAttribute(uv, 2));
 	}
+	/** Vertex alpha for a flat water geometry: 1 inside, 0 at its rectangle (or circle, when round) edge `fade` metres out. */
+	function shore(geo, round, fade) {
+		geo.computeBoundingBox();
+		const b = geo.boundingBox;
+		const mx = (b.min.x + b.max.x) / 2;
+		const mz = (b.min.z + b.max.z) / 2;
+		const p = geo.attributes.position;
+		const c = new Float32Array(p.count * 4).fill(1);
+		for (let i = 0; i < p.count; i++) {
+			const x = p.getX(i);
+			const z = p.getZ(i);
+			const d = round ? (b.max.x - mx) - Math.hypot(x - mx, z - mz) : Math.min(x - b.min.x, b.max.x - x, z - b.min.z, b.max.z - z);
+			const k = Math.min(1, Math.max(0, d / fade));
+			c[i * 4 + 3] = k * k * (3 - 2 * k);
+		}
+		geo.setAttribute('color', new T.BufferAttribute(c, 4));
+	}
 
 	// --- Water ------------------------------------------------------------------------------------------------
 	const waters = [];
 	function water(deep) {
 		const n = tex('tex_water', { repeat: true, linear: true, post: normalsFrom });
-		const m = new T.MeshStandardMaterial({ color: deep ? 0x1f5f86 : 0x3d8296, roughness: deep ? 0.12 : 0.18, metalness: 0.0, transparent: true, opacity: deep ? 0.88 : 0.42,
-			normalMap: n, normalScale: new T.Vector2(0.55, 0.55), envMap: envMap(), envMapIntensity: deep ? 1.1 : 0.45 });
+		// Clear blue-green river water as in the original; vertex alpha from shore() softens the banks.
+		const m = new T.MeshStandardMaterial({ color: deep ? 0x17606a : 0x4f9c8e, roughness: deep ? 0.1 : 0.2, metalness: 0.0, transparent: true, opacity: deep ? 0.9 : 0.5,
+			vertexColors: true, normalMap: n, normalScale: new T.Vector2(0.55, 0.55), envMap: envMap(), envMapIntensity: deep ? 0.9 : 0.35 });
 		// A second ripple layer drifting the other way, mixed into the normal in the shader.
 		m.onBeforeCompile = (sh) => {
 			sh.uniforms.uTime = time.u;
@@ -517,26 +556,49 @@ const DotGfx = (() => {
 		const rnd = mulberry(5);
 		const cx = W / 2;
 		const cz = -D / 2;
-		// Sky dome: deep blue overhead, hazy at the horizon (the fog colour), drawn behind everything.
-		const sky = new T.SphereGeometry(1300, 32, 16);
-		const sp = sky.attributes.position;
-		const sc = [];
-		const top = new T.Color(0x4f86c8);
-		const mid = new T.Color(0x8fb6dc);
+		// Sky dome drawn behind everything; its horizon colour is also the fog colour.
 		const hor = new T.Color(0xc8d9e4);
-		const c = new T.Color();
-		for (let i = 0; i < sp.count; i++) {
-			const y = sp.getY(i) / 1300;
-			if (y > 0.25) c.copy(mid).lerp(top, Math.min(1, (y - 0.25) / 0.6));
-			else c.copy(hor).lerp(mid, Math.max(0, y / 0.25));
-			sc.push(c.r, c.g, c.b);
+		const setHorizon = (col) => { if (scene) { scene.background = col.clone(); if (scene.fog) scene.fog.color.copy(col); } };
+		let dome;
+		if (art.sky_dome) {
+			// Photographed sky (art sky_dome): the upper 0.5625 of an equirectangular panorama, horizon at 8/9 of its height.
+			// Turned half a circle so its sun stands where the battle's sun light comes from.
+			const mat = new T.MeshBasicMaterial({ color: hor, side: T.BackSide, fog: false, depthWrite: false });
+			dome = new T.Mesh(new T.SphereGeometry(1300, 48, 18, 0, Math.PI * 2, 0, Math.PI * 0.5625), mat);
+			dome.rotation.y = Math.PI;
+			raster('sky_dome', 1, (img) => {
+				const t = new T.CanvasTexture(img);
+				t.encoding = T.sRGBEncoding;
+				mat.map = t;
+				mat.color.set(0xffffff);
+				mat.needsUpdate = true;
+				const row = img.getContext('2d').getImageData(0, Math.round(img.height * (8 / 9)) - 3, img.width, 1).data;
+				let r = 0, gg = 0, b = 0;
+				for (let i = 0; i < row.length; i += 4) { r += row[i]; gg += row[i + 1]; b += row[i + 2]; }
+				const n = (row.length / 4) * 255;
+				setHorizon(new T.Color().setRGB(r / n, gg / n, b / n).convertSRGBToLinear());
+			});
+		} else {
+			// Without the photo: deep blue overhead, hazy at the horizon.
+			const sky = new T.SphereGeometry(1300, 32, 16);
+			const sp = sky.attributes.position;
+			const sc = [];
+			const top = new T.Color(0x4f86c8);
+			const mid = new T.Color(0x8fb6dc);
+			const c = new T.Color();
+			for (let i = 0; i < sp.count; i++) {
+				const y = sp.getY(i) / 1300;
+				if (y > 0.25) c.copy(mid).lerp(top, Math.min(1, (y - 0.25) / 0.6));
+				else c.copy(hor).lerp(mid, Math.max(0, y / 0.25));
+				sc.push(c.r, c.g, c.b);
+			}
+			sky.setAttribute('color', new T.Float32BufferAttribute(sc, 3));
+			dome = new T.Mesh(sky, new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false }));
 		}
-		sky.setAttribute('color', new T.Float32BufferAttribute(sc, 3));
-		const dome = new T.Mesh(sky, new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false }));
 		dome.position.set(cx, -120, cz);
 		dome.renderOrder = -10;
 		group.add(dome);
-		if (scene) { scene.background = hor.clone(); if (scene.fog) scene.fog.color.copy(hor); }
+		setHorizon(hor);
 		// Land around the field: textured, gently rolling, a little darker than the field.
 		const land = new T.PlaneGeometry(1600, 1600, 160, 160).rotateX(-Math.PI / 2);
 		const lp = land.attributes.position;
@@ -560,7 +622,7 @@ const DotGfx = (() => {
 		land.setAttribute('splat', new T.BufferAttribute(splat, 3));
 		land.setAttribute('color', new T.BufferAttribute(lc, 3));
 		land.computeVertexNormals();
-		const lm = new T.Mesh(land, splatMaterial(9));
+		const lm = new T.Mesh(land, splatMaterial(9, 0.6));
 		lm.position.set(cx, 0, cz);
 		lm.receiveShadow = true;
 		group.add(lm);
@@ -580,12 +642,41 @@ const DotGfx = (() => {
 			belt.push([x, -0.3 + Math.max(0, hill), z, 1.0 + rnd() * 0.9, rnd()]);
 		}
 		forest(group, belt, false);
-		// Mountains on the horizon, softened by the fog.
-		const mount = new T.ConeGeometry(1, 1, 7, 3);
+		// Mountains on the horizon: forested foot, rock (art tex_rock) and snow caps, only half lost in the haze.
+		const mount = new T.ConeGeometry(1, 1, 11, 7);
 		const mp = mount.attributes.position;
-		for (let i = 0; i < mp.count; i++) if (mp.getY(i) < 0.49) { const k = 0.85 + rnd() * 0.3; mp.setX(i, mp.getX(i) * k); mp.setZ(i, mp.getZ(i) * k); }
+		const snow = new Float32Array(mp.count);
+		const mcol = new Float32Array(mp.count * 3);
+		for (let i = 0; i < mp.count; i++) {
+			const x = mp.getX(i);
+			const y = mp.getY(i);
+			const z = mp.getZ(i);
+			// Ridges from the vertex position itself, so the seam's twin vertices move together.
+			if (y < 0.49) { const k = 0.8 + 0.22 * Math.sin(x * 7.1 + z * 3.7 + y * 5) + 0.12 * Math.sin(z * 13.3 - x * 2.9); mp.setX(i, x * k); mp.setZ(i, z * k); mp.setY(i, y + 0.035 * Math.sin(x * 11 + z * 9)); }
+			const t = y + 0.5;
+			snow[i] = Math.min(1, Math.max(0, (t - 0.6) / 0.16 + 0.35 * Math.sin(x * 9 + z * 5)));
+			const f = Math.min(1, Math.max(0, (0.3 - t) / 0.2));
+			mcol[i * 3] = 1 - f * 0.55;
+			mcol[i * 3 + 1] = 1 - f * 0.25;
+			mcol[i * 3 + 2] = 1 - f * 0.6;
+		}
+		mount.setAttribute('snow', new T.BufferAttribute(snow, 1));
+		mount.setAttribute('color', new T.BufferAttribute(mcol, 3));
 		mount.computeVertexNormals();
-		const mm = new T.InstancedMesh(mount, new T.MeshLambertMaterial({ color: 0x6d7a86, flatShading: true }), 26);
+		const rockT = groundTex().r;
+		const mmat = new T.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, flatShading: true });
+		mmat.onBeforeCompile = (sh) => {
+			sh.uniforms.tR = { value: rockT };
+			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float snow;\nvarying float vSnow;\nvarying vec2 vMuv;')
+				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvSnow = snow;\nvMuv = uv * vec2(7.0, 2.5);');
+			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tR;\nvarying float vSnow;\nvarying vec2 vMuv;')
+				.replace('#include <map_fragment>', [
+					'vec3 rk = texture2D(tR, vMuv).rgb;',
+					'diffuseColor.rgb = mix(diffuseColor.rgb * rk * 1.25, vec3(0.86, 0.89, 0.94) * (0.75 + rk.g * 0.8), vSnow);',
+				].join('\n'))
+				.replace('#include <fog_fragment>', partialFog(0.55));
+		};
+		const mm = new T.InstancedMesh(mount, mmat, 26);
 		const o = new T.Object3D();
 		for (let i = 0; i < 26; i++) {
 			const a = (i / 26) * Math.PI * 2 + rnd() * 0.2;
@@ -1005,7 +1096,7 @@ const DotGfx = (() => {
 		},
 		setQuality(q) { quality = q; },
 		get hasArt() { return Object.keys(art).length > 0; },
-		tex, glow, envMap, dressTerrain, surroundings, foliage, forest, rockGeometry, water, worldUv, burst, emit, trail, decal,
+		tex, glow, envMap, dressTerrain, surroundings, foliage, forest, rockGeometry, water, worldUv, shore, burst, emit, trail, decal,
 		update(dt, t) {
 			time.t = t;
 			time.u.value = t;

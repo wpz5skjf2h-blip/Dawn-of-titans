@@ -595,9 +595,11 @@ function buildTerrain(st) {
 		const sx = f.c ? f.r * 2 : f.x1 - f.x0;
 		const sz = f.c ? f.r * 2 : f.z1 - f.z0;
 		if (f.t === FT.Deep || f.t === FT.Shallow) {
-			const geo = f.c ? new THREE.CircleGeometry(f.r, 48) : new THREE.PlaneGeometry(sx, sz); // round lakes and marshes
+			// Round lakes and marshes; rings of vertices near the edge let GFX fade the shore.
+			const geo = f.c ? (GFX ? new THREE.RingGeometry(0, f.r, 48, 6) : new THREE.CircleGeometry(f.r, 48))
+				: (GFX ? new THREE.PlaneGeometry(sx, sz, Math.max(1, Math.round(sx / 3)), Math.max(1, Math.round(sz / 3))) : new THREE.PlaneGeometry(sx, sz));
 			geo.rotateX(-Math.PI / 2);
-			if (GFX) GFX.worldUv(geo, cx, -cz, 26);
+			if (GFX) { GFX.worldUv(geo, cx, -cz, 26); GFX.shore(geo, f.c, f.t === FT.Deep ? 2.5 : 4); }
 			const m = new THREE.Mesh(geo, f.t === FT.Deep ? water : shallow);
 			m.position.set(cx, f.t === FT.Deep ? -0.05 : 0.02, -cz);
 			m.renderOrder = 1;
