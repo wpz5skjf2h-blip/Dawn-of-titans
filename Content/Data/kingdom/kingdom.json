@@ -68,6 +68,71 @@
     ]
   },
 
+  // Alliances. From the original: a player may join one at 1 000 VP (guides: Level Winner, Touch Tap Play); members'
+  // VP count for themselves and for the alliance (wiki, Announcements); alliances meet in leagues ranked every week,
+  // the best go up and the worst go down, and every member is paid by the alliance's result: gems, portal stones and a
+  // crystal of rarity 1-4 with a relic or sometimes a titan; crystal rarity grows with the league, rarity 4 only in the
+  // top ones, and a higher place gives a better chance of a titan (wiki: Leagues, Announcements). Allies send troops
+  // to the Alliance Camp: they fight in one battle, and the camp's level sets how many (wiki: Troops, Announcements).
+  // There is no server yet, so the other alliances and their members are computer players: their weekly VP follow
+  // from the kingdom's seed and the alliance's strength. Everything below that the original does not give is ours:
+  // the names, group size, how many go up and down, the rewards by place, the requirements of strong alliances,
+  // creating an alliance (100 gems, master prompt 12.1), recruits of an own alliance, a day in the alliance before
+  // its reward is paid, the request cooldown (20 min, master prompt 12.6) and the level of the troops allies send.
+  "alliances": {
+    "joinVp": 1000,
+    "createGems": 100,
+    "members": [8, 30],
+    "groupSize": 8,
+    "promote": 2,
+    "memberHours": 24,
+    "recruitHours": 6,
+    "recruits": 24,
+    "placeStepPct": 10,
+    "minPlacePct": 30,
+    "crystalGems": [20, 40, 80, 160],
+    "reinforceCooldownSec": 1200,
+    "reinforceArriveSec": 60,
+    // memberVp: weekly VP of a computer member, by its alliance's strength; joinVp of an alliance grows with its
+    // strength (1.5 × the strength, rounded down to 500, from joinVp up to joinVpMax); gems and stones are for first
+    // place; titanPct is the crystal's titan chance for first and last place; troopLevel is what allies send.
+    "joinVpMax": 8000,
+    "leagues": [
+      { "id": "bronze",   "name": "Бронзовая лига",  "memberVp": [150, 500],   "gems": 100, "stones": 9,  "crystal": 1, "titanPct": [30, 10], "troopLevel": 3 },
+      { "id": "silver",   "name": "Серебряная лига", "memberVp": [300, 900],   "gems": 150, "stones": 12, "crystal": 2, "titanPct": [25, 8],  "troopLevel": 5 },
+      { "id": "gold",     "name": "Золотая лига",    "memberVp": [600, 1600],  "gems": 220, "stones": 15, "crystal": 2, "titanPct": [20, 6],  "troopLevel": 7 },
+      { "id": "platinum", "name": "Платиновая лига", "memberVp": [1200, 3000], "gems": 320, "stones": 18, "crystal": 3, "titanPct": [15, 5],  "troopLevel": 9 },
+      { "id": "diamond",  "name": "Алмазная лига",   "memberVp": [2500, 6000], "gems": 450, "stones": 24, "crystal": 3, "titanPct": [12, 4],  "troopLevel": 12 },
+      { "id": "titan",    "name": "Лига титанов",    "memberVp": [5000, 12000],"gems": 650, "stones": 30, "crystal": 4, "titanPct": [8, 2],   "troopLevel": 15 }
+    ],
+    // Computer alliances: name and tag. There are groupSize of them per league at the start.
+    "names": [
+      ["Сыны Грома", "ГРОМ"], ["Стражи Рассвета", "ЗАРЯ"], ["Пепельные Волки", "ВОЛК"], ["Железный Венец", "ВЕНЕЦ"],
+      ["Дети Бури", "БУРЯ"], ["Каменные Клыки", "КЛЫК"], ["Северный Щит", "ЩИТ"], ["Орден Феникса", "ФНКС"],
+      ["Багровый Рог", "РОГ"], ["Звёздные Странники", "ЗВЁЗД"], ["Тени Ущелья", "ТЕНЬ"], ["Морской Змей", "ЗМЕЙ"],
+      ["Золотая Грива", "ГРИВА"], ["Последний Бастион", "БАСТ"], ["Древние Корни", "КОРНИ"], ["Ледяная Корона", "ЛЁД"],
+      ["Кузня Титанов", "КУЗНЯ"], ["Чёрный Ворон", "ВОРОН"], ["Братство Секиры", "ТОПОР"], ["Вечный Огонь", "ОГОНЬ"],
+      ["Небесный Молот", "МОЛОТ"], ["Песчаная Буря", "ПЕСОК"], ["Дом Медведя", "МЕДВ"], ["Клинки Заката", "ЗАКАТ"],
+      ["Хранители Рун", "РУНА"], ["Гнев Олимпа", "ОЛИМП"], ["Сердце Горы", "ГОРА"], ["Полуночные Всадники", "НОЧЬ"],
+      ["Белый Олень", "ОЛЕНЬ"], ["Медные Легионы", "ЛЕГИ"], ["Шёпот Леса", "ЛЕС"], ["Острова Туманов", "ТУМАН"],
+      ["Солнечный Круг", "СОЛН"], ["Кровь Драконов", "ДРАК"], ["Серебряный Лист", "ЛИСТ"], ["Громовой Перевал", "ПИК"],
+      ["Стальной Кулак", "КУЛАК"], ["Племя Ясеня", "ЯСЕНЬ"], ["Вестники Бури", "ВЕСТ"], ["Алый Рассвет", "АЛЫЙ"],
+      ["Вороны Одина", "ОДИН"], ["Седьмой Легион", "VII"], ["Каменный Страж", "СТРАЖ"], ["Озёрные Девы", "ОЗЕРО"],
+      ["Лунные Псы", "ЛУНА"], ["Пламя Востока", "ВОСТ"], ["Горные Короли", "КРОНА"], ["Последние Титаны", "ТИТАН"]
+    ],
+    // Computer members (a prime count, so the members of one alliance never repeat a name).
+    "memberNames": [
+      "Ратибор", "Велена", "Добрыня", "Ярослава", "Светозар", "Мирослава", "Горислав", "Всеволод", "Злата", "Святогор",
+      "Любава", "Радомир", "Есения", "Богдан", "Милена", "Тихомир", "Дарина", "Ждан", "Ольгерд", "Рогнеда",
+      "Вышата", "Забава", "Ставр", "Беляна", "Твердислав", "Агния", "Лютобор", "Веселина", "Остромир", "Умила",
+      "Kronos", "NightHawk", "Valkyr", "Draugr", "Fenrir_7", "Sigrun", "Ragnar", "Brunhild", "Thorgal", "Morrigan",
+      "Lyra", "Orion", "Hyperion", "Selene", "Aegis", "Nyx", "Talon", "Ember", "Frostbite", "Vortex",
+      "Bastion", "Warden", "Oracle", "Seraph", "Zephyr", "Gryphon", "Wyvern", "Kraken", "Phoenix", "Hydra",
+      "Cyclops", "Minotaur", "Medusa", "Atlas_Jr", "Ares", "Leonid", "Spartan300", "Achilles", "Hector", "Ajax",
+      "Perseus", "Theseus", "Hermes", "Иггдрасиль", "Морозко", "Буревей", "Огнеяр", "Чернава", "Велес_2"
+    ]
+  },
+
   // Gems for missing resources (estimate, piecewise linear on amount).
   "gemsForResources": [[0, 0], [100, 1], [1000, 5], [10000, 25], [100000, 125], [1000000, 600], [10000000, 3000]],
 

@@ -340,6 +340,30 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .landCard .info span { font-size: 12px; color: var(--dim); }
 .landCard .row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .landCard .row .btn { flex: 1 1 140px; }
+/* Alliances: emblem shields (colour by emblem index), league tables, the founding form. */
+.emb { width: 44px; height: 44px; border-radius: 10px 10px 22px 22px; display: grid; place-items: center; flex: 0 0 auto; font-family: var(--font-display);
+  font-weight: 800; font-size: 12px; letter-spacing: 0.02em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.landCard .emb, h2.ti > .emb { width: 56px; height: 56px; font-size: 14px; }
+.emb.e0 { background: linear-gradient(#d4553f, #7a2219); } .emb.e1 { background: linear-gradient(#4f8fe0, #1d3f7a); }
+.emb.e2 { background: linear-gradient(#5fb05a, #22551f); } .emb.e3 { background: linear-gradient(#e2b04a, #85591a); }
+.emb.e4 { background: linear-gradient(#9b6be0, #44236f); } .emb.e5 { background: linear-gradient(#3fb3a8, #145550); }
+.emb.e6 { background: linear-gradient(#ec8a3c, #8a3f12); } .emb.e7 { background: linear-gradient(#7d8a9a, #333c48); }
+.emb.e8 { background: linear-gradient(#c2364f, #5e1222); } .emb.e9 { background: linear-gradient(#3c5bb0, #142554); }
+.emb.e10 { background: linear-gradient(#9aa04a, #4a4d16); } .emb.e11 { background: linear-gradient(#d0569f, #64184a); }
+.league { display: grid; grid-template-columns: 26px 1fr auto; gap: 5px 10px; font-size: 14px; align-items: center; }
+.league .pl { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+.league .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.league .nm small { color: var(--dim); margin-left: 6px; }
+.league .v { font-variant-numeric: tabular-nums; text-align: right; }
+.league .me { color: var(--valor); font-weight: 700; }
+.league .up { color: var(--good); } .league .down { color: #ffb4a6; }
+.league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); min-width: 0; }
+.field input { height: 42px; border-radius: 10px; border: 1px solid var(--hair); background: rgba(255, 255, 255, 0.06); color: var(--parch);
+  padding: 0 12px; font: inherit; font-size: 16px; min-width: 0; }
+.field input:focus { outline: 2px solid var(--bronze); outline-offset: 1px; }
+.form2 { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
 #kPlace { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center;
   background: var(--panel); border: 1px solid var(--hair); border-radius: 16px; padding: 8px 10px; }
 #kPlace p { margin: 0; font-size: 13px; color: var(--dim); max-width: 26ch; }
@@ -466,7 +490,9 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   .res svg { width: 18px; height: 18px; }
   .res small { display: none; }
   #kCastle { font-size: 14px; }
-  .bigbtn { min-width: 96px; height: 56px; font-size: 17px; }
+  .bigbtn { min-width: 0; height: 56px; font-size: 16px; padding: 6px 4px 0; }
+  .bigbtn .bt { max-width: 100%; }
+  .bigbtn small { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #kToasts { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 84px); }
 }
 @media (max-height: 430px) {
@@ -498,6 +524,7 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
     <div id="kToasts" aria-live="polite"></div>
     <footer id="kBottom">
       <button class="bigbtn" id="kAttack"><span class="bt">Атака<small id="kAttackSub">Земли</small></span></button>
+      <button class="bigbtn alt" id="kAllyBtn"><span class="bt">Альянс<small id="kAllySub">Лиги</small></span></button>
       <button class="bigbtn alt" id="kArmyBtn"><span class="bt">Армия<small id="kArmySub">Титаны и войска</small></span></button>
       <button class="bigbtn alt" id="kShopBtn"><span class="bt">Строить<small>Магазин</small></span></button>
     </footer>

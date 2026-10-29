@@ -83,7 +83,7 @@ const char* ToString(Error E)
 	static const char* const Names[] = {"none", "bad_id", "max_level", "castle_too_low", "need_requirement", "need_expansion", "locked",
 		"limit_reached", "no_builder", "not_enough", "bad_placement", "busy", "not_busy", "nothing", "storage_full", "need_stones",
 		"no_land_slot", "no_attack", "queue_full", "researching", "too_many_squads", "no_troops", "titan_recovering", "not_ready",
-		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full"};
+		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full", "need_vp", "alliance_full", "in_alliance", "no_alliance"};
 	const int I = static_cast<int>(E);
 	return I >= 0 && I < static_cast<int>(Error::Count) ? Names[I] : "?";
 }
@@ -107,6 +107,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	PendingIsCapture = false;
 	SeasonNo = SeasonOf(Now);
 	Last = SeasonResult();
+	ResetAlliances();
 	for (const StartBuilding& S : C.startBuildings)
 	{
 		Building B;
@@ -1102,7 +1103,10 @@ void Kingdom::RollSeason(int64_t At)
 {
 	(void)At; // stones were regenerated up to At by the caller
 	int64_t& Vp = Res_[static_cast<size_t>(ResIndex(Res::Vp))];
-	if (Vp > 0)
+	// Every alliance league is ranked and moves; a member is paid by the alliance's league (the original's leagues
+	// are alliance leagues). Alone, or new to the alliance, the personal league pays instead.
+	const bool bAlliancePaid = RollAllianceLeagues(SeasonStart(SeasonNo + 1));
+	if (!bAlliancePaid && Vp > 0)
 	{
 		Last = SeasonResult();
 		Last.season = SeasonNo;
@@ -1121,6 +1125,594 @@ void Kingdom::RollSeason(int64_t At)
 	// Everyone's VP returns to zero for the new season (wiki, Leagues).
 	Vp = 0;
 	++SeasonNo;
+}
+
+// --- Alliances ----------------------------------------------------------------------------------
+// The other alliances and their members are computer players (there is no server yet): who they are, how strong and
+// how many follow from the kingdom's seed; their VP grow through the week at their own pace. Only the leagues the
+// alliances are in change, once a week, and they are saved.
+
+namespace
+{
+uint64_t AllyHash(uint64_t Seed, uint64_t A, uint64_t B, uint64_t Cc)
+{
+	return Mix(Mix(Mix(Seed ^ 0x616c6c69616e6365ULL, A), B), Cc);
+}
+
+/** Trims spaces; true when the text is a usable alliance name or tag (UTF-8, no control characters). */
+bool CleanName(const std::string& In, size_t MaxBytes, std::string& Out)
+{
+	size_t B = 0;
+	size_t E = In.size();
+	while (B < E && In[B] == ' ')
+	{
+		++B;
+	}
+	while (E > B && In[E - 1] == ' ')
+	{
+		--E;
+	}
+	Out = In.substr(B, E - B);
+	for (const char Ch : Out)
+	{
+		if (static_cast<unsigned char>(Ch) < 0x20 || Ch == 0x7f)
+		{
+			return false;
+		}
+	}
+	return !Out.empty() && Out.size() <= MaxBytes;
+}
+
+const size_t kMaxNameBytes = 48; // 24 Cyrillic letters
+const size_t kMaxTagBytes = 10; // 5 Cyrillic letters
+} // namespace
+
+void Kingdom::ResetAlliances()
+{
+	const int N = BaseAlliances();
+	const int Leagues = static_cast<int>(C.alliances.leagues.size());
+	// Which name each alliance gets: a shuffle by the seed, so every kingdom has its own neighbours.
+	AlliancePerm.resize(static_cast<size_t>(N));
+	for (int I = 0; I < N; ++I)
+	{
+		AlliancePerm[static_cast<size_t>(I)] = I;
+	}
+	for (int I = N - 1; I > 0; --I)
+	{
+		const int J = static_cast<int>(Mix(Seed ^ 0x6e616d6573ULL, static_cast<uint64_t>(I)) % static_cast<uint64_t>(I + 1));
+		std::swap(AlliancePerm[static_cast<size_t>(I)], AlliancePerm[static_cast<size_t>(J)]);
+	}
+	// At the start every league holds groupSize alliances, the strongest in the top one.
+	AllianceTiers.assign(static_cast<size_t>(N), 0);
+	for (int I = 0; I < N; ++I)
+	{
+		AllianceTiers[static_cast<size_t>(I)] = Leagues > 0 ? std::min(I / C.alliances.groupSize, Leagues - 1) : 0;
+	}
+	AllianceIdx = -1;
+	AllianceJoinedAt = 0;
+	OwnName.clear();
+	OwnTag.clear();
+	OwnFounded = 0;
+	ReinforceList.clear();
+	ReinforceAt = 0;
+	bReinforceAsked = false;
+	PendingReinforce.clear();
+}
+
+int Kingdom::AllianceCount() const
+{
+	return BaseAlliances() + (HasOwnAlliance() ? 1 : 0);
+}
+
+int Kingdom::AllianceTier(int Index) const
+{
+	return Index >= 0 && Index < static_cast<int>(AllianceTiers.size()) ? AllianceTiers[static_cast<size_t>(Index)] : 0;
+}
+
+int64_t Kingdom::AllianceStrength(int Index) const
+{
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Leagues.empty())
+	{
+		return 0;
+	}
+	if (Index >= BaseAlliances())
+	{
+		// Recruits of an own alliance play like the weakest of its league.
+		return Leagues[static_cast<size_t>(std::max(0, std::min(AllianceTier(Index), static_cast<int>(Leagues.size()) - 1)))].memberVpMin;
+	}
+	// A computer alliance keeps the strength of the league it started in, wherever it goes.
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(std::min(Index / C.alliances.groupSize, static_cast<int>(Leagues.size()) - 1))];
+	const uint64_t H = AllyHash(Seed, static_cast<uint64_t>(Index), 1, 0);
+	return L.memberVpMin + (L.memberVpMax - L.memberVpMin) * static_cast<int64_t>(H % 1001) / 1000;
+}
+
+int Kingdom::RecruitsAt(int64_t At) const
+{
+	if (!HasOwnAlliance() || At <= OwnFounded)
+	{
+		return 0;
+	}
+	return static_cast<int>(std::min<int64_t>(C.alliances.recruits, (At - OwnFounded) / C.alliances.recruitSec));
+}
+
+int Kingdom::AllianceSize(int Index) const
+{
+	if (Index >= BaseAlliances())
+	{
+		return RecruitsAt(Time);
+	}
+	const AllianceRules& A = C.alliances;
+	return A.minMembers + static_cast<int>(AllyHash(Seed, static_cast<uint64_t>(Index), 2, 0) % static_cast<uint64_t>(A.maxMembers - A.minMembers + 1));
+}
+
+int64_t Kingdom::AllianceJoinVp(int Index) const
+{
+	const AllianceRules& A = C.alliances;
+	if (Index >= BaseAlliances())
+	{
+		return A.joinVp;
+	}
+	// Strong alliances ask more: one and a half weeks of their average member, rounded down to 500.
+	return std::max(A.joinVp, std::min(A.joinVpMax, AllianceStrength(Index) * 3 / 2 / 500 * 500));
+}
+
+int64_t Kingdom::MemberVp(int Index, int Member, int64_t Season, int64_t At) const
+{
+	const bool bOwn = Index >= BaseAlliances();
+	const uint64_t Key = bOwn ? 0x100000000ULL + static_cast<uint64_t>(OwnFounded) : static_cast<uint64_t>(Index);
+	const uint64_t H = AllyHash(Seed, Key, 3 + static_cast<uint64_t>(Member), static_cast<uint64_t>(Season));
+	// A member's pace this week: 50-150% of the alliance's strength, starting up to a quarter of the week late.
+	const int64_t Weekly = AllianceStrength(Index) * (50 + static_cast<int64_t>(H % 101)) / 100;
+	const int64_t Len = C.seasonSec;
+	const int64_t Start = SeasonStart(Season);
+	int64_t From = Start + static_cast<int64_t>((H >> 20) % 251) * Len / 1000;
+	if (bOwn)
+	{
+		From = std::max(From, OwnFounded + (Member + 1) * C.alliances.recruitSec);
+	}
+	const int64_t T = std::min(At, Start + Len);
+	return T > From ? Weekly * (T - From) / Len : 0;
+}
+
+int64_t Kingdom::AllianceVp(int Index, int64_t Season, int64_t At) const
+{
+	const int Size = Index >= BaseAlliances() ? RecruitsAt(std::min(At, SeasonStart(Season + 1))) : AllianceSize(Index);
+	int64_t Total = 0;
+	for (int M = 0; M < Size; ++M)
+	{
+		Total += MemberVp(Index, M, Season, At);
+	}
+	// The player's VP count for the alliance too (the original).
+	if (Index == AllianceIdx && Season == SeasonNo)
+	{
+		Total += Amount(Res::Vp);
+	}
+	return Total;
+}
+
+AllianceInfo Kingdom::Alliance(int Index) const
+{
+	AllianceInfo A;
+	if (Index < 0 || Index >= AllianceCount())
+	{
+		return A;
+	}
+	A.index = Index;
+	A.own = Index >= BaseAlliances();
+	if (A.own)
+	{
+		A.name = OwnName;
+		A.tag = OwnTag;
+		A.emblem = static_cast<int>(AllyHash(Seed, 0x100000000ULL + static_cast<uint64_t>(OwnFounded), 0, 0) % 12);
+	}
+	else
+	{
+		const std::pair<std::string, std::string>& N = C.alliances.names[static_cast<size_t>(AlliancePerm[static_cast<size_t>(Index)])];
+		A.name = N.first;
+		A.tag = N.second;
+		A.emblem = static_cast<int>(AllyHash(Seed, static_cast<uint64_t>(Index), 0, 0) % 12);
+	}
+	A.tier = AllianceTier(Index);
+	A.members = AllianceSize(Index) + (AllianceIdx == Index ? 1 : 0);
+	A.joinVp = AllianceJoinVp(Index);
+	A.vp = AllianceVp(Index, SeasonNo, Time);
+	return A;
+}
+
+int64_t Kingdom::AllianceRating() const
+{
+	return std::max(Amount(Res::Vp), Last.season == SeasonNo - 1 ? Last.vp : 0);
+}
+
+std::vector<int> Kingdom::LeagueTable(int Tier) const
+{
+	std::vector<std::pair<int64_t, int>> Rows;
+	for (int I = 0; I < AllianceCount(); ++I)
+	{
+		if (AllianceTier(I) == Tier)
+		{
+			Rows.emplace_back(AllianceVp(I, SeasonNo, Time), I);
+		}
+	}
+	std::sort(Rows.begin(), Rows.end(), [](const std::pair<int64_t, int>& X, const std::pair<int64_t, int>& Y)
+		{ return X.first != Y.first ? X.first > Y.first : X.second < Y.second; });
+	std::vector<int> Out;
+	for (const std::pair<int64_t, int>& R : Rows)
+	{
+		Out.push_back(R.second);
+	}
+	return Out;
+}
+
+std::vector<AllianceMember> Kingdom::Members(int Index) const
+{
+	std::vector<AllianceMember> Out;
+	if (Index < 0 || Index >= AllianceCount())
+	{
+		return Out;
+	}
+	const bool bOwn = Index >= BaseAlliances();
+	const std::vector<std::string>& Names = C.alliances.memberNames;
+	const uint64_t NameCount = static_cast<uint64_t>(Names.size());
+	const uint64_t Key = bOwn ? 0x100000000ULL + static_cast<uint64_t>(OwnFounded) : static_cast<uint64_t>(Index);
+	const uint64_t H = AllyHash(Seed, Key, 0, 1);
+	// Names walk the list with a step coprime to its (prime) length, so they never repeat within an alliance.
+	const uint64_t First = H % NameCount;
+	const uint64_t Step = NameCount > 1 ? 1 + (H >> 32) % (NameCount - 1) : 1;
+	if (bOwn)
+	{
+		AllianceMember You;
+		You.role = 0;
+		You.vp = Amount(Res::Vp);
+		You.joinedAt = OwnFounded;
+		Out.push_back(You);
+	}
+	const int Size = AllianceSize(Index);
+	for (int M = 0; M < Size; ++M)
+	{
+		AllianceMember A;
+		A.name = Names[static_cast<size_t>((First + static_cast<uint64_t>(M) * Step) % NameCount)];
+		A.role = bOwn ? 2 : (M == 0 ? 0 : (M <= 2 ? 1 : 2));
+		A.vp = MemberVp(Index, M, SeasonNo, Time);
+		A.joinedAt = bOwn ? OwnFounded + (M + 1) * C.alliances.recruitSec : 0;
+		Out.push_back(A);
+	}
+	if (!bOwn && AllianceIdx == Index)
+	{
+		AllianceMember You;
+		You.vp = Amount(Res::Vp);
+		You.joinedAt = AllianceJoinedAt;
+		Out.push_back(You);
+	}
+	return Out;
+}
+
+SeasonResult Kingdom::LeagueReward(int Tier, int Place, int GroupSize) const
+{
+	SeasonResult R;
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Tier < 0 || Tier >= static_cast<int>(Leagues.size()) || Place < 1)
+	{
+		return R;
+	}
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(Tier)];
+	const int64_t Pct = std::max<int64_t>(C.alliances.minPlacePct, 100 - static_cast<int64_t>(C.alliances.placeStepPct) * (Place - 1));
+	R.allianceTier = Tier;
+	R.place = Place;
+	R.groupSize = GroupSize;
+	R.gems = L.gems * Pct / 100;
+	R.stones = L.stones > 0 ? std::max<int64_t>(1, L.stones * Pct / 100) : 0;
+	R.crystal = L.crystal;
+	return R;
+}
+
+int Kingdom::TitanChancePct(int Tier, int Place, int GroupSize) const
+{
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Tier < 0 || Tier >= static_cast<int>(Leagues.size()))
+	{
+		return 0;
+	}
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(Tier)];
+	const int Span = std::max(1, GroupSize - 1);
+	const int P = std::max(0, std::min(Span, Place - 1));
+	return L.titanPctFirst + (L.titanPctLast - L.titanPctFirst) * P / Span;
+}
+
+bool Kingdom::RollAllianceLeagues(int64_t End)
+{
+	const int N = AllianceCount();
+	const int Tiers = static_cast<int>(C.alliances.leagues.size());
+	if (N == 0 || Tiers == 0)
+	{
+		return false;
+	}
+	std::vector<std::vector<std::pair<int64_t, int>>> Table(static_cast<size_t>(Tiers));
+	for (int I = 0; I < N; ++I)
+	{
+		const int T = std::max(0, std::min(Tiers - 1, AllianceTier(I)));
+		Table[static_cast<size_t>(T)].emplace_back(AllianceVp(I, SeasonNo, End), I);
+	}
+	for (std::vector<std::pair<int64_t, int>>& Rows : Table)
+	{
+		std::sort(Rows.begin(), Rows.end(), [](const std::pair<int64_t, int>& X, const std::pair<int64_t, int>& Y)
+			{ return X.first != Y.first ? X.first > Y.first : X.second < Y.second; });
+	}
+	// The player's alliance pays every member who was in it for long enough before the end.
+	bool bPaid = false;
+	if (AllianceIdx >= 0 && AllianceJoinedAt <= End - C.alliances.memberSec)
+	{
+		const int T = std::max(0, std::min(Tiers - 1, AllianceTier(AllianceIdx)));
+		const std::vector<std::pair<int64_t, int>>& Rows = Table[static_cast<size_t>(T)];
+		int Place = 1;
+		int64_t Total = 0;
+		for (size_t K = 0; K < Rows.size(); ++K)
+		{
+			if (Rows[K].second == AllianceIdx)
+			{
+				Place = static_cast<int>(K) + 1;
+				Total = Rows[K].first;
+			}
+		}
+		const int Size = static_cast<int>(Rows.size());
+		const int64_t Vp = Amount(Res::Vp);
+		Last = LeagueReward(T, Place, Size);
+		Last.season = SeasonNo;
+		Last.vp = Vp;
+		Last.league = League(Vp);
+		Last.alliance = AllianceIdx;
+		Last.allianceVp = Total;
+		Res_[static_cast<size_t>(ResIndex(Res::Gems))] += Last.gems;
+		const int64_t Before = Amount(Res::Stones);
+		AddResource(Res::Stones, Last.stones);
+		Last.stones = Amount(Res::Stones) - Before;
+		// The crystal: a titan by chance (better at a higher place) while the Hall has room, else a relic of its
+		// rarity, else (the inventory is full) gems.
+		if (Last.crystal > 0)
+		{
+			const uint64_t H = Mix(Seed ^ 0x6372797374616cULL, static_cast<uint64_t>(SeasonNo));
+			if (static_cast<int>(H % 100) < TitanChancePct(T, Place, Size) && static_cast<int>(TitanList.size()) < TitanCapacity())
+			{
+				Last.crystalTitan = SummonTitan(Last.crystal, H >> 24);
+			}
+			else
+			{
+				Last.crystalRelic = AddRelic(RollRelicKind(H >> 32), Last.crystal);
+				if (Last.crystalRelic == 0)
+				{
+					const std::vector<int64_t>& G = C.alliances.crystalGems;
+					Last.crystalGems = G.empty() ? 0 : G[static_cast<size_t>(std::min<int>(Last.crystal, static_cast<int>(G.size())) - 1)];
+					Res_[static_cast<size_t>(ResIndex(Res::Gems))] += Last.crystalGems;
+				}
+			}
+		}
+		bPaid = true;
+	}
+	// The best of each league go up and as many of the worst of the league above come down.
+	std::vector<int> NewTiers = AllianceTiers;
+	NewTiers.resize(static_cast<size_t>(N), 0);
+	for (int T = 0; T + 1 < Tiers; ++T)
+	{
+		const std::vector<std::pair<int64_t, int>>& Low = Table[static_cast<size_t>(T)];
+		const std::vector<std::pair<int64_t, int>>& High = Table[static_cast<size_t>(T + 1)];
+		const int Moves = std::min(C.alliances.promote, static_cast<int>(std::min(Low.size(), High.size()) / 2));
+		for (int K = 0; K < Moves; ++K)
+		{
+			NewTiers[static_cast<size_t>(Low[static_cast<size_t>(K)].second)] = T + 1;
+			NewTiers[static_cast<size_t>(High[High.size() - 1 - static_cast<size_t>(K)].second)] = T;
+		}
+	}
+	if (bPaid)
+	{
+		Last.move = NewTiers[static_cast<size_t>(AllianceIdx)] - AllianceTier(AllianceIdx);
+	}
+	AllianceTiers = NewTiers;
+	return bPaid;
+}
+
+Check Kingdom::CheckJoin(int Index) const
+{
+	Check Out;
+	if (AllianceIdx >= 0)
+	{
+		Out.error = Error::InAlliance;
+		return Out;
+	}
+	if (Index < 0 || Index >= BaseAlliances())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	Out.cost[static_cast<size_t>(ResIndex(Res::Vp))] = AllianceJoinVp(Index);
+	if (AllianceRating() < AllianceJoinVp(Index))
+	{
+		Out.error = Error::NeedVp;
+	}
+	else if (AllianceSize(Index) >= C.alliances.maxMembers)
+	{
+		Out.error = Error::AllianceFull;
+	}
+	return Out;
+}
+
+Check Kingdom::CheckCreate() const
+{
+	Check Out;
+	Out.cost[static_cast<size_t>(ResIndex(Res::Gems))] = C.alliances.createGems;
+	if (AllianceIdx >= 0)
+	{
+		Out.error = Error::InAlliance;
+	}
+	else if (C.alliances.leagues.empty())
+	{
+		Out.error = Error::Locked;
+	}
+	else if (AllianceRating() < C.alliances.joinVp)
+	{
+		Out.error = Error::NeedVp;
+		Out.cost[static_cast<size_t>(ResIndex(Res::Vp))] = C.alliances.joinVp;
+	}
+	else if (Amount(Res::Gems) < C.alliances.createGems)
+	{
+		Out.error = Error::NotEnough;
+	}
+	return Out;
+}
+
+Error Kingdom::JoinAlliance(int Index)
+{
+	const Check Ck = CheckJoin(Index);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	AllianceIdx = Index;
+	AllianceJoinedAt = Time;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+Error Kingdom::CreateAlliance(const std::string& Name, const std::string& Tag)
+{
+	const Check Ck = CheckCreate();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	std::string CleanTitle;
+	std::string CleanTag;
+	if (!CleanName(Name, kMaxNameBytes, CleanTitle) || !CleanName(Tag, kMaxTagBytes, CleanTag))
+	{
+		return Error::BadId;
+	}
+	Res_[static_cast<size_t>(ResIndex(Res::Gems))] -= C.alliances.createGems;
+	OwnName = CleanTitle;
+	OwnTag = CleanTag;
+	OwnFounded = Time;
+	AllianceTiers.resize(static_cast<size_t>(BaseAlliances()), 0);
+	AllianceTiers.push_back(0); // a new alliance starts in the lowest league
+	AllianceIdx = BaseAlliances();
+	AllianceJoinedAt = Time;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+Error Kingdom::LeaveAlliance()
+{
+	if (AllianceIdx < 0)
+	{
+		return Error::NoAlliance;
+	}
+	if (HasOwnAlliance())
+	{
+		// An own alliance is disbanded: its recruits leave too.
+		AllianceTiers.resize(static_cast<size_t>(BaseAlliances()));
+		OwnName.clear();
+		OwnTag.clear();
+		OwnFounded = 0;
+	}
+	AllianceIdx = -1;
+	AllianceJoinedAt = 0;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+int Kingdom::ReinforceCapacity() const
+{
+	const LevelDef* L = C.allianceCamp >= 0 ? BuildingLevel(C.allianceCamp) : nullptr;
+	return L ? static_cast<int>(L->reinforcements) : 0;
+}
+
+int Kingdom::ReinforcementsReady() const
+{
+	int N = 0;
+	for (const Reinforcement& R : ReinforceList)
+	{
+		N += R.at <= Time ? 1 : 0;
+	}
+	return N;
+}
+
+int64_t Kingdom::ReinforceReadyAt() const
+{
+	return bReinforceAsked ? ReinforceAt + C.alliances.reinforceCooldownSec : 0;
+}
+
+Check Kingdom::CheckReinforce() const
+{
+	Check Out;
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (ReinforceCapacity() <= 0)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.allianceCamp >= 0 ? C.buildings[static_cast<size_t>(C.allianceCamp)].unlockCastle : 0;
+	}
+	else if (static_cast<int>(ReinforceList.size()) >= ReinforceCapacity())
+	{
+		Out.error = Error::StorageFull;
+	}
+	else if (ReinforceReadyAt() > Time)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = ReinforceReadyAt() - Time;
+	}
+	else if (AllianceSize(AllianceIdx) <= 0)
+	{
+		Out.error = Error::Nothing; // an own alliance with no recruits yet
+	}
+	return Out;
+}
+
+Error Kingdom::RequestReinforcements()
+{
+	const Check Ck = CheckReinforce();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	// Allies send troops a player of this Castle could have, at their league's level but no stronger than the
+	// player's Armoury allows; one squad a minute until the camp is full.
+	std::vector<int> Pool;
+	for (size_t I = 0; I < C.troops.size(); ++I)
+	{
+		if (C.troops[I].unlockCastle <= CastleLevel())
+		{
+			Pool.push_back(static_cast<int>(I));
+		}
+	}
+	if (Pool.empty())
+	{
+		return Error::Nothing;
+	}
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	const int Tier = std::max(0, std::min(static_cast<int>(Leagues.size()) - 1, AllianceTier(AllianceIdx)));
+	const int Level = std::max(1, std::min(Leagues[static_cast<size_t>(Tier)].troopLevel, MaxTroopLevel()));
+	const int Senders = AllianceSize(AllianceIdx);
+	const int Free = ReinforceCapacity() - static_cast<int>(ReinforceList.size());
+	int64_t At = Time;
+	for (const Reinforcement& R : ReinforceList)
+	{
+		At = std::max(At, R.at);
+	}
+	for (int K = 0; K < Free; ++K)
+	{
+		const uint64_t H = Mix(Mix(Seed ^ 0x7265696e66ULL, static_cast<uint64_t>(Time)), static_cast<uint64_t>(K));
+		Reinforcement R;
+		R.troop = Pool[static_cast<size_t>(H % static_cast<uint64_t>(Pool.size()))];
+		R.level = std::min(Level, C.troops[static_cast<size_t>(R.troop)].MaxLevel());
+		At += C.alliances.reinforceArriveSec;
+		R.at = At;
+		// Members() lists the player first in an own alliance, last in a computer one.
+		R.from = static_cast<int>((H >> 32) % static_cast<uint64_t>(Senders)) + (HasOwnAlliance() ? 1 : 0);
+		ReinforceList.push_back(R);
+	}
+	ReinforceAt = Time;
+	bReinforceAsked = true;
+	return Error::None;
 }
 
 WorldLand Kingdom::MakeWorldLand()
@@ -1178,6 +1770,11 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 }
 
 Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	return StartAttack(WorldId, Capture, Squads, TitanId, Spells, false);
+}
+
+Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
 {
 	const WorldLand* W = nullptr;
 	for (const WorldLand& It : WorldList)
@@ -1256,6 +1853,23 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 	PendingArmy = Squads;
 	PendingTitanId = TitanId;
 	PendingSpellList = Spells;
+	// Allies' squads that have arrived go along; the ones still on their way stay in the camp's queue.
+	PendingReinforce.clear();
+	if (Reinforce)
+	{
+		for (size_t I = 0; I < ReinforceList.size();)
+		{
+			if (ReinforceList[I].at <= Time)
+			{
+				PendingReinforce.push_back(ReinforceList[I]);
+				ReinforceList.erase(ReinforceList.begin() + static_cast<std::ptrdiff_t>(I));
+			}
+			else
+			{
+				++I;
+			}
+		}
+	}
 	return Error::None;
 }
 
@@ -1347,6 +1961,9 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	PendingArmy.clear();
 	PendingTitanId = 0;
 	UnblockQueue(Time);
+	// Reinforcements help in one battle only (the original).
+	R.reinforcements = static_cast<int>(PendingReinforce.size());
+	PendingReinforce.clear();
 	if (Index >= WorldList.size())
 	{
 		if (Out)
@@ -2075,6 +2692,20 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 			Roll -= A.weights[static_cast<size_t>(K)];
 		}
 	}
+	const int32_t Id = SummonTitan(Stars, H >> 24);
+	if (A.cooldownSec > 0)
+	{
+		RelicAt = Time + A.cooldownSec;
+	}
+	if (OutTitanId)
+	{
+		*OutTitanId = Id;
+	}
+	return Error::None;
+}
+
+int32_t Kingdom::SummonTitan(int Stars, uint64_t Pick)
+{
 	std::vector<int> Pool;
 	for (size_t I = 0; I < C.titans.size(); ++I)
 	{
@@ -2092,17 +2723,9 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 	}
 	TitanState T;
 	T.id = NextId++;
-	T.def = Pool[static_cast<size_t>((H >> 24) % static_cast<uint64_t>(Pool.size()))];
+	T.def = Pool[static_cast<size_t>(Pick % static_cast<uint64_t>(Pool.size()))];
 	TitanList.push_back(T);
-	if (A.cooldownSec > 0)
-	{
-		RelicAt = Time + A.cooldownSec;
-	}
-	if (OutTitanId)
-	{
-		*OutTitanId = T.id;
-	}
-	return Error::None;
+	return T.id;
 }
 
 Check Kingdom::CheckFusion(int32_t Target, const std::vector<int32_t>& Sacrifices) const
@@ -3060,7 +3683,7 @@ std::string Kingdom::Save() const
 	JsonWriter W;
 	W.BeginObject();
 	W.Key("formatVersion");
-	W.Int(5);
+	W.Int(6);
 	W.Key("contentHash");
 	W.String(C.hash);
 	W.Key("time");
@@ -3098,7 +3721,83 @@ std::string Kingdom::Save() const
 	W.Int(Last.gems);
 	W.Key("stones");
 	W.Int(Last.stones);
+	// What the alliance league paid (format 6).
+	if (Last.alliance >= 0)
+	{
+		W.Key("alliance");
+		W.Int(Last.alliance);
+		W.Key("allianceTier");
+		W.Int(Last.allianceTier);
+		W.Key("place");
+		W.Int(Last.place);
+		W.Key("groupSize");
+		W.Int(Last.groupSize);
+		W.Key("move");
+		W.Int(Last.move);
+		W.Key("allianceVp");
+		W.Int(Last.allianceVp);
+		W.Key("crystal");
+		W.Int(Last.crystal);
+		W.Key("crystalTitan");
+		W.Int(Last.crystalTitan);
+		W.Key("crystalRelic");
+		W.Int(Last.crystalRelic);
+		W.Key("crystalGems");
+		W.Int(Last.crystalGems);
+	}
 	W.EndObject();
+	W.EndObject();
+	// Alliances (format 6): the player's alliance, every alliance's league, an own alliance, reinforcements.
+	const auto WriteSquads = [this, &W](const std::vector<Reinforcement>& List)
+	{
+		W.BeginArray();
+		for (const Reinforcement& R : List)
+		{
+			W.BeginObject();
+			W.Key("troop");
+			W.String(C.troops[static_cast<size_t>(R.troop)].id);
+			W.Key("level");
+			W.Int(R.level);
+			W.Key("at");
+			W.Int(R.at);
+			W.Key("from");
+			W.Int(R.from);
+			W.EndObject();
+		}
+		W.EndArray();
+	};
+	W.Key("alliance");
+	W.BeginObject();
+	W.Key("index");
+	W.Int(HasOwnAlliance() ? -1 : AllianceIdx);
+	W.Key("own");
+	W.Bool(HasOwnAlliance());
+	W.Key("since");
+	W.Int(AllianceJoinedAt);
+	W.Key("tiers");
+	W.BeginArray();
+	for (const int T : AllianceTiers)
+	{
+		W.Int(T);
+	}
+	W.EndArray();
+	if (HasOwnAlliance())
+	{
+		W.Key("name");
+		W.String(OwnName);
+		W.Key("tag");
+		W.String(OwnTag);
+		W.Key("founded");
+		W.Int(OwnFounded);
+	}
+	W.Key("reinforcements");
+	WriteSquads(ReinforceList);
+	W.Key("pending");
+	WriteSquads(PendingReinforce);
+	W.Key("askedAt");
+	W.Int(ReinforceAt);
+	W.Key("asked");
+	W.Bool(bReinforceAsked);
 	W.EndObject();
 	W.Key("resources");
 	W.BeginObject();
@@ -3346,7 +4045,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		return false;
 	}
 	const int Version = J.GetInt("formatVersion", 0);
-	if (Version < 1 || Version > 5)
+	if (Version < 1 || Version > 6)
 	{
 		OutError = "unsupported kingdom save version";
 		return false;
@@ -3448,6 +4147,16 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			Last.league = LastJ->GetInt("league", -1);
 			Last.gems = LastJ->GetInt64("gems", 0);
 			Last.stones = LastJ->GetInt64("stones", 0);
+			Last.alliance = LastJ->GetInt("alliance", -1);
+			Last.allianceTier = LastJ->GetInt("allianceTier", -1);
+			Last.place = LastJ->GetInt("place", 0);
+			Last.groupSize = LastJ->GetInt("groupSize", 0);
+			Last.move = LastJ->GetInt("move", 0);
+			Last.allianceVp = LastJ->GetInt64("allianceVp", 0);
+			Last.crystal = LastJ->GetInt("crystal", 0);
+			Last.crystalTitan = static_cast<int32_t>(LastJ->GetInt64("crystalTitan", 0));
+			Last.crystalRelic = static_cast<int32_t>(LastJ->GetInt64("crystalRelic", 0));
+			Last.crystalGems = LastJ->GetInt64("crystalGems", 0);
 		}
 	}
 	Res_.fill(0);
@@ -3661,6 +4370,82 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.titanId = 0;
 		}
 	}
+	// Alliances (format 6). Older saves start outside any alliance, every alliance in the league it starts in.
+	ResetAlliances();
+	if (const JsonValue* AJ = J.Find("alliance"))
+	{
+		const int Base = BaseAlliances();
+		const int Tiers = static_cast<int>(C.alliances.leagues.size());
+		bool bOwn = AJ->GetBool("own", false);
+		std::vector<int> Saved;
+		if (const JsonValue* TJ = AJ->Find("tiers"))
+		{
+			for (size_t I = 0; I < TJ->Size(); ++I)
+			{
+				Saved.push_back(std::max(0, std::min(std::max(0, Tiers - 1), (*TJ)[I].AsInt(0))));
+			}
+		}
+		// A save from content with another number of alliances keeps nothing but the player's own alliance.
+		const bool bSameWorld = static_cast<int>(Saved.size()) == Base + (bOwn ? 1 : 0);
+		if (bSameWorld)
+		{
+			AllianceTiers = Saved;
+		}
+		if (bOwn)
+		{
+			bOwn = CleanName(AJ->GetString("name"), kMaxNameBytes, OwnName) && CleanName(AJ->GetString("tag"), kMaxTagBytes, OwnTag);
+			if (bOwn)
+			{
+				AllianceTiers.resize(static_cast<size_t>(Base), 0);
+				AllianceTiers.push_back(bSameWorld ? Saved.back() : 0);
+				OwnFounded = AJ->GetInt64("founded", Time);
+				AllianceIdx = Base;
+			}
+			else
+			{
+				AllianceTiers.resize(static_cast<size_t>(Base), 0);
+				OwnName.clear();
+				OwnTag.clear();
+			}
+		}
+		else
+		{
+			const int Idx = AJ->GetInt("index", -1);
+			AllianceIdx = Idx >= 0 && Idx < Base ? Idx : -1;
+		}
+		if (AllianceIdx >= 0)
+		{
+			AllianceJoinedAt = AJ->GetInt64("since", Time);
+		}
+		const auto ReadSquads = [this](const JsonValue* List, std::vector<Reinforcement>& Into)
+		{
+			Into.clear();
+			for (size_t I = 0; List && I < List->Size(); ++I)
+			{
+				const JsonValue& RJ = (*List)[I];
+				Reinforcement R;
+				R.troop = C.FindTroop(RJ.GetString("troop"));
+				if (R.troop < 0)
+				{
+					continue;
+				}
+				R.level = std::max(1, std::min(C.troops[static_cast<size_t>(R.troop)].MaxLevel(), RJ.GetInt("level", 1)));
+				R.at = RJ.GetInt64("at", Time);
+				R.from = std::max(0, RJ.GetInt("from", 0));
+				Into.push_back(R);
+			}
+		};
+		if (AllianceIdx >= 0)
+		{
+			ReadSquads(AJ->Find("reinforcements"), ReinforceList);
+		}
+		if (Pending != 0)
+		{
+			ReadSquads(AJ->Find("pending"), PendingReinforce);
+		}
+		ReinforceAt = AJ->GetInt64("askedAt", 0);
+		bReinforceAsked = AJ->GetBool("asked", false);
+	}
 	FillWorld();
 	return true;
 }
@@ -3684,6 +4469,44 @@ uint64_t Kingdom::Hash() const
 	W.I32(Last.league);
 	W.I64(Last.gems);
 	W.I64(Last.stones);
+	W.I32(Last.alliance);
+	W.I32(Last.allianceTier);
+	W.I32(Last.place);
+	W.I32(Last.groupSize);
+	W.I32(Last.move);
+	W.I64(Last.allianceVp);
+	W.I32(Last.crystal);
+	W.I32(Last.crystalTitan);
+	W.I32(Last.crystalRelic);
+	W.I64(Last.crystalGems);
+	W.I32(AllianceIdx);
+	W.I64(AllianceJoinedAt);
+	for (const int T : AllianceTiers)
+	{
+		W.I32(T);
+	}
+	for (const std::string* Text : {&OwnName, &OwnTag})
+	{
+		W.I32(static_cast<int32_t>(Text->size()));
+		for (const char Ch : *Text)
+		{
+			W.U8(static_cast<uint8_t>(Ch));
+		}
+	}
+	W.I64(OwnFounded);
+	for (const std::vector<Reinforcement>* List : {&ReinforceList, &PendingReinforce})
+	{
+		W.I32(static_cast<int32_t>(List->size()));
+		for (const Reinforcement& R : *List)
+		{
+			W.I32(R.troop);
+			W.I32(R.level);
+			W.I64(R.at);
+			W.I32(R.from);
+		}
+	}
+	W.I64(ReinforceAt);
+	W.Bool(bReinforceAsked);
 	for (const Building& B : BuildingList)
 	{
 		W.I32(B.id);

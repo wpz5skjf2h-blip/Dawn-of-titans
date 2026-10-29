@@ -18,7 +18,7 @@ const HINT_KEY = 'dot.kingdom.welcomed';
 const E = { None: 0, BadId: 1, MaxLevel: 2, CastleTooLow: 3, NeedRequirement: 4, NeedExpansion: 5, Locked: 6, LimitReached: 7,
 	NoBuilder: 8, NotEnough: 9, BadPlacement: 10, Busy: 11, NotBusy: 12, Nothing: 13, StorageFull: 14, NeedStones: 15, NoLandSlot: 16, NoAttack: 17,
 	QueueFull: 18, Researching: 19, TooManySquads: 20, NoTroops: 21, TitanRecovering: 22, NotReady: 23, RosterFull: 24, NotMaxLevel: 25,
-	WrongRelic: 26, SameRelic: 27, InventoryFull: 28 };
+	WrongRelic: 26, SameRelic: 27, InventoryFull: 28, NeedVp: 29, AllianceFull: 30, InAlliance: 31, NoAlliance: 32 };
 // Mirrors dot::kingdom::Res: shards come from ruins and pay for ascension; VP (victory points) rank the season.
 const RES = ['gold', 'food', 'gems', 'stones', 'shards', 'vp'];
 const RES_OF = { gold: 'золота', food: 'еды', gems: 'самоцветов', stones: 'камней портала', shards: 'осколков', vp: 'очков победы' };
@@ -150,9 +150,9 @@ class KingdomBridge {
 	refillStones() { return this.M._dk_refill_stones(); }
 	collectLand(id) { return JSON.parse(this.str(this.M._dk_collect_land(id))); }
 	abandonLand(id) { return this.M._dk_abandon_land(id); }
-	attackStart(worldId, capture, squads, titan, spells) {
-		return this.M.ccall('dk_attack_start', 'number', ['number', 'number', 'string', 'number', 'string'],
-			[worldId, capture ? 1 : 0, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
+	attackStart(worldId, capture, squads, titan, spells, reinforce) {
+		return this.M.ccall('dk_attack_start', 'number', ['number', 'number', 'string', 'number', 'string', 'number'],
+			[worldId, capture ? 1 : 0, (squads || []).join(','), titan || 0, (spells || []).join(','), reinforce ? 1 : 0]);
 	}
 	attackFinish(worldId, capture, stars, survivors, used) {
 		return JSON.parse(this.str(this.M.ccall('dk_attack_finish', 'number', ['number', 'number', 'number', 'string', 'string'],
@@ -182,6 +182,11 @@ class KingdomBridge {
 	fuse(target, ids) { return this.M.ccall('dk_fuse', 'number', ['number', 'string'], [target, ids.join(',')]); }
 	skipTitan(id) { return this.M._dk_skip_titan(id); }
 	ascend(id, gems) { return this.M._dk_ascend(id, gems ? 1 : 0); }
+	alliances() { return JSON.parse(this.str(this.M._dk_alliances())); }
+	join(i) { return this.M._dk_join(i); }
+	create(name, tag) { return this.M.ccall('dk_create', 'number', ['string', 'string'], [name, tag]); }
+	leave() { return this.M._dk_leave(); }
+	reinforce() { return this.M._dk_reinforce(); }
 }
 
 /** kingdom.json carries // comments (the C++ reader allows them); strips them outside strings. */
@@ -1953,6 +1958,10 @@ function errText(code, ck, ctx) {
 	case E.WrongRelic: return 'Эта реликвия сюда не подходит';
 	case E.SameRelic: return 'Такая реликвия уже надета: две одинаковые носить нельзя';
 	case E.InventoryFull: return 'Склад реликвий полон (' + K.army.relics.maxRelics + ')';
+	case E.NeedVp: return 'Нужно ' + fmt(ck && ck.cost[5] ? ck.cost[5] : K.rules.alliances.joinVp) + ' очков победы за этот или прошлый сезон';
+	case E.AllianceFull: return 'В альянсе нет мест (' + K.rules.alliances.members[1] + ')';
+	case E.InAlliance: return 'Сначала выйдите из своего альянса';
+	case E.NoAlliance: return 'Сначала вступите в альянс';
 	default: return 'Не получилось (код ' + code + ')';
 	}
 }
@@ -1986,8 +1995,24 @@ function announceSeason(st) {
 	if (seen >= last.no || K.seasonSeen === last.no) return;
 	K.seasonSeen = last.no;
 	try { localStorage.setItem(SEASON_KEY, String(last.no)); } catch (e) { /* per-viewer only */ }
+	if (last.al >= 0) {
+		// The alliance league paid: place, the move, the reward and what the crystal held.
+		const alg = K.rules.alliances.leagues[last.tier];
+		const got = crystalGot(last, st);
+		toast('Сезон завершён: альянс' + (last.aname ? ' «' + last.aname + '»' : '') + ' на ' + last.place + ' месте из ' + last.size + ' в лиге «' + alg.name + '»' +
+			(last.move > 0 ? ', повышение!' : last.move < 0 ? ', понижение' : '') + ' · +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ', +' + last.stones + ' камней' : '') +
+			(got ? ' · из кристалла: ' + got : ''), 'gold');
+		return;
+	}
 	const lg = last.league >= 0 ? K.rules.seasons.leagues[last.league] : null;
 	toast('Сезон завершён: ' + fmt(last.vp) + ' ОП · ' + (lg ? lg.name + ', награда +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ' и +' + last.stones + ' камней' : '') : 'до лиги не хватило'), lg ? 'gold' : '');
+}
+/** What last season's alliance crystal held: a titan, a relic, or gems when the relic inventory was full. */
+function crystalGot(last, st) {
+	const t = last.ctitan && st.titans.find((x) => x.id === last.ctitan);
+	const rl = last.crelic && st.relics.find((x) => x.id === last.crelic);
+	return t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(last.crystal) : rl ? 'реликвия ' + relicName(rl) + ' ' + '★'.repeat(last.crystal)
+		: last.cgems ? 'склад реликвий полон, +' + fmt(last.cgems) + ' самоцветов' : '';
 }
 /** Finished constructions since the last state. */
 function announce(prev, st) {
@@ -2013,7 +2038,7 @@ function initHud() {
 	for (const [id, kind] of [['rGold', 'gold'], ['rFood', 'food'], ['rGems', 'gems'], ['rStones', 'stones'], ['rVp', 'vp'], ['rShards', 'shards'], ['rBuilders', 'builders']]) {
 		$(id).innerHTML = iconSvg(kind) + '<span></span><small></small>' + (kind === 'gold' || kind === 'food' ? '<i class="fill"></i>' : '');
 	}
-	for (const [id, icon] of [['kAttack', 'ui.attack'], ['kArmyBtn', 'ui.army'], ['kShopBtn', 'ui.build']]) $(id).insertAdjacentHTML('afterbegin', DotIcons.svg(icon, 'bi'));
+	for (const [id, icon] of [['kAttack', 'ui.attack'], ['kAllyBtn', 'ui.alliance'], ['kArmyBtn', 'ui.army'], ['kShopBtn', 'ui.build']]) $(id).insertAdjacentHTML('afterbegin', DotIcons.svg(icon, 'bi'));
 	$('rStones').addEventListener('click', openStones);
 	$('rVp').addEventListener('click', openSeason);
 	$('rBuilders').addEventListener('click', openBuilders);
@@ -2021,6 +2046,13 @@ function initHud() {
 	$('kAttack').addEventListener('click', openWorld);
 	$('kShopBtn').addEventListener('click', openShop);
 	$('kArmyBtn').addEventListener('click', openArmy);
+	$('kAllyBtn').addEventListener('click', () => openAlliance());
+	// The alliance founding form keeps what was typed when the sheet is redrawn.
+	$('kSheetPanel').addEventListener('input', (e) => {
+		if (e.target.id !== 'allyName' && e.target.id !== 'allyTag') return;
+		K.allyForm = K.allyForm || { name: '', tag: '' };
+		K.allyForm[e.target.id === 'allyName' ? 'name' : 'tag'] = e.target.value;
+	});
 	$('kCastle').addEventListener('click', () => {
 		const c = K.st.b.find((b) => b.def === K.rules.castleIndex);
 		if (c) { const v = world.views.get(c.id); if (v) focusOn(v.anchor.x, v.anchor.z); select({ kind: 'b', id: c.id }); }
@@ -2057,8 +2089,12 @@ function updateHud() {
 	stones.querySelector('small').textContent = st.stonesNext ? fmtClock(st.stonesNext - nowF()) : '';
 	const vp = $('rVp');
 	vp.querySelector('span').textContent = fmtShort(st.res[5]);
-	vp.querySelector('small').textContent = st.season.league >= 0 ? K.rules.seasons.leagues[st.season.league].name.split(' ')[0] : '';
+	// In an alliance the league is the alliance's (the original's leagues are alliance leagues).
+	const lgName = st.ally.my >= 0 ? K.rules.alliances.leagues[st.ally.tier].name : st.season.league >= 0 ? K.rules.seasons.leagues[st.season.league].name : '';
+	vp.querySelector('small').textContent = lgName.split(' ')[0];
 	vp.title = 'Очки победы за сезон: ' + fmt(st.res[5]) + '. Сезон кончится через ' + fmtDur(Math.max(0, st.season.end - nowF()));
+	const ally = st.ally;
+	$('kAllySub').textContent = ally.my >= 0 ? '[' + ally.tag + '] ' + ally.place + ' из ' + ally.size : ally.rating >= K.rules.alliances.joinVp ? 'Вступить' : fmtShort(ally.rating) + ' / ' + fmtShort(K.rules.alliances.joinVp) + ' ОП';
 	const shards = $('rShards');
 	shards.hidden = st.res[4] <= 0 && !st.lands.some((L) => landType(L.type).resource === 'shards');
 	shards.querySelector('span').textContent = fmt(st.res[4]);
@@ -2126,7 +2162,8 @@ const gemSpan = (n) => '<span class="cost">' + iconSvg('gems') + fmt(n) + '</spa
 
 /** Buildings with their own screen: data-act and button label. */
 const BUILDING_ACT = { barracks: ['barracks', 'Обучить'], army_camp: ['army', 'Армия'], armoury: ['armoury', 'Войска'], hall_of_titans: ['titans', 'Титаны'],
-	relic_temple: ['relics', 'Реликвии'], medical_school: ['army', 'Армия'], spell_forge: ['forge', 'Заклинания'], arcane_tower: ['arcane', 'Улучшения'] };
+	relic_temple: ['relics', 'Реликвии'], medical_school: ['army', 'Армия'], spell_forge: ['forge', 'Заклинания'], arcane_tower: ['arcane', 'Улучшения'],
+	alliance_camp: ['alliance-camp', 'Подкрепления'] };
 function buildingPanel(id) {
 	const st = K.st;
 	const b = st.b.find((x) => x.id === id);
@@ -2137,7 +2174,8 @@ function buildingPanel(id) {
 	const armedSkip = isArmed('skip:' + id);
 	const brl = buildingRelic(id);
 	const key = ['b', id, b.lv, b.up, b.st > 0, armedSkip, brl ? brl.id + ':' + (brl.dur > 0) + ':' + brl.v.join('.') : '', d.role === 'storage' || d.role === 'castle' || d.role === 'portal' || d.role === 'builders' ? st.res.join() + st.busy + st.builders : '',
-		BUILDING_ACT[d.id] ? [st.army.queue.length, st.army.total, st.army.cap, st.army.rs.t, st.titans.length, st.army.surv, st.spells.total, st.spells.queue.length, st.spells.labs.length].join() : ''].join('|');
+		BUILDING_ACT[d.id] ? [st.army.queue.length, st.army.total, st.army.cap, st.army.rs.t, st.titans.length, st.army.surv, st.spells.total, st.spells.queue.length, st.spells.labs.length,
+			st.ally.my, st.ally.reinf.length].join() : ''].join('|');
 	const stats = [];
 	if (!cur) stats.push(esc(d.description));
 	else if (d.role === 'producer') {
@@ -2162,6 +2200,7 @@ function buildingPanel(id) {
 	else if (d.id === 'relic_temple') stats.push('Бесплатная реликвия: <b data-live="relic"></b>');
 	else if (d.id === 'spell_forge') stats.push('Запас <b>' + st.spells.total + ' / ' + st.spells.cap + '</b>', 'Очередь <b>' + st.spells.queue.length + ' / ' + st.spells.qcap + '</b>');
 	else if (d.id === 'arcane_tower') stats.push('Улучшений сразу <b>' + st.spells.slots + '</b>', 'Предел уровня <b>' + st.spells.maxLv + '</b>');
+	else if (d.id === 'alliance_camp') stats.push('Подкреплений <b>' + st.ally.reinf.length + ' / ' + cur.reinforcements + '</b>', st.ally.my >= 0 ? 'альянс <b>[' + esc(st.ally.tag) + ']</b>' : 'вы не в альянсе');
 	else if (d.category === 'councils') stats.push('Присылает <b>' + councilTroops(d.id).map((t) => esc(K.army.troops[t].name)).join(', ') + '</b>', 'Предел уровня их войск <b>' + cur.maxTroopLevel + '</b>');
 	else for (const k of statKeys(d, cur).slice(0, 3)) stats.push(statLabel(d, k) + ' <b>' + fmt(cur[k]) + '</b>');
 	const btn = [];
@@ -2205,6 +2244,10 @@ function buildingPanel(id) {
 			else if (dd.id === 'army_camp' || dd.id === 'medical_school') live(el, 'extra', aa.total + ' / ' + aa.cap);
 			else if (dd.id === 'spell_forge') live(el, 'extra', K.st.spells.queue.length ? 'следующее ' + fmtClock(K.st.spells.qf - now) : 'запас ' + K.st.spells.total);
 			else if (dd.id === 'arcane_tower') live(el, 'extra', K.st.spells.labs.length ? fmtDur(K.st.spells.labs[0].until - now) : 'улучшить');
+			else if (dd.id === 'alliance_camp') {
+				const al = K.st.ally;
+				live(el, 'extra', al.my < 0 ? 'нет альянса' : al.reinf.length ? al.reinf.filter((r) => r[2] <= now).length + ' готовы' : al.rck.err === E.None ? 'попросить' : 'пусто');
+			}
 			if (bb.up) {
 				const left = bb.f - nowF();
 				live(el, 'left', fmtDur(left));
@@ -2288,6 +2331,23 @@ function onAct(e) {
 	case 'ascend': run(K.bridge.ascend(id, false), 'Титан возвышен: ещё 10 уровней и слот реликвии', (K.st.titans.find((t) => t.id === id) || {}).ack); break;
 	case 'ascend-gems': gemAction('asc:' + id, +el.dataset.gems, () => run(K.bridge.ascend(id, true), 'Титан возвышен: ещё 10 уровней и слот реликвии')); break;
 	case 'season': openSeason(); break;
+	case 'alliance': openAlliance(); break;
+	case 'alliance-camp': openAlliance('reinf'); break;
+	case 'ally-tab': K.allyTab = el.dataset.tab; K.armed = null; refreshSheet(true); break;
+	case 'ally-view': K.allyView = el.dataset.tab; K.armed = null; refreshSheet(true); break;
+	case 'ally-join': {
+		const a = K.allyData && K.allyData.all[id];
+		if (run(K.bridge.join(id), a ? 'Вы вступили в альянс «' + a.name + '»' : 'Вы в альянсе')) K.allyView = 'league';
+		break;
+	}
+	case 'ally-create': createAlliance(); break;
+	case 'ally-leave':
+		if (!isArmed('ally-leave')) { arm('ally-leave'); break; }
+		K.armed = null;
+		run(K.bridge.leave(), K.st.ally.own ? 'Альянс распущен' : 'Вы вышли из альянса');
+		break;
+	case 'ally-reinforce': run(K.bridge.reinforce(), 'Просьба отправлена: союзники пришлют отряды', K.st.ally.rck); break;
+	case 'prep-reinf': if (K.prep) { K.prep.reinf = !K.prep.reinf; refreshSheet(true); } break;
 	case 'altar': {
 		const go = () => {
 			const r = K.bridge.openAltar(id);
@@ -2942,17 +3002,28 @@ function openSeason() {
 			'<span class="n">+' + fmt(lg.gems) + ' ' + iconSvg('gems') + ' +' + lg.stones + ' ' + iconSvg('stones') + '</span>');
 		const last = st.season.last;
 		const lastLg = last.no >= 0 && last.league >= 0 ? S.leagues[last.league] : null;
+		const al = st.ally;
+		const allyHtml = al.my >= 0 ? '<div class="landCard">' + embHtml(al.tag, al.emb) + '<div class="info"><b>' + esc(al.name) + ' [' + esc(al.tag) + ']</b>' +
+			'<span>' + esc(K.rules.alliances.leagues[al.tier].name) + ', место ' + al.place + ' из ' + al.size + '. Награду сезона даёт лига альянса.</span></div>' +
+			'<div class="row"><button class="btn primary" data-act="alliance">Альянс</button></div></div>'
+			: '<p class="fine">С ' + fmt(K.rules.alliances.joinVp) + ' ОП можно вступить в альянс: тогда награду сезона даёт лига альянса, как в оригинале.</p>';
+		const paid = 'получено +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ' и +' + last.stones + ' камней' : '');
+		const got = last.al >= 0 ? crystalGot(last, st) : '';
+		const lastText = last.no < 0 ? '' : last.al >= 0
+			? 'Прошлый сезон: ' + fmt(last.vp) + ' ОП, альянс на ' + last.place + ' месте из ' + last.size + ' в лиге «' + esc(K.rules.alliances.leagues[last.tier].name) + '», ' + paid + (got ? ', из кристалла: ' + esc(got) : '') + '.'
+			: 'Прошлый сезон: ' + fmt(last.vp) + ' ОП, ' + (lastLg ? esc(lastLg.name) + ', ' + paid + '.' : 'без лиги.');
 		const html = sheetTitle('<div class="ico land vp">' + DotIcons.svg('land.forest') + '</div>', 'Сезон') +
 			'<div class="costline"><span>Очки победы</span><b>' + iconSvg('vp') + fmt(vp) + '</b><span>' + (cur >= 0 ? esc(S.leagues[cur].name) : 'пока без лиги') + '</span></div>' +
 			(next ? '<div class="progress"><i style="width:' + Math.round((100 * (vp - from)) / Math.max(1, next.vp - from)) + '%"></i></div><p class="fine">До лиги «' + esc(next.name) + '»: ' + fmt(next.vp - vp) + ' ОП.</p>' : '<p class="fine">Высшая лига взята.</p>') +
-			'<p>Сезон кончится через <b data-live="left"></b>. Тогда очки победы обнулятся, а лига принесёт награду.</p>' +
+			'<p>Сезон кончится через <b data-live="left"></b>. Тогда очки победы обнулятся, а лига принесёт награду.</p>' + allyHtml +
+			'<h3>Личная лига' + (al.my >= 0 ? ' (платит, если вы не в альянсе)' : '') + '</h3>' +
 			'<div class="cmp">' + rows.join('') + '</div>' +
-			(last.no >= 0 ? '<p class="fine">Прошлый сезон: ' + fmt(last.vp) + ' ОП, ' + (lastLg ? esc(lastLg.name) + ', получено +' + fmt(last.gems) + ' самоцветов и +' + last.stones + ' камней.' : 'без лиги.') + '</p>' : '') +
+			(lastText ? '<p class="fine">' + lastText + '</p>' : '') +
 			'<p class="fine">Как в оригинале: очки победы приносят победы в боях за земли и земли очков победы (лес, озеро, гора, с Замка 3); в конце недели очки у всех обнуляются, а награда зависит от результата. ' +
-			'В оригинале лига — это союзы, которые повышаются и понижаются; пока союзов нет, лига здесь личная и задаётся очками за сезон. Названия лиг, пороги и награды наши.</p>' +
+			'В оригинале лиги — это лиги альянсов, которые повышаются и понижаются; они есть в окне «Альянс». Личная лига для тех, кто без альянса, — наша: её названия, пороги и награды наши.</p>' +
 			'<div class="actions"><button class="btn primary" data-act="world">К землям</button>' + closeBtn + '</div>';
 		return {
-			key: ['season', vp, cur, last.no, st.season.no].join('|'), html,
+			key: ['season', vp, cur, last.no, st.season.no, al.my, al.tier, al.place].join('|'), html,
 			live(el) { live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF()))); },
 		};
 	});
@@ -3054,6 +3125,7 @@ function openWelcome() {
 			'<dt>«Атака»</dt><dd>бои за земли вашим титаном и отрядами: набег за добычей или захват земли, которая потом приносит доход</dd>' +
 			'<dt>Камни портала</dt><dd>новый каждые 7 минут; набег стоит 3, захват 6</dd>' +
 			'<dt>Очки победы и осколки</dt><dd>лес, озеро и гора дают очки победы для недельного сезона с наградами лиг; руины дают осколки, на них возвышают титанов</dd>' +
+			'<dt>«Альянс»</dt><dd>с 1 000 очков победы можно вступить в альянс или основать свой; альянсы соревнуются в недельных лигах, а Лагерь альянса принимает подкрепления союзников</dd>' +
 			'<dt>Камера</dt><dd>тяните, чтобы двигать; щипок или колесо для зума; зажмите постройку, чтобы переставить</dd></dl>' +
 			'<div class="actions"><button class="btn primary" data-act="welcome-ok">Начать</button></div>',
 	}));
@@ -3087,9 +3159,11 @@ function landScenario(w, prep) {
 	let front = 0;
 	let back = 0;
 	att.name = 'Ваше войско';
-	att.squads = prep.squads.map((t) => {
+	// The player's squads first (the kingdom reads their survivors in this order), then the allies'.
+	const sent = prep.squads.map((t) => [t, K.st.army.lv[t]]).concat(prep.reinf || []);
+	att.squads = sent.map(([t, lv]) => {
 		const tr = K.army.troops[t];
-		const lvl = tr.levels[K.st.army.lv[t] - 1];
+		const lvl = tr.levels[Math.max(1, Math.min(lv, tr.levels.length)) - 1];
 		const ranged = BACK_ROW.has(tr.id);
 		const pos = ranged ? [xs[back++ % xs.length], 18 - 6 * Math.floor((back - 1) / xs.length)] : [xs[front++ % xs.length], 34 - 6 * Math.floor((front - 1) / xs.length)];
 		return { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
@@ -3136,10 +3210,12 @@ function launchAttack() {
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
 	if (!squads.length && !p.titan) { toast('Выберите титана или хотя бы один отряд', 'bad'); return; }
 	const spells = p.spells.filter((i) => K.st.spells.stock[i] > 0);
-	const code = K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells);
+	const code = K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
 	if (code !== E.None) { toast(errText(code), 'bad'); refresh(true); return; }
 	persist();
-	const sc = landScenario(w, { squads, titan: p.titan, spells });
+	// The allies' squads the kingdom sent along (troop, level), after the player's own.
+	const reinf = K.bridge.state().ally.pend;
+	const sc = landScenario(w, { squads, titan: p.titan, spells, reinf });
 	const path = 'scenarios/land_battle.json';
 	K.app.sim.addFile(path, JSON.stringify(sc));
 	closeSheet();
@@ -3190,6 +3266,7 @@ function onBattleEnd(ctx, stars, retreat) {
 			const got = (r.relics || []).map((rid) => K.bridge.state().relics.find((x) => x.id === rid)).filter(Boolean);
 			if (got.length) parts.push('реликвии: ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
 			if (r.relicsLost) parts.push('склад реликвий полон, пропало ' + r.relicsLost);
+			if (r.reinf) parts.push('подкрепления альянса (' + r.reinf + ') ушли после боя');
 			if (parts.length) toast(parts.join(' · ').replace(/^./, (c) => c.toUpperCase()), r.lost ? 'bad' : 'gold');
 		}
 		persist();
@@ -3776,7 +3853,7 @@ function openPrepare(wid, capture) {
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, titan: ready.length ? ready[0].id : 0, counts, spells };
+	K.prep = { wid, capture, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: true };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
@@ -3799,16 +3876,196 @@ function openPrepare(wid, capture) {
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
+		// Allies' squads that have arrived in the Alliance Camp fight once and are gone (the original).
+		const arrived = st.ally.reinf.filter((r) => r[2] <= nowF());
+		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
+			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
+			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
 		const html = sheetTitle(landIcon(w.type, w.lv), (p.capture ? 'Захват' : 'Набег') + ': ' + esc(ty.name) + ', ур. ' + w.lv) +
 			'<p>Противник: ' + esc(enemyText(w.lv, et)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
 			'<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' +
-			'<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') +
+			'<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
 			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
 			'<p class="fine">' + (aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
 			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan ? '' : ' disabled') + '>В бой · ' + cost + ' ' + iconSvg('stones') + '</button><button class="btn" data-act="world">Назад</button></div>';
-		return { key: ['prep', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join()].join('|'), html };
+		return { key: ['prep', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
+	});
+}
+
+// ---------------------------------------------------------------------------------------------
+// Alliances and alliance leagues
+// ---------------------------------------------------------------------------------------------
+const ROLE_RU = ['лидер', 'офицер', 'участник'];
+const allyLeague = (tier) => K.rules.alliances.leagues[tier];
+const embHtml = (tag, emb) => '<div class="emb e' + (emb % 12) + '" aria-hidden="true">' + esc(tag) + '</div>';
+/** A league place's reward: [gems, stones, crystal rarity, titan chance %]. */
+const payHtml = (p) => '+' + fmt(p[0]) + ' ' + iconSvg('gems') + ' +' + p[1] + ' ' + iconSvg('stones') + (p[2] ? ' + ' + mini('ui.crystal') + '★'.repeat(p[2]) : '');
+const crystalNote = (p) => (p[2] ? 'Кристалл ' + '★'.repeat(p[2]) + ': титан этой редкости с шансом ' + p[3] + '%, иначе реликвия.' : '');
+/** The member who sent a squad (index into the alliance's member list). */
+function senderName(data, from) {
+	const m = data && data.members[from];
+	return m ? (m.you ? 'вы' : m.name) : '';
+}
+function openAlliance(view) {
+	cancelPlace();
+	select(null);
+	if (view) K.allyView = view;
+	openSheet(() => {
+		const st = K.st;
+		const data = K.bridge.alliances();
+		K.allyData = data;
+		return st.ally.my >= 0 ? allianceMine(st, data) : allianceList(st, data);
+	});
+}
+/** Outside an alliance: the 1 000 VP gate, alliances to join, founding an own one. */
+function allianceList(st, data) {
+	const al = st.ally;
+	const A = K.rules.alliances;
+	const open = al.rating >= A.joinVp;
+	const tab = K.allyTab || (open ? 'fit' : 'all');
+	const tabs = [['fit', 'Подходящие'], ['all', 'Все'], ['create', 'Основать']];
+	let body = '';
+	let key = '';
+	if (tab === 'create') {
+		const ck = al.create;
+		const f = K.allyForm || { name: '', tag: '' };
+		const gems = A.createGems;
+		const btn = ck.err === E.None ? '<button class="btn primary" data-act="ally-create">' + (isArmed('ally-create') ? 'Подтвердить ' : 'Основать ') + gemSpan(gems) + '</button>'
+			: '<button class="btn" disabled>' + esc(errText(ck.err, ck)) + '</button>';
+		body = '<p>Свой альянс начинает в низшей лиге. Новобранцы приходят сами, по одному каждые ' + A.recruitHours + ' ч (до ' + A.recruits + '); чем выше лига, тем сильнее они играют. ' +
+			'Если выйти из своего альянса, он распустится.</p>' +
+			'<div class="form2"><label class="field">Название<input id="allyName" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Дом Рассвета" value="' + esc(f.name) + '"></label>' +
+			'<label class="field">Тег<input id="allyTag" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ДОМ" value="' + esc(f.tag) + '"></label></div>' +
+			'<div class="actions">' + btn + '</div>' +
+			'<p class="fine">В мастер-промпте альянс стоит 100 самоцветов; новобранцы и их число — наше решение, пока нет сервера с живыми игроками.</p>';
+		// Typing must not rebuild the form: the key holds nothing that changes by the second.
+		key = ['ally-create', ck.err, isArmed('ally-create')].join('|');
+	} else {
+		const list = data.all.filter((a) => !a.own && (tab === 'all' || a.err === E.None)).sort((x, y) => y.tier - x.tier || y.vp - x.vp);
+		const cards = list.map((a) => '<div class="landCard">' + embHtml(a.tag, a.emb) + '<div class="info"><b>' + esc(a.name) + ' [' + esc(a.tag) + ']</b>' +
+			'<span>' + esc(allyLeague(a.tier).name) + ' · ' + a.m + ' из ' + A.members[1] + ' · <span data-live="avp' + a.i + '"></span> ОП за сезон</span>' +
+			'<span>Принимает от ' + fmt(a.join) + ' ОП</span></div><div class="row">' +
+			(a.err === E.None ? '<button class="btn primary" data-act="ally-join" data-id="' + a.i + '">Вступить</button>'
+				: '<button class="btn" disabled>' + esc(errText(a.err, { cost: [0, 0, 0, 0, 0, a.join], m: [-1, 0, 0] })) + '</button>') + '</div></div>');
+		body = cards.length ? cards.join('') : '<p class="fine">' + (open ? 'Сейчас нет альянсов, которые вас примут: сильные просят больше очков. Посмотрите «Все» или основайте свой.' : 'Пока ни один альянс вас не примет.') + '</p>';
+		key = ['ally-list', tab, list.map((a) => a.i + ':' + a.err + ':' + a.tier + ':' + a.m).join()].join('|');
+	}
+	const html = sheetTitle(icoHtml('ui.alliance', 'bld other'), 'Альянсы') +
+		'<p>Как в оригинале: в альянс можно вступить с ' + fmt(A.joinVp) + ' очков победы. Очки участников идут и им самим, и альянсу; альянсы соревнуются в лигах, каждую неделю лучшие поднимаются, худшие опускаются, а награду каждый участник получает по месту своего альянса.</p>' +
+		'<div class="costline"><span>Ваш рейтинг</span><b>' + iconSvg('vp') + fmt(al.rating) + '</b><span>' + (open ? 'альянсы открыты' : 'нужно ' + fmt(A.joinVp)) + '</span></div>' +
+		(open ? '' : '<div class="progress"><i style="width:' + Math.round((100 * al.rating) / A.joinVp) + '%"></i></div>') +
+		'<p class="fine">Рейтинг: очки победы этого сезона или прошлого, если их было больше.' + (open ? '' : ' Их приносят победы в боях за земли и земли очков победы.') + '</p>' +
+		'<div class="seg three">' + tabs.map(([id, t]) => '<button class="' + (tab === id ? 'on' : '') + '" data-act="ally-tab" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
+		body + '<p class="fine">Другие альянсы и их участники пока управляются компьютером: у игры нет сервера. Их состав и сила зависят от вашего королевства, а очки растут в течение недели.</p>' +
+		'<div class="actions">' + closeBtn + '</div>';
+	return {
+		key, html,
+		live(el) {
+			for (const a of (K.allyData || data).all) live(el, 'avp' + a.i, fmt(a.vp));
+		},
+	};
+}
+/** Inside an alliance: its league table, members, rewards by place and reinforcements. */
+function allianceMine(st, data) {
+	const al = st.ally;
+	const A = K.rules.alliances;
+	const lg = allyLeague(al.tier);
+	const top = A.leagues.length - 1;
+	const view = K.allyView || 'league';
+	const zone = (place, size) => (place <= A.promote && al.tier < top ? 'up' : place > size - A.promote && al.tier > 0 ? 'down' : '');
+	const myZone = zone(al.place, al.size);
+	const pay = data.pay[al.place - 1] || [0, 0, 0, 0];
+	const late = al.since > st.season.end - A.memberHours * 3600;
+	const views = [['league', 'Лига'], ['members', 'Участники'], ['pay', 'Награды'], ['reinf', 'Подкрепления']];
+	let body = '';
+	let key = '';
+	if (view === 'league') {
+		const rows = data.tables[al.tier].map((i, n) => {
+			const a = data.all[i];
+			const z = zone(n + 1, al.size);
+			return '<span class="pl ' + z + '">' + (z === 'up' ? '▲' : z === 'down' ? '▼' : '') + (n + 1) + '</span><span class="nm' + (i === al.my ? ' me' : '') + '">' + esc(a.name) +
+				'<small>[' + esc(a.tag) + '] · ' + a.m + '</small></span><span class="v' + (i === al.my ? ' me' : '') + '" data-live="avp' + i + '"></span>';
+		});
+		body = '<div class="league">' + rows.join('') + '</div><p class="fine">▲ — зона повышения, ▼ — зона понижения: в конце сезона по ' + A.promote + ' альянса меняются местами с соседней лигой.</p>';
+		key = data.tables[al.tier].join();
+	} else if (view === 'members') {
+		const ms = data.members.slice().sort((x, y) => y.vp - x.vp);
+		body = '<div class="league">' + ms.map((m, n) => '<span class="pl">' + (n + 1) + '</span><span class="nm' + (m.you ? ' me' : '') + '">' + (m.you ? 'Вы' : esc(m.name)) +
+			'<small>' + ROLE_RU[m.role] + '</small></span><span class="v' + (m.you ? ' me' : '') + '">' + fmt(m.vp) + '</span>').join('') + '</div>' +
+			(al.own ? '<p class="fine">Новобранцы приходят по одному каждые ' + A.recruitHours + ' ч, до ' + A.recruits + '.</p>' : '');
+		key = ms.map((m) => m.name + ':' + Math.floor(m.vp / 25)).join();
+	} else if (view === 'pay') {
+		body = '<div class="cmp">' + data.pay.map((p, n) => '<span class="k' + (n + 1 === al.place ? ' on' : '') + '">' + (n + 1) + ' место</span><span class="v">' + payHtml(p) + '</span>' +
+			'<span class="n">' + (p[2] ? 'титан ' + p[3] + '%' : '') + '</span>').join('') + '</div>' +
+			'<p class="fine">Как в оригинале: награда каждому участнику — самоцветы, камни портала и кристалл. Кристалл выше в лигах повыше, ★★★★ — только в высшей; чем выше место, тем больше шанс, что в нём титан. Сами числа наши.</p>';
+		key = data.pay.map((p) => p.join(':')).join();
+	} else {
+		body = reinforceHtml(st, data);
+		key = ['reinf', al.cap, al.rck.err, al.reinf.map((r) => r.join(':')).join(), isArmed('ally-reinforce')].join();
+	}
+	const leaveArmed = isArmed('ally-leave');
+	const html = sheetTitle(embHtml(al.tag, al.emb), esc(al.name) + ' [' + esc(al.tag) + ']') +
+		'<p>' + esc(lg.name) + ' · место <b>' + al.place + '</b> из ' + al.size + ' · ' + al.members + ' ' + plural(al.members, 'участник', 'участника', 'участников') + (al.own ? ' · ваш альянс' : '') + '</p>' +
+		'<div class="costline"><span>Очки альянса</span><b>' + iconSvg('vp') + '<span data-live="myvp"></span></b><span>ваши ' + fmt(st.res[5]) + '</span></div>' +
+		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
+		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
+		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
+		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
+		body +
+		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
+	return {
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5]].join('|'), html,
+		live(el) {
+			const d = K.allyData || data;
+			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));
+			live(el, 'myvp', fmt(K.st.ally.vp));
+			for (const i of d.tables[K.st.ally.tier] || []) live(el, 'avp' + i, fmt(d.all[i].vp));
+			liveReinforce(el, d);
+		},
+	};
+}
+/** The Alliance Camp: squads allies sent (on their way or waiting for a battle) and the request button. */
+function reinforceHtml(st, data) {
+	const al = st.ally;
+	const A = K.rules.alliances;
+	const camp = K.defs.find((d) => d.id === 'alliance_camp');
+	if (!al.cap) {
+		return '<p>Подкрепления принимает Лагерь альянса' + (camp ? ' (с Замка ' + camp.unlockCastle + ')' : '') + '. Как в оригинале, союзники присылают в него отряды, а уровень Лагеря задаёт, сколько.</p>';
+	}
+	const rows = al.reinf.map((r, i) => '<div class="troopRow">' + troopIcon(r[0]) + '<div class="info"><b>' + esc(K.army.troops[r[0]].name) + ' · ур. ' + r[1] + '</b>' +
+		'<span data-live="ra' + i + '"></span></div></div>');
+	const ck = al.rck;
+	let btn;
+	if (ck.err === E.None) btn = '<button class="btn primary" data-act="ally-reinforce">Попросить подкрепления</button>';
+	else if (ck.err === E.NotReady) btn = '<button class="btn" disabled>Снова можно через <span data-live="rnext"></span></button>';
+	else if (ck.err === E.StorageFull) btn = '<button class="btn" disabled>Лагерь альянса полон</button>';
+	else if (ck.err === E.Nothing) btn = '<button class="btn" disabled>Пока некому прислать: новобранцев ещё нет</button>';
+	else btn = '<button class="btn" disabled>' + esc(errText(ck.err, ck)) + '</button>';
+	return '<h3>Лагерь альянса: ' + al.reinf.length + ' из ' + al.cap + '</h3>' + (rows.length ? rows.join('') : '<p class="fine">Лагерь пуст.</p>') +
+		'<div class="actions">' + btn + '</div>' +
+		'<p class="fine">Как в оригинале: отряды союзников сражаются в одном бою и уходят; их берут в бой за землю в окне подготовки. ' +
+		'Наше: союзники присылают по отряду в минуту войска, доступные вашему Замку, уровня своей лиги, но не выше предела вашего Арсенала; просить можно раз в ' + Math.round(A.reinforceCooldownSec / 60) + ' минут.</p>';
+}
+function liveReinforce(el, data) {
+	const al = K.st.ally;
+	const now = nowF();
+	al.reinf.forEach((r, i) => {
+		const who = senderName(data, r[3]);
+		live(el, 'ra' + i, (r[2] > now ? 'в пути, прибудет через ' + fmtClock(r[2] - now) : 'ждёт боя') + (who ? ' · прислал' + (who === 'вы' ? 'и вы' : ' ' + who) : ''));
+	});
+	if (al.next > now) live(el, 'rnext', fmtClock(al.next - now));
+}
+function createAlliance() {
+	const name = (($('allyName') || {}).value || '').trim();
+	const tag = (($('allyTag') || {}).value || '').trim();
+	K.allyForm = { name, tag };
+	if (!name || [...name].length > 24) { toast('Название: от 1 до 24 букв', 'bad'); return; }
+	if (!tag || [...tag].length > 5) { toast('Тег: от 1 до 5 букв', 'bad'); return; }
+	gemAction('ally-create', K.rules.alliances.createGems, () => {
+		if (run(K.bridge.create(name, tag), 'Альянс «' + name + '» основан')) { K.allyForm = null; K.allyView = 'members'; }
+		refreshSheet(true);
 	});
 }
 
