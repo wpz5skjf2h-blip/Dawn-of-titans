@@ -92,8 +92,8 @@
     // titanPct %, the raiders' scaled by their AI; at ratio x = raiders / defense they win with x^k / (x^k + c^k)
     // (c in hundredths). When they win, they take three stars from threeStars (hundredths of x), two below that, one
     // below twoStars if a titan defends (as in battle: without a defending titan its star comes with the first).
-    "odds": { "titanPct": 510, "aiPct": { "recruit": 87, "veteran": 100, "warlord": 141, "nightmare": 172 },
-              "k": 3.75, "c": 104, "threeStars": 90, "twoStars": 50 },
+    "odds": { "titanPct": 590, "aiPct": { "recruit": 89, "veteran": 100, "warlord": 145, "nightmare": 216 },
+              "k": 4.5, "c": 103, "threeStars": 90, "twoStars": 50 },
     "log": 10
   },
 

@@ -1158,7 +1158,7 @@ void TestRaids()
 {
 	const KingdomContent& Ct = Content();
 	const RaidRules& R = Ct.raids;
-	KD_CHECK(R.castle == 3 && R.vpPct == 5 && R.titanLevels.size() == 9 && Ct.battles.size() == 9 && R.oddsKQuarters == 15);
+	KD_CHECK(R.castle == 3 && R.vpPct == 5 && R.titanLevels.size() == 9 && Ct.battles.size() == 9 && R.oddsKQuarters == 18);
 	const BuildingDef& G = Ct.buildings[static_cast<size_t>(Def("garrison"))];
 	KD_CHECK(G.levels[0].defenseSlots == 3 && G.levels.back().defenseSlots == 8 && G.levels.back().guardTier == 3 && G.levels.back().defenseBonusPct == 22);
 	// The power the raids count is the battle's own start power.
