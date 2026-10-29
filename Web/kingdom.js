@@ -2413,6 +2413,7 @@ function onAct(e) {
 	case 'upgrade-spell-gems': gemAction('us:' + id, +el.dataset.gems, () => run(K.bridge.upgradeSpell(id, true), 'Башня улучшает: ' + K.army.spells[id].name, null, 'arcane')); break;
 	case 'skip-spell': gemAction('ls:' + id, +el.dataset.gems, () => run(K.bridge.skipSpell(id), 'Улучшение заклинания завершено')); break;
 	case 'titan-relics': openTitanRelics(id); break;
+	case 'titan-play': DotTitans.play(el.closest('.titanStage').querySelector('svg'), el.dataset.clip); break;
 	case 'relic-inv': K.repair = null; openRelicInventory(); break;
 	case 'equip': run(K.bridge.equip(+el.dataset.titan, id), 'Реликвия надета'); break;
 	case 'attach': run(K.bridge.attach(+el.dataset.building, id), 'Реликвия на постройке'); break;
@@ -3324,7 +3325,18 @@ function titanGlyph(t) {
 	const n = 'class.' + K.army.titans[t.def].class;
 	return DotIcons.has(n) ? n : 'class.Champion';
 }
-const titanIcon = (t) => icoHtml(titanGlyph(t), 'titan');
+/** Titan tile: the titan's own head and shoulders from titans.js, or its class glyph. */
+function titanIcon(t) {
+	const id = K.army.titans[t.def].id;
+	return typeof DotTitans !== 'undefined' && DotTitans.has(id) ? '<div class="ico titan">' + DotTitans.svg(id, { view: 'bust' }) + '</div>' : icoHtml(titanGlyph(t), 'titan');
+}
+/** Animated titan figure with buttons that play its attack and both abilities. */
+function titanStage(d, abil) {
+	if (typeof DotTitans === 'undefined' || !DotTitans.has(d.id)) return '';
+	const names = ['Атака'].concat(abil.length === 2 ? abil : DotTitans.info(d.id).abil);
+	return '<div class="titanStage">' + DotTitans.svg(d.id) + '<div class="clips">' +
+		['atk', 'a1', 'a2'].map((c, i) => '<button class="btn" data-act="titan-play" data-clip="' + c + '">' + esc(names[i]) + '</button>').join('') + '</div></div>';
+}
 function relicIcon(r) {
 	const broken = r.dur <= 0;
 	return '<div class="ico relic r' + r.r + (broken ? ' broken' : '') + '">' + DotIcons.svg('relic.' + K.army.relics.kinds[r.kind].id) + (broken ? DotIcons.svg('ui.crack', 'crack') : '') + '</div>';
@@ -3502,7 +3514,7 @@ function openTitans() {
 			let act = '';
 			if (fz) act = target ? '<span class="tag">цель слияния</span>' : '<button class="btn' + (picked ? ' primary' : '') + '" data-act="fuse-pick" data-id="' + t.id + '">' + (picked ? 'Выбран' : 'В жертву') + '</button>';
 			else {
-				act += '<button class="btn" data-act="titan-relics" data-id="' + t.id + '">Реликвии ' + t.relics.length + '/' + t.slots + '</button>';
+				act += '<button class="btn" data-act="titan-relics" data-id="' + t.id + '">Титан и реликвии ' + t.relics.length + '/' + t.slots + '</button>';
 				if (canFuse && t.lv < t.max) act += '<button class="btn" data-act="fuse-start" data-id="' + t.id + '">Слияние</button>';
 				if (t.lv >= t.max && !t.asc) {
 					const ck = t.ack;
@@ -3513,7 +3525,7 @@ function openTitans() {
 				}
 				if (resting) act += '<button class="btn" data-act="skip-titan" data-id="' + t.id + '" data-gems="' + t.skip + '">' + (isArmed('tr:' + t.id) ? 'Подтвердить ' : 'Разбудить ') + gemSpan(t.skip) + '</button>';
 			}
-			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
+			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head" data-act="titan-relics" data-id="' + t.id + '">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
 				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
 				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
@@ -3720,6 +3732,7 @@ function openTitanRelics(id) {
 				(same ? 'Такая уже надета' : r.dur <= 0 ? 'Сломана' : 'Надеть') + '</button>';
 		};
 		const html = sheetTitle(titanIcon(t), esc(d.name) + ' ' + starsHtml(d.stars)) +
+			titanStage(d, abil) +
 			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. ' + (bonus.length ? 'Бонус реликвий: ' + bonus.join(', ') + '.' : 'Бонусов от реликвий нет.') + '</p>' +
 			(abil.length ? '<p>Способности в бою: <b>' + abil.map(esc).join('</b>, <b>') + '</b>.</p>' : '') +
 			'<h3>Реликвии: ' + t.relics.length + ' из ' + t.slots + '</h3>' +
