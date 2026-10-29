@@ -151,8 +151,12 @@ void TestJson()
 void TestContent()
 {
 	const SimContent& C = Content();
-	DOT_CHECK(C.troops.size() == 13);
+	DOT_CHECK(C.troops.size() == 14);
 	DOT_CHECK(C.FindTroop("troop.skeleton") == 6);
+	const TroopDef& Ballista = C.troops[static_cast<size_t>(C.FindTroop("troop.ballista"))];
+	DOT_CHECK(Ballista.siege && Ballista.ranged && Ballista.cls == DefenderClass::Siege && Ballista.move == MoveClass::Siege);
+	DOT_CHECK(Ballista.squadSize == 3 && Ballista.crew == 3 && Ballista.pierceTargets == 3 && Ballista.pinMaxStacks == 3);
+	DOT_CHECK(Ballista.setupTicks == 2 * kTicksPerSecond && Ballista.poiseFactor > C.rules.poiseFactorTroops);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.pikemen"))].frost);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].cleave);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].maxAttackers == 8);
@@ -1001,6 +1005,109 @@ void TestCouncilTroops()
 	DOT_CHECK(MilitiaArchersVsGoliaths >= 5);
 }
 
+void TestBallista()
+{
+	std::string Error;
+	const SimContent& C = Content();
+	const TroopDef& TD = C.troops[static_cast<size_t>(C.FindTroop("troop.ballista"))];
+	// A bolt goes through up to three soldiers standing in its line; an engine fires only after standing still for its setup time;
+	// a damaged engine has fewer crewmen and reloads slower.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[1].aiProfile.clear();
+		S.sides[0].aiProfile.clear();
+		S.sides[0].squads = {MakeSquad("troop.ballista", 120, 40, true, Stance::Aggressive)};
+		SquadSetup Column = MakeSquad("troop.militia", 120, 94, false, Stance::Hold);
+		Column.formation = Formation::Column;
+		S.sides[1].squads = {Column};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		std::vector<SimEvent> Ev;
+		std::vector<int32_t> LastMoved(Sim.Soldiers().size(), -1000);
+		int MostPierced = 0;
+		int Bolts = 0;
+		bool bSetupKept = true;
+		bool bReloadKept = true;
+		for (int I = 0; I < 40 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Sim.DrainEvents(Ev);
+			for (const int32_t M : Sim.Squads()[0].members)
+			{
+				const Soldier& E = Sim.Soldiers()[static_cast<size_t>(M)];
+				if (E.state == SoldierState::Moving)
+				{
+					LastMoved[static_cast<size_t>(M)] = Sim.CurrentTick();
+				}
+				if (E.Alive() && E.lastAttackTick == Sim.CurrentTick())
+				{
+					bSetupKept = bSetupKept && Sim.CurrentTick() - LastMoved[static_cast<size_t>(M)] >= TD.setupTicks;
+					bReloadKept = bReloadKept && E.attackCooldown >= Sim.Squads()[0].interval * TD.crew / Sim.CrewAlive(E);
+				}
+			}
+		}
+		for (const SimEvent& E : Ev)
+		{
+			if (E.type == SimEventType::BoltImpact)
+			{
+				++Bolts;
+				MostPierced = std::max(MostPierced, E.b);
+			}
+		}
+		std::printf("  ballista: %d bolts, at most %d soldiers in one line\n", Bolts, MostPierced);
+		DOT_CHECK(Bolts >= 6);
+		DOT_CHECK(MostPierced >= 2 && MostPierced <= TD.pierceTargets);
+		DOT_CHECK(bSetupKept);
+		DOT_CHECK(bReloadKept);
+		// The engines walked into range first, so the column is hurt.
+		DOT_CHECK(Sim.Squads()[1].aliveCount < Sim.Squads()[1].startCount);
+	}
+	// Bolts pin a titan (up to three pins, 10% slower each) and shake its poise far more than troops do; a titan's
+	// sweeps and stomps never send an engine flying.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.position = FixVec2(fx::Int(120), fx::Int(110));
+		S.sides[0].squads = {MakeSquad("troop.ballista", 104, 50, true, Stance::Hold), MakeSquad("troop.ballista", 136, 50, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 40, 150, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		int MostPins = 0;
+		Fix64 Slowest;
+		bool bAirborne = false;
+		Fix64 Poise;
+		for (int I = 0; I < 40 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			const Titan& T = Sim.Titans()[0];
+			MostPins = std::max(MostPins, Sim.TitanPins(T));
+			Slowest = fx::Min(Slowest, Sim.TitanStat(T, StatType::MoveSpeedPct));
+			Poise = fx::Max(Poise, T.poiseDamage);
+			for (const Squad& Sq : Sim.Squads())
+			{
+				for (const int32_t M : Sq.members)
+				{
+					bAirborne = bAirborne || (Sq.side == Side::Attacker && Sim.Soldiers()[static_cast<size_t>(M)].state == SoldierState::Airborne);
+				}
+			}
+		}
+		std::printf("  ballista vs titan: %d pins at most, speed %.0f%%, poise damage up to %.0f\n", MostPins, Slowest.ToDouble() * 100, Poise.ToDouble());
+		DOT_CHECK(MostPins == TD.pinMaxStacks);
+		DOT_CHECK(Slowest <= -TD.pinMoveSlow * TD.pinMaxStacks);
+		DOT_CHECK(!bAirborne);
+	}
+	// Cavalry is the answer to engines; a lone ballista crew loses to infantry that closes in, too.
+	const int OutridersVsBallista = DuelWins({"troop.outriders"}, {"troop.ballista"}, 6);
+	const int MilitiaVsBallista = DuelWins({"troop.militia"}, {"troop.ballista"}, 6);
+	std::printf("  outriders vs ballista %d/6, militia vs ballista %d/6\n", OutridersVsBallista, MilitiaVsBallista);
+	DOT_CHECK(OutridersVsBallista >= 5);
+	DOT_CHECK(MilitiaVsBallista >= 4);
+}
+
 void TestTitanAbilities()
 {
 	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
@@ -1070,7 +1177,7 @@ int main()
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
 		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
 		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities},
-		{"NewTroops", TestNewTroops}, {"CouncilTroops", TestCouncilTroops}, {"LandMaps", TestLandMaps}};
+		{"NewTroops", TestNewTroops}, {"CouncilTroops", TestCouncilTroops}, {"Ballista", TestBallista}, {"LandMaps", TestLandMaps}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

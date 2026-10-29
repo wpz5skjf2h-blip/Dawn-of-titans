@@ -472,7 +472,7 @@ Full meta (training, research, tiers) is in Section 6. Values below are **Tier 1
 | 5 | **Outriders** (light cavalry) | Cavalry · Light | 12 | 260 | 10% | 22 | 1.5 | 1.8 | 9.0 | Flanker, hunts ranged and siege |
 | 6 | **Knights** (heavy cavalry) | Cavalry · Heavy | 10 | 420 | 35% | 30 | 1.6 | 1.8 | 7.0 | Shock charge, trample |
 | 7 | **Grenadiers** | Ranged · AoE | 12 | 100 | 5% | 40 (splash 3 m) | 3.5 | 22 | 3.2 | Breaks dense formations and walls |
-| 8 | **Ballista Crew** | Siege | 3 engines × 3 crew | 600 per engine | 20% | 180 (piercing) | 4.5 | 55 (min 8) | 1.6 | Titan slayer, structure breaker |
+| 8 | **Ballista Crew** | Siege | 3 engines × 3 crew | 600 per engine | 20% | 150 (piercing; was 180, tuned by harness, `docs/M0_Notes.md` 6a) | 4.5 | 42 (min 8; was 55, tuned by harness) | 1.6 | Titan slayer, structure breaker |
 | 9 | **Chainbreakers** | Specialist · LightInf | 12 | 150 | 15% | 10 | 1.4 | 1.5 (chains 18) | 3.4 | Binds and staggers titans |
 | 10 | **War Priests** | Support | 8 | 110 | 5% | — | — | aura 8 | 3.2 | Healing, morale, armor aura |
 
@@ -484,7 +484,7 @@ Full meta (training, research, tiers) is in Section 6. Values below are **Tier 1
 - **Outriders — Charge:** when moving faster than 6 m/s at contact, the first hit deals ×2.5 damage and knocks down infantry for 1 s (not braced or Square troops). Skirmish stance by default.
 - **Knights — Lance Charge and Trample:** charge first hit ×3.0. Passing through Light infantry deals 30 damage per soldier and knocks it down.
 - **Grenadiers — Firebomb:** 3 m splash (50% damage at the edge). Leaves a fire patch for 4 s (radius 2.5 m, 8 damage/s to every unit inside, friendly units take 50%). ×2.0 damage against structures.
-- **Ballista Crew — Bolt:** pierces up to 3 soldiers in a line. Must be stationary for 1 s before firing (setup). A hit on a titan applies *Pinned*: −10% move speed for 3 s, stacking up to 3 times. Crew can be killed separately; an engine with no crew stops firing.
+- **Ballista Crew — Bolt:** pierces up to 3 soldiers in a line. Must be stationary for 2 s before firing (setup; was 1 s, tuned by harness). A hit on a titan applies *Pinned*: −10% move speed for 3 s, stacking up to 3 times. Crew can be killed separately; an engine with no crew stops firing.
 - **Chainbreakers — Chain Harpoons:** while within 18 m of an enemy titan and with at least 3 soldiers alive, the squad throws one chain every 2.5 s. Each chain gives the titan −8% move speed and −5% attack speed for 10 s. At **5 chains** the titan is **Bound**: rooted and staggered for 2.5 s, then all chains break and the titan is immune to chains for 12 s. A titan Stomp removes all chains.
 - **War Priests — Sanctuary aura (8 m):** allied troops heal 1.5% of max HP per second (titans are not healed), burns are cleansed, morale +3/s, armor +10%. Priests never attack and automatically keep 8 m away from enemies.
 
@@ -500,7 +500,7 @@ Rows are attackers, columns are defender classes. Troop to defender class mappin
 | Grenadiers | **1.5** | 1.2 | **1.5** | 1.0 | 0.9 | 1.0 | 1.5 | 0.6 | **2.0** |
 | Outriders | 1.2 | 0.8 | 0.5 | **1.75** | 1.0 | **1.75** | **1.75** | 0.5 | 0.5 |
 | Knights | **1.5** | 1.2 | 0.6 | **1.75** | 1.2 | **1.75** | **1.75** | 0.6 | 0.6 |
-| Ballista | 0.6 | 0.6 | 0.6 | 0.6 | 1.0 | 1.0 | 0.6 | **2.5** | **3.0** |
+| Ballista | 0.6 | 0.6 | 0.6 | 0.6 | 1.0 | 1.0 | 0.6 | **2.0** (was 2.5; tuned by harness) | **3.0** |
 | Chainbreakers | 0.8 | 0.6 | 0.8 | 0.8 | 0.6 | 1.0 | 0.8 | **2.0** | 0.5 |
 | Titan (any) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.2 | 1.0 | 1.0 | **2.0** |
 | Archer Tower | 1.4 | 0.6 | 1.4 | 1.0 | 0.8 | 1.0 | 1.4 | 0.5 | — |
@@ -1084,8 +1084,9 @@ estimates `"src": "est"`.
   Medical School every squad that took damage is destroyed after the battle; with it a squad returns if it kept at least
   the threshold (85% at L1 → 75% at L11). **Emissary troops** (original rule): every troop trains in the Barracks, but a
   people's troop needs its council: Sunreach sends Grenadiers (War Priests from council L3), Rimeheim sends Pikemen
-  (Chainbreakers from L3), Jade Peaks sends Goliaths, Mistmoor sends Panthers (Castle 8, wiki). The council level caps its
-  troops' level at 2 × level + 1 (ours); pikes slow, goliaths cleave and knock down, panthers poison (numbers ours).
+  (Chainbreakers from L3), Jade Peaks sends Goliaths (Ballista Crew from L3), Mistmoor sends Panthers (Castle 8, wiki).
+  The council level caps its troops' level at 2 × level + 1 (ours); pikes slow, goliaths cleave and knock down, panthers
+  poison (numbers ours).
 - **Titans (original rules; supersedes 5.x where they differ):** rarity R1–R4 (stars) sets the max level 20/30/40/50;
   titans earn XP in battles and rest after battles once above level 10. The Relic Temple gives a free relic every day and
   has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan. The Altar of
@@ -2419,7 +2420,7 @@ Every table below is generated from the formulas in Sections 4–9 (generator sc
 | Outriders | 260 / 22 | 351 / 30 | 468 / 40 | 624 / 53 | 832 / 70 |
 | Knights | 420 / 30 | 567 / 40 | 756 / 54 | 1,008 / 72 | 1,344 / 96 |
 | Grenadiers | 100 / 40 | 135 / 54 | 180 / 72 | 240 / 96 | 320 / 128 |
-| Ballista (per engine) | 600 / 180 | 810 / 243 | 1,080 / 324 | 1,440 / 432 | 1,920 / 576 |
+| Ballista (per engine; ATK was 180 → 576, tuned by harness) | 600 / 150 | 810 / 203 | 1,080 / 270 | 1,440 / 360 | 1,920 / 480 |
 | Chainbreakers | 150 / 10 | 202 / 14 | 270 / 18 | 360 / 24 | 480 / 32 |
 | War Priests | 110 / — | 148 / — | 198 / — | 264 / — | 352 / — |
 (Before Drill levels, War Banners, research and titan auras.)

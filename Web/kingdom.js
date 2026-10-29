@@ -26,10 +26,11 @@ const SEASON_KEY = 'dot.kingdom.seasonSeen';
 const AI_RU = { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' };
 const TROOP_RU = { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
 	'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.grenadiers': 'гренадеры', 'troop.chainbreakers': 'цепеломы',
-	'troop.priests': 'боевые жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры' };
+	'troop.priests': 'боевые жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры',
+	'troop.ballista': 'расчёт баллисты' };
 const CAVALRY = new Set(['troop.outriders', 'troop.knights', 'troop.panthers']);
 /** Troops that deploy behind the melee line. */
-const BACK_ROW = new Set(['troop.archers', 'troop.grenadiers', 'troop.priests']);
+const BACK_ROW = new Set(['troop.archers', 'troop.grenadiers', 'troop.priests', 'troop.ballista']);
 const CATS = [['resources', 'Ресурсы'], ['troops', 'Войска'], ['councils', 'Советы'], ['spells', 'Заклинания'], ['other', 'Прочее']];
 
 // Shared state of the kingdom screen.
@@ -3301,6 +3302,7 @@ const TROOP_NOTE = {
 	'troop.pikemen': 'длинные пики держат конницу и зверей, ледяной удар замедляет врага',
 	'troop.goliaths': 'трое великанов: удар дубиной бьёт по площади и валит пехоту с ног',
 	'troop.panthers': 'быстрые звери, рвут стрелков, яд жжёт после укуса; гибнут на пиках',
+	'troop.ballista': 'три машины: болт пробивает строй и пригвождает титана, но расчёт беззащитен перед конницей',
 };
 /** Troop indices a council sends (army.json "council"), in content order. */
 function councilTroops(councilId) {

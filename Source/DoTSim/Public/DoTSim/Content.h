@@ -66,6 +66,10 @@ struct TroopDef
 	Fix64 accuracyFar;
 	Fix64 accuracyNearRange;
 	Fix64 accuracyVsTitan;
+	/** Share of ATK a ranged soldier deals when it has to fight hand to hand. */
+	Fix64 rangedMeleeMult = fx::Pct(50);
+	/** Poise damage per point of damage to a titan (0 = rules.poiseFactorTroops). */
+	Fix64 poiseFactor;
 	// Specials (4.9)
 	bool shieldBlock = false;
 	Fix64 shieldBlockReduction;
@@ -121,6 +125,18 @@ struct TroopDef
 	bool poison = false;
 	Fix64 poisonDps;
 	int poisonTicks = 0;
+	// Ballista Crew: siege engines. A bolt pierces up to pierceTargets soldiers in a line and pins a titan it hits;
+	// an engine has to stand still for setupTicks before it fires; every crewman lost (one per 1/crew of the engine's HP)
+	// slows the reload; sweeps and stomps do not move an engine, a smash topples it for toppleTicks.
+	bool siege = false;
+	int pierceTargets = 3;
+	Fix64 pierceWidth = fx::Milli(500);
+	int setupTicks = 30;
+	Fix64 pinMoveSlow;
+	int pinTicks = 90;
+	int pinMaxStacks = 3;
+	int crew = 3;
+	int toppleTicks = 120;
 	/** How many enemy soldiers may fight one soldier of this troop at once (0 = rules.maxAttackersPerSoldier). */
 	int maxAttackers = 0;
 	uint32_t formationMask = 0;

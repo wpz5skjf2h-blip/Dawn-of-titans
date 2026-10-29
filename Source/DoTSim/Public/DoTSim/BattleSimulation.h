@@ -54,6 +54,8 @@ struct Soldier
 	int32_t deathTick = -1;
 	int32_t lastTrampledTick = -100000;
 	int32_t attackers = 0;
+	/** Siege engines fire only from this tick on: they must stand still for the troop's setup time first. */
+	int32_t readyTick = 0;
 	bool chargeArmed = false;
 	/** The body was raised by Raise Dead (or was itself a raised soldier) and cannot rise again. */
 	bool raised = false;
@@ -373,6 +375,10 @@ public:
 	const std::vector<FirePatch>& FirePatches() const { return Fires; }
 	/** Chains on a titan right now (Chainbreakers). */
 	int TitanChains(const Titan& T) const;
+	/** Ballista pins on a titan right now. */
+	int TitanPins(const Titan& T) const;
+	/** Crewmen still serving a siege engine (one dies per 1/crew of the engine's HP lost); 0 for other troops. */
+	int CrewAlive(const Soldier& S) const;
 	const ClashState& Clash() const { return ClashData; }
 	const SideState& GetSide(Side S) const { return Sides[SideIndex(S)]; }
 	const BattleResult& Result() const { return ResultData; }
@@ -456,6 +462,9 @@ private:
 	void CleanupDead();
 	void ExpireStatuses();
 	void ExplodeFirebomb(const Projectile& P);
+	/** A ballista bolt flies on along its line and hits up to the troop's pierce count of enemy soldiers. */
+	void ImpactBolt(const Projectile& P);
+	void PinTitan(Titan& T, const TroopDef& TD);
 	void UpdateFirePatches();
 	void UpdateChains();
 	void ClearChains(Titan& T);

@@ -3,6 +3,7 @@
 
 #include "DoTSim/Hash.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace dot
@@ -326,7 +327,9 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 			T.accuracyFar = R->GetFix("accuracyFar", fx::Pct(40));
 			T.accuracyNearRange = R->GetFix("accuracyNearRange", fx::Int(15));
 			T.accuracyVsTitan = R->GetFix("accuracyVsTitan", fx::Pct(95));
+			T.rangedMeleeMult = R->GetFix("meleeMult", fx::Pct(50));
 		}
+		T.poiseFactor = J.GetFix("poiseFactor");
 		if (const JsonValue* S = J.Find("specials"))
 		{
 			if (const JsonValue* V = S->Find("shieldBlock"))
@@ -408,6 +411,18 @@ bool LoadTroops(const JsonValue& Root, SimContent& C, std::string& Error)
 				T.poison = true;
 				T.poisonDps = V->GetFix("dps", fx::Int(6));
 				T.poisonTicks = SecToTicks(V->GetDouble("duration", 5.0));
+			}
+			if (const JsonValue* V = S->Find("siege"))
+			{
+				T.siege = true;
+				T.pierceTargets = V->GetInt("pierce", 3);
+				T.pierceWidth = V->GetFix("pierceWidth", fx::Milli(500));
+				T.setupTicks = SecToTicks(V->GetDouble("setup", 1.0));
+				T.pinMoveSlow = V->GetFix("pinMoveSlow", fx::Pct(10));
+				T.pinTicks = SecToTicks(V->GetDouble("pinDuration", 3.0));
+				T.pinMaxStacks = V->GetInt("pinMaxStacks", 3);
+				T.crew = std::max(1, V->GetInt("crew", 3));
+				T.toppleTicks = SecToTicks(V->GetDouble("topple", 4.0));
 			}
 		}
 		if (const JsonValue* F = J.Find("formations"))
