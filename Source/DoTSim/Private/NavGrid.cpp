@@ -289,7 +289,7 @@ int NavGrid::StepCost(MoveClass Move, int Cx, int Cz, bool bDiagonal) const
 	{
 		Cost *= 2;
 	}
-	if ((F & cellflag::Forest) && Move == MoveClass::Cavalry)
+	if ((F & cellflag::Forest) && (Move == MoveClass::Cavalry || Move == MoveClass::Siege))
 	{
 		Cost = Cost * 16 / 10;
 	}
@@ -445,7 +445,7 @@ Fix64 NavGrid::SpeedMult(MoveClass Move, FixVec2 P, const RulesDef& Rules) const
 	{
 		M = M * Rules.fordSpeedMult;
 	}
-	if ((F & cellflag::Forest) && Move == MoveClass::Cavalry)
+	if ((F & cellflag::Forest) && (Move == MoveClass::Cavalry || Move == MoveClass::Siege))
 	{
 		M = M * Rules.forestCavalrySpeedMult;
 	}

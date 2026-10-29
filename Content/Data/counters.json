@@ -10,7 +10,8 @@
     "grenadiers":    [1.5, 1.2, 1.5, 1.0,  0.9,  1.0,  1.5,  0.6, 2.0],
     "outriders":     [1.2, 0.8, 0.5, 1.75, 1.0,  1.75, 1.75, 0.5, 0.5],
     "knights":       [1.5, 1.2, 0.6, 1.75, 1.2,  1.75, 1.75, 0.6, 0.6],
-    "ballista":      [0.6, 0.6, 0.6, 0.6,  1.0,  1.0,  0.6,  2.5, 3.0],
+    // Ballista vs titan: 2.5 in 4.10, lowered to 2.0 by dot_harness (see troops.json).
+    "ballista":      [0.6, 0.6, 0.6, 0.6,  1.0,  1.0,  0.6,  2.0, 3.0],
     "chainbreakers": [0.8, 0.6, 0.8, 0.8,  0.6,  1.0,  0.8,  2.0, 0.5],
     "priests":       [0.0, 0.0, 0.0, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0],
     // Envoy council troops; the original's chart: pikemen and goliaths beat panthers and militia and lose to

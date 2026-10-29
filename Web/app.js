@@ -15,7 +15,7 @@ const CMD = { Move: 0, Path: 1, Attack: 2, Charge: 3, Halt: 4, Retreat: 5, SetFo
 const EV = { SoldierDied: 0, TitanAttack: 1, TitanSmash: 2, TitanStomp: 3, TitanGrab: 4, TitanThrowImpact: 5, TitanFootstep: 6, TitanChargeStart: 7,
 	TitanStaggered: 8, TitanDied: 9, AbilityCast: 10, AbilityImpact: 11, SpellCast: 12, SpellImpact: 13, ClashStarted: 14, ClashExchange: 15,
 	ClashEnded: 16, SquadRouted: 17, SquadRallied: 18, SquadLeftField: 19, SquadDestroyed: 20, ChargeImpact: 21, StarEarned: 22, BattleStarted: 23, BattleEnded: 24, DeadRaised: 25,
-	FirebombImpact: 26, ChainThrown: 27, TitanBound: 28 };
+	FirebombImpact: 26, ChainThrown: 27, TitanBound: 28, BoltImpact: 29 };
 const PH = { Deploy: 0, Countdown: 1, Battle: 2, Finished: 3 };
 const SS = { Idle: 0, Moving: 1, Fighting: 2, Airborne: 3, Down: 4, Dead: 5, Left: 6 };
 const TS = { Idle: 0, Moving: 1, Attacking: 2, Stomping: 3, Grabbing: 4, Casting: 5, Leaping: 6, Clashing: 7, Staggered: 8, Dead: 9 };
@@ -31,13 +31,16 @@ const SOLDIER_SCALE = 1.25;
 const RU = {
 	troop: { 'troop.militia': 'Ополчение', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копейщики', 'troop.archers': 'Лучники',
 		'troop.outriders': 'Всадники', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренадеры',
-		'troop.chainbreakers': 'Цепеломы', 'troop.priests': 'Боевые жрецы', 'troop.pikemen': 'Пикинёры', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры' },
+		'troop.chainbreakers': 'Цепеломы', 'troop.priests': 'Боевые жрецы', 'troop.pikemen': 'Пикинёры', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры',
+		'troop.ballista': 'Расчёт баллисты' },
 	troopShort: { 'troop.militia': 'Ополч.', 'troop.swordsmen': 'Мечники', 'troop.spearmen': 'Копья', 'troop.archers': 'Лучники',
 		'troop.outriders': 'Конница', 'troop.knights': 'Рыцари', 'troop.skeleton': 'Скелеты', 'troop.grenadiers': 'Гренад.',
-		'troop.chainbreakers': 'Цепи', 'troop.priests': 'Жрецы', 'troop.pikemen': 'Пики', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры' },
+		'troop.chainbreakers': 'Цепи', 'troop.priests': 'Жрецы', 'troop.pikemen': 'Пики', 'troop.goliaths': 'Голиафы', 'troop.panthers': 'Пантеры',
+		'troop.ballista': 'Баллиста' },
 	troopOf: { 'troop.militia': 'ополчение', 'troop.swordsmen': 'мечники', 'troop.spearmen': 'копейщики', 'troop.archers': 'лучники',
 		'troop.outriders': 'всадники', 'troop.knights': 'рыцари', 'troop.skeleton': 'скелеты', 'troop.grenadiers': 'гренадеры',
-		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры' },
+		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры',
+		'troop.ballista': 'баллисты' },
 	titan: { 'titan.thor': 'Тор', 'titan.talos': 'Талос', 'titan.minotaur': 'Минотавр', 'titan.cyclops': 'Циклоп', 'titan.perun': 'Перун',
 		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида' },
 	abil: { 'ability.talos.molten_ichor': 'Ихор', 'ability.talos.bronze_bulwark': 'Оплот', 'ability.thor.hammer_throw': 'Молот',
@@ -78,6 +81,7 @@ const SCENARIOS = [
 	{ path: 'scenarios/m0_cavalry_test.json', name: 'Копья против конницы', note: 'Удержите строй копейщиков против всадников' },
 	{ path: 'scenarios/m1_raise_dead.json', name: 'Факелы Гекаты', note: 'Геката и «Поднять мёртвых» против огненного войска Сурта' },
 	{ path: 'scenarios/m1_chains_and_fire.json', name: 'Цепи и огонь', note: 'Цепеломы, гренадеры и боевые жрецы против Атланта' },
+	{ path: 'scenarios/m1_ballista_line.json', name: 'Стена баллист', note: 'Расчёты баллист против Имира и его конницы: прикройте машины копьями' },
 ];
 const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
@@ -476,6 +480,21 @@ function troopModel(id) {
 		gear.push(part(lowSph, C_SKIN, 0, 1.98, 0.2, 0.32, 0.34, 0.32));
 		gear.push(part(lowCone, 0x3b5a2e, 0, 2.18, 0.24, 0.42, 0.42, 0.42));
 		gear.push(part(GEO.box, C_STEEL, 0.32, 1.55, -0.35, 0.05, 0.05, 1.2, rad(-25), 0, 0));
+	} else if (id === 'troop.ballista') {
+		// A bolt-thrower on a wheeled sled: a long stock on a post, two bow arms with a taut string, a bolt in the groove
+		// and a mantlet in the house colour at the front. Its crew of three is drawn separately (ballistaCrewModel).
+		gear.push(part(GEO.box, C_WOOD, 0, 0.32, 0.1, 1.5, 0.22, 2.3));
+		for (const wx of [-0.82, 0.82]) for (const wz of [-0.65, 0.85]) gear.push(part(lowCyl, C_LEATHER, wx, 0.32, wz, 0.62, 0.14, 0.62, 0, 0, rad(90)));
+		gear.push(part(GEO.box, C_WOOD, 0, 0.75, 0.25, 0.22, 0.7, 0.22));
+		gear.push(part(GEO.box, C_WOOD, 0, 1.12, -0.05, 0.3, 0.2, 2.5, rad(-4), 0, 0));
+		for (const side of [-1, 1]) gear.push(part(GEO.box, C_WOOD, side * 0.7, 1.18, -0.95, 1.35, 0.14, 0.14, 0, rad(side * 18), 0));
+		gear.push(part(GEO.box, C_BONE, 0, 1.18, -0.68, 2.5, 0.03, 0.03));
+		gear.push(part(GEO.box, C_IRON, 0, 1.12, -0.95, 0.42, 0.42, 0.24));
+		gear.push(part(GEO.box, C_WOOD, 0, 1.28, -0.2, 0.07, 0.07, 1.9));
+		gear.push(part(lowCone, C_STEEL, 0, 1.28, -1.25, 0.14, 0.4, 0.14, rad(-90), 0, 0));
+		gear.push(part(lowCyl, C_IRON, 0, 1.05, 1.0, 0.36, 0.5, 0.36, 0, 0, rad(90)));
+		body.push(part(GEO.box, W, 0, 0.62, -1.18, 1.3, 0.62, 0.08, rad(-12), 0, 0));
+		body.push(part(GEO.box, G, 0, 0.36, -1.12, 1.4, 0.1, 0.12));
 	} else if (id === 'troop.skeleton') {
 		// Raised dead: a tattered tabard in the caster's colour over bare bones, a rusty blade.
 		body.push(part(GEO.box, W, 0, 0.95, 0, 0.5, 0.55, 0.22));
@@ -492,6 +511,16 @@ function troopModel(id) {
 	}
 	return { body: mergeParts(body), gear: mergeParts(gear) };
 }
+
+/** One of the three crewmen around a ballista: leather cap, the house colour, a crank handle. */
+function ballistaCrewModel() {
+	const body = [part(lowCyl, 0xffffff, 0, 0.62, 0, 0.56, 1.24, 0.56)];
+	const gear = [part(lowSph, C_SKIN, 0, 1.45, 0, 0.36, 0.38, 0.36), part(lowSph, C_LEATHER, 0, 1.55, 0, 0.4, 0.24, 0.4),
+		part(GEO.box, C_IRON, 0.32, 0.95, -0.2, 0.06, 0.06, 0.6, rad(-30), 0, 0)];
+	return { body: mergeParts(body), gear: mergeParts(gear) };
+}
+/** Where the crew stands around its engine (engine space, forward is -Z): two at the winch, one loading at the side. */
+const BALLISTA_CREW = [[-0.95, 1.55], [0.95, 1.55], [1.5, -0.1]];
 
 function mulberry32(seed) {
 	let a = seed >>> 0;
@@ -743,21 +772,30 @@ function buildUnits(st, soldiers) {
 }
 
 const TROOP_TINT = { 'troop.militia': 1.15, 'troop.swordsmen': 0.85, 'troop.spearmen': 1.0, 'troop.archers': 1.3, 'troop.outriders': 0.95, 'troop.knights': 0.7, 'troop.skeleton': 0.55,
-	'troop.grenadiers': 1.1, 'troop.chainbreakers': 0.8, 'troop.priests': 1.25, 'troop.pikemen': 1.05, 'troop.goliaths': 0.75, 'troop.panthers': 0.9 };
+	'troop.grenadiers': 1.1, 'troop.chainbreakers': 0.8, 'troop.priests': 1.25, 'troop.pikemen': 1.05, 'troop.goliaths': 0.75, 'troop.panthers': 0.9,
+	'troop.ballista': 1.0 };
 function makeTroopGroup(st, side, troop, n) {
 	const id = st.troops[troop].id;
 	const model = troopModel(id);
 	const color = SIDE_COLOR[side].clone().multiplyScalar(TROOP_TINT[id] || 1);
 	const body = new THREE.InstancedMesh(model.body, lambert(color, { vertexColors: true }), n);
 	const gear = new THREE.InstancedMesh(model.gear, lambert(0xffffff, { vertexColors: true }), n);
-	for (const m of [body, gear]) {
+	const meshes = [body, gear];
+	let crew = null;
+	if (id === 'troop.ballista') {
+		const cm = ballistaCrewModel();
+		crew = { body: new THREE.InstancedMesh(cm.body, lambert(color, { vertexColors: true }), n * BALLISTA_CREW.length),
+			gear: new THREE.InstancedMesh(cm.gear, lambert(0xffffff, { vertexColors: true }), n * BALLISTA_CREW.length) };
+		meshes.push(crew.body, crew.gear);
+	}
+	for (const m of meshes) {
 		m.userData.ownGeo = true;
 		m.castShadow = true;
 		m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 		m.frustumCulled = false;
 		view.units.add(m);
 	}
-	return { body, gear, cav: st.troops[troop].cav === 1 };
+	return { body, gear, crew, cav: st.troops[troop].cav === 1 };
 }
 function makeRing(sq) {
 	const m = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: SIDE_COLOR[sq.side].clone().lerp(new THREE.Color(0xffffff), 0.35), transparent: true, opacity: 0.9, depthWrite: false }));
@@ -913,6 +951,7 @@ function poolsEnd() { for (const k in pools) { const p = pools[k]; for (let i = 
 
 const MAT = {
 	arrow: lambert(0xe6dcc2),
+	ballistaBolt: lambert(0x5a4632),
 	boulder: lambert(0x8a5a2e),
 	bolt: new THREE.MeshBasicMaterial({ color: 0xbfe6ff }),
 	hammer: new THREE.MeshStandardMaterial({ color: 0x737c88, metalness: 0.8, roughness: 0.3 }),
@@ -928,6 +967,7 @@ const MAT = {
 	reticleFill: new THREE.MeshBasicMaterial({ color: 0xf2c14e, transparent: true, opacity: 0.14, depthWrite: false }),
 };
 const arrowGeo = new THREE.BoxGeometry(0.06, 0.06, 1.1);
+const boltGeo = new THREE.BoxGeometry(0.14, 0.14, 2.2);
 
 const effects = [];
 const FX = {
@@ -1009,6 +1049,7 @@ function updateSoldiers(rt, alpha) {
 	const fr = game.fr;
 	const n = Math.min(b.length / 8, view.soldierGroup.length);
 	const scale = SOLDIER_SCALE;
+	const crewOf = new Map(fr && fr.cw ? fr.cw : []);
 	for (let i = 0; i < n; i++) {
 		const o = i * 8;
 		// A soldier raised this tick has no previous snapshot yet.
@@ -1018,6 +1059,7 @@ function updateSoldiers(rt, alpha) {
 		const state = b[o + 4];
 		const sqIdx = b[o + 7];
 		const hidden = st.squads[sqIdx].side === 1 && fr && fr.sq[sqIdx] && !fr.sq[sqIdx].vis && state !== SS.Dead;
+		if (g.crew) placeCrew(g, inst, i, state === SS.Left || hidden || state === SS.Dead ? 0 : crewOf.get(i) || 0, a, b, o, alpha);
 		if (state === SS.Left || hidden) { g.body.setMatrixAt(inst, ZERO_M); g.gear.setMatrixAt(inst, ZERO_M); continue; }
 		const x = lerp(a[o], b[o], alpha);
 		const z = lerp(a[o + 1], b[o + 1], alpha);
@@ -1055,7 +1097,35 @@ function updateSoldiers(rt, alpha) {
 		g.body.setMatrixAt(inst, tmpM);
 		g.gear.setMatrixAt(inst, tmpM);
 	}
-	for (const g of view.groups) { g.body.instanceMatrix.needsUpdate = true; g.gear.instanceMatrix.needsUpdate = true; }
+	for (const g of view.groups) {
+		g.body.instanceMatrix.needsUpdate = true;
+		g.gear.instanceMatrix.needsUpdate = true;
+		if (g.crew) { g.crew.body.instanceMatrix.needsUpdate = true; g.crew.gear.instanceMatrix.needsUpdate = true; }
+	}
+}
+
+/** The crew of one ballista: the first `alive` of its three crewmen stand at their posts, upright even when the engine is toppled. */
+function placeCrew(g, inst, i, alive, a, b, o, alpha) {
+	const yaw = b[o + 3];
+	const x = lerp(a[o], b[o], alpha);
+	const z = lerp(a[o + 1], b[o + 1], alpha);
+	const y = lerp(a[o + 2], b[o + 2], alpha);
+	const c = Math.cos(yaw);
+	const sn = Math.sin(yaw);
+	tmpE.set(0, -yaw, 0, 'YXZ');
+	tmpQ.setFromEuler(tmpE);
+	tmpS.set(SOLDIER_SCALE, SOLDIER_SCALE, SOLDIER_SCALE);
+	BALLISTA_CREW.forEach(([ox, oz], k) => {
+		const idx = inst * BALLISTA_CREW.length + k;
+		if (k >= alive) { g.crew.body.setMatrixAt(idx, ZERO_M); g.crew.gear.setMatrixAt(idx, ZERO_M); return; }
+		// Engine space to world: forward (-Z in the model) is the sim's facing (sin yaw, cos yaw).
+		const wx = x + (ox * c - oz * sn) * SOLDIER_SCALE;
+		const wz = z + (-ox * sn - oz * c) * SOLDIER_SCALE;
+		tmpP.set(wx, y, -wz);
+		tmpM.compose(tmpP, tmpQ, tmpS);
+		g.crew.body.setMatrixAt(idx, tmpM);
+		g.crew.gear.setMatrixAt(idx, tmpM);
+	});
 }
 
 function updateTitans(rt, alpha) {
@@ -1161,7 +1231,8 @@ function updateProjectiles(rt) {
 		const dist = Math.hypot(tx - fx, tz - fz);
 		const thrown = kind === 2;
 		const pot = kind === 4;
-		const apex = thrown ? 12 : pot ? 2 + dist * 0.3 : 1 + dist * 0.12;
+		const bolt = kind === 1;
+		const apex = thrown ? 12 : pot ? 2 + dist * 0.3 : bolt ? 0.4 + dist * 0.03 : 1 + dist * 0.12;
 		const x = lerp(fx, tx, k);
 		const z = lerp(fz, tz, k);
 		const y = lerp(h0, h1 + 0.5, k) + 4 * apex * k * (1 - k);
@@ -1179,7 +1250,7 @@ function updateProjectiles(rt) {
 			m.position.set(x, y, -z);
 			m.scale.setScalar(1.2);
 		} else {
-			const m = take('arrow', () => new THREE.Mesh(arrowGeo, MAT.arrow));
+			const m = bolt ? take('ballistaBolt', () => new THREE.Mesh(boltGeo, MAT.ballistaBolt)) : take('arrow', () => new THREE.Mesh(arrowGeo, MAT.arrow));
 			m.position.set(x, y, -z);
 			const k2 = Math.min(1, k + 0.02);
 			const y2 = lerp(h0, h1 + 0.5, k2) + 4 * apex * k2 * (1 - k2);
@@ -2131,7 +2202,8 @@ function drawOverlay(rt) {
 		ov.fillStyle = '#efe7d6';
 		ov.textAlign = 'left';
 		const chains = T.ch || 0;
-		ov.fillText((RU.titan[t.def] || t.name) + '  ур. ' + t.lvl + (chains ? '  ⛓' + chains : ''), bx, by - 6);
+		const pins = T.pn || 0;
+		ov.fillText((RU.titan[t.def] || t.name) + '  ур. ' + t.lvl + (chains ? '  ⛓' + chains : '') + (pins ? '  📌' + pins : ''), bx, by - 6);
 		ov.fillStyle = 'rgba(255, 255, 255, 0.15)';
 		ov.fillRect(bx, by + 2, w, 6);
 		ov.fillStyle = t.side === 0 ? '#5fd38d' : '#e5533d';
@@ -2427,6 +2499,11 @@ function handleEvents(events) {
 			break;
 		case EV.ChargeImpact: spawnFx('dust', x, z, 0, 0.5, 1, 6); break;
 		case EV.FirebombImpact: spawnFx('fire', x, z, 0.6, 0.45, 1, 4.5); spawnFx('dust', x, z, 0, 0.5, 1, 5); soundAt(x, z, 'thud'); break;
+		case EV.BoltImpact:
+			// b = soldiers the bolt went through; value = pins on a titan it hit.
+			spawnFx('dust', x, z, 0, 0.35, 1, b > 1 ? 4 : 2.5);
+			if (value > 0) soundAt(x, z, 'clang');
+			break;
 		case EV.ChainThrown:
 			game.chains.push({ squad: a - 1, titan: b - TITAN_BASE, t0: t });
 			soundAt(x, z, 'clang');
