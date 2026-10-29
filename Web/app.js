@@ -216,6 +216,7 @@ function applyQuality() {
 	const q = qualityLevel();
 	const dpr = window.devicePixelRatio || 1;
 	renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : 1.35));
+	if (GFX) GFX.setQuality(q);
 	const shadows = q === 'high';
 	if (renderer.shadowMap.enabled !== shadows) {
 		renderer.shadowMap.enabled = shadows;
