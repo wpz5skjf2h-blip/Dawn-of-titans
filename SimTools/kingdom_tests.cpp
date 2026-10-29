@@ -1131,6 +1131,102 @@ void TestTitanMonumentsAndXpArenas()
 	KD_CHECK(Old != Save && O.Load(Old, Error) && O.CheckSite(0).error == Error::None);
 }
 
+void TestCampaigns()
+{
+	const KingdomContent& Ct = Content();
+	const CampaignRules& G = Ct.campaigns;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	KD_CHECK(G.stones == 2 && G.guild == Def("adventurers_guild") && G.acts.size() == 2);
+	KD_CHECK(G.acts[0].id == "act1" && G.acts[0].castle == 8 && G.acts[1].id == "act2" && G.acts[1].castle == 12);
+	const MissionDef& First = G.acts[0].missions[0];
+	KD_CHECK(First.id == "a1m1" && First.level == 3 && First.first[GemsI] == 10 && First.first[FoodI] == 5000);
+	KD_CHECK(G.acts[0].chests[2].stars == 36 && G.acts[0].chests[2].titan == 2 && G.acts[0].chests[2].res[GemsI] == 150 && G.acts[0].chests[1].relic == 3);
+	// The master prompt: 12 missions and a boss per act, 10-30 gems for a first clear, star chests at 12 / 24 / 36 of 39.
+	for (const ActDef& A : G.acts)
+	{
+		KD_CHECK(A.missions.size() == 13 && A.chests.size() == 3 && A.chests[0].stars == 12 && A.chests[1].stars == 24 && A.chests[2].stars == 36);
+		for (size_t M = 0; M < A.missions.size(); ++M)
+		{
+			KD_CHECK(A.missions[M].first[GemsI] >= 10 && A.missions[M].first[GemsI] <= 40);
+			KD_CHECK(M == 0 || A.missions[M].level >= A.missions[M - 1].level);
+		}
+	}
+
+	Kingdom K(Content());
+	K.NewGame(T0, 61);
+	KD_CHECK(K.ActCount() == 2 && K.MissionCount(0) == 13 && K.MissionCount(2) == 0 && K.ActStars(0) == 0 && !K.ChestClaimed(0, 0));
+	// Without the Adventurers' Guild nothing opens.
+	const Check NoGuild = K.CheckMission(0, 0);
+	KD_CHECK(NoGuild.error == Error::NeedRequirement && NoGuild.missing.building == G.guild && NoGuild.missing.level == 1);
+	KD_CHECK(K.StartMission(0, 0, {}, 0, {}, false) == Error::NeedRequirement && K.CheckMission(0, 13).error == Error::BadId);
+	// With the Guild the act still waits for its Castle.
+	const std::string Save = WithBuilding(K.Save(), "adventurers_guild", 1, 2);
+	const auto AtCastle = [&](int Castle) { return Replace(Save, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":" + std::to_string(Castle)); };
+	std::string Error;
+	Kingdom L(Content());
+	KD_CHECK(L.Load(AtCastle(7), Error) && L.CheckMission(0, 0).error == Error::Locked && L.CheckMission(0, 0).castle == 8);
+	// Act II needs its Castle and Act I won to the end.
+	KD_CHECK(L.Load(AtCastle(12), Error) && L.CheckMission(1, 0).error == Error::Locked && L.CheckMission(1, 0).castle == 0);
+	Kingdom P(Content());
+	KD_CHECK(P.Load(AtCastle(8), Error));
+	KD_CHECK(P.CheckMission(0, 0).error == Error::None && P.CheckMission(0, 0).cost[static_cast<size_t>(ResIndex(Res::Stones))] == 2);
+	KD_CHECK(P.CheckMission(0, 1).error == Error::Locked && P.CheckMission(0, 1).castle == 0 && P.CheckMission(1, 0).castle == 12);
+	const int32_t Perun = P.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	const int64_t Stones = P.Amount(Res::Stones);
+	KD_CHECK(P.StartMission(0, 1, {}, 0, {}, false) == Error::Locked);
+	KD_CHECK(P.StartMission(0, 0, {Militia}, Perun, {}, false) == Error::None);
+	KD_CHECK(P.Amount(Res::Stones) == Stones - 2 && P.PendingMission() == 0 && P.PendingSite() == -1 && P.PendingAttack() == -Kingdom::MissionBase);
+	KD_CHECK(P.FinishMission(0, 1, 3, {100}, {}, nullptr) == Error::NoAttack && P.FinishSiteAttack(0, 3, {100}, {}, nullptr) == Error::NoAttack);
+	// A save in the middle of the mission loads to the same state.
+	const std::string Mid = P.Save();
+	Kingdom M(Content());
+	KD_CHECK(M.Load(Mid, Error) && M.Hash() == P.Hash() && M.Save() == Mid && M.PendingMission() == 0);
+	// A lost mission pays nothing and opens nothing; the titan still gains XP as in a land battle of its level.
+	Reward R;
+	KD_CHECK(P.FinishMission(0, 0, 0, {100}, {}, &R) == Error::None && P.PendingAttack() == 0 && !R.firstClear && R.res[GemsI] == 0);
+	KD_CHECK(P.MissionStars(0, 0) == 0 && P.CheckMission(0, 1).error == Error::Locked);
+	KD_CHECK(R.titanId == Perun && R.titanXp == Ct.titanBattleXp[2] * Ct.titanStarsPct[0] / 100 && R.squadsBack == 1);
+	// The first win pays the mission's reward and opens the next one.
+	P.RefillStones();
+	const int64_t Gems = P.Amount(Res::Gems);
+	const int64_t Food = P.Amount(Res::Food);
+	KD_CHECK(P.StartMission(0, 0, {Militia}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 2, {100}, {}, &R) == Error::None);
+	KD_CHECK(R.firstClear && R.res[GemsI] == 10 && P.Amount(Res::Gems) == Gems + 10 && R.res[FoodI] == P.Amount(Res::Food) - Food && R.res[FoodI] > 0);
+	KD_CHECK(R.relics.empty() && P.MissionStars(0, 0) == 2 && P.ActStars(0) == 2 && P.CheckMission(0, 1).error == Error::None);
+	// Repeats give the titan XP only; the best stars stay.
+	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 1, {}, {}, &R) == Error::None);
+	KD_CHECK(!R.firstClear && R.res[GemsI] == 0 && R.res[FoodI] == 0 && P.MissionStars(0, 0) == 2);
+	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 3, {}, {}, &R) == Error::None && P.MissionStars(0, 0) == 3);
+	KD_CHECK(P.ClaimChest(0, 0, &R) == Error::NotEnough && P.ClaimChest(0, 3, &R) == Error::BadId);
+	// Through the act with three stars: Act II waits for Castle 12 only.
+	for (int Mi = 1; Mi < 13; ++Mi)
+	{
+		P.RefillStones();
+		KD_CHECK(P.StartMission(0, Mi, {}, 0, {}, false) == Error::None && P.FinishMission(0, Mi, 3, {}, {}, &R) == Error::None && R.firstClear);
+	}
+	KD_CHECK(P.ActStars(0) == 39 && P.CheckMission(1, 0).error == Error::Locked && P.CheckMission(1, 0).castle == 12);
+	// The chests: resources, a relic of their rarity, a titan while the Hall has room.
+	const int64_t Gems2 = P.Amount(Res::Gems);
+	KD_CHECK(P.ClaimChest(0, 0, &R) == Error::None && R.res[GemsI] == 50 && P.Amount(Res::Gems) == Gems2 + 50 && P.ChestClaimed(0, 0));
+	KD_CHECK(P.ClaimChest(0, 0, &R) == Error::Nothing);
+	const size_t Relics = P.Relics().size();
+	KD_CHECK(P.ClaimChest(0, 1, &R) == Error::None && R.relics.size() == 1 && P.Relics().size() == Relics + 1 && P.FindRelic(R.relics[0])->rarity == 3);
+	const size_t Titans = P.Titans().size();
+	const bool bRoom = static_cast<int>(Titans) < P.TitanCapacity();
+	KD_CHECK(P.ClaimChest(0, 2, &R) == Error::None && P.ChestClaimed(0, 2));
+	KD_CHECK(bRoom ? R.newTitan != 0 && P.Titans().size() == Titans + 1 && Ct.titans[static_cast<size_t>(P.FindTitan(R.newTitan)->def)].stars == 2
+				   : R.newTitan == 0 && R.relics.size() == 1);
+	// Stars and chests survive a save; the hash covers them.
+	Kingdom Q(Content());
+	KD_CHECK(Q.Load(P.Save(), Error) && Q.Hash() == P.Hash() && Q.Save() == P.Save() && Q.ActStars(0) == 39 && Q.ChestClaimed(0, 1) && !Q.ChestClaimed(1, 0));
+	// An old save without campaigns loads with nothing played.
+	Kingdom O(Content());
+	const std::string Old = Replace(AtCastle(8), "\"campaigns\":{}", "\"x\":0");
+	KD_CHECK(Old != AtCastle(8) && O.Load(Old, Error) && O.ActStars(0) == 0 && O.CheckMission(0, 0).error == Error::None);
+}
+
 const SimContent& Battle()
 {
 	static SimContent S;
@@ -1599,6 +1695,7 @@ int main()
 		{"Alliances", TestAlliances},
 		{"LandUpgrades", TestLandUpgrades},
 		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
+		{"Campaigns", TestCampaigns},
 		{"Raids", TestRaids},
 	};
 	for (const auto& T : Tests)

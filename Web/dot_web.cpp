@@ -1092,7 +1092,41 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		WriteCheck(O, Km->CheckSite(I));
 		O.Raw("}");
 	}
+	// Campaigns: best stars and each mission's check (error code) by act, opened chests, and the full check of the next
+	// mission to play (the first not won yet, else the last).
+	O.Raw("],").Key("campaign").Raw("[");
+	for (int A = 0; A < Km->ActCount(); ++A)
+	{
+		const int N = Km->MissionCount(A);
+		int Next = N - 1;
+		for (int M = N - 1; M >= 0; --M)
+		{
+			if (Km->MissionStars(A, M) == 0)
+			{
+				Next = M;
+			}
+		}
+		O.Raw(A ? "," : "").Raw("{").Key("stars").Raw("[");
+		for (int M = 0; M < N; ++M)
+		{
+			O.Raw(M ? "," : "").Int(Km->MissionStars(A, M));
+		}
+		O.Raw("],").Key("err").Raw("[");
+		for (int M = 0; M < N; ++M)
+		{
+			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckMission(A, M).error));
+		}
+		O.Raw("],").Key("chests").Raw("[");
+		for (size_t I = 0; I < C.campaigns.acts[static_cast<size_t>(A)].chests.size(); ++I)
+		{
+			O.Raw(I ? "," : "").Int(Km->ChestClaimed(A, static_cast<int>(I)) ? 1 : 0);
+		}
+		O.Raw("],").Key("total").Int(Km->ActStars(A)).Comma().Key("next").Int(Next).Comma().Key("ck");
+		WriteCheck(O, Km->CheckMission(A, Next));
+		O.Raw("}");
+	}
 	O.Raw("],").Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
+	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1363,6 +1397,9 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("land").Int(R.landId).Comma().Key("lost").Int(R.squadsLost).Comma().Key("back").Int(R.squadsBack).Comma();
 	O.Key("titan").Int(R.titanId).Comma().Key("xp").Int(R.titanXp).Comma().Key("levels").Int(R.titanLevels).Comma();
 	O.Key("broken").Int(R.relicsBroken).Comma().Key("relicsLost").Int(R.relicsLost).Comma().Key("reinf").Int(R.reinforcements).Comma();
+	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
+	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
+	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1395,6 +1432,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_site_finish(int Site, int Stars, const char*
 EMSCRIPTEN_KEEPALIVE int dk_site_reset(int Site)
 {
 	return K() ? static_cast<int>(K()->ResetSite(Site)) : -1;
+}
+
+/** A campaign mission battle: the army as for dk_attack_start. */
+EMSCRIPTEN_KEEPALIVE int dk_mission_start(int Act, int Mission, const char* Squads, int TitanId, const char* Spells, int Reinforce)
+{
+	return K() ? static_cast<int>(K()->StartMission(Act, Mission, ParseInts(Squads), TitanId, ParseInts(Spells), Reinforce != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_mission_finish(int Act, int Mission, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishMission(Act, Mission, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Opens a campaign act's star chest: the reward as for a battle (gems, stones, relics, newTitan). */
+EMSCRIPTEN_KEEPALIVE const char* dk_chest(int Act, int Chest)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimChest(Act, Chest, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
 }
 
 EMSCRIPTEN_KEEPALIVE int dk_train(int Troop)

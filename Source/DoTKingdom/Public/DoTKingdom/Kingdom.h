@@ -208,6 +208,8 @@ struct Reward
 	std::vector<int32_t> relics; // relic items the victory dropped
 	int relicsLost = 0; // drops that did not fit in the inventory
 	int reinforcements = 0; // allies' squads that fought (they are gone now)
+	bool firstClear = false; // a campaign mission won for the first time (res holds its reward)
+	int32_t newTitan = 0; // a titan a star chest gave
 };
 
 /** A raid on the kingdom: when and where, how it went and what it cost. */
@@ -519,8 +521,34 @@ public:
 	Error StartSiteAttack(int Site, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
 	/** Applies a site battle's result: casualties, spells and titan XP as on a land, then the site's reward. */
 	Error FinishSiteAttack(int Site, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out);
-	/** The pending battle's site (-1 when the pending battle is on a world land or there is none). */
-	int PendingSite() const { return Pending < 0 ? -Pending - 1 : -1; }
+	/** Pending battle ids from here down are campaign missions: -(MissionBase + Act * 100 + Mission). */
+	static constexpr int32_t MissionBase = 1000;
+	/** The pending battle's site (-1 when the pending battle is on a world land, a mission or there is none). */
+	int PendingSite() const { return Pending < 0 && -Pending < MissionBase ? -Pending - 1 : -1; }
+
+	// --- Campaigns of the Adventurers' Guild ---
+	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
+	// Guild). A mission costs portal stones and gives titan XP like a land battle of its level; the first win also
+	// pays its first-clear reward. Stars won in an act open its star chests.
+	int ActCount() const { return static_cast<int>(C.campaigns.acts.size()); }
+	int MissionCount(int Act) const;
+	/** Best stars won in the mission (0 = not won yet). */
+	int MissionStars(int Act, int Mission) const;
+	/** Stars won in the act's missions. */
+	int ActStars(int Act) const;
+	bool ChestClaimed(int Act, int Chest) const;
+	/** NeedRequirement (no Adventurers' Guild), Locked (Castle too low, or the mission or act before is not won yet:
+	 *  castle 0), NeedStones; the cost is the portal stones. */
+	Check CheckMission(int Act, int Mission) const;
+	/** Spends portal stones for a mission battle with this army (as StartAttack); the battle runs elsewhere. */
+	Error StartMission(int Act, int Mission, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
+	/** Applies a mission's result as on a land (casualties, spells, titan XP), keeps the best stars and pays the
+	 *  first-clear reward on the first win. */
+	Error FinishMission(int Act, int Mission, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out);
+	/** Opens a star chest: NotEnough (too few stars), Nothing (already open). */
+	Error ClaimChest(int Act, int Chest, Reward* Out);
+	/** The pending battle's mission as Act * 100 + Mission (-1 when it is not a mission). */
+	int PendingMission() const { return -Pending >= MissionBase ? -Pending - MissionBase : -1; }
 
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
@@ -611,7 +639,7 @@ private:
 	/** Ranks every league at the end of the season, pays the player's alliance and moves alliances up and down. */
 	bool RollAllianceLeagues(int64_t End);
 	/** Checks the army that goes to a battle, spends the stones and makes it the pending battle (Target: a world
-	 *  land's id, or -(site + 1)). */
+	 *  land's id, -(site + 1) or a mission's id). */
 	Error BeginBattle(int32_t Target, bool Capture, int64_t Stones, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells,
 		bool Reinforce);
 	/** Brings the pending army back: casualties, spells cast, the titan's XP (XpPct of a land battle of this level),
@@ -690,6 +718,9 @@ private:
 	// Titan Monuments and XP Arenas: when each site opens again (by site index), and the shard drop counter.
 	std::vector<int64_t> SiteReady;
 	uint64_t SiteCounter = 0;
+	// Campaigns: best stars by act and mission, opened star chests by act (bits).
+	std::vector<std::vector<uint8_t>> MissionStarList;
+	std::vector<uint32_t> ChestMask;
 	// Raids
 	const SimContent* BattleContent = nullptr;
 	int64_t NextRaid = 0;

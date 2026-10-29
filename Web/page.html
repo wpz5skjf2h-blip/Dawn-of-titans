@@ -340,6 +340,10 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .landCard .info span { font-size: 12px; color: var(--dim); }
 .landCard .row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .landCard .row .btn { flex: 1 1 140px; }
+/* Campaign missions: a won mission gets a gold edge; Ilsa Wren's briefing spans the card. */
+.landCard.won { border-color: rgba(244, 196, 79, 0.3); }
+.landCard .brief { grid-column: 1 / -1; margin: 0; font-style: italic; }
+.landCard .info b.gold { color: var(--valor); font-size: inherit; }
 /* Alliances: emblem shields (colour by emblem index), league tables, the founding form. */
 .emb { width: 44px; height: 44px; border-radius: 10px 10px 22px 22px; display: grid; place-items: center; flex: 0 0 auto; font-family: var(--font-display);
   font-weight: 800; font-size: 12px; letter-spacing: 0.02em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden;

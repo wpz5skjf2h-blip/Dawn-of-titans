@@ -124,6 +124,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ResetRaids(Now);
 	SiteReady.assign(C.sites.list.size(), 0);
 	SiteCounter = 0;
+	MissionStarList.assign(C.campaigns.acts.size(), {});
+	ChestMask.assign(C.campaigns.acts.size(), 0);
 	FillWorld();
 }
 
@@ -2314,6 +2316,172 @@ Error Kingdom::FinishSiteAttack(int Site, int Stars, const std::vector<int>& Sur
 	return Error::None;
 }
 
+// --- Campaigns of the Adventurers' Guild -----------------------------------------------------------
+
+int Kingdom::MissionCount(int Act) const
+{
+	return Act >= 0 && Act < ActCount() ? static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].missions.size()) : 0;
+}
+
+int Kingdom::MissionStars(int Act, int Mission) const
+{
+	if (Act < 0 || Act >= static_cast<int>(MissionStarList.size()))
+	{
+		return 0;
+	}
+	const std::vector<uint8_t>& Stars = MissionStarList[static_cast<size_t>(Act)];
+	return Mission >= 0 && Mission < static_cast<int>(Stars.size()) ? Stars[static_cast<size_t>(Mission)] : 0;
+}
+
+int Kingdom::ActStars(int Act) const
+{
+	int Total = 0;
+	for (int M = 0; M < MissionCount(Act); ++M)
+	{
+		Total += MissionStars(Act, M);
+	}
+	return Total;
+}
+
+bool Kingdom::ChestClaimed(int Act, int Chest) const
+{
+	return Act >= 0 && Act < static_cast<int>(ChestMask.size()) && Chest >= 0 && Chest < 32 && ((ChestMask[static_cast<size_t>(Act)] >> Chest) & 1u) != 0;
+}
+
+Check Kingdom::CheckMission(int Act, int Mission) const
+{
+	Check Out;
+	if (Mission < 0 || Mission >= MissionCount(Act))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const ActDef& A = C.campaigns.acts[static_cast<size_t>(Act)];
+	Out.cost[static_cast<size_t>(ResIndex(Res::Stones))] = C.campaigns.stones;
+	// Missions go in order, and an act opens when the one before it is won to its last mission.
+	const bool bOpen = Mission > 0 ? MissionStars(Act, Mission - 1) > 0 : (Act == 0 || MissionStars(Act - 1, MissionCount(Act - 1) - 1) > 0);
+	if (C.campaigns.guild >= 0 && !BuildingLevel(C.campaigns.guild))
+	{
+		Out.error = Error::NeedRequirement;
+		Out.missing = {C.campaigns.guild, 1, 1};
+	}
+	else if (CastleLevel() < A.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = A.castle;
+	}
+	else if (!bOpen)
+	{
+		Out.error = Error::Locked;
+	}
+	else if (Amount(Res::Stones) < C.campaigns.stones)
+	{
+		Out.error = Error::NeedStones;
+	}
+	return Out;
+}
+
+Error Kingdom::StartMission(int Act, int Mission, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
+{
+	const Check Ck = CheckMission(Act, Mission);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	return BeginBattle(-(MissionBase + Act * 100 + Mission), false, C.campaigns.stones, Squads, TitanId, Spells, Reinforce);
+}
+
+Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Mission < 0 || Mission >= MissionCount(Act) || Pending != -(MissionBase + Act * 100 + Mission))
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const MissionDef& D = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Mission)];
+	Reward R;
+	EndBattle(D.level, Stars, 100, SurvivorPct, SpellsUsed, R);
+	MissionStarList.resize(C.campaigns.acts.size());
+	std::vector<uint8_t>& Best = MissionStarList[static_cast<size_t>(Act)];
+	Best.resize(static_cast<size_t>(MissionCount(Act)), 0);
+	uint8_t& Mine = Best[static_cast<size_t>(Mission)];
+	const uint8_t Won = static_cast<uint8_t>(std::max(0, std::min(3, Stars)));
+	if (Won > 0 && Mine == 0)
+	{
+		// The first win pays the mission's reward (repeats give the titan XP only).
+		R.firstClear = true;
+		for (int I = 0; I < kResCount; ++I)
+		{
+			if (D.first[static_cast<size_t>(I)] > 0)
+			{
+				const int64_t Before = Amount(static_cast<Res>(I));
+				AddResource(static_cast<Res>(I), D.first[static_cast<size_t>(I)]);
+				R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+			}
+		}
+	}
+	Mine = std::max(Mine, Won);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
+{
+	if (Act < 0 || Act >= ActCount() || Chest < 0 || Chest >= static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].chests.size()))
+	{
+		return Error::BadId;
+	}
+	if (ChestClaimed(Act, Chest))
+	{
+		return Error::Nothing;
+	}
+	const ChestDef& D = C.campaigns.acts[static_cast<size_t>(Act)].chests[static_cast<size_t>(Chest)];
+	if (ActStars(Act) < D.stars)
+	{
+		return Error::NotEnough;
+	}
+	// A titan while the Hall of Titans has room, else a relic of its rarity; a relic needs room in the inventory.
+	const uint64_t H = Mix(Seed ^ 0x6368657374ULL, static_cast<uint64_t>(Act * 32 + Chest));
+	const bool bTitan = D.titan > 0 && static_cast<int>(TitanList.size()) < TitanCapacity();
+	const int RelicRarity = bTitan ? D.relic : std::max(D.relic, D.titan);
+	if (RelicRarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	Reward R;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (D.res[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), D.res[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	if (bTitan)
+	{
+		R.newTitan = SummonTitan(D.titan, H >> 24);
+	}
+	if (RelicRarity > 0)
+	{
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), RelicRarity);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	ChestMask.resize(C.campaigns.acts.size(), 0);
+	ChestMask[static_cast<size_t>(Act)] |= 1u << Chest;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
 // --- Army -----------------------------------------------------------------------------------------
 
 const LevelDef* Kingdom::BuildingLevel(int Def) const
@@ -4412,6 +4580,30 @@ std::string Kingdom::Save() const
 	}
 	W.EndObject();
 	W.EndObject();
+	// Campaigns (optional): best stars as a string of digits and opened chests as a bit mask, by act id.
+	W.Key("campaigns");
+	W.BeginObject();
+	for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
+	{
+		std::string Stars;
+		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
+		{
+			Stars += static_cast<char>('0' + MissionStars(static_cast<int>(A), M));
+		}
+		const uint32_t Mask = A < ChestMask.size() ? ChestMask[A] : 0;
+		if (Stars.find_first_not_of('0') == std::string::npos && Mask == 0)
+		{
+			continue;
+		}
+		W.Key(C.campaigns.acts[A].id.c_str());
+		W.BeginObject();
+		W.Key("stars");
+		W.String(Stars.c_str());
+		W.Key("chests");
+		W.Int(static_cast<int64_t>(Mask));
+		W.EndObject();
+	}
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -4899,9 +5091,36 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
-	if (Pending < 0 && -Pending > static_cast<int32_t>(C.sites.list.size()))
+	// Campaigns (saves before them have played no mission).
+	MissionStarList.assign(C.campaigns.acts.size(), {});
+	ChestMask.assign(C.campaigns.acts.size(), 0);
+	if (const JsonValue* CampJ = J.Find("campaigns"))
 	{
-		Pending = 0; // a site the content no longer has
+		for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
+		{
+			const JsonValue* ActJ = CampJ->Find(C.campaigns.acts[A].id.c_str());
+			if (!ActJ)
+			{
+				continue;
+			}
+			const std::string Stars = ActJ->GetString("stars");
+			std::vector<uint8_t>& Best = MissionStarList[A];
+			Best.assign(C.campaigns.acts[A].missions.size(), 0);
+			for (size_t M = 0; M < Best.size() && M < Stars.size(); ++M)
+			{
+				Best[M] = static_cast<uint8_t>(Stars[M] >= '1' && Stars[M] <= '3' ? Stars[M] - '0' : 0);
+			}
+			ChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("chests", 0)));
+		}
+	}
+	if (Pending < 0)
+	{
+		// A site or mission the content no longer has.
+		const int Mission = PendingMission();
+		if (Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
+		{
+			Pending = 0;
+		}
 	}
 	FillWorld();
 	return true;
@@ -5113,6 +5332,22 @@ uint64_t Kingdom::Hash() const
 		{
 			W.I64(T);
 		}
+	}
+	// Campaigns (only once a mission is won or a chest opened).
+	for (size_t A = 0; A < MissionStarList.size() || A < ChestMask.size(); ++A)
+	{
+		const int Stars = ActStars(static_cast<int>(A));
+		const uint32_t Mask = A < ChestMask.size() ? ChestMask[A] : 0;
+		if (Stars == 0 && Mask == 0)
+		{
+			continue;
+		}
+		W.I32(static_cast<int32_t>(A));
+		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
+		{
+			W.I32(MissionStars(static_cast<int>(A), M));
+		}
+		W.U32(Mask);
 	}
 	return W.Hash();
 }

@@ -216,6 +216,40 @@ struct SiteRules
 	std::vector<SiteDef> list;
 };
 
+/** A campaign mission: the land battle row its enemy comes from (the clients build the army) and its first-clear reward. */
+struct MissionDef
+{
+	std::string id;
+	int level = 1;
+	ResArray first{}; // resources for the first win
+};
+
+/** A star chest of a campaign act: opens at so many stars won in the act's missions. */
+struct ChestDef
+{
+	int stars = 0;
+	ResArray res{};
+	int relic = 0; // a relic of this rarity (0 = none)
+	int titan = 0; // a titan of this rarity while the Hall of Titans has room, else a relic of it (0 = none)
+};
+
+/** A campaign act: missions played in order; the next act opens when its last mission is won. */
+struct ActDef
+{
+	std::string id;
+	int castle = 1; // Castle level that opens it (besides the Adventurers' Guild)
+	std::vector<MissionDef> missions;
+	std::vector<ChestDef> chests;
+};
+
+/** Campaigns of the Adventurers' Guild (kingdom.json "campaigns"). */
+struct CampaignRules
+{
+	int64_t stones = 2; // portal stones per mission battle
+	int guild = -1; // building index that opens the campaigns (-1: none needed)
+	std::vector<ActDef> acts;
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -399,6 +433,7 @@ struct KingdomContent
 	std::vector<LeagueDef> leagues;
 	AllianceRules alliances;
 	SiteRules sites;
+	CampaignRules campaigns;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

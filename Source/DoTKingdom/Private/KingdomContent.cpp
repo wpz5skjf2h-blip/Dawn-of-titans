@@ -902,6 +902,60 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 	}
+	if (const JsonValue* Camp = Rules.Find("campaigns"))
+	{
+		CampaignRules& G = Out.campaigns;
+		G.stones = std::max<int64_t>(0, Camp->GetInt64("stones", G.stones));
+		const std::string Guild = Camp->GetString("guild");
+		G.guild = Guild.empty() ? -1 : Out.FindBuilding(Guild);
+		if (!Guild.empty() && G.guild < 0)
+		{
+			Error = "kingdom/kingdom.json: campaigns.guild names an unknown building";
+			return false;
+		}
+		if (const JsonValue* Acts = Camp->Find("acts"))
+		{
+			for (size_t I = 0; I < Acts->Size(); ++I)
+			{
+				const JsonValue& AJ = (*Acts)[I];
+				ActDef A;
+				A.id = AJ.GetString("id");
+				A.castle = std::max(1, AJ.GetInt("castle", 1));
+				if (const JsonValue* Missions = AJ.Find("missions"))
+				{
+					for (size_t M = 0; M < Missions->Size(); ++M)
+					{
+						const JsonValue& MJ = (*Missions)[M];
+						MissionDef D;
+						D.id = MJ.GetString("id");
+						D.level = std::max(1, std::min(static_cast<int>(Out.battles.size()), MJ.GetInt("level", 1)));
+						ReadCost(MJ.Find("first"), D.first);
+						A.missions.push_back(D);
+					}
+				}
+				if (const JsonValue* Chests = AJ.Find("chests"))
+				{
+					for (size_t K = 0; K < Chests->Size(); ++K)
+					{
+						const JsonValue& CJ = (*Chests)[K];
+						ChestDef D;
+						D.stars = std::max(1, CJ.GetInt("stars", 1));
+						ReadCost(&CJ, D.res);
+						D.relic = std::max(0, std::min(5, CJ.GetInt("relic", 0)));
+						D.titan = std::max(0, std::min(4, CJ.GetInt("titan", 0)));
+						A.chests.push_back(D);
+					}
+				}
+				// Missions are stored as one byte of stars each and chests as bits of a 32-bit mask.
+				if (A.id.empty() || A.missions.empty() || A.missions.size() > 99 || A.chests.size() > 32 || Out.battles.empty())
+				{
+					Error = "kingdom/kingdom.json: a campaign act needs an id, 1-99 missions, at most 32 chests and the battles table";
+					return false;
+				}
+				G.acts.push_back(A);
+			}
+		}
+	}
 	if (const JsonValue* Al = Rules.Find("alliances"))
 	{
 		AllianceRules& A = Out.alliances;
