@@ -501,6 +501,46 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   #kPanel { padding: 8px 12px; gap: 6px; }
   #kPanel h3 { font-size: 18px; }
 }
+/* ===== Admin mode (Web/admin.js): hidden until switched on; a wrench button and its panel ===== */
+#admBtn { position: absolute; right: var(--gut-r); top: 50%; transform: translateY(-50%); color: #ffb36b; border-color: rgba(255, 150, 70, 0.6); }
+#admBtn > b { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--enemy); color: #fff;
+  font-size: 11px; line-height: 18px; text-align: center; }
+#admPanel { width: min(660px, 100%); gap: 10px; }
+#admPanel h2 { display: flex; align-items: center; gap: 10px; font-size: 26px; color: #ffcf9a; }
+#admPanel h2 svg { width: 26px; height: 26px; flex: 0 0 auto; }
+#admPanel .btn { height: 36px; padding: 0 11px; font-size: 13px; }
+#admPanel .actions .btn { flex: 1 1 auto; }
+.admTabs button { height: 32px; padding: 0 11px; font-size: 13px; }
+.admDot { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--enemy); color: #fff; font-size: 11px; line-height: 16px; }
+.admMsg { min-height: 1.45em; font-size: 13px; color: var(--valor) !important; }
+.admMsg.bad { color: #ffb4a6 !important; } .admMsg:empty { display: none; }
+.admList { display: flex; flex-direction: column; gap: 5px; }
+.admRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.admRow .nm { flex: 1 1 180px; min-width: 0; font-size: 14px; }
+.admRow .nm b { color: var(--valor); font-variant-numeric: tabular-nums; }
+.admRow .nm small { display: block; color: var(--dim); font-size: 12px; }
+.admRow .bs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.admRow .bs .btn { height: 32px; min-width: 34px; padding: 0 8px; }
+.admSeg { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+.admSeg button { height: 34px; font-size: 13px; }
+.admForm { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
+#admPanel input, #admPanel select, #admPanel textarea { font: inherit; font-size: 14px; color: var(--parch); background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--hair); border-radius: 9px; min-width: 0; -webkit-user-select: text; user-select: text; }
+#admPanel input, #admPanel select { height: 34px; padding: 0 8px; }
+.admRow input { width: 96px; }
+#admPanel select { width: 100%; }
+#admPanel select option { background: #1b2229; }
+.admText { width: 100%; min-height: 180px; padding: 8px; font: 11px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace !important; resize: vertical; }
+.admText.small { min-height: 90px; }
+.admChk > div { font-size: 13px; padding: 5px 8px 5px 26px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); position: relative; }
+.admChk > div::before { position: absolute; left: 8px; font-weight: 700; }
+.admChk .ok::before { content: "✓"; color: var(--good); } .admChk .warn::before { content: "!"; color: var(--valor); } .admChk .bad::before { content: "✗"; color: #ff8a75; }
+.admChk .bad { color: #ffb4a6; }
+.admLog { display: flex; flex-direction: column; gap: 4px; font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; -webkit-user-select: text; user-select: text; }
+.admLog > div { padding: 5px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
+.admLog i { display: block; font-style: normal; color: var(--dim); font-size: 11px; }
+.admLog .error { color: #ffb4a6; } .admLog .warn { color: #ffd98a; } .admLog .info { color: var(--dim); }
+body.adm-perf #perf { display: block !important; }
 </style>
 
 <div id="game">
@@ -673,6 +713,9 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   </div>
 </div>
 
+<script>
+/*ADMIN_JS*/
+</script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script id="content-data" type="application/json">/*CONTENT_JSON*/</script>
 <script>
