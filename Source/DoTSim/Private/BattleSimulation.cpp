@@ -25,6 +25,42 @@ int64_t ComputePower(Fix64 Hp, Fix64 Armor, Fix64 Atk, int IntervalTicks, int64_
 }
 } // namespace
 
+int64_t SquadPower(const SimContent& Content, const SquadSetup& Squad)
+{
+	const int TroopIndex = Content.FindTroop(Squad.troopId);
+	if (TroopIndex < 0)
+	{
+		return 0;
+	}
+	// The same stats as BattleSimulation::InitSquadStats.
+	const TroopDef& TD = Content.troops[static_cast<size_t>(TroopIndex)];
+	const int Tier = std::max(1, std::min(static_cast<int>(TD.tiers.size()), Squad.tier));
+	const TroopTierDef& TierDef = TD.tiers[static_cast<size_t>(Tier - 1)];
+	const int64_t PerSoldier = ComputePower(TD.hp * TierDef.hpMult, TD.armor + TierDef.armorAdd, TD.atk * TierDef.atkMult, TD.attackIntervalTicks, 1);
+	return PerSoldier * (Squad.count > 0 ? Squad.count : TD.squadSize);
+}
+
+int64_t TitanPower(const SimContent& Content, const TitanSetup& Titan)
+{
+	const int Def = Content.FindTitan(Titan.titanId);
+	if (!Titan.present || Def < 0)
+	{
+		return 0;
+	}
+	// The same stats as BattleSimulation::BuildSide.
+	const TitanDef& TD = Content.titans[static_cast<size_t>(Def)];
+	const TitanClassDef& CD = Content.titanClasses[static_cast<size_t>(TD.cls)];
+	const ProgressionDef& P = Content.progression;
+	const int Stars = std::max(1, std::min(6, Titan.stars));
+	const int Level = std::max(1, std::min(10 + 10 * Stars + (Titan.ascended ? 10 : 0), Titan.level));
+	const Fix64 LevelMult = Fix64::One() + P.levelGrowth * (Level - 1);
+	const Fix64 Growth = P.rarityMult[static_cast<int>(TD.rarity)] * LevelMult * P.starMult[Stars];
+	const Fix64 MaxHp = CD.hp * TD.varianceHp * Growth * fx::Pct(100 + std::max(0, Titan.hpPct));
+	const Fix64 Atk = CD.atk * TD.varianceAtk * Growth * fx::Pct(100 + std::max(0, Titan.atkPct));
+	const Fix64 Armor = fx::Min(fx::Pct(75), CD.armor * fx::Pct(100 + std::max(0, Titan.armorPct)));
+	return ComputePower(MaxHp, Armor, Atk, CD.attackIntervalTicks, CD.aoeFactor.RoundToInt());
+}
+
 const char* ToString(CommandType T)
 {
 	const int I = static_cast<int>(T);

@@ -3,12 +3,14 @@
 // victory-point lands), portal stones, seasons of victory points, the army (training, troop levels, casualties),
 // spells (Spell Forge stock, Arcane Tower levels), the titan roster (XP, fusion, ascension, titans guarding lands),
 // relic items (combat relics on titans, economy relics on buildings; effects that open and grow with repairs) and
+// raids on the kingdom (the Garrison's defense, shields, reports) and
 // alliances (computer alliances in weekly leagues with promotion and relegation, an own alliance, reinforcements).
 // Deterministic and engine-free like the battle simulation: integer math only, time is passed in
 // explicitly (seconds), so a server can replay the same actions and reach the same state.
 #pragma once
 
 #include "DoTKingdom/KingdomContent.h"
+#include "DoTSim/BattleTypes.h"
 
 #include <string>
 #include <vector>
@@ -85,6 +87,7 @@ struct Land
 	bool upgrading = false;
 	int64_t startAt = 0;
 	int64_t finishAt = 0;
+	int64_t shieldUntil = 0; // raiders leave it alone until then
 };
 
 /** A neutral land on the world map that can be raided or captured. */
@@ -205,6 +208,37 @@ struct Reward
 	std::vector<int32_t> relics; // relic items the victory dropped
 	int relicsLost = 0; // drops that did not fit in the inventory
 	int reinforcements = 0; // allies' squads that fought (they are gone now)
+};
+
+/** A raid on the kingdom: when and where, how it went and what it cost. */
+struct RaidReport
+{
+	int64_t at = 0;
+	int32_t landId = 0; // 0 = the city
+	int landType = -1; // the land's type (-1 for the city)
+	int level = 1; // the raiders' level (a land's raiders match its level)
+	int stars = 0; // the raiders' stars; 0 = the defense held
+	int64_t raidPower = 0;
+	int64_t defensePower = 0;
+	ResArray lost{}; // what the raiders took
+	int64_t vp = 0; // VP for a held defense
+	int32_t titanId = 0; // the titan that defended
+	int squads = 0; // the player's squads in the city's defense
+	int64_t shieldUntil = 0; // shield after a lost defense
+};
+
+/** What a defense can expect now: its power, the raiders' and the chance to hold (for the UI). */
+struct RaidForecast
+{
+	bool active = false; // raids come (battle content set, Castle high enough)
+	int64_t defense = 0;
+	int64_t raiders = 0; // the average of the levels that can come
+	int levelLow = 0;
+	int levelHigh = 0;
+	int holdPct = 0;
+	int32_t titanId = 0; // the titan that would defend (0 = none or resting)
+	int squads = 0; // the player's squads that would defend (the city)
+	int guards = 0; // the Garrison's own guards in the other slots
 };
 
 /** Result of checking an action before doing it (for the UI). */
@@ -470,6 +504,33 @@ public:
 	/** Asks the alliance to fill the Alliance Camp; squads arrive one by one. */
 	Error RequestReinforcements();
 
+	// --- Raids on the kingdom ---
+	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
+	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
+	// battles of the simulation; the battle content gives each squad's and titan's power. Without it no raids come.
+	void SetBattleContent(const SimContent* Battle) { BattleContent = Battle; }
+	/** The player is in the game: raiders keep coming until awayHours after the last visit. */
+	void Visit();
+	int64_t LastVisit() const { return VisitAt; }
+	/** When the next raid comes; 0 when none is due (no battle content, or the player is away too long). */
+	int64_t NextRaidAt() const;
+	int64_t CityShieldUntil() const { return CityShield; }
+	/** Squads that defend the city: the Garrison's slots (filled with the player's squads, then its own guards). */
+	int DefenseSlots() const;
+	int GuardTier() const;
+	/** The Garrison's bonus to the city's defense, in percent. */
+	int64_t DefenseBonusPct() const;
+	const std::vector<int>& GarrisonSquads() const { return GarrisonList; }
+	int32_t GarrisonTitan() const { return GarrisonTitanId; }
+	/** Sets the city's defense: squads (troop indices, one per slot) and a titan (0 for none). */
+	Error SetGarrison(const std::vector<int>& Squads, int32_t TitanId);
+	/** The defense of the city (LandId 0) or a captured land against the raiders that can come now. */
+	RaidForecast Forecast(int32_t LandId) const;
+	const std::vector<RaidReport>& Raids() const { return RaidLog; }
+	/** Reports after this time are new to the player. */
+	int64_t RaidsReadAt() const { return RaidsRead; }
+	Error ReadRaids();
+
 private:
 	const LevelDef* CurrentLevel(const Building& B) const;
 	const LevelDef* NextLevel(const Building& B) const;
@@ -531,6 +592,23 @@ private:
 	int RecruitsAt(int64_t At) const;
 	/** Ranks every league at the end of the season, pays the player's alliance and moves alliances up and down. */
 	bool RollAllianceLeagues(int64_t End);
+	// Raids (KingdomRaids.cpp)
+	void ResetRaids(int64_t Now);
+	void RunRaid(int64_t At);
+	int RaidLevelLow() const;
+	int RaidLevelHigh() const;
+	/** Titans (indices) that raiders of this level can bring; empty when they come without one. */
+	std::vector<int> RaiderTitans(int Level) const;
+	int RaiderTitanLevel(int Level) const;
+	/** The two sides of a raid on the city (LandId 0) or a land at a time; Pick chooses the raiders' titan. */
+	void RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, SideSetup& Raiders, SideSetup& Defense, int* OutSquads, int* OutGuards,
+		int32_t* OutTitan) const;
+	int64_t ArmyPower(const SideSetup& Side) const;
+	/** A defense's power: its army's, with the Garrison's bonus on the city (LandId 0). */
+	int64_t DefensePower(const SideSetup& Defense, int32_t LandId) const;
+	/** Chance in permille that raiders of this power beat this defense. */
+	int64_t RaidWinPermille(int64_t Raid, int64_t Defense) const;
+	void ClearGuard(int32_t TitanId);
 
 	const KingdomContent& C;
 	int64_t Time = 0;
@@ -584,6 +662,16 @@ private:
 	std::vector<RelicItem> RelicList;
 	int64_t RelicAt = 0;
 	uint64_t RelicCounter = 0;
+	// Raids
+	const SimContent* BattleContent = nullptr;
+	int64_t NextRaid = 0;
+	int64_t VisitAt = 0;
+	uint64_t RaidCounter = 0;
+	int64_t CityShield = 0;
+	int64_t RaidsRead = 0;
+	std::vector<int> GarrisonList; // troop per defending squad
+	int32_t GarrisonTitanId = 0;
+	std::vector<RaidReport> RaidLog; // oldest first
 };
 } // namespace kingdom
 } // namespace dot

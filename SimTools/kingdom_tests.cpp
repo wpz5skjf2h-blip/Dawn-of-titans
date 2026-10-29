@@ -1,11 +1,12 @@
 // SimTools/kingdom_tests.cpp
 // Tests for the kingdom economy (Source/DoTKingdom): content numbers from the original game,
 // timers, production, limits, requirements, portal stones, lands (ruins, victory-point lands, upgrades), seasons,
-// army, titans (ascension too), relic items (combat and economy, effects, repair), alliances with their leagues and
+// army, titans (ascension too), relic items (combat and economy, effects, repair), raids on the kingdom, alliances with their leagues and
 // reinforcements, and save/load determinism.
 #include "ToolCommon.h"
 
 #include "DoTKingdom/Kingdom.h"
+#include "DoTSim/BattleSimulation.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -1046,6 +1047,188 @@ void TestLandUpgrades()
 	KD_CHECK(N.CheckLandUpgrade(800).error == Error::NotEnough && N.CheckLandUpgrade(800).castle == 0);
 	KD_CHECK(N.AbandonLand(800) == Error::None && N.Lands().size() == 1);
 }
+const SimContent& Battle()
+{
+	static SimContent S;
+	static bool bLoaded = false;
+	if (!bLoaded)
+	{
+		std::string Error;
+		if (!dottools::LoadContentDir(dottools::DefaultContentDir(), S, Error))
+		{
+			std::printf("battle content error: %s\n", Error.c_str());
+		}
+		bLoaded = true;
+	}
+	return S;
+}
+
+/** The save with its raids object replaced (it is the last key of a save). */
+std::string WithRaids(const std::string& Save, const std::string& Raids)
+{
+	const size_t P = Save.find("\"raids\":{");
+	return P == std::string::npos ? Save : Save.substr(0, P) + "\"raids\":" + Raids + "}";
+}
+
+void TestRaids()
+{
+	const KingdomContent& Ct = Content();
+	const RaidRules& R = Ct.raids;
+	KD_CHECK(R.castle == 3 && R.vpPct == 5 && R.titanLevels.size() == 9 && Ct.battles.size() == 9 && R.oddsKQuarters == 15);
+	const BuildingDef& G = Ct.buildings[static_cast<size_t>(Def("garrison"))];
+	KD_CHECK(G.levels[0].defenseSlots == 3 && G.levels.back().defenseSlots == 8 && G.levels.back().guardTier == 3 && G.levels.back().defenseBonusPct == 22);
+	// The power the raids count is the battle's own start power.
+	{
+		BattleSetup S;
+		std::string Error;
+		KD_CHECK(dottools::LoadScenario(dottools::DefaultContentDir(), "scenarios/m0_sandbox.json", S, Error));
+		BattleSimulation Sim(Battle());
+		KD_CHECK(Sim.Init(S, Error));
+		for (int Side = 0; Side < 2; ++Side)
+		{
+			int64_t Sum = TitanPower(Battle(), S.sides[Side].titan);
+			for (const SquadSetup& Q : S.sides[Side].squads)
+			{
+				Sum += SquadPower(Battle(), Q);
+			}
+			KD_CHECK(Sum == Sim.GetSide(static_cast<dot::Side>(Side)).startPower);
+		}
+	}
+
+	// Without battle content no raids come.
+	Kingdom K(Content());
+	K.NewGame(T0, 61);
+	KD_CHECK(K.NextRaidAt() == 0 && K.DefenseSlots() == 2);
+	K.Advance(T0 + 10 * 24 * Hour);
+	KD_CHECK(K.Raids().empty());
+
+	// Castle 6 (raiders of levels 2-4), a Garrison 5, a gold reserve, gold, food and VP; the start titans and army.
+	Kingdom N(Content());
+	N.NewGame(T0, 61);
+	std::string Base = WithBuilding(WithBuilding(N.Save(), "garrison", 5, 30), "gold_reserve", 1, 34);
+	Base = Replace(Base, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6");
+	Base = Replace(Base, "\"gold\":2500", "\"gold\":12000");
+	Base = Replace(Base, "\"food\":2500", "\"food\":10000");
+	Base = Replace(Base, "\"shards\":0,\"vp\":0", "\"shards\":0,\"vp\":1000");
+	std::string Error;
+	Kingdom A(Content());
+	KD_CHECK(A.Load(Base, Error));
+	A.SetBattleContent(&Battle());
+	KD_CHECK(A.NextRaidAt() == T0 + 24 * Hour && A.DefenseSlots() == 4 && A.GuardTier() == 1 && A.DefenseBonusPct() == 4);
+	const int32_t Perun = A.Titans()[0].id;
+	const int32_t Talos = A.Titans()[1].id;
+	// Raiders always bring a titan: guards alone do not stand a chance.
+	RaidForecast F = A.Forecast(0);
+	KD_CHECK(F.active && F.levelLow == 2 && F.levelHigh == 4 && F.squads == 0 && F.guards == 4 && F.titanId == 0 && F.holdPct < 5);
+	// The city's defense: up to four squads that are at home and a titan.
+	const int Mil = Troop("troop.militia");
+	const int Arc = Troop("troop.archers");
+	KD_CHECK(A.SetGarrison({Mil, Mil, Mil, Mil}, 0) == Error::NoTroops);
+	KD_CHECK(A.SetGarrison({Mil, Mil, Arc, Mil, Mil}, 0) == Error::TooManySquads);
+	KD_CHECK(A.SetGarrison({Mil, 99}, 0) == Error::BadId);
+	KD_CHECK(A.SetGarrison({Mil, Arc}, 4242) == Error::BadId);
+	KD_CHECK(A.SetGarrison({Mil, Mil, Arc}, Perun) == Error::None && A.GarrisonTitan() == Perun);
+	RaidForecast G1 = A.Forecast(0);
+	KD_CHECK(G1.squads == 3 && G1.guards == 1 && G1.titanId == Perun && G1.defense > F.defense && G1.holdPct > F.holdPct);
+	// Squads and a titan away in the player's own attack do not defend: guards take the squads' places.
+	KD_CHECK(A.StartAttack(A.World()[0].id, false, {Mil, Mil}, Perun) == Error::None);
+	RaidForecast Away = A.Forecast(0);
+	KD_CHECK(Away.titanId == 0 && Away.squads == 2 && Away.guards == 2 && Away.holdPct < G1.holdPct);
+	// A titan guards one place: on a land it leaves the Garrison, and back.
+	const std::string WithLand = Replace(Base, "\"lands\":[]",
+		"\"lands\":[{\"id\":800,\"type\":\"gold_land\",\"level\":3,\"stored\":0,\"carry\":0,\"lastAt\":" + std::to_string(T0) + ",\"titan\":0}]");
+	Kingdom B(Content());
+	KD_CHECK(B.Load(WithLand, Error));
+	B.SetBattleContent(&Battle());
+	KD_CHECK(B.SetGarrison({}, Perun) == Error::None && B.AssignTitan(800, Perun) == Error::None && B.GarrisonTitan() == 0);
+	KD_CHECK(B.Forecast(800).titanId == Perun && B.SetGarrison({}, Perun) == Error::None && B.FindLand(800)->titanId == 0);
+	// A titan resting after a battle does not defend.
+	Kingdom Rest(Content());
+	KD_CHECK(Rest.Load(Replace(B.Save(), "\"recoverUntil\":0", "\"recoverUntil\":" + std::to_string(T0 + Hour)), Error));
+	Rest.SetBattleContent(&Battle());
+	KD_CHECK(Rest.Titans()[0].recoverUntil == T0 + Hour && Rest.Forecast(0).titanId == 0);
+
+	// A lost defense of the city: a fifth of the gold and food above the reserves at three stars, 5% of VP, a shield.
+	Kingdom C(Content());
+	KD_CHECK(C.Load(Base, Error));
+	C.SetBattleContent(&Battle());
+	C.Advance(T0 + 24 * Hour);
+	KD_CHECK(C.Raids().size() == 1);
+	const RaidReport& Lost = C.Raids()[0];
+	KD_CHECK(Lost.at == T0 + 24 * Hour && Lost.landId == 0 && Lost.stars == 3 && Lost.titanId == 0 && Lost.raidPower > Lost.defensePower);
+	KD_CHECK(Lost.lost[static_cast<size_t>(ResIndex(Res::Gold))] == (12000 - 2000) * 20 / 100);
+	KD_CHECK(Lost.lost[static_cast<size_t>(ResIndex(Res::Food))] == 10000 * 20 / 100);
+	KD_CHECK(Lost.lost[static_cast<size_t>(ResIndex(Res::Vp))] == 50 && C.Amount(Res::Vp) == 950 && C.Amount(Res::Gold) == 10000);
+	KD_CHECK(C.CityShieldUntil() == Lost.shieldUntil && Lost.shieldUntil == Lost.at + 12 * Hour);
+	// The shield keeps the next raid off (the city is the only target), and the report is new until read.
+	C.Advance(Lost.at + 12 * Hour - 1);
+	KD_CHECK(C.Raids().size() == 1 && C.RaidsReadAt() < Lost.at && C.ReadRaids() == Error::None && C.RaidsReadAt() == C.Now());
+
+	// A held defense: a strong titan on guard at Castle 3 (raiders of levels 1-3); VP for the victory.
+	Kingdom D(Content());
+	KD_CHECK(D.Load(Replace(Replace(Base, "\"def\":\"titan.perun\",\"level\":5", "\"def\":\"titan.perun\",\"level\":30"),
+		"\"def\":\"castle\",\"level\":6", "\"def\":\"castle\",\"level\":3"), Error));
+	D.SetBattleContent(&Battle());
+	KD_CHECK(D.SetGarrison({Mil, Mil, Arc}, Perun) == Error::None && D.Forecast(0).holdPct >= 95);
+	D.Advance(T0 + 24 * Hour);
+	KD_CHECK(D.Raids().size() == 1 && D.Raids()[0].stars == 0 && D.Raids()[0].titanId == Perun && D.Raids()[0].squads == 3);
+	KD_CHECK(D.Raids()[0].vp == D.VictoryVp(D.Raids()[0].level) * 50 / 100 && D.Amount(Res::Vp) == 1000 + D.Raids()[0].vp);
+	KD_CHECK(D.CityShieldUntil() == 0 && D.Amount(Res::Gold) == 12000);
+
+	// A raid on an unguarded land takes what it holds and shields it; the city is shielded, so the land is the target.
+	Kingdom L(Content());
+	KD_CHECK(L.Load(WithRaids(WithLand, "{\"next\":" + std::to_string(T0 + 24 * Hour) + ",\"visit\":" + std::to_string(T0) +
+		",\"counter\":0,\"cityShield\":" + std::to_string(T0 + 100 * 24 * Hour) + ",\"read\":" + std::to_string(T0) + ",\"garrison\":[],\"titan\":0,\"log\":[]}"), Error));
+	L.SetBattleContent(&Battle());
+	L.Advance(T0 + 24 * Hour);
+	KD_CHECK(L.Raids().size() == 1 && L.Raids()[0].landId == 800 && L.Raids()[0].stars == 3);
+	KD_CHECK(L.Raids()[0].lost[static_cast<size_t>(ResIndex(Res::Gold))] == L.LandStoreCap(*L.FindLand(800)) && L.UncollectedLand(*L.FindLand(800)) == 0);
+	KD_CHECK(L.FindLand(800)->shieldUntil == T0 + 36 * Hour && L.Amount(Res::Gold) == 12000);
+
+	// Raids keep coming every 6-10 hours, and stop two days after the player's last visit.
+	Kingdom E(Content());
+	KD_CHECK(E.Load(WithLand, Error));
+	E.SetBattleContent(&Battle());
+	KD_CHECK(E.SetGarrison({Mil, Arc}, Talos) == Error::None && E.AssignTitan(800, Perun) == Error::None);
+	const ResArray Before = [&E]() { ResArray A0{}; for (int I = 0; I < kResCount; ++I) A0[static_cast<size_t>(I)] = E.Amount(static_cast<Res>(I)); return A0; }();
+	E.Advance(T0 + 72 * Hour); // before the season ends (T0 + 87 h) and resets VP
+	KD_CHECK(E.Raids().size() >= 2 && E.Raids().size() <= 4 && E.NextRaidAt() == 0);
+	int64_t LostGold = 0;
+	int64_t VpDelta = 0;
+	for (size_t I = 0; I < E.Raids().size(); ++I)
+	{
+		const RaidReport& Rep = E.Raids()[I];
+		KD_CHECK(Rep.at <= T0 + 48 * Hour && (I == 0 || Rep.at >= E.Raids()[I - 1].at + 6 * Hour));
+		KD_CHECK(Rep.level >= 2 && Rep.level <= 4 && Rep.raidPower > 0 && Rep.defensePower > 0);
+		LostGold += Rep.landId ? 0 : Rep.lost[static_cast<size_t>(ResIndex(Res::Gold))];
+		VpDelta += Rep.vp - Rep.lost[static_cast<size_t>(ResIndex(Res::Vp))];
+	}
+	KD_CHECK(E.Amount(Res::Gold) == Before[static_cast<size_t>(ResIndex(Res::Gold))] - LostGold);
+	KD_CHECK(E.Amount(Res::Vp) == Before[static_cast<size_t>(ResIndex(Res::Vp))] + VpDelta);
+	const size_t Within = E.Raids().size();
+	E.Advance(T0 + 10 * 24 * Hour);
+	KD_CHECK(E.Raids().size() == Within);
+	// The same time in small steps, or through a save, ends in the same kingdom.
+	Kingdom S(Content());
+	KD_CHECK(S.Load(WithLand, Error));
+	S.SetBattleContent(&Battle());
+	KD_CHECK(S.SetGarrison({Mil, Arc}, Talos) == Error::None && S.AssignTitan(800, Perun) == Error::None);
+	for (int64_t T = T0; T <= T0 + 5 * 24 * Hour; T += 1234)
+	{
+		S.Advance(T);
+	}
+	Kingdom S2(Content());
+	KD_CHECK(S2.Load(S.Save(), Error) && S2.Hash() == S.Hash() && S2.Save() == S.Save());
+	S2.SetBattleContent(&Battle());
+	S2.Advance(T0 + 10 * 24 * Hour);
+	KD_CHECK(S2.Hash() == E.Hash() && S2.Raids().size() == E.Raids().size());
+	// A visit brings them back, from the visit on.
+	E.Visit();
+	KD_CHECK(E.LastVisit() == E.Now() && E.NextRaidAt() >= E.Now() + 6 * Hour && E.NextRaidAt() <= E.Now() + 10 * Hour);
+	const size_t Count = E.Raids().size();
+	E.Advance(E.Now() + 11 * Hour);
+	KD_CHECK(E.Raids().size() == std::min<size_t>(Count + 1, static_cast<size_t>(R.log)) && E.Raids().back().at > E.LastVisit());
+}
 } // namespace
 
 /** A kingdom of this seed with this much VP this season. */
@@ -1331,6 +1514,7 @@ int main()
 		{"Ascension", TestAscension},
 		{"Alliances", TestAlliances},
 		{"LandUpgrades", TestLandUpgrades},
+		{"Raids", TestRaids},
 	};
 	for (const auto& T : Tests)
 	{

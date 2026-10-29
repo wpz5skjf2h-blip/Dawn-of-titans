@@ -343,6 +343,10 @@ struct FallenBody
 	bool active = true;
 };
 
+/** A squad's and a titan's power as a battle counts it at the start (a side's start power is their sum). */
+DOTSIM_API int64_t SquadPower(const SimContent& Content, const SquadSetup& Squad);
+DOTSIM_API int64_t TitanPower(const SimContent& Content, const TitanSetup& Titan);
+
 class DOTSIM_API BattleSimulation
 {
 public:

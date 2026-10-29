@@ -210,6 +210,11 @@ EMSCRIPTEN_KEEPALIVE int dot_load_content()
 	{
 		S.Error = "Content error: " + Error;
 	}
+	if (S.Kingdom)
+	{
+		// Raids on the kingdom resolve with the battle content's troop and titan stats.
+		S.Kingdom->SetBattleContent(S.bContentLoaded ? &S.Content : nullptr);
+	}
 	return S.bContentLoaded ? 1 : 0;
 }
 
@@ -903,6 +908,7 @@ EMSCRIPTEN_KEEPALIVE int dk_init()
 		return 0;
 	}
 	S.Kingdom = std::make_unique<dot::kingdom::Kingdom>(S.KingdomContent);
+	S.Kingdom->SetBattleContent(S.bContentLoaded ? &S.Content : nullptr);
 	return 1;
 }
 
@@ -1062,7 +1068,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("{").Key("id").Int(L.id).Comma().Key("type").Int(L.type).Comma().Key("lv").Int(L.level).Comma().Key("titan").Int(L.titanId).Comma();
 		O.Key("st").Int(Km->UncollectedLand(L)).Comma().Key("cap").Int(Km->LandStoreCap(L)).Comma().Key("rate").Int(Km->LandRate(L)).Comma();
 		O.Key("fill").Int(Km->LandFillHours(L)).Comma().Key("up").Int(L.upgrading ? 1 : 0).Comma().Key("s").Int(L.startAt).Comma();
-		O.Key("f").Int(L.finishAt).Comma().Key("skip").Int(Km->LandSkipCost(L.id)).Comma().Key("nx");
+		O.Key("f").Int(L.finishAt).Comma().Key("skip").Int(Km->LandSkipCost(L.id)).Comma().Key("shield").Int(L.shieldUntil).Comma().Key("nx");
 		WriteCheck(O, Km->CheckLandUpgrade(L.id));
 		O.Raw("}");
 	}
@@ -1197,6 +1203,30 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	for (size_t I = 0; I < Km->PendingSpells().size(); ++I)
 	{
 		O.Raw(I ? "," : "").Int(Km->PendingSpells()[I]);
+	}
+	O.Raw("]},");
+	// Raids on the kingdom: the Garrison's defense, the city's shield, the reports (forecasts come from dk_forecast).
+	O.Key("raids").Raw("{").Key("castle").Int(C.raids.castle).Comma().Key("next").Int(Km->NextRaidAt()).Comma();
+	O.Key("visit").Int(Km->LastVisit()).Comma().Key("away").Int(C.raids.awaySec).Comma().Key("shield").Int(Km->CityShieldUntil()).Comma();
+	O.Key("read").Int(Km->RaidsReadAt()).Comma().Key("slots").Int(Km->DefenseSlots()).Comma().Key("gtier").Int(Km->GuardTier()).Comma();
+	O.Key("bonus").Int(Km->DefenseBonusPct()).Comma().Key("titan").Int(Km->GarrisonTitan()).Comma().Key("squads").Raw("[");
+	for (size_t I = 0; I < Km->GarrisonSquads().size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->GarrisonSquads()[I]);
+	}
+	O.Raw("],").Key("log").Raw("[");
+	bFirst = true;
+	for (const RaidReport& R : Km->Raids())
+	{
+		O.Raw(bFirst ? "" : ",");
+		bFirst = false;
+		O.Raw("{").Key("at").Int(R.at).Comma().Key("land").Int(R.landId).Comma().Key("type").Int(R.landType).Comma().Key("lv").Int(R.level).Comma();
+		O.Key("stars").Int(R.stars).Comma().Key("rp").Int(R.raidPower).Comma().Key("dp").Int(R.defensePower).Comma().Key("lost").Raw("[");
+		for (size_t I = 0; I < R.lost.size(); ++I)
+		{
+			O.Raw(I ? "," : "").Int(R.lost[I]);
+		}
+		O.Raw("],").Key("vp").Int(R.vp).Comma().Key("titan").Int(R.titanId).Comma().Key("sq").Int(R.squads).Comma().Key("shield").Int(R.shieldUntil).Raw("}");
 	}
 	O.Raw("]},");
 	// Relic items: kind, rarity, durability left (battles, or seconds for economy relics), the titan or building
@@ -1563,5 +1593,41 @@ EMSCRIPTEN_KEEPALIVE int dk_skip_titan(int Id)
 EMSCRIPTEN_KEEPALIVE int dk_ascend(int Id, int UseGems)
 {
 	return K() ? static_cast<int>(K()->Ascend(Id, UseGems != 0)) : -1;
+}
+
+/** The player is here (call after advancing): raiders keep coming while the player keeps visiting. */
+EMSCRIPTEN_KEEPALIVE void dk_visit()
+{
+	if (K())
+	{
+		K()->Visit();
+	}
+}
+
+/** Squads are troop indices (one per squad) that defend the city; TitanId 0 means no titan on guard. */
+EMSCRIPTEN_KEEPALIVE int dk_set_garrison(const char* Squads, int TitanId)
+{
+	return K() ? static_cast<int>(K()->SetGarrison(ParseInts(Squads), TitanId)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_read_raids()
+{
+	return K() ? static_cast<int>(K()->ReadRaids()) : -1;
+}
+
+/** What a defense can expect now: the city (LandId 0) or a land. */
+EMSCRIPTEN_KEEPALIVE const char* dk_forecast(int LandId)
+{
+	Out O(G().Text);
+	if (!K())
+	{
+		O.Raw("null");
+		return G().Text.c_str();
+	}
+	const dot::kingdom::RaidForecast F = K()->Forecast(LandId);
+	O.Raw("{").Key("on").Int(F.active ? 1 : 0).Comma().Key("dp").Int(F.defense).Comma().Key("rp").Int(F.raiders).Comma();
+	O.Key("lo").Int(F.levelLow).Comma().Key("hi").Int(F.levelHigh).Comma().Key("hold").Int(F.holdPct).Comma().Key("titan").Int(F.titanId).Comma();
+	O.Key("sq").Int(F.squads).Comma().Key("gd").Int(F.guards).Raw("}");
+	return G().Text.c_str();
 }
 }

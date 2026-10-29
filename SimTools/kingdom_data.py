@@ -273,9 +273,13 @@ building("garrison", "Гарнизон", "troops", "other", [3, 3], 2, [[2, 1]],
          {1: 800, 5: 17500, 10: 334300, 15: 1665400, 20: 4497800, 22: 5886600, 23: 6640000},
          {1: secs("5m"), 5: secs("2h 15m"), 10: secs("23h 25m"), 15: secs("3d 17h 50m"), 20: secs("9d 7h 35m"), 22: secs("13d 10h")},
          lambda lv: max(1, lv), gems={1: 5, 5: 291, 10: 1458, 15: 2869, 20: 5562, 22: 7453},
-         stats={"defenders": {1: E(5), 23: E(60)}},
+         # Squads that defend the city, the tier of the Garrison's own guards in the slots the player leaves empty and
+         # a bonus to the city's defense (1.8: a defense buff and extra defense slots; the numbers are ours).
+         stats={"defenseSlots": {lv: E(3 + (lv >= 4) + (lv >= 8) + (lv >= 12) + (lv >= 16) + (lv >= 20)) for lv in range(1, 24)},
+                "guardTier": {lv: E(1 + (lv >= 8) + (lv >= 16)) for lv in range(1, 24)},
+                "defenseBonusPct": {lv: E(lv - 1) for lv in range(1, 24)}},
          reqs={5: [("gold_reserve", 2, 1)], 10: [("food_reserve", 7, 2)]},
-         desc="Войска гарнизона защищают город от нападений других игроков.")
+         desc="Войска и титан гарнизона защищают город от налётчиков.")
 building("armoury", "Арсенал", "troops", "other", [3, 3], 2, [[2, 1]], 24,
          {1: E(1500), 15: 1999000, 16: 2513900, 17: 3096900, 18: 3662800, 19: 4261100, 24: E(7200000)},
          {1: secs("5m"), 15: secs("3d 23h 10m"), 16: secs("4d 18h 10m"), 17: secs("5d 17h"), 18: secs("6d 20h 25m"),

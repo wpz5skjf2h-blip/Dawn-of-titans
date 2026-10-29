@@ -621,6 +621,9 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			L.spellSlots = LJ.GetInt64("spellSlots", 0);
 			L.maxSpellLevel = LJ.GetInt64("maxSpellLevel", 0);
 			L.reinforcements = LJ.GetInt64("reinforcements", 0);
+			L.defenseSlots = LJ.GetInt64("defenseSlots", 0);
+			L.guardTier = LJ.GetInt64("guardTier", 0);
+			L.defenseBonusPct = LJ.GetInt64("defenseBonusPct", 0);
 			L.estimated = LJ.GetString("src", "est") != "wiki";
 			if (const JsonValue* Reqs = LJ.Find("requires"))
 			{
@@ -650,6 +653,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	Out.armoury = Out.FindBuilding("armoury");
 	Out.medicalSchool = Out.FindBuilding("medical_school");
 	Out.hallOfTitans = Out.FindBuilding("hall_of_titans");
+	Out.garrison = Out.FindBuilding("garrison");
 	Out.relicTemple = Out.FindBuilding("relic_temple");
 	Out.spellForge = Out.FindBuilding("spell_forge");
 	Out.arcaneTower = Out.FindBuilding("arcane_tower");
@@ -744,6 +748,13 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				ReadInts(J.Find("raidLoot"), T.raidLoot);
 				T.castle = std::max(1, J.GetInt("castle", 1));
 				T.weight = std::max<int64_t>(0, J.GetInt64("weight", 1));
+				if (const JsonValue* Swap = J.Find("swap"))
+				{
+					for (size_t K = 0; K < Swap->keys.size(); ++K)
+					{
+						T.swap.emplace_back(Swap->keys[K], Swap->items[K].AsString());
+					}
+				}
 				if (T.produce.empty())
 				{
 					Error = "kingdom/kingdom.json: land type '" + T.id + "' needs produce";
@@ -757,6 +768,78 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	{
 		Error = "kingdom/kingdom.json: lands need types, fillHours and raidLoot";
 		return false;
+	}
+	if (const JsonValue* Battles = Rules.Find("battles"))
+	{
+		for (size_t I = 0; I < Battles->Size(); ++I)
+		{
+			const JsonValue& J = (*Battles)[I];
+			BattleRowDef B;
+			B.ai = J.GetString("ai", "veteran");
+			B.tier = std::max(1, J.GetInt("tier", 1));
+			if (const JsonValue* Squads = J.Find("squads"))
+			{
+				for (size_t K = 0; K < Squads->Size(); ++K)
+				{
+					B.squads.push_back((*Squads)[K].AsString());
+				}
+			}
+			if (const JsonValue* Titan = J.Find("titan"))
+			{
+				B.titanLevel = std::max(1, Titan->GetInt("level", 1));
+			}
+			Out.battles.push_back(B);
+		}
+	}
+	if (const JsonValue* Raids = Rules.Find("raids"))
+	{
+		RaidRules& R = Out.raids;
+		R.castle = std::max(1, Raids->GetInt("castle", R.castle));
+		R.firstSec = Raids->GetInt64("firstHours", R.firstSec / 3600) * 3600;
+		if (const JsonValue* Every = Raids->Find("everyHours"))
+		{
+			if (Every->Size() == 2)
+			{
+				R.everyMinSec = std::max<int64_t>(1, (*Every)[0].AsInt64(6)) * 3600;
+				R.everyMaxSec = std::max<int64_t>(R.everyMinSec, (*Every)[1].AsInt64(10) * 3600);
+			}
+		}
+		R.awaySec = Raids->GetInt64("awayHours", R.awaySec / 3600) * 3600;
+		R.cityPct = Raids->GetInt64("cityPct", R.cityPct);
+		R.cityShieldSec = Raids->GetInt64("cityShieldHours", R.cityShieldSec / 3600) * 3600;
+		R.landShieldSec = Raids->GetInt64("landShieldHours", R.landShieldSec / 3600) * 3600;
+		R.stealPct = Raids->GetInt64("stealPct", R.stealPct);
+		R.vpPct = Raids->GetInt64("vpPct", R.vpPct);
+		R.landStealPct = Raids->GetInt64("landStealPct", R.landStealPct);
+		R.defenseVpPct = Raids->GetInt64("defenseVpPct", R.defenseVpPct);
+		ReadInts(Raids->Find("citySquads"), R.citySquads);
+		ReadInts(Raids->Find("titanLevels"), R.titanLevels);
+		if (const JsonValue* Guards = Raids->Find("guards"))
+		{
+			for (size_t K = 0; K < Guards->Size(); ++K)
+			{
+				R.guards.push_back((*Guards)[K].AsString());
+			}
+		}
+		R.defaultSlots = std::max(1, Raids->GetInt("noGarrisonSlots", R.defaultSlots));
+		R.defaultGuardTier = std::max(1, Raids->GetInt("noGarrisonTier", R.defaultGuardTier));
+		R.defenderAi = Raids->GetString("defenderAi", R.defenderAi);
+		if (const JsonValue* Odds = Raids->Find("odds"))
+		{
+			R.titanPct = std::max<int64_t>(0, Odds->GetInt64("titanPct", R.titanPct));
+			if (const JsonValue* Ai = Odds->Find("aiPct"))
+			{
+				for (size_t K = 0; K < Ai->keys.size(); ++K)
+				{
+					R.aiPct.emplace_back(Ai->keys[K], std::max<int64_t>(1, Ai->items[K].AsInt64(100)));
+				}
+			}
+			R.oddsKQuarters = std::max(1, std::min(32, static_cast<int>(Odds->GetDouble("k", R.oddsKQuarters / 4.0) * 4.0 + 0.5)));
+			R.oddsC = std::max<int64_t>(1, Odds->GetInt64("c", R.oddsC));
+			R.threeStarRatio = Odds->GetInt64("threeStars", R.threeStarRatio);
+			R.twoStarRatio = Odds->GetInt64("twoStars", R.twoStarRatio);
+		}
+		R.log = std::max(1, Raids->GetInt("log", R.log));
 	}
 	if (const JsonValue* Season = Rules.Find("seasons"))
 	{

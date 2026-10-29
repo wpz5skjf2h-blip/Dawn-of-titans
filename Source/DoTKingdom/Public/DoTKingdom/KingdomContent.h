@@ -62,6 +62,9 @@ struct LevelDef
 	int64_t survival = 0; // medical school: share of a squad (%) that must survive for it to come back
 	int64_t titans = 0; // hall of titans: roster size
 	int64_t spellSlots = 0; // arcane tower: spell researches at once
+	int64_t defenseSlots = 0; // garrison: squads that defend the city
+	int64_t guardTier = 0; // garrison: tier of its own guards in the slots left empty
+	int64_t defenseBonusPct = 0; // garrison: the city's defense counts this much more
 	int64_t maxSpellLevel = 0; // arcane tower
 	int64_t reinforcements = 0; // alliance camp: squads allies may send
 	bool estimated = false;
@@ -108,9 +111,56 @@ struct LandTypeDef
 	std::vector<int64_t> raidLoot; // of the land's resource, by land level; empty = the common table
 	int castle = 1; // Castle level from which the type appears on the world map
 	int64_t weight = 1; // how often it appears
+	/** Defenders that differ on this land type (battle troop id -> the one that stands instead). */
+	std::vector<std::pair<std::string, std::string>> swap;
 };
 
 /** A league at the end of a season: reached with this many VP, rewarded with gems and portal stones. */
+/** The defenders of a world land of one level (kingdom.json "battles"); AI raiders of that level bring the same. */
+struct BattleRowDef
+{
+	std::string ai; // AI profile
+	int tier = 1;
+	std::vector<std::string> squads; // battle troop ids
+	int titanLevel = 0; // 0 = no titan
+};
+
+/** Raids on the kingdom by AI raiders (kingdom.json "raids"). */
+struct RaidRules
+{
+	int castle = 3; // raiders come from this Castle level
+	int64_t firstSec = 86400; // a new kingdom is left alone this long
+	int64_t everyMinSec = 6 * 3600; // time between raids, random within
+	int64_t everyMaxSec = 10 * 3600;
+	int64_t awaySec = 48 * 3600; // raiders stop coming this long after the player's last visit
+	int64_t cityPct = 40; // chance the city is the target when a land is open too
+	int64_t cityShieldSec = 12 * 3600; // after a lost defense
+	int64_t landShieldSec = 12 * 3600;
+	int64_t stealPct = 20; // of the gold and food above the reserves, at three stars
+	int64_t vpPct = 5; // of VP for a lost city defense, at three stars
+	int64_t landStealPct = 100; // of what a land holds, at three stars
+	int64_t defenseVpPct = 50; // VP for a held defense: share of a land battle's VP at the raiders' level
+	std::vector<int64_t> citySquads; // raiders' squads on the city by their level
+	std::vector<int64_t> titanLevels; // the raiders' titan by their level (raiders are players: they always bring one)
+	std::vector<std::string> guards; // Garrison guard troops, cycled over the empty slots
+	int defaultSlots = 3; // without a Garrison
+	int defaultGuardTier = 1;
+	std::string defenderAi = "veteran";
+	/**
+	 * How a raid goes, fitted to simulated battles: each side's power counts titans at titanPct and the raiders' at
+	 * their AI's percentage; at the ratio x = raiders / defense the raiders win with x^k / (x^k + c^k). Ratios and c in
+	 * hundredths, k in quarters. When they win they take three stars from threeStarRatio, else two (one below
+	 * twoStarRatio, where a defending titan still stands).
+	 */
+	int64_t titanPct = 100;
+	std::vector<std::pair<std::string, int64_t>> aiPct;
+	int oddsKQuarters = 16;
+	int64_t oddsC = 100;
+	int64_t threeStarRatio = 90;
+	int64_t twoStarRatio = 60;
+	int log = 10; // reports kept
+};
+
 struct LeagueDef
 {
 	std::string id;
@@ -314,6 +364,9 @@ struct KingdomContent
 	/** Upgrading a captured land: gold and seconds by the level reached (index L - 1, so the first entry is unused). */
 	std::vector<int64_t> landUpgradeGold;
 	std::vector<int64_t> landUpgradeSec;
+	/** World land battles by land level (the clients build the battle from them). */
+	std::vector<BattleRowDef> battles;
+	RaidRules raids;
 	/** Seasons: VP resets to zero at the end of each one and the reached league pays its reward. */
 	int64_t seasonEpoch = 0;
 	int64_t seasonSec = 7 * 86400;
@@ -331,6 +384,7 @@ struct KingdomContent
 	int armoury = -1;
 	int medicalSchool = -1;
 	int hallOfTitans = -1;
+	int garrison = -1;
 	int relicTemple = -1;
 	int spellForge = -1;
 	int arcaneTower = -1;

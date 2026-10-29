@@ -56,6 +56,47 @@
     "upgradeHours": [0, 1, 2, 4, 8, 12, 18, 24, 36]
   },
 
+  // Raids on the kingdom. The original (wiki, guides): the city and captured lands have default defenses that the player
+  // reinforces with titans and troops (Garrison), a lost defense gives a shield, reserves keep part of the gold and food
+  // from raiders, a raid on the Garrison takes 5% of the defender's VP (1.8). There the raiders are other players; until
+  // there is a server they are AI raiders, and they also come while the game is closed (the player's choice, 2026-10-28).
+  // Everything except the 5% is our estimate. Raiders come at a level of the band the Castle opens on the world map and
+  // bring that level's land battle army ("battles" below): on the city citySquads squads by level, on a land as many as
+  // the row has. A land defends with the army of its own level, so upgrading it strengthens the defense.
+  "raids": {
+    "castle": 3,
+    "firstHours": 24,
+    "everyHours": [6, 10],
+    "awayHours": 48,
+    "cityPct": 40,
+    "cityShieldHours": 12,
+    "landShieldHours": 12,
+    // Of the gold and food above the reserves; of VP; of what a land holds. At three stars; 2 stars 75%, 1 star 50%.
+    "stealPct": 20,
+    "vpPct": 5,
+    "landStealPct": 100,
+    // A held defense gives this share of a land battle's VP at the raiders' level.
+    "defenseVpPct": 50,
+    "citySquads": [3, 4, 4, 5, 5, 6, 6, 7, 8],
+    // Raiders are players in the original, so they always bring a titan: its level by the raiders' level (rarity R1 to
+    // level 3, R1-R2 to 6, R2-R3 to 8, then R3-R4).
+    "titanLevels": [6, 9, 12, 15, 18, 22, 28, 34, 40],
+    // The Garrison's own guards stand in its empty slots (tier by Garrison level in buildings.json); without a Garrison
+    // the city has noGarrisonSlots of them.
+    "guards": ["troop.militia", "troop.spearmen", "troop.archers"],
+    "noGarrisonSlots": 2,
+    "noGarrisonTier": 1,
+    "defenderAi": "veteran",
+    // How a raid goes, fitted by maximum likelihood to 4 000 simulated battles of raid-like armies (raiders of every
+    // level against random defenses): each side's power is the battle's own start power with titans counted
+    // titanPct %, the raiders' scaled by their AI; at ratio x = raiders / defense they win with x^k / (x^k + c^k)
+    // (c in hundredths). When they win, they take three stars from threeStars (hundredths of x), two below that, one
+    // below twoStars if a titan defends (as in battle: without a defending titan its star comes with the first).
+    "odds": { "titanPct": 510, "aiPct": { "recruit": 87, "veteran": 100, "warlord": 141, "nightmare": 172 },
+              "k": 3.75, "c": 104, "threeStars": 90, "twoStars": 50 },
+    "log": 10
+  },
+
   // Seasons (wiki, Leagues): VP ranks players and alliances; at the end of a season everyone's VP returns to zero
   // and rewards follow the result; leagues are ranked every week (wiki, 1.8). The original ranks alliances in
   // leagues with promotion and relegation; until alliances arrive, the league here is personal and set by the

@@ -2652,7 +2652,7 @@
      1
     ]
    ],
-   "description": "Войска гарнизона защищают город от нападений других игроков.",
+   "description": "Войска и титан гарнизона защищают город от налётчиков.",
    "levels": [
     {
      "level": 1,
@@ -2663,7 +2663,9 @@
      "skipGems": 5,
      "castle": 1,
      "src": "est",
-     "defenders": 5
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 0
     },
     {
      "level": 2,
@@ -2675,7 +2677,9 @@
      "castle": 2,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 6
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 1
     },
     {
      "level": 3,
@@ -2687,7 +2691,9 @@
      "castle": 3,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 6
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 2
     },
     {
      "level": 4,
@@ -2699,7 +2705,9 @@
      "castle": 4,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 7
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 3
     },
     {
      "level": 5,
@@ -2710,7 +2718,9 @@
      "skipGems": 291,
      "castle": 5,
      "src": "est",
-     "defenders": 8,
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 4,
      "requires": [
       {
        "building": "gold_reserve",
@@ -2728,7 +2738,9 @@
      "castle": 6,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 9
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 5
     },
     {
      "level": 7,
@@ -2740,7 +2752,9 @@
      "castle": 7,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 10
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 6
     },
     {
      "level": 8,
@@ -2752,7 +2766,9 @@
      "castle": 8,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 11
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 7
     },
     {
      "level": 9,
@@ -2764,7 +2780,9 @@
      "castle": 9,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 12
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 8
     },
     {
      "level": 10,
@@ -2775,7 +2793,9 @@
      "skipGems": 1458,
      "castle": 10,
      "src": "est",
-     "defenders": 14,
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 9,
      "requires": [
       {
        "building": "food_reserve",
@@ -2794,7 +2814,9 @@
      "castle": 11,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 15
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 10
     },
     {
      "level": 12,
@@ -2806,7 +2828,9 @@
      "castle": 12,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 17
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 11
     },
     {
      "level": 13,
@@ -2818,7 +2842,9 @@
      "castle": 13,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 19
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 12
     },
     {
      "level": 14,
@@ -2830,7 +2856,9 @@
      "castle": 14,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 22
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 13
     },
     {
      "level": 15,
@@ -2841,7 +2869,9 @@
      "skipGems": 2869,
      "castle": 15,
      "src": "est",
-     "defenders": 24
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 14
     },
     {
      "level": 16,
@@ -2853,7 +2883,9 @@
      "castle": 16,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 27
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 15
     },
     {
      "level": 17,
@@ -2865,7 +2897,9 @@
      "castle": 17,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 30
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 16
     },
     {
      "level": 18,
@@ -2877,7 +2911,9 @@
      "castle": 18,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 34
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 17
     },
     {
      "level": 19,
@@ -2889,7 +2925,9 @@
      "castle": 19,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 38
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 18
     },
     {
      "level": 20,
@@ -2900,7 +2938,9 @@
      "skipGems": 5562,
      "castle": 20,
      "src": "est",
-     "defenders": 43
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 19
     },
     {
      "level": 21,
@@ -2912,7 +2952,9 @@
      "castle": 21,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 48
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 20
     },
     {
      "level": 22,
@@ -2923,7 +2965,9 @@
      "skipGems": 7453,
      "castle": 22,
      "src": "est",
-     "defenders": 54
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 21
     },
     {
      "level": 23,
@@ -2935,7 +2979,9 @@
      "castle": 23,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 60
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 22
     }
    ]
   },

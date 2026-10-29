@@ -121,6 +121,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	}
 	Res_[static_cast<size_t>(ResIndex(Res::Stones))] = std::min(Amount(Res::Stones), Capacity(Res::Stones));
 	ResetArmy();
+	ResetRaids(Now);
 	FillWorld();
 }
 
@@ -794,11 +795,13 @@ void Kingdom::Advance(int64_t Now)
 			}
 		}
 		const int64_t TX = Spent ? Spent->since + Spent->durability : InfT;
-		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT)
+		// Raids come last on a tie, and only until the player has been away too long.
+		const int64_t TA = BattleContent && NextRaid <= Now && NextRaid <= VisitAt + C.raids.awaySec ? std::max(Time, NextRaid) : InfT;
+		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(TN, TX));
+		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), TA));
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
@@ -835,9 +838,13 @@ void Kingdom::Advance(int64_t Now)
 			UnblockQueue(At); // a finished Army Camp may have room now
 			UnblockCraft(At); // and a finished Spell Forge
 		}
-		else
+		else if (TL == At)
 		{
 			CompleteLand(*NextL, At);
+		}
+		else
+		{
+			RunRaid(At);
 		}
 	}
 	ProcessQueue(Now);
@@ -2943,6 +2950,10 @@ Error Kingdom::FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices
 			L.titanId = 0;
 		}
 	}
+	for (const int32_t Id : Sacrifices)
+	{
+		ClearGuard(Id);
+	}
 	int64_t Xp = 0;
 	for (const int32_t Id : Sacrifices)
 	{
@@ -3802,11 +3813,12 @@ Error Kingdom::AssignTitan(int32_t LandId, int32_t TitanId)
 		return Error::BadId;
 	}
 	SettleLands();
+	ClearGuard(TitanId); // a titan guards one place at a time
 	for (Land& L : LandList)
 	{
 		if (L.titanId == TitanId)
 		{
-			L.titanId = 0; // a titan guards one land at a time
+			L.titanId = 0;
 		}
 		if (L.id == LandId)
 		{
@@ -4020,6 +4032,8 @@ std::string Kingdom::Save() const
 		W.Int(L.startAt);
 		W.Key("finishAt");
 		W.Int(L.finishAt);
+		W.Key("shield");
+		W.Int(L.shieldUntil);
 		W.EndObject();
 	}
 	W.EndArray();
@@ -4197,6 +4211,70 @@ std::string Kingdom::Save() const
 	W.Int(RelicAt);
 	W.Key("relicCounter");
 	W.UInt(RelicCounter);
+	// Raids on the kingdom (format 4, optional).
+	W.Key("raids");
+	W.BeginObject();
+	W.Key("next");
+	W.Int(NextRaid);
+	W.Key("visit");
+	W.Int(VisitAt);
+	W.Key("counter");
+	W.UInt(RaidCounter);
+	W.Key("cityShield");
+	W.Int(CityShield);
+	W.Key("read");
+	W.Int(RaidsRead);
+	W.Key("garrison");
+	W.BeginArray();
+	for (const int T : GarrisonList)
+	{
+		W.String(C.troops[static_cast<size_t>(T)].id);
+	}
+	W.EndArray();
+	W.Key("titan");
+	W.Int(GarrisonTitanId);
+	W.Key("log");
+	W.BeginArray();
+	for (const RaidReport& Rep : RaidLog)
+	{
+		W.BeginObject();
+		W.Key("at");
+		W.Int(Rep.at);
+		W.Key("land");
+		W.Int(Rep.landId);
+		W.Key("type");
+		W.String(Rep.landType >= 0 ? C.landTypes[static_cast<size_t>(Rep.landType)].id : std::string());
+		W.Key("level");
+		W.Int(Rep.level);
+		W.Key("stars");
+		W.Int(Rep.stars);
+		W.Key("raid");
+		W.Int(Rep.raidPower);
+		W.Key("defense");
+		W.Int(Rep.defensePower);
+		W.Key("lost");
+		W.BeginObject();
+		for (int I = 0; I < kResCount; ++I)
+		{
+			if (Rep.lost[static_cast<size_t>(I)])
+			{
+				W.Key(ToString(static_cast<Res>(I)));
+				W.Int(Rep.lost[static_cast<size_t>(I)]);
+			}
+		}
+		W.EndObject();
+		W.Key("vp");
+		W.Int(Rep.vp);
+		W.Key("titan");
+		W.Int(Rep.titanId);
+		W.Key("squads");
+		W.Int(Rep.squads);
+		W.Key("shield");
+		W.Int(Rep.shieldUntil);
+		W.EndObject();
+	}
+	W.EndArray();
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -4266,6 +4344,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.carry = LJ.GetInt64("carry", 0) * (Version < 4 ? 100 : 1);
 			L.lastAt = LJ.GetInt64("lastAt", 0);
 			L.titanId = static_cast<int32_t>(LJ.GetInt64("titan", 0));
+			L.shieldUntil = LJ.GetInt64("shield", 0);
 			L.startAt = LJ.GetInt64("startAt", 0);
 			L.finishAt = LJ.GetInt64("finishAt", 0);
 			if (L.type >= 0)
@@ -4614,6 +4693,60 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		ReinforceAt = AJ->GetInt64("askedAt", 0);
 		bReinforceAsked = AJ->GetBool("asked", false);
 	}
+	// Raids (saves before them start like a new kingdom: the first raid comes a day after loading).
+	ResetRaids(Time);
+	if (const JsonValue* RaidsJ = J.Find("raids"))
+	{
+		NextRaid = RaidsJ->GetInt64("next", NextRaid);
+		VisitAt = RaidsJ->GetInt64("visit", Time);
+		const JsonValue* CounterJ2 = RaidsJ->Find("counter");
+		RaidCounter = CounterJ2 ? static_cast<uint64_t>(std::strtoull(CounterJ2->text.c_str(), nullptr, 10)) : 0;
+		CityShield = RaidsJ->GetInt64("cityShield", 0);
+		RaidsRead = RaidsJ->GetInt64("read", Time);
+		if (const JsonValue* List = RaidsJ->Find("garrison"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const int T = C.FindTroop((*List)[I].AsString());
+				if (T >= 0)
+				{
+					GarrisonList.push_back(T);
+				}
+			}
+		}
+		GarrisonTitanId = static_cast<int32_t>(RaidsJ->GetInt64("titan", 0));
+		if (const JsonValue* List = RaidsJ->Find("log"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const JsonValue& RJ = (*List)[I];
+				RaidReport Rep;
+				Rep.at = RJ.GetInt64("at", 0);
+				Rep.landId = static_cast<int32_t>(RJ.GetInt64("land", 0));
+				Rep.landType = Rep.landId ? FindLandType(RJ.GetString("type")) : -1;
+				Rep.level = std::max(1, RJ.GetInt("level", 1));
+				Rep.stars = std::max(0, std::min(3, RJ.GetInt("stars", 0)));
+				Rep.raidPower = RJ.GetInt64("raid", 0);
+				Rep.defensePower = RJ.GetInt64("defense", 0);
+				if (const JsonValue* Lost = RJ.Find("lost"))
+				{
+					for (int K = 0; K < kResCount; ++K)
+					{
+						Rep.lost[static_cast<size_t>(K)] = Lost->GetInt64(ToString(static_cast<Res>(K)), 0);
+					}
+				}
+				Rep.vp = RJ.GetInt64("vp", 0);
+				Rep.titanId = static_cast<int32_t>(RJ.GetInt64("titan", 0));
+				Rep.squads = RJ.GetInt("squads", 0);
+				Rep.shieldUntil = RJ.GetInt64("shield", 0);
+				RaidLog.push_back(Rep);
+			}
+		}
+	}
+	if (GarrisonTitanId && !FindTitan(GarrisonTitanId))
+	{
+		GarrisonTitanId = 0;
+	}
 	FillWorld();
 	return true;
 }
@@ -4788,6 +4921,33 @@ uint64_t Kingdom::Hash() const
 			W.I64(L.startAt);
 			W.I64(L.finishAt);
 		}
+	}
+	// Raids
+	W.I64(NextRaid);
+	W.I64(VisitAt);
+	W.U64(RaidCounter);
+	W.I64(CityShield);
+	W.I64(RaidsRead);
+	for (const int T : GarrisonList)
+	{
+		W.I32(T);
+	}
+	W.I32(GarrisonTitanId);
+	for (const Land& L : LandList)
+	{
+		W.I64(L.shieldUntil);
+	}
+	for (const RaidReport& Rep : RaidLog)
+	{
+		W.I64(Rep.at);
+		W.I32(Rep.landId);
+		W.I32(Rep.level);
+		W.I32(Rep.stars);
+		for (const int64_t V : Rep.lost)
+		{
+			W.I64(V);
+		}
+		W.I64(Rep.vp);
 	}
 	return W.Hash();
 }
