@@ -1,0 +1,36 @@
+{
+  "name": "M1 Ballista Line: engines against a titan and its riders",
+  "map": "map.highvale_01",
+  "seed": 20261029,
+  "timerSec": 180,
+  "skipDeploy": false,
+  "sides": {
+    "attacker": {
+      "name": "House of Highvale",
+      "ai": "",
+      "titan": { "id": "titan.talos", "level": 20, "stars": 2, "abilityLevels": [1, 1], "pos": [120, 26], "facingDeg": 0 },
+      "spells": ["spell.war_drums", "spell.healing_spring"],
+      "squads": [
+        { "troop": "troop.ballista",  "tier": 2, "pos": [100, 16], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.ballista",  "tier": 2, "pos": [140, 16], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [100, 32], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.spearmen",  "tier": 2, "pos": [140, 32], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.swordsmen", "tier": 2, "pos": [120, 38], "facingDeg": 0, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [120, 18], "facingDeg": 0, "formation": "Line" }
+      ]
+    },
+    "defender": {
+      "name": "The Frost Reavers",
+      "ai": "veteran",
+      "titan": { "id": "titan.ymir", "level": 13, "stars": 2, "abilityLevels": [1, 1], "pos": [120, 134], "facingDeg": 180 },
+      "spells": ["spell.meteor_strike"],
+      "squads": [
+        { "troop": "troop.militia",   "tier": 2, "pos": [100, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.militia",   "tier": 2, "pos": [140, 128], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.archers",   "tier": 2, "pos": [120, 142], "facingDeg": 180, "formation": "Line" },
+        { "troop": "troop.outriders", "tier": 2, "pos": [40, 134],  "facingDeg": 180, "formation": "Wedge" },
+        { "troop": "troop.knights",   "tier": 2, "pos": [200, 134], "facingDeg": 180, "formation": "Wedge" }
+      ]
+    }
+  }
+}

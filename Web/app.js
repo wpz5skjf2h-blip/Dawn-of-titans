@@ -81,6 +81,7 @@ const SCENARIOS = [
 	{ path: 'scenarios/m0_cavalry_test.json', name: 'Копья против конницы', note: 'Удержите строй копейщиков против всадников' },
 	{ path: 'scenarios/m1_raise_dead.json', name: 'Факелы Гекаты', note: 'Геката и «Поднять мёртвых» против огненного войска Сурта' },
 	{ path: 'scenarios/m1_chains_and_fire.json', name: 'Цепи и огонь', note: 'Цепеломы, гренадеры и боевые жрецы против Атланта' },
+	{ path: 'scenarios/m1_ballista_line.json', name: 'Стена баллист', note: 'Расчёты баллист против Имира и его конницы: прикройте машины копьями' },
 ];
 const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
