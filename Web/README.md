@@ -9,9 +9,11 @@ both compiled with Emscripten; no game rules live in JavaScript.
 | `build.sh` | Builds `dist/dotsim.js` (WebAssembly embedded as base64) and `dist/dotsim-js.js` (pure JS fallback) |
 | `page.html` | Markup and styles of the page and HUD |
 | `icons.js` | Hand-drawn SVG icons (troops, buildings, spells, relics, titan classes, altars, lands, menu) shared by both screens; also cached as images for the island overlay |
+| `titans.js` | One hand-drawn SVG figure per kingdom titan in the same ink style, rigged for CSS animation: idle, attack and both abilities. Used for titan tiles (head and shoulders) and the animated titan in its sheet |
+| `export_titans.js` | `node Web/export_titans.js <dir>` writes every titan as a portrait card (`titan_<id>.svg`) and a looping showcase of all clips (`titan_<id>.anim.svg`) |
 | `app.js` | Battle: Three.js view, procedural titan animation, touch/mouse/keyboard gestures, HUD logic, modes |
 | `kingdom.js` | Kingdom: floating island, procedural building and land models, overlay, shop, panels, lands (gold, farm, victory-point, ruins), season sheet, Barracks, Armoury, army, Hall of Titans, Relic Temple, relic inventory and repair, Spell Forge, Arcane Tower, land guards, battle preparation, saves (browser and claude.ai `db`) |
-| `bundle.py` | Inlines `icons.js`, `app.js`, `kingdom.js` and `Content/Data` into `dist/index.html` (standalone) and `dist/artifact.html` (body only) |
+| `bundle.py` | Inlines `icons.js`, `titans.js`, `app.js`, `kingdom.js` and `Content/Data` into `dist/index.html` (standalone) and `dist/artifact.html` (body only) |
 | `make_content.py` | Writes `Content/Data` as one JSON file (handy for tools) |
 
 Run: `python3 -m http.server 8000 --directory Web/dist`, then open `http://localhost:8000`.
