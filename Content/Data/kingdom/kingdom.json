@@ -56,6 +56,34 @@
     "upgradeHours": [0, 1, 2, 4, 8, 12, 18, 24, 36]
   },
 
+  // The world map. The original: every kingdom is an island with its captured lands floating around it, so a glance
+  // tells how strong a player is; between them float neutral lands and sites; a land is targeted by tapping it. Until
+  // there is a server the other kingdoms are computer lords. Ours: the lords, their Castle against the player's, how
+  // many lands they hold, how long a taken land takes to come back and a raided one stays shielded, the extra loot and
+  // VP their lands give, and the level of the lord's titan that guards every one of their lands, by land level (rarity
+  // by the lord's Castle). All of it is our estimate; the titan levels are fitted on the sim so that a typical kingdom
+  // wins 75-100% on lords' lands of its own level band and about half on the strongest neighbour's top land.
+  "rivals": {
+    "castle": 3,
+    "castleOffsets": [-1, 0, 0, 1, 2],
+    "lands": { "base": 2, "perCastle": 6, "max": 4 },
+    "regrowHours": 8,
+    "shieldHours": 8,
+    "lootPct": 150,
+    "vpPct": 150,
+    "titanLevels": [5, 8, 11, 14, 16, 22, 28, 36, 40],
+    "lords": [
+      { "name": "Лорд Вейран",      "realm": "Северная марка" },
+      { "name": "Леди Исмена",      "realm": "Янтарный берег" },
+      { "name": "Ярл Хродгар",      "realm": "Вороний фьорд" },
+      { "name": "Князь Осмунд",     "realm": "Серые холмы" },
+      { "name": "Королева Мираэль", "realm": "Лунная долина" },
+      { "name": "Барон Гаррик",     "realm": "Ржавые копи" },
+      { "name": "Леди Сельвина",    "realm": "Туманные топи" },
+      { "name": "Тан Бруннар",      "realm": "Каменный предел" }
+    ]
+  },
+
   // Raids on the kingdom. The original (wiki, guides): the city and captured lands have default defenses that the player
   // reinforces with titans and troops (Garrison), a lost defense gives a shield, reserves keep part of the gold and food
   // from raiders, a raid on the Garrison takes 5% of the defender's VP (1.8). There the raiders are other players; until

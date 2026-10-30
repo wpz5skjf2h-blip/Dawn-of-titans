@@ -1084,6 +1084,34 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma();
 		O.Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->VictoryVp(W.level)).Raw("}");
 	}
+	// Neighbouring lords: which lord (rules.rivals.lords), their Castle, titan (army titan index), lands held and the
+	// next land they win back; then their lands with the owner, shield, loot, VP and the guarding titan's level.
+	O.Raw("],").Key("rivals").Raw("[");
+	for (size_t R = 0; R < Km->Rivals().size(); ++R)
+	{
+		const Rival& Rv = Km->Rivals()[R];
+		int Held = 0;
+		for (const WorldLand& W : Km->RivalLands())
+		{
+			Held += W.owner == static_cast<int>(R) ? 1 : 0;
+		}
+		O.Raw(R ? "," : "").Raw("{").Key("lord").Int(Rv.lord).Comma().Key("castle").Int(Km->RivalCastle(static_cast<int>(R))).Comma();
+		O.Key("titan").Int(Km->RivalTitan(static_cast<int>(R))).Comma().Key("lands").Int(Held).Comma();
+		O.Key("target").Int(Km->RivalLandTarget(static_cast<int>(R))).Comma().Key("back").Int(Rv.regrow.empty() ? 0 : Rv.regrow.front()).Raw("}");
+	}
+	O.Raw("],").Key("rivalLands").Raw("[");
+	bFirst = true;
+	for (const WorldLand& W : Km->RivalLands())
+	{
+		if (!bFirst)
+		{
+			O.Comma();
+		}
+		bFirst = false;
+		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma().Key("own").Int(W.owner).Comma();
+		O.Key("shield").Int(W.shieldUntil).Comma().Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->WorldVp(W)).Comma();
+		O.Key("tdef").Int(Km->RivalTitan(W.owner)).Comma().Key("tlv").Int(Km->RivalTitanLevel(W)).Raw("}");
+	}
 	// Titan Monuments and XP Arenas: when each opens again, what fighting it now would say, the reset price.
 	O.Raw("],").Key("sites").Raw("[");
 	for (int I = 0; I < Km->SiteCount(); ++I)

@@ -352,6 +352,35 @@ ul.skills li.fine { list-style: circle; }
 .landCard.won { border-color: rgba(244, 196, 79, 0.3); }
 .landCard .brief { grid-column: 1 / -1; margin: 0; font-style: italic; }
 .landCard .info b.gold { color: var(--valor); font-size: inherit; }
+/* World map (kingdom.js openWorldMap): islands on a sky chart; lords and their lands carry the lord's colour (--lord). */
+.landCard.rival, .landCard.lord { border-left: 3px solid var(--lord); }
+.ico.land.lordIco { background: radial-gradient(circle at 40% 35%, #5a626e, #1d2229); box-shadow: inset 0 0 0 2px var(--lord); }
+.lordLine { display: flex; align-items: center; gap: 6px; }
+.lordLine i, .lordChip i { width: 10px; height: 10px; border-radius: 50%; background: var(--lord); flex: 0 0 auto; }
+.worldMap { flex: none; width: 100%; max-width: 480px; margin: 0 auto; border-radius: 16px; overflow: hidden; border: 1px solid var(--hair); aspect-ratio: 1 / 1; }
+#kSheetPanel .worldMap svg.wmap { display: block; width: 100%; height: 100%; vertical-align: top; }
+.wmap .cloud { fill: rgba(220, 232, 245, 0.05); }
+.wmap .orbit { fill: none; stroke: rgba(239, 231, 214, 0.08); stroke-dasharray: 2 6; }
+.wmap .link { stroke-width: 1.4; stroke-dasharray: 3 4; opacity: 0.6; }
+.wmap .mn { cursor: pointer; }
+.wmap .mn .hit { fill: transparent; }
+.wmap .mn .isle { stroke-width: 2; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45)); }
+.wmap .mn.dim .isle, .wmap .mn.dim .gi { opacity: 0.45; }
+.wmap .mn .halo { fill: rgba(255, 255, 255, 0.12); stroke: #fff; stroke-width: 2.2; animation: wmPulse 1.4s ease-in-out infinite; }
+.wmap .mn .shield { fill: rgba(143, 211, 255, 0.1); stroke: #8fd3ff; stroke-width: 1.4; stroke-dasharray: 3 2.5; }
+.wmap .mn .full { fill: #ffd970; stroke: #2a1a05; stroke-width: 1; }
+.wmap .mn .lb circle { fill: #1b232b; stroke: var(--bronze); stroke-width: 1; }
+.wmap .mn .lb text { fill: var(--parch); font: 700 9px var(--font-ui); text-anchor: middle; dominant-baseline: central; }
+@keyframes wmPulse { 50% { stroke-opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .wmap .mn .halo { animation: none; } }
+.mapLegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); margin-top: -4px; }
+.mapLegend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; margin-right: 5px; vertical-align: -2px; }
+.mapLegend i.multi { border-color: #e0645a #e8a33c #a487ea #46b5a6; }
+.mapLegend i.dia { border-radius: 2px; transform: rotate(45deg) scale(0.85); border-color: #f2d38a; }
+.mapLegend i.sh { border: 1.5px dashed #8fd3ff; }
+.lordChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lordChip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--panel-hi); border: 1px solid var(--hair); font-size: 13px; font-weight: 600; }
+.lordChip.on { border-color: var(--lord); box-shadow: inset 0 0 0 1px var(--lord); }
 /* Alliances: emblem shields (colour by emblem index), league tables, the founding form. */
 .emb { width: 44px; height: 44px; border-radius: 10px 10px 22px 22px; display: grid; place-items: center; flex: 0 0 auto; font-family: var(--font-display);
   font-weight: 800; font-size: 12px; letter-spacing: 0.02em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden;

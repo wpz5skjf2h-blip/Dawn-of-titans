@@ -2128,7 +2128,7 @@ function initHud() {
 	$('kQuestBtn').innerHTML = DotIcons.svg('ui.quest') + '<span></span>';
 	$('kQuestBtn').addEventListener('click', openQuests);
 	$('kMenuBtn').addEventListener('click', openMenu);
-	$('kAttack').addEventListener('click', openWorld);
+	$('kAttack').addEventListener('click', openWorldMap);
 	$('kShopBtn').addEventListener('click', openShop);
 	$('kArmyBtn').addEventListener('click', openArmy);
 	$('kAllyBtn').addEventListener('click', () => openAlliance());
@@ -2440,7 +2440,9 @@ function onAct(e) {
 	case 'quest-chest': openQuestChest(); break;
 	case 'site-reset': gemAction('site-reset:' + id, +el.dataset.gems, () => run(K.bridge.siteReset(id), siteDef(id).name + ': можно снова в бой')); break;
 	case 'capture': startAttack(id, true); break;
-	case 'world': openWorld(); break;
+	case 'world': openWorldMap(); break;
+	case 'world-list': openWorld(); break;
+	case 'map-sel': K.mapSel = el.dataset.k + ':' + id; refreshSheet(true); break;
 	case 'army': openArmy(); break;
 	case 'barracks': openBarracks(); break;
 	case 'armoury': openArmoury(); break;
@@ -3469,53 +3471,214 @@ function openQuestChest() {
 	refresh(true);
 }
 
+/** A land to attack (neutral or a neighbouring lord's): what fighting it gives and the raid and capture buttons. */
+function worldCard(st, w) {
+	const L = K.rules.lands;
+	const ty = landType(w.type);
+	const rate = ty.produce[Math.min(w.lv, ty.produce.length) - 1];
+	const fill = (ty.fillHours || L.fillHours)[Math.min(w.lv, (ty.fillHours || L.fillHours).length) - 1];
+	const lord = w.own >= 0 ? lordOf(w.own) : null;
+	const shielded = lord && w.shield > nowF();
+	const locked = lord && st.castle < K.rules.rivals.castle;
+	let btns;
+	if (locked) btns = '<button class="btn" disabled>С Замка ' + K.rules.rivals.castle + '</button>';
+	else if (shielded) btns = '<button class="btn" disabled>Под щитом</button>';
+	else {
+		const capBtn = st.lands.length >= st.landCap ? '<button class="btn" disabled>Захват: нет мест</button>'
+			: '<button class="btn primary" data-act="capture" data-id="' + w.id + '"' + (st.res[3] < 6 ? ' disabled' : '') + '>Захват · 6 ' + iconSvg('stones') + '</button>';
+		btns = '<button class="btn" data-act="raid" data-id="' + w.id + '"' + (st.res[3] < 3 ? ' disabled' : '') + '>Набег · 3 ' + iconSvg('stones') + '</button>' + capBtn;
+	}
+	return '<div class="landCard' + (lord ? ' rival' : '') + '"' + (lord ? ' style="--lord:' + lordColor(w.own) + '"' : '') + '>' + landIcon(w.type, w.lv) +
+		'<div class="info"><b>' + esc(ty.name) + ' · ур. ' + w.lv + '</b>' +
+		(lord ? '<span class="lordLine"><i></i>' + esc(lord.name) + ', ' + esc(lord.realm) + (shielded ? ' · щит ещё <b data-live="sh' + w.id + '"></b>' : '') + '</span>' : '') +
+		'<span>' + esc(enemyText(w.lv, enemyTitan(w))) + (ty.field ? ' · поле боя: ' + esc(ty.field) : '') + '</span>' +
+		'<span>Набег: до ' + resAmount(ty.resource, w.loot) + ' · Захват: ' + landRateText(w.type, rate) + ', полна за ' + fill + ' ч · победа: +' + w.vp + ' ОП</span></div>' +
+		'<div class="row">' + btns + '</div></div>';
+}
+/** One of the player's own lands with its store and the collect button. */
+function ownLandCard(l) {
+	const ty = landType(l.type);
+	return '<div class="landCard">' + landIcon(l.type, l.lv) + '<div class="info"><b>' + esc(ty.name) + ' · ур. ' + l.lv + '</b>' +
+		'<span>' + landRateText(l.type, l.rate) + ' · накоплено ' + fmt(l.st) + ' из ' + fmt(l.cap) + '</span></div>' +
+		'<div class="row"><button class="btn" data-act="land-collect" data-id="' + l.id + '"' + (l.st > 0 ? '' : ' disabled') + '>Собрать</button></div></div>';
+}
+/** Stones, the next one and the refill button: the line on top of the map and of the list. */
+function stonesLine(st) {
+	const refill = (st.cap[3] - st.res[3]) * 4;
+	return '<div class="costline"><span>Камни</span><b>' + iconSvg('stones') + st.res[3] + ' / ' + st.cap[3] + '</b><span data-live="next"></span>' +
+		(refill > 0 ? '<button class="btn" data-act="refill" data-gems="' + refill + '">' + (isArmed('refill') ? 'Подтвердить ' : 'Пополнить ') + gemSpan(refill) + '</button>' : '') + '</div>';
+}
+function slotButton(st) {
+	const L = K.rules.lands;
+	const price = st.extraSlots < L.extraSlotGems.length && st.landCap < L.maxLands ? L.extraSlotGems[st.extraSlots] : 0;
+	return price ? '<div class="actions"><button class="btn" data-act="slot" data-gems="' + price + '">' + (isArmed('slot') ? 'Подтвердить ' : 'Ещё место для земли ') + gemSpan(price) + '</button></div>' : '';
+}
+const SITES_NOTE = 'Как в оригинале (версия 1.8): бои постоянной сложности. Монумент может дать осколки, арена — много опыта титану, без добычи. После боя, чем бы он ни кончился, место закрыто на сутки; открыть раньше можно за самоцветы.';
+/** Live timers of the land sheets: the next stone, sites, shields on lords' lands and the lands lords win back. */
+function liveWorld(el) {
+	live(el, 'next', K.st.stonesNext ? 'следующий через ' + fmtClock(K.st.stonesNext - nowF()) : 'полный запас');
+	(K.st.sites || []).forEach((x, i) => live(el, 'site' + i, 'откроется через ' + fmtDur(x.ready - nowF())));
+	(K.st.rivalLands || []).forEach((w) => { if (w.shield > nowF()) live(el, 'sh' + w.id, fmtDur(w.shield - nowF())); });
+	(K.st.rivals || []).forEach((r, i) => { if (r.back) live(el, 'back' + i, fmtDur(r.back - nowF())); });
+}
+/** What the land sheets show of the world: changes of any of it redraw them. */
+function worldKey(st) {
+	return [st.res[3], st.cap[3], st.castle, st.lands.map((l) => l.id + ':' + l.lv + ':' + (l.st > 0)).join(), st.world.map((w) => w.id + ':' + w.lv).join(), st.landCap,
+		isArmed('refill'), isArmed('slot'), (st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join(),
+		(st.rivals || []).map((r) => r.castle + ':' + r.lands + ':' + r.back).join(), (st.rivalLands || []).map((w) => w.id + ':' + w.lv + ':' + (w.shield > nowF())).join()].join('|');
+}
+
 function openWorld() {
 	cancelPlace();
 	select(null);
 	openSheet(() => {
 		const st = K.st;
 		const L = K.rules.lands;
-		const fullSlots = st.lands.length >= st.landCap;
-		const raid = 3;
-		const capture = 6;
-		const cards = st.world.map((w) => {
-			const ty = landType(w.type);
-			const rate = ty.produce[Math.min(w.lv, ty.produce.length) - 1];
-			const fill = (ty.fillHours || L.fillHours)[Math.min(w.lv, (ty.fillHours || L.fillHours).length) - 1];
-			const capBtn = fullSlots ? '<button class="btn" disabled>Захват: нет мест</button>'
-				: '<button class="btn primary" data-act="capture" data-id="' + w.id + '"' + (st.res[3] < capture ? ' disabled' : '') + '>Захват · ' + capture + ' ' + iconSvg('stones') + '</button>';
-			return '<div class="landCard">' + landIcon(w.type, w.lv) + '<div class="info"><b>' + esc(ty.name) + ' · ур. ' + w.lv + '</b>' +
-				'<span>' + esc(enemyText(w.lv, enemyTitan(w))) + (ty.field ? ' · поле боя: ' + esc(ty.field) : '') + '</span>' +
-				'<span>Набег: до ' + resAmount(ty.resource, w.loot) + ' · Захват: ' + landRateText(w.type, rate) + ', полна за ' + fill + ' ч · победа: +' + w.vp + ' ОП</span></div>' +
-				'<div class="row"><button class="btn" data-act="raid" data-id="' + w.id + '"' + (st.res[3] < raid ? ' disabled' : '') + '>Набег · ' + raid + ' ' + iconSvg('stones') + '</button>' + capBtn + '</div></div>';
-		});
-		const mine = st.lands.map((l) => {
-			const ty = landType(l.type);
-			return '<div class="landCard">' + landIcon(l.type, l.lv) + '<div class="info"><b>' + esc(ty.name) + ' · ур. ' + l.lv + '</b>' +
-				'<span>' + landRateText(l.type, l.rate) + ' · накоплено ' + fmt(l.st) + ' из ' + fmt(l.cap) + '</span></div>' +
-				'<div class="row"><button class="btn" data-act="land-collect" data-id="' + l.id + '"' + (l.st > 0 ? '' : ' disabled') + '>Собрать</button></div></div>';
-		});
-		const slotPrice = st.extraSlots < L.extraSlotGems.length && st.landCap < L.maxLands ? L.extraSlotGems[st.extraSlots] : 0;
-		const refill = (st.cap[3] - st.res[3]) * 4;
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			'<div class="costline"><span>Камни</span><b>' + iconSvg('stones') + st.res[3] + ' / ' + st.cap[3] + '</b><span data-live="next"></span>' +
-			(refill > 0 ? '<button class="btn" data-act="refill" data-gems="' + refill + '">' + (isArmed('refill') ? 'Подтвердить ' : 'Пополнить ') + gemSpan(refill) + '</button>' : '') + '</div>' +
-			'<h3>Можно атаковать</h3>' + cards.join('') +
-			(K.rules.sites ? '<h3>Монументы титанов и арены опыта</h3><p class="fine">Как в оригинале (версия 1.8): бои постоянной сложности. Монумент может дать осколки, арена — много опыта титану, без добычи. После боя, чем бы он ни кончился, место закрыто на сутки; открыть раньше можно за самоцветы.</p>' + siteCards(st).join('') : '') +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' +
+			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
+			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
+				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
+			(K.rules.sites ? '<h3>Монументы титанов и арены опыта</h3><p class="fine">' + SITES_NOTE + '</p>' + siteCards(st).join('') : '') +
 			'<h3>Ваши земли: ' + st.lands.length + ' из ' + st.landCap + '</h3>' +
-			(mine.length ? mine.join('') : '<p class="fine">Пока ни одной. Захватите землю, и она будет приносить ресурсы. Мест для земель: ' + st.landCap + ' (растёт с Замком, до ' + L.maxLands + ').</p>') +
-			(slotPrice ? '<div class="actions"><button class="btn" data-act="slot" data-gems="' + slotPrice + '">' + (isArmed('slot') ? 'Подтвердить ' : 'Ещё место для земли ') + gemSpan(slotPrice) + '</button></div>' : '') +
-			'<div class="actions">' + closeBtn + '</div>';
-		return {
-			key: ['world', st.res[3], st.cap[3], st.lands.map((l) => l.id + ':' + (l.st > 0)).join(), st.world.map((w) => w.id).join(), st.landCap, isArmed('refill'), isArmed('slot'),
-				(st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join()].join('|'), html,
-			live(el) {
-				live(el, 'next', K.st.stonesNext ? 'следующий через ' + fmtClock(K.st.stonesNext - nowF()) : 'полный запас');
-				(K.st.sites || []).forEach((x, i) => live(el, 'site' + i, 'откроется через ' + fmtDur(x.ready - nowF())));
-			},
-		};
+			(st.lands.length ? st.lands.map(ownLandCard).join('') : '<p class="fine">Пока ни одной. Захватите землю, и она будет приносить ресурсы. Мест для земель: ' + st.landCap + ' (растёт с Замком, до ' + L.maxLands + ').</p>') +
+			slotButton(st) + '<div class="actions">' + closeBtn + '</div>';
+		return { key: 'world|' + worldKey(st), html, live: liveWorld };
+	});
+}
+
+// ---------------------------------------------------------------------------------------------
+// World map: the kingdom's island in the middle, its lands around it, free lands, neighbouring lords with their lands
+// and the Titan Monuments and XP Arenas on the rim (the original's world map, drawn as a chart of floating islands)
+// ---------------------------------------------------------------------------------------------
+const RIVAL_NOTE = 'Как в оригинале, по соседству живут другие лорды; пока нет сервера, это лорды компьютера. ' +
+	'Их земли стережёт титан лорда, добыча и очки победы там в полтора раза больше. После набега лорд закрывает землю щитом на 8 часов, ' +
+	'захваченную землю он отвоёвывает себе новой через 8 часов. Нападать на соседей можно с Замка 3.';
+const LORD_COLORS = ['#e0645a', '#e8a33c', '#a487ea', '#46b5a6', '#d870b8', '#93b84a', '#5aa6e0', '#c9a27a'];
+const lordColor = (i) => LORD_COLORS[(K.st.rivals && K.st.rivals[i] ? K.st.rivals[i].lord : i) % LORD_COLORS.length];
+const MAP_C = 240;
+const polar = (deg, r) => [MAP_C + r * Math.cos((deg * Math.PI) / 180), MAP_C + r * Math.sin((deg * Math.PI) / 180)];
+/** A neighbouring lord: realm, Castle, titan, lands held and when the next one is won back. */
+function lordCard(st, i) {
+	const r = st.rivals[i];
+	const lord = lordOf(i);
+	const t = K.army.titans[r.titan];
+	return '<div class="landCard lord" style="--lord:' + lordColor(i) + '"><div class="ico land lordIco">' + DotIcons.svg('building.castle') + '<i class="lvb">' + r.castle + '</i></div>' +
+		'<div class="info"><b>' + esc(lord.name) + '</b><span>' + esc(lord.realm) + ' · Замок ' + r.castle + ' · титан ' + esc(t.name) + ' ' + '★'.repeat(t.stars) + '</span>' +
+		'<span>Земель: ' + r.lands + ' из ' + r.target + (r.back ? ' · новая через <b data-live="back' + i + '"></b>' : '') + '</span></div></div>';
+}
+/** Every island on the map: kind (map-sel key), id, position, size and look. */
+function worldMapLayout(st) {
+	const out = [];
+	out.push({ k: 'home', id: 0, x: MAP_C, y: MAP_C, r: 32, fill: 'home', ring: 'var(--own)', glyph: 'building.castle', lv: st.castle, title: 'Ваше королевство' });
+	// Own lands in rings around the island: 9, 13, then the rest.
+	const rings = [[56, 9], [78, 13], [100, 99]];
+	let left = st.lands.length;
+	let i0 = 0;
+	for (const [rad, cap] of rings) {
+		const n = Math.min(left, cap);
+		for (let j = 0; j < n; j++) {
+			const l = st.lands[i0 + j];
+			const [x, y] = polar(-90 + (360 / n) * j + (rings[0][0] === rad ? 0 : 180 / n), rad);
+			out.push({ k: 'own', id: l.id, x, y, r: 11, fill: landType(l.type).resource, ring: 'var(--own)', glyph: landGlyph(l.type), lv: l.lv, from: [MAP_C, MAP_C], title: landType(l.type).name, full: l.st >= l.cap });
+		}
+		i0 += n;
+		left -= n;
+	}
+	// Free lands between the kingdom and the lords.
+	st.world.forEach((w, j) => {
+		const [x, y] = polar(-90 + 180 / st.world.length + (360 / st.world.length) * j, 134);
+		out.push({ k: 'w', id: w.id, x, y, r: 15, fill: landType(w.type).resource, ring: 'rgba(239,231,214,0.85)', glyph: landGlyph(w.type), lv: w.lv, title: landType(w.type).name });
+	});
+	// Lords on the outer ring, their lands fanned out behind them.
+	const nl = (st.rivals || []).length;
+	const locked = st.castle < ((K.rules.rivals && K.rules.rivals.castle) || 0);
+	(st.rivals || []).forEach((r, i) => {
+		const a = -90 + (360 / nl) * i;
+		const [x, y] = polar(a, 178);
+		const col = lordColor(i);
+		out.push({ k: 'lord', id: i, x, y, r: 21, fill: 'lord', ring: col, glyph: 'building.castle', lv: r.castle, title: lordOf(i).name });
+		const mine = st.rivalLands.filter((w) => w.own === i);
+		mine.forEach((w, j) => {
+			const d = ((a + (j - (mine.length - 1) / 2) * 48) * Math.PI) / 180;
+			out.push({ k: 'r', id: w.id, x: x + 40 * Math.cos(d), y: y + 40 * Math.sin(d), r: 13.5, fill: landType(w.type).resource, ring: col, glyph: landGlyph(w.type), lv: w.lv,
+				from: [x, y], title: landType(w.type).name + ' · ' + lordOf(i).name, shield: w.shield > nowF(), dim: locked || w.shield > nowF() });
+		});
+	});
+	// Monuments and arenas in the gaps between the lords.
+	if (K.rules.sites && nl) {
+		const per = new Array(nl).fill(0);
+		K.rules.sites.list.forEach((d, j) => per[j % nl]++);
+		K.rules.sites.list.forEach((d, j) => {
+			const g = j % nl;
+			const m = Math.floor(j / nl);
+			const [x, y] = polar(-90 + (360 / nl) * (g + 0.5) + (m - (per[g] - 1) / 2) * 26, 222);
+			const s = st.sites[j];
+			out.push({ k: 'site', id: j, x, y, r: 12.5, fill: d.kind === 'arena' ? 'vp' : 'shards', ring: '#f2d38a', glyph: 'land.' + d.kind, lv: d.level, site: true, title: d.name,
+				dim: s.ck.err !== E.None && s.ck.err !== E.NeedStones });
+		});
+	}
+	return out;
+}
+const mapGlyph = (name, s) => DotIcons.svg(name).replace('<svg class="gi"', '<svg class="gi" x="' + -s / 2 + '" y="' + -s / 2 + '" width="' + s + '" height="' + s + '"');
+function worldMapSvg(st, sel) {
+	const nodes = worldMapLayout(st);
+	const grad = (id, a, b) => '<radialGradient id="wm-' + id + '" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="' + a + '"/><stop offset="1" stop-color="' + b + '"/></radialGradient>';
+	let s = '<svg class="wmap" viewBox="0 0 480 480" role="group" aria-label="Карта мира"><defs>' +
+		grad('gold', '#f6d77c', '#9a6a1f') + grad('food', '#c8ec8c', '#4f7a24') + grad('vp', '#9fd48a', '#2f5d3a') + grad('shards', '#b9c6d8', '#44506a') +
+		grad('home', '#8fd07a', '#2d5a3c') + grad('lord', '#4a515c', '#1d2229') +
+		'<radialGradient id="wm-sky" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#2a4560"/><stop offset="0.65" stop-color="#172636"/><stop offset="1" stop-color="#0d151e"/></radialGradient></defs>' +
+		'<rect width="480" height="480" fill="url(#wm-sky)"/>';
+	// Drifting clouds and the orbits of the rings.
+	for (const [cx, cy, rx] of [[70, 92, 46], [402, 120, 38], [96, 400, 40], [392, 396, 52], [240, 36, 30]]) s += '<ellipse class="cloud" cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + rx * 0.42 + '"/>';
+	for (const r of [78, 134, 178, 222]) s += '<circle class="orbit" cx="' + MAP_C + '" cy="' + MAP_C + '" r="' + r + '"/>';
+	for (const n of nodes) if (n.from) s += '<line class="link" x1="' + n.from[0].toFixed(1) + '" y1="' + n.from[1].toFixed(1) + '" x2="' + n.x.toFixed(1) + '" y2="' + n.y.toFixed(1) + '" stroke="' + n.ring + '"/>';
+	for (const n of nodes) {
+		const on = sel === n.k + ':' + n.id;
+		const b = n.r * 0.72;
+		s += '<g class="mn' + (n.dim ? ' dim' : '') + (on ? ' on' : '') + '" data-act="map-sel" data-k="' + n.k + '" data-id="' + n.id + '" transform="translate(' + n.x.toFixed(1) + ' ' + n.y.toFixed(1) + ')">' +
+			'<title>' + esc(n.title) + '</title><circle class="hit" r="' + (n.r + 7) + '"/>' + (on ? '<circle class="halo" r="' + (n.r + 5) + '"/>' : '') +
+			(n.site ? '<rect class="isle" x="' + -n.r + '" y="' + -n.r + '" width="' + 2 * n.r + '" height="' + 2 * n.r + '" rx="4" transform="rotate(45)" fill="url(#wm-' + n.fill + ')" stroke="' + n.ring + '"/>'
+				: '<circle class="isle" r="' + n.r + '" fill="url(#wm-' + n.fill + ')" stroke="' + n.ring + '"' + (n.k === 'lord' || n.k === 'home' ? ' stroke-width="3"' : '') + '/>') +
+			(n.shield ? '<circle class="shield" r="' + (n.r + 3.5) + '"/>' : '') + mapGlyph(n.glyph, n.r * 1.35) +
+			(n.full ? '<circle class="full" cx="' + -b + '" cy="' + -b + '" r="3.2"/>' : '') +
+			'<g class="lb" transform="translate(' + b.toFixed(1) + ' ' + b.toFixed(1) + ')"><circle r="' + (n.r >= 19 ? 8 : 6.5) + '"/><text>' + n.lv + '</text></g></g>';
+	}
+	return s + '</svg>';
+}
+/** The card under the map for the selected island; '' when nothing (or something gone) is selected. */
+function mapSelCard(st, sel) {
+	const [k, v] = (sel || '').split(':');
+	const id = +v;
+	if (k === 'home') {
+		return '<div class="landCard">' + icoHtml('building.castle', 'bld other') + '<div class="info"><b>Ваше королевство · Замок ' + st.castle + '</b>' +
+			'<span>Земель: ' + st.lands.length + ' из ' + st.landCap + ' (мест прибавляется с Замком, до ' + K.rules.lands.maxLands + ')</span></div></div>' + slotButton(st);
+	}
+	if (k === 'own') { const l = st.lands.find((x) => x.id === id); return l ? ownLandCard(l) : ''; }
+	if (k === 'w' || k === 'r') { const w = worldLand(id); return w ? worldCard(st, w) : ''; }
+	if (k === 'lord' && st.rivals && st.rivals[id]) return lordCard(st, id) + '<p class="fine">' + RIVAL_NOTE + '</p>';
+	if (k === 'site' && st.sites && st.sites[id]) return siteCards(st)[id];
+	return '';
+}
+function openWorldMap() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const card = mapSelCard(st, K.mapSel);
+		const sel = card ? K.mapSel : '';
+		const chips = (st.rivals || []).map((r, i) => '<button class="lordChip' + (sel === 'lord:' + i ? ' on' : '') + '" data-act="map-sel" data-k="lord" data-id="' + i + '" style="--lord:' + lordColor(i) + '"><i></i>' +
+			esc(lordOf(i).name) + ' · ' + r.lands + '</button>').join('');
+		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Карта мира') + stonesLine(st) +
+			'<div class="worldMap">' + worldMapSvg(st, sel) + '</div>' +
+			'<div class="mapLegend"><span><i style="border-color:var(--own)"></i>ваши земли ' + st.lands.length + ' / ' + st.landCap + '</span><span><i style="border-color:rgba(239,231,214,0.85)"></i>ничьи</span>' +
+			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
+			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
+			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') +
+			'<div class="actions"><button class="btn" data-act="world-list">Списком</button>' + closeBtn + '</div>';
+		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
 }
 function openStones() {
@@ -3678,8 +3841,14 @@ function openWelcome() {
 // Battles for lands
 // ---------------------------------------------------------------------------------------------
 /** Enemy titan for a land: a roster titan whose rarity fits the land level (none below level 5). */
+/** A world land by id: a neutral one or one a neighbouring lord holds. */
+const worldLand = (id) => K.st.world.find((x) => x.id === id) || (K.st.rivalLands || []).find((x) => x.id === id);
+/** The lord (name, realm) of a rival by its index in the state. */
+const lordOf = (i) => (K.st.rivals && K.st.rivals[i] ? K.rules.rivals.lords[K.st.rivals[i].lord] : null);
 function enemyTitan(w) {
 	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m));
+	// A lord's titan guards every one of its lands.
+	if (w.own >= 0) return { def: K.army.titans[w.tdef], level: w.tlv };
 	const b = K.rules.battles[Math.min(w.lv, K.rules.battles.length) - 1];
 	if (!b.titan) return null;
 	const band = w.lv <= 6 ? [1, 2] : w.lv <= 8 ? [2, 3] : [3, 4];
@@ -3697,7 +3866,8 @@ function landScenario(w, prep) {
 	const site = w.site >= 0 ? siteDef(w.site) : null;
 	const md = w.mission ? missionDef(w.mission.a, w.mission.m) : null;
 	const ty = md ? siteField(md) : site ? siteField(site) : landType(w.type);
-	sc.name = md ? md.name : site ? site.name : ty.name + ', уровень ' + w.lv;
+	const lord = !md && !site && w.own >= 0 ? lordOf(w.own) : null;
+	sc.name = md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -3727,7 +3897,7 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : 'Защитники земли';
+	def.name = md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
 	def.ai = (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
@@ -3742,8 +3912,10 @@ function landScenario(w, prep) {
 	return sc;
 }
 function startAttack(wid, capture) {
-	const w = K.st.world.find((x) => x.id === wid);
+	const w = worldLand(wid);
 	if (!w) return;
+	if (w.own >= 0 && K.st.castle < K.rules.rivals.castle) { toast('Земли соседей можно атаковать с Замка ' + K.rules.rivals.castle, 'bad'); return; }
+	if (w.shield > nowF()) { toast('Земля под щитом ещё ' + fmtDur(w.shield - nowF()), 'bad'); return; }
 	if (capture && K.st.lands.length >= K.st.landCap) { toast(errText(E.NoLandSlot), 'bad'); return; }
 	if (K.st.res[3] < (capture ? 6 : 3)) { toast(errText(E.NeedStones), 'bad'); return; }
 	openPrepare(wid, capture);
@@ -3758,7 +3930,7 @@ function launchAttack() {
 	const p = K.prep;
 	const site = p && p.site >= 0;
 	const ms = p && p.mission;
-	const w = ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && K.st.world.find((x) => x.id === p.wid);
+	const w = ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
@@ -3779,7 +3951,7 @@ function launchAttack() {
 	// A site battle is a land battle for the battle screen (retreat, stars back to the kingdom), with its site.
 	K.app.startLandBattle(path, sc.sides.defender.ai, ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
 		: site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
-		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, squads: squads.length, charges });
+		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, own: w.own, squads: squads.length, charges });
 }
 /** Each attacking squad's surviving share (%) in the order they were sent, read from the finished simulation. */
 function survivorsFromBattle(count) {
@@ -3832,9 +4004,11 @@ function onBattleEnd(ctx, stars, retreat) {
 			const res = landType(ctx.type).resource;
 			const vpText = r.vp > 0 && res !== 'vp' ? ', +' + fmt(r.vp) + ' ОП за победу' : '';
 			const what = { gold: 'золото', food: 'еду', vp: 'очки победы', shards: 'осколки' }[res];
-			if (stars > 0 && ctx.capture) toast('Земля захвачена! Теперь она приносит ' + what + vpText, 'gold');
-			else if (stars > 0) toast('Набег удался: +' + resAmount(res, res === 'vp' ? r.vp : res === 'shards' ? r.shards : res === 'food' ? r.food : r.gold) + vpText, 'gold');
-			else toast((retreat ? 'Отступление' : 'Поражение') + ': камни портала потрачены, земля осталась у врага', 'bad');
+			const lord = ctx.own >= 0 ? lordOf(ctx.own) : null;
+			if (stars > 0 && ctx.capture) toast((lord ? 'Земля отбита у: ' + lord.name + '! ' : 'Земля захвачена! ') + 'Теперь она приносит ' + what + vpText, 'gold');
+			else if (stars > 0) toast('Набег удался: +' + resAmount(res, res === 'vp' ? r.vp : res === 'shards' ? r.shards : res === 'food' ? r.food : r.gold) + vpText +
+				(lord ? '. ' + lord.name + ' закрыл землю щитом на ' + K.rules.rivals.shieldHours + ' ч' : ''), 'gold');
+			else toast((retreat ? 'Отступление' : 'Поражение') + ': камни портала потрачены, земля осталась у ' + (lord ? 'хозяина: ' + lord.name : 'врага'), 'bad');
 			armyToast(r, used);
 		}
 		persist();
@@ -4592,7 +4766,7 @@ function openPrepare(wid, capture, site, mission) {
 		const p = K.prep;
 		const md = p.mission ? missionDef(p.mission.a, p.mission.m) : null;
 		const sd = !md && p.site >= 0 ? siteDef(p.site) : null;
-		const w = md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : st.world.find((x) => x.id === p.wid);
+		const w = md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -4617,7 +4791,7 @@ function openPrepare(wid, capture, site, mission) {
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
 		const html = sheetTitle(md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(ty.name) + ', ур. ' + w.lv) +
-			(md ? missionBrief(md) : '') +
+			(md ? missionBrief(md) : '') + (!md && !sd && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			'<p>Противник: ' + esc(enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
 			(md ? '<p class="fine">' + missionRewardText(p.mission.a, p.mission.m) + '</p>' : sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
 			'<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' +

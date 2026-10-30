@@ -91,12 +91,21 @@ struct Land
 	int64_t shieldUntil = 0; // raiders leave it alone until then
 };
 
-/** A neutral land on the world map that can be raided or captured. */
+/** A land on the world map that can be raided or captured: a neutral one, or one a neighbouring lord holds. */
 struct WorldLand
 {
 	int32_t id = 0;
 	int type = 0;
 	int level = 1;
+	int owner = -1; // the rival holding it (index into Rivals()), -1 = neutral
+	int64_t shieldUntil = 0; // a lord's raided land is left alone until then
+};
+
+/** A neighbouring lord: a computer kingdom on the world map in place of the original's players. */
+struct Rival
+{
+	int lord = 0; // index into the content's lords (name and realm)
+	std::vector<int64_t> regrow; // when the lands taken from it come back, earliest first
 };
 
 /** A titan the player owns. */
@@ -305,6 +314,19 @@ public:
 	const std::vector<Building>& Buildings() const { return BuildingList; }
 	const std::vector<Land>& Lands() const { return LandList; }
 	const std::vector<WorldLand>& World() const { return WorldList; }
+	/** Neighbouring lords and the lands they hold (ids from kRivalLandBase, so they never meet the neutral ones). */
+	const std::vector<Rival>& Rivals() const { return RivalList; }
+	const std::vector<WorldLand>& RivalLands() const { return RivalLandList; }
+	static constexpr int32_t kRivalLandBase = 1000000;
+	/** A world land by id, neutral or a lord's. */
+	const WorldLand* FindWorldLand(int32_t Id) const;
+	/** A lord's Castle: the player's moved by the lord's offset. */
+	int RivalCastle(int Rival) const;
+	/** How many lands a lord holds when none are lost. */
+	int RivalLandTarget(int Rival) const;
+	/** The lord's titan (index into the content's titans) and its level on one of its lands. */
+	int RivalTitan(int Rival) const;
+	int RivalTitanLevel(const WorldLand& W) const;
 	int32_t PendingAttack() const { return Pending; }
 	bool PendingCapture() const { return PendingIsCapture; }
 	const Building* Find(int32_t Id) const;
@@ -319,6 +341,8 @@ public:
 	/** Raid loot of the land's own resource at three stars; VP for winning there (both before the stars). */
 	int64_t RaidLoot(const WorldLand& W) const;
 	int64_t VictoryVp(int LandLevel) const;
+	/** VP for winning on this world land (a lord's pays more). */
+	int64_t WorldVp(const WorldLand& W) const;
 	/** The highest land level the Castle allows: the top of the level band it opens on the world map. */
 	int MaxLandLevel() const;
 	Check CheckLandUpgrade(int32_t Id) const;
@@ -643,6 +667,12 @@ private:
 	int64_t LandPeriodSec(const Land& L) const;
 	WorldLand MakeWorldLand();
 	void FillWorld();
+	/** The lords on a new game or an old save without them; their lands up to what each holds. */
+	void ResetRivals();
+	void FillRivals();
+	int PickLandType(uint64_t H, int Castle) const;
+	WorldLand MakeRivalLand(int Rival);
+	WorldLand* FindWorld(int32_t Id, bool* OutRival);
 	int64_t ProducerRate(const Building& B) const;
 	int64_t ProducerCap(const Building& B) const;
 	const LevelDef* BuildingLevel(int Def) const;
@@ -729,6 +759,9 @@ private:
 	std::vector<Building> BuildingList;
 	std::vector<Land> LandList;
 	std::vector<WorldLand> WorldList;
+	std::vector<Rival> RivalList;
+	std::vector<WorldLand> RivalLandList;
+	uint64_t RivalCounter = 0;
 	int ExpansionCount = 1;
 	int ExtraSlots = 0;
 	int32_t NextId = 1;

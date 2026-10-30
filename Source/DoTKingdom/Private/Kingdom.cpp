@@ -130,6 +130,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	QuestCounter = 0;
 	RollQuests();
 	FillWorld();
+	ResetRivals();
 }
 
 void Kingdom::ResetArmy()
@@ -364,7 +365,14 @@ int64_t Kingdom::RaidLoot(const WorldLand& W) const
 {
 	const LandTypeDef& T = C.landTypes[static_cast<size_t>(W.type)];
 	const std::vector<int64_t>& Loot = T.raidLoot.empty() ? C.raidLoot : T.raidLoot;
-	return Loot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(Loot.size())) - 1)];
+	const int64_t Base = Loot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(Loot.size())) - 1)];
+	return W.owner >= 0 ? Base * C.rivals.lootPct / 100 : Base;
+}
+
+int64_t Kingdom::WorldVp(const WorldLand& W) const
+{
+	const int64_t Base = VictoryVp(W.level);
+	return W.owner >= 0 ? Base * C.rivals.vpPct / 100 : Base;
 }
 
 int64_t Kingdom::VictoryVp(int LandLevel) const
@@ -714,6 +722,10 @@ void Kingdom::Complete(Building& B, int64_t At)
 	B.level = std::min(B.level + 1, C.buildings[static_cast<size_t>(B.def)].MaxLevel());
 	B.lastAt = At;
 	B.carry = 0;
+	if (B.def == C.castle)
+	{
+		FillRivals(); // the lords grow with the player
+	}
 }
 
 void Kingdom::CompleteLand(Land& L, int64_t At)
@@ -805,11 +817,22 @@ void Kingdom::Advance(int64_t Now)
 		const int64_t TX = Spent ? Spent->since + Spent->durability : InfT;
 		// Raids come last on a tie, and only until the player has been away too long.
 		const int64_t TA = BattleContent && NextRaid <= Now && NextRaid <= VisitAt + C.raids.awaySec ? std::max(Time, NextRaid) : InfT;
-		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT)
+		// A lord winning back a land taken from it (before raids on a tie).
+		int Regrow = -1;
+		for (size_t I = 0; I < RivalList.size(); ++I)
+		{
+			const std::vector<int64_t>& G = RivalList[I].regrow;
+			if (!G.empty() && G.front() <= Now && (Regrow < 0 || G.front() < RivalList[static_cast<size_t>(Regrow)].regrow.front()))
+			{
+				Regrow = static_cast<int>(I);
+			}
+		}
+		const int64_t TG = Regrow >= 0 ? std::max(Time, RivalList[static_cast<size_t>(Regrow)].regrow.front()) : InfT;
+		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT && TG == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), TA));
+		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), std::min(TA, TG)));
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
@@ -849,6 +872,12 @@ void Kingdom::Advance(int64_t Now)
 		else if (TL == At)
 		{
 			CompleteLand(*NextL, At);
+		}
+		else if (TG == At)
+		{
+			std::vector<int64_t>& G = RivalList[static_cast<size_t>(Regrow)].regrow;
+			G.erase(G.begin());
+			FillRivals();
 		}
 		else
 		{
@@ -1895,19 +1924,14 @@ Error Kingdom::RequestReinforcements()
 	return Error::None;
 }
 
-WorldLand Kingdom::MakeWorldLand()
+int Kingdom::PickLandType(uint64_t H, int Castle) const
 {
-	const uint64_t H = Mix(Seed, WorldCounter++);
-	WorldLand W;
-	W.id = NextId++;
 	// Land types by weight among those the Castle has opened (ruins and VP lands come later).
-	const int Castle = CastleLevel();
 	int64_t Total = 0;
 	for (const LandTypeDef& T : C.landTypes)
 	{
 		Total += T.castle <= Castle ? T.weight : 0;
 	}
-	W.type = 0;
 	int64_t Pick = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
 	for (size_t I = 0; I < C.landTypes.size() && Total > 0; ++I)
 	{
@@ -1918,16 +1942,168 @@ WorldLand Kingdom::MakeWorldLand()
 		}
 		if (Pick < T.weight)
 		{
-			W.type = static_cast<int>(I);
-			break;
+			return static_cast<int>(I);
 		}
 		Pick -= T.weight;
 	}
+	return 0;
+}
+
+WorldLand Kingdom::MakeWorldLand()
+{
+	const uint64_t H = Mix(Seed, WorldCounter++);
+	WorldLand W;
+	W.id = NextId++;
+	const int Castle = CastleLevel();
+	W.type = PickLandType(H, Castle);
 	// Land levels follow the Castle: a band of three levels that rises with it.
 	const int Lo = LandBandLow(Castle);
 	const int Hi = LandBandTop(Castle);
 	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
 	return W;
+}
+
+WorldLand Kingdom::MakeRivalLand(int R)
+{
+	// Rival lands have their own counter and id range, so the neutral world stays as it was.
+	const uint64_t H = Mix(Seed ^ 0x726976616cULL, RivalCounter);
+	WorldLand W;
+	W.id = kRivalLandBase + static_cast<int32_t>(RivalCounter++);
+	W.owner = R;
+	// A lord holds lands of its own Castle's band: a stronger neighbour holds richer, better defended ones.
+	const int Castle = RivalCastle(R);
+	W.type = PickLandType(H, Castle);
+	const int Lo = LandBandLow(Castle);
+	const int Hi = LandBandTop(Castle);
+	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
+	return W;
+}
+
+void Kingdom::ResetRivals()
+{
+	RivalList.clear();
+	RivalLandList.clear();
+	RivalCounter = 0;
+	// Each rival is a different lord, picked by the seed.
+	std::vector<int> Free;
+	for (size_t I = 0; I < C.rivals.lords.size(); ++I)
+	{
+		Free.push_back(static_cast<int>(I));
+	}
+	for (size_t I = 0; I < C.rivals.castleOffsets.size() && !Free.empty(); ++I)
+	{
+		const size_t Pick = static_cast<size_t>(Mix(Seed ^ 0x6c6f7264ULL, I) % Free.size());
+		Rival R;
+		R.lord = Free[Pick];
+		Free.erase(Free.begin() + static_cast<std::ptrdiff_t>(Pick));
+		RivalList.push_back(R);
+	}
+	FillRivals();
+}
+
+void Kingdom::FillRivals()
+{
+	for (size_t R = 0; R < RivalList.size(); ++R)
+	{
+		int Held = static_cast<int>(RivalList[R].regrow.size());
+		for (const WorldLand& W : RivalLandList)
+		{
+			Held += W.owner == static_cast<int>(R) ? 1 : 0;
+		}
+		for (; Held < RivalLandTarget(static_cast<int>(R)); ++Held)
+		{
+			RivalLandList.push_back(MakeRivalLand(static_cast<int>(R)));
+		}
+	}
+}
+
+int Kingdom::RivalCastle(int R) const
+{
+	const int Offset = R >= 0 && R < static_cast<int>(C.rivals.castleOffsets.size()) ? C.rivals.castleOffsets[static_cast<size_t>(R)] : 0;
+	return std::max(1, std::min(CastleLevel() + Offset, C.buildings[static_cast<size_t>(C.castle)].MaxLevel()));
+}
+
+int Kingdom::RivalLandTarget(int R) const
+{
+	const RivalRules& RR = C.rivals;
+	return std::min(RR.landsMax, RR.landsBase + RivalCastle(R) / RR.landsPerCastle);
+}
+
+int Kingdom::RivalTitan(int R) const
+{
+	if (C.titans.empty())
+	{
+		return -1;
+	}
+	// The lord's titan rises in rarity with its Castle (as the titans a player of that Castle has).
+	const int Castle = RivalCastle(R);
+	const int Stars = Castle < 7 ? 1 : (Castle < 12 ? 2 : (Castle < 18 ? 3 : 4));
+	std::vector<int> Pool;
+	for (size_t I = 0; I < C.titans.size(); ++I)
+	{
+		if (C.titans[I].stars == Stars)
+		{
+			Pool.push_back(static_cast<int>(I));
+		}
+	}
+	if (Pool.empty())
+	{
+		return 0;
+	}
+	const int Lord = R >= 0 && R < static_cast<int>(RivalList.size()) ? RivalList[static_cast<size_t>(R)].lord : R;
+	return Pool[static_cast<size_t>(Mix(Seed ^ 0x7469746eULL, static_cast<uint64_t>(Lord)) % Pool.size())];
+}
+
+int Kingdom::RivalTitanLevel(const WorldLand& W) const
+{
+	const int T = RivalTitan(W.owner);
+	if (T < 0 || C.battles.empty())
+	{
+		return 0;
+	}
+	// The lord's own table by land level (a little above the battle rows' titans), past its end the battle row's titan
+	// level; never above the titan's cap.
+	const BattleRowDef& Row = C.battles[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(C.battles.size())) - 1)];
+	const std::vector<int64_t>& Table = C.rivals.titanLevels;
+	const int Level = W.level <= static_cast<int>(Table.size()) ? static_cast<int>(Table[static_cast<size_t>(W.level - 1)])
+		: (Row.titanLevel > 0 ? Row.titanLevel : (Table.empty() ? 1 : static_cast<int>(Table.back())));
+	return std::max(1, std::min(Level, C.titans[static_cast<size_t>(T)].MaxLevel()));
+}
+
+const WorldLand* Kingdom::FindWorldLand(int32_t Id) const
+{
+	for (const std::vector<WorldLand>* List : {&WorldList, &RivalLandList})
+	{
+		for (const WorldLand& W : *List)
+		{
+			if (W.id == Id)
+			{
+				return &W;
+			}
+		}
+	}
+	return nullptr;
+}
+
+WorldLand* Kingdom::FindWorld(int32_t Id, bool* OutRival)
+{
+	for (WorldLand& W : WorldList)
+	{
+		if (W.id == Id)
+		{
+			*OutRival = false;
+			return &W;
+		}
+	}
+	for (WorldLand& W : RivalLandList)
+	{
+		if (W.id == Id)
+		{
+			*OutRival = true;
+			return &W;
+		}
+	}
+	return nullptr;
 }
 
 void Kingdom::FillWorld()
@@ -1955,17 +2131,18 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 
 Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
 {
-	const WorldLand* W = nullptr;
-	for (const WorldLand& It : WorldList)
-	{
-		if (It.id == WorldId)
-		{
-			W = &It;
-		}
-	}
+	const WorldLand* W = FindWorldLand(WorldId);
 	if (!W)
 	{
 		return Error::BadId;
+	}
+	if (W->owner >= 0 && CastleLevel() < C.rivals.castle)
+	{
+		return Error::CastleTooLow;
+	}
+	if (W->shieldUntil > Time)
+	{
+		return Error::NotReady; // a lord's land raided not long ago
 	}
 	if (Capture && static_cast<int>(LandList.size()) >= LandCapacity())
 	{
@@ -2149,17 +2326,11 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 		return Error::NoAttack;
 	}
 	Pending = 0;
-	size_t Index = WorldList.size();
-	for (size_t I = 0; I < WorldList.size(); ++I)
-	{
-		if (WorldList[I].id == WorldId)
-		{
-			Index = I;
-		}
-	}
+	bool bRival = false;
+	WorldLand* Found = FindWorld(WorldId, &bRival);
 	Reward R;
-	EndBattle(Index < WorldList.size() ? WorldList[Index].level : 1, Stars, 100, SurvivorPct, SpellsUsed, R);
-	if (Index >= WorldList.size())
+	EndBattle(Found ? Found->level : 1, Stars, 100, SurvivorPct, SpellsUsed, R);
+	if (!Found)
 	{
 		if (Out)
 		{
@@ -2169,7 +2340,7 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	}
 	if (Stars > 0)
 	{
-		const WorldLand W = WorldList[Index];
+		const WorldLand W = *Found;
 		const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
 		const auto Scaled = [Pct](int64_t Base) { return Base > 0 ? std::max<int64_t>(1, Base * Pct / 100) : 0; };
 		if (Capture)
@@ -2191,7 +2362,7 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 			R.res[static_cast<size_t>(ResIndex(Kind))] += Amount(Kind) - Before;
 		}
 		// Every victory brings victory points as well (the original's rule; the amounts are ours).
-		const int64_t Vp = Scaled(VictoryVp(W.level));
+		const int64_t Vp = Scaled(WorldVp(W));
 		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
 		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
 		// And relics: the original (1.8) drops one to three per won battle, better ones as the player goes on.
@@ -2213,9 +2384,24 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 				}
 			}
 		}
-		// A beaten land leaves the map; a new one appears.
-		WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Index));
-		FillWorld();
+		if (!bRival)
+		{
+			// A beaten land leaves the map; a new one appears.
+			WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Found - WorldList.data()));
+			FillWorld();
+		}
+		else if (Capture)
+		{
+			// The lord wins another land back after a while.
+			std::vector<int64_t>& Regrow = RivalList[static_cast<size_t>(W.owner)].regrow;
+			Regrow.insert(std::upper_bound(Regrow.begin(), Regrow.end(), Time + C.rivals.regrowSec), Time + C.rivals.regrowSec);
+			RivalLandList.erase(RivalLandList.begin() + static_cast<std::ptrdiff_t>(Found - RivalLandList.data()));
+		}
+		else
+		{
+			// A raided land stays the lord's, shielded for a while.
+			Found->shieldUntil = Time + C.rivals.shieldSec;
+		}
 	}
 	if (Out)
 	{
@@ -4670,6 +4856,44 @@ std::string Kingdom::Save() const
 		W.EndObject();
 	}
 	W.EndArray();
+	// Neighbouring lords (optional fields: older saves get them on load).
+	W.Key("rivalCounter");
+	W.UInt(RivalCounter);
+	W.Key("rivals");
+	W.BeginArray();
+	for (const Rival& R : RivalList)
+	{
+		W.BeginObject();
+		W.Key("lord");
+		W.Int(R.lord);
+		W.Key("regrow");
+		W.BeginArray();
+		for (const int64_t At : R.regrow)
+		{
+			W.Int(At);
+		}
+		W.EndArray();
+		W.EndObject();
+	}
+	W.EndArray();
+	W.Key("rivalLands");
+	W.BeginArray();
+	for (const WorldLand& L : RivalLandList)
+	{
+		W.BeginObject();
+		W.Key("id");
+		W.Int(L.id);
+		W.Key("type");
+		W.String(C.landTypes[static_cast<size_t>(L.type)].id);
+		W.Key("level");
+		W.Int(L.level);
+		W.Key("owner");
+		W.Int(L.owner);
+		W.Key("shield");
+		W.Int(L.shieldUntil);
+		W.EndObject();
+	}
+	W.EndArray();
 	// Army and titans (format 2). Troops and titans are stored by id so content can grow.
 	W.Key("army");
 	W.BeginObject();
@@ -5069,6 +5293,47 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	std::vector<Rival> NewRivals;
+	std::vector<WorldLand> NewRivalLands;
+	const JsonValue* RivalsJ = J.Find("rivals");
+	if (RivalsJ)
+	{
+		for (size_t I = 0; I < RivalsJ->Size(); ++I)
+		{
+			const JsonValue& RJ = (*RivalsJ)[I];
+			Rival R;
+			R.lord = std::max(0, std::min(RJ.GetInt("lord", 0), static_cast<int>(C.rivals.lords.size()) - 1));
+			if (const JsonValue* G = RJ.Find("regrow"))
+			{
+				for (size_t K = 0; K < G->Size(); ++K)
+				{
+					R.regrow.push_back((*G)[K].AsInt64(0));
+				}
+			}
+			std::sort(R.regrow.begin(), R.regrow.end());
+			if (NewRivals.size() < C.rivals.castleOffsets.size() && !C.rivals.lords.empty())
+			{
+				NewRivals.push_back(R);
+			}
+		}
+		if (const JsonValue* List = J.Find("rivalLands"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const JsonValue& WJ = (*List)[I];
+				WorldLand W;
+				W.id = static_cast<int32_t>(WJ.GetInt64("id", 0));
+				W.type = FindLandType(WJ.GetString("type"));
+				W.level = std::max(1, WJ.GetInt("level", 1));
+				W.owner = WJ.GetInt("owner", -1);
+				W.shieldUntil = WJ.GetInt64("shield", 0);
+				if (W.type >= 0 && W.owner >= 0 && W.owner < static_cast<int>(NewRivals.size()))
+				{
+					NewRivalLands.push_back(W);
+				}
+			}
+		}
+	}
 	Time = J.GetInt64("time", 0);
 	const JsonValue* SeedJ = J.Find("seed");
 	Seed = SeedJ ? static_cast<uint64_t>(std::strtoull(SeedJ->text.c_str(), nullptr, 10)) : 1;
@@ -5115,6 +5380,10 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	BuildingList = NewBuildings;
 	LandList = NewLands;
 	WorldList = NewWorld;
+	RivalList = NewRivals;
+	RivalLandList = NewRivalLands;
+	const JsonValue* RivalCounterJ = J.Find("rivalCounter");
+	RivalCounter = RivalCounterJ ? static_cast<uint64_t>(std::strtoull(RivalCounterJ->text.c_str(), nullptr, 10)) : 0;
 	const JsonValue* ArmyJ = J.Find("army");
 	if (!ArmyJ)
 	{
@@ -5549,6 +5818,14 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		}
 	}
 	FillWorld();
+	if (!RivalsJ)
+	{
+		ResetRivals(); // a save from before the world map
+	}
+	else
+	{
+		FillRivals(); // the content may ask for more lands now
+	}
 	return true;
 }
 
@@ -5637,6 +5914,23 @@ uint64_t Kingdom::Hash() const
 		W.I32(L.id);
 		W.I32(L.type);
 		W.I32(L.level);
+	}
+	W.U64(RivalCounter);
+	for (const Rival& R : RivalList)
+	{
+		W.I32(R.lord);
+		for (const int64_t At : R.regrow)
+		{
+			W.I64(At);
+		}
+	}
+	for (const WorldLand& L : RivalLandList)
+	{
+		W.I32(L.id);
+		W.I32(L.type);
+		W.I32(L.level);
+		W.I32(L.owner);
+		W.I64(L.shieldUntil);
 	}
 	for (size_t I = 0; I < TroopLevels.size(); ++I)
 	{

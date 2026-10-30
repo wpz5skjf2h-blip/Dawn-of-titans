@@ -216,6 +216,29 @@ struct SiteRules
 	std::vector<SiteDef> list;
 };
 
+/** Neighbouring lords on the world map (kingdom.json "rivals"): computer kingdoms in place of the original's players,
+ *  each an island with its captured lands around it. Their lands can be raided (then shielded for a while) or taken
+ *  (then they win another one back after a while); the lord's titan guards every one of them. */
+struct RivalRules
+{
+	struct Lord
+	{
+		std::string name;
+		std::string realm;
+	};
+	std::vector<Lord> lords; // the seed picks one per rival
+	std::vector<int> castleOffsets; // one per rival: its Castle against the player's
+	int castle = 3; // their lands can be attacked from this Castle
+	int landsBase = 2; // lands a lord holds: base, one more every landsPerCastle Castle levels, at most landsMax
+	int landsPerCastle = 6;
+	int landsMax = 4;
+	int64_t regrowSec = 8 * 3600; // a taken land comes back after this
+	int64_t shieldSec = 8 * 3600; // a raided land is left alone this long
+	int64_t lootPct = 100; // raid loot of a lord's land against a neutral one
+	int64_t vpPct = 100;
+	std::vector<int64_t> titanLevels; // the lord's titan on a land whose battle row has none, by land level
+};
+
 /** A campaign mission: the land battle row its enemy comes from (the clients build the army) and its first-clear reward. */
 struct MissionDef
 {
@@ -493,6 +516,7 @@ struct KingdomContent
 	std::vector<LeagueDef> leagues;
 	AllianceRules alliances;
 	SiteRules sites;
+	RivalRules rivals;
 	CampaignRules campaigns;
 	QuestRules quests;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */

@@ -919,6 +919,41 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 	}
+	if (const JsonValue* Rivals = Rules.Find("rivals"))
+	{
+		RivalRules& R = Out.rivals;
+		if (const JsonValue* Lords = Rivals->Find("lords"))
+		{
+			for (size_t I = 0; I < Lords->Size(); ++I)
+			{
+				const JsonValue& J = (*Lords)[I];
+				R.lords.push_back({J.GetString("name"), J.GetString("realm")});
+			}
+		}
+		std::vector<int64_t> Offsets;
+		ReadInts(Rivals->Find("castleOffsets"), Offsets);
+		for (const int64_t O : Offsets)
+		{
+			R.castleOffsets.push_back(static_cast<int>(O));
+		}
+		R.castle = std::max(1, Rivals->GetInt("castle", R.castle));
+		if (const JsonValue* Lands = Rivals->Find("lands"))
+		{
+			R.landsBase = std::max(1, Lands->GetInt("base", R.landsBase));
+			R.landsPerCastle = std::max(1, Lands->GetInt("perCastle", R.landsPerCastle));
+			R.landsMax = std::max(R.landsBase, Lands->GetInt("max", R.landsMax));
+		}
+		R.regrowSec = std::max<int64_t>(1, Rivals->GetInt64("regrowHours", R.regrowSec / 3600)) * 3600;
+		R.shieldSec = std::max<int64_t>(0, Rivals->GetInt64("shieldHours", R.shieldSec / 3600)) * 3600;
+		R.lootPct = std::max<int64_t>(0, Rivals->GetInt64("lootPct", R.lootPct));
+		R.vpPct = std::max<int64_t>(0, Rivals->GetInt64("vpPct", R.vpPct));
+		ReadInts(Rivals->Find("titanLevels"), R.titanLevels);
+		if (R.lords.size() < R.castleOffsets.size())
+		{
+			Error = "kingdom/kingdom.json: rivals need at least one lord per castle offset";
+			return false;
+		}
+	}
 	if (const JsonValue* Sites = Rules.Find("sites"))
 	{
 		SiteRules& S = Out.sites;

@@ -1573,6 +1573,97 @@ std::string WithRaids(const std::string& Save, const std::string& Raids)
 	return P == std::string::npos ? Save : Save.substr(0, P) + "\"raids\":" + Raids + "}";
 }
 
+void TestRivals()
+{
+	const KingdomContent& Ct = Content();
+	const RivalRules& RR = Ct.rivals;
+	KD_CHECK(RR.castleOffsets.size() == 5 && RR.lords.size() == 8 && RR.castle == 3 && RR.lootPct == 150 && RR.vpPct == 150);
+	KD_CHECK(RR.titanLevels.size() == 9 && RR.regrowSec == 8 * Hour && RR.shieldSec == 8 * Hour);
+	// A new kingdom: five different lords (Castles 1 to 3), two lands each, all of their own band; the neutral world as before.
+	Kingdom K(Ct);
+	K.NewGame(T0, 21);
+	KD_CHECK(K.Rivals().size() == 5 && K.RivalLands().size() == 10 && static_cast<int>(K.World().size()) == Ct.worldSize);
+	std::vector<int> Lords;
+	for (const Rival& R : K.Rivals())
+	{
+		KD_CHECK(std::find(Lords.begin(), Lords.end(), R.lord) == Lords.end() && R.regrow.empty());
+		Lords.push_back(R.lord);
+	}
+	KD_CHECK(K.RivalCastle(0) == 1 && K.RivalCastle(1) == 1 && K.RivalCastle(3) == 2 && K.RivalCastle(4) == 3);
+	for (const WorldLand& W : K.RivalLands())
+	{
+		KD_CHECK(W.id >= Kingdom::kRivalLandBase && W.owner >= 0 && W.owner < 5 && W.level >= 1 && W.level <= 3 && W.shieldUntil == 0);
+		KD_CHECK(K.FindWorldLand(W.id) == &W && Ct.landTypes[static_cast<size_t>(W.type)].castle <= K.RivalCastle(W.owner));
+		// The lord's titan (one star at these Castles) guards every land, at the table's level for the land's.
+		KD_CHECK(Ct.titans[static_cast<size_t>(K.RivalTitan(W.owner))].stars == 1 && K.RivalTitanLevel(W) == RR.titanLevels[static_cast<size_t>(W.level - 1)]);
+	}
+	// Their lands open at Castle 3.
+	KD_CHECK(K.StartAttack(K.RivalLands()[0].id, false) == Error::CastleTooLow);
+	// The same seed gives the same lords and lands.
+	Kingdom K2(Ct);
+	K2.NewGame(T0, 21);
+	KD_CHECK(K2.Hash() == K.Hash());
+
+	// An old save at Castle 6 (no lords in it): lords at Castles 5-8 hold 2 or 3 lands.
+	std::string Base = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6");
+	Base = Replace(Base, "\"rivals\":", "\"oldRivals\":");
+	std::string Error;
+	Kingdom A(Ct);
+	KD_CHECK(A.Load(Base, Error));
+	int Expected = 0;
+	for (int R = 0; R < 5; ++R)
+	{
+		Expected += A.RivalLandTarget(R);
+	}
+	KD_CHECK(Expected == 14 && static_cast<int>(A.RivalLands().size()) == Expected);
+	KD_CHECK(Ct.titans[static_cast<size_t>(A.RivalTitan(0))].stars == 1 && Ct.titans[static_cast<size_t>(A.RivalTitan(4))].stars == 2);
+	for (const WorldLand& W : A.RivalLands())
+	{
+		const int Lo = (A.RivalCastle(W.owner) + 1) / 3;
+		KD_CHECK(W.level >= Lo && W.level <= Lo + 2);
+		// The table's level for the land's, under the titan's own cap.
+		KD_CHECK(A.RivalTitanLevel(W) == std::min(static_cast<int>(RR.titanLevels[static_cast<size_t>(W.level - 1)]),
+			Ct.titans[static_cast<size_t>(A.RivalTitan(W.owner))].MaxLevel()));
+	}
+
+	// A raid: half as much again of loot and VP; the land stays the lord's under a shield.
+	const WorldLand T = A.RivalLands()[0];
+	const LandTypeDef& Ty = Ct.landTypes[static_cast<size_t>(T.type)];
+	const std::vector<int64_t>& Table = Ty.raidLoot.empty() ? Ct.raidLoot : Ty.raidLoot;
+	KD_CHECK(A.RaidLoot(T) == Table[static_cast<size_t>(T.level - 1)] * 150 / 100 && A.WorldVp(T) == A.VictoryVp(T.level) * 150 / 100);
+	Reward R;
+	KD_CHECK(A.StartAttack(T.id, false) == Error::None);
+	KD_CHECK(A.FinishAttack(T.id, false, 3, &R) == Error::None);
+	KD_CHECK(R.res[static_cast<size_t>(ResIndex(Res::Vp))] == A.WorldVp(T) && R.res[static_cast<size_t>(ResIndex(Ty.resource))] > 0);
+	const WorldLand* Raided = A.FindWorldLand(T.id);
+	KD_CHECK(Raided && Raided->shieldUntil == A.Now() + RR.shieldSec && static_cast<int>(A.RivalLands().size()) == Expected);
+	KD_CHECK(A.StartAttack(T.id, true) == Error::NotReady);
+	// A lost battle changes nothing.
+	const WorldLand U = A.RivalLands()[1];
+	KD_CHECK(A.StartAttack(U.id, false) == Error::None && A.FinishAttack(U.id, false, 0, &R) == Error::None);
+	KD_CHECK(A.FindWorldLand(U.id)->shieldUntil == 0 && R.res[static_cast<size_t>(ResIndex(Res::Vp))] == 0);
+	// After the shield it can be taken: the player gets it at its level, and the lord wins another one back later.
+	A.Advance(A.Now() + RR.shieldSec);
+	KD_CHECK(A.StartAttack(T.id, true) == Error::None);
+	KD_CHECK(A.FinishAttack(T.id, true, 2, &R) == Error::None && R.landId != 0);
+	const Land* Taken = A.FindLand(R.landId);
+	KD_CHECK(Taken && Taken->type == T.type && Taken->level == T.level && !A.FindWorldLand(T.id));
+	KD_CHECK(static_cast<int>(A.RivalLands().size()) == Expected - 1 && A.Rivals()[static_cast<size_t>(T.owner)].regrow.size() == 1);
+	const int64_t Back = A.Rivals()[static_cast<size_t>(T.owner)].regrow[0];
+	KD_CHECK(Back == A.Now() + RR.regrowSec);
+	// Saved and loaded in between, both copies go on the same way.
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(A.Save(), Error) && B.Hash() == A.Hash() && B.Save() == A.Save());
+	A.Advance(Back - 1);
+	KD_CHECK(static_cast<int>(A.RivalLands().size()) == Expected - 1);
+	A.Advance(Back);
+	KD_CHECK(static_cast<int>(A.RivalLands().size()) == Expected && A.Rivals()[static_cast<size_t>(T.owner)].regrow.empty());
+	KD_CHECK(A.RivalLands().back().owner == T.owner && A.RivalLands().back().id > T.id);
+	B.Advance(Back + Hour);
+	A.Advance(Back + Hour);
+	KD_CHECK(B.Hash() == A.Hash());
+}
+
 void TestRaids()
 {
 	const KingdomContent& Ct = Content();
@@ -2022,6 +2113,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
+		{"Rivals", TestRivals},
 	};
 	for (const auto& T : Tests)
 	{
