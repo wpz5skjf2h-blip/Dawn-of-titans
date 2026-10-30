@@ -4007,8 +4007,8 @@ function onBattleEnd(ctx, stars, retreat) {
 			const lord = ctx.own >= 0 ? lordOf(ctx.own) : null;
 			if (stars > 0 && ctx.capture) toast((lord ? 'Земля отбита у: ' + lord.name + '! ' : 'Земля захвачена! ') + 'Теперь она приносит ' + what + vpText, 'gold');
 			else if (stars > 0) toast('Набег удался: +' + resAmount(res, res === 'vp' ? r.vp : res === 'shards' ? r.shards : res === 'food' ? r.food : r.gold) + vpText +
-				(lord ? '. ' + lord.name + ' закрыл землю щитом на ' + K.rules.rivals.shieldHours + ' ч' : ''), 'gold');
-			else toast((retreat ? 'Отступление' : 'Поражение') + ': камни портала потрачены, земля осталась у ' + (lord ? 'хозяина: ' + lord.name : 'врага'), 'bad');
+				(lord ? '. ' + lord.name + ' ставит на землю щит на ' + K.rules.rivals.shieldHours + ' ч' : ''), 'gold');
+			else toast((retreat ? 'Отступление' : 'Поражение') + ': камни портала потрачены, земля осталась ' + (lord ? 'во владении: ' + lord.name : 'у врага'), 'bad');
 			armyToast(r, used);
 		}
 		persist();
