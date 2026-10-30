@@ -43,7 +43,7 @@ const RU = {
 		'troop.ballista': 'баллисты' },
 	titan: { 'titan.thor': 'Тор', 'titan.talos': 'Талос', 'titan.minotaur': 'Минотавр', 'titan.cyclops': 'Циклоп', 'titan.perun': 'Перун',
 		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида',
-		'titan.loki': 'Локи', 'titan.tyr': 'Тюр' },
+		'titan.loki': 'Локи', 'titan.tyr': 'Тюр', 'titan.veles': 'Велес' },
 	abil: { 'ability.talos.molten_ichor': 'Ихор', 'ability.talos.bronze_bulwark': 'Оплот', 'ability.thor.hammer_throw': 'Молот',
 		'ability.thor.thunderclap': 'Гром', 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Барабаны', 'spell.healing_spring': 'Источник',
 		'spell.fireball': 'Огн. шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
@@ -57,7 +57,8 @@ const RU = {
 		'ability.hecate.crossroads_hex': 'Порча', 'ability.hecate.underworld_torches': 'Факелы',
 		'ability.artemis.silver_volley': 'Залп', 'ability.artemis.moonshot': 'Луна',
 		'ability.loki.shadow_step': 'Тень', 'ability.loki.trickster_blades': 'Обман',
-		'ability.tyr.sword_of_justice': 'Правосудие', 'ability.tyr.oath_of_law': 'Клятва' },
+		'ability.tyr.sword_of_justice': 'Правосудие', 'ability.tyr.oath_of_law': 'Клятва',
+		'ability.veles.nav_mire': 'Топь', 'ability.veles.ancestors_chant': 'Песнь' },
 	abilFull: { 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Боевые барабаны', 'spell.healing_spring': 'Целебный источник',
 		'spell.fireball': 'Огненный шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
 		'spell.terror': 'Ужас', 'spell.acid_cloud': 'Кислотное облако',
@@ -73,7 +74,8 @@ const RU = {
 		'ability.hecate.crossroads_hex': 'Порча перекрёстка', 'ability.hecate.underworld_torches': 'Факелы преисподней',
 		'ability.artemis.silver_volley': 'Серебряный залп', 'ability.artemis.moonshot': 'Лунная стрела',
 		'ability.loki.shadow_step': 'Шаг из тени', 'ability.loki.trickster_blades': 'Клинки обманщика',
-		'ability.tyr.sword_of_justice': 'Меч правосудия', 'ability.tyr.oath_of_law': 'Клятва закона' },
+		'ability.tyr.sword_of_justice': 'Меч правосудия', 'ability.tyr.oath_of_law': 'Клятва закона',
+		'ability.veles.nav_mire': 'Топь Нави', 'ability.veles.ancestors_chant': 'Песнь предков' },
 	ai: { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' },
 	formation: ['Линия', 'Колонна', 'Клин', 'Каре', 'Рассыпной'],
 	stance: ['Натиск', 'Стоять', 'Застрельщики'],
@@ -88,7 +90,7 @@ const SCENARIOS = [
 	{ path: 'scenarios/m1_chains_and_fire.json', name: 'Цепи и огонь', note: 'Цепеломы, гренадеры и боевые жрецы против Атланта' },
 	{ path: 'scenarios/m1_ballista_line.json', name: 'Стена баллист', note: 'Расчёты баллист против Имира и его конницы: прикройте машины копьями' },
 ];
-const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis', 'titan.loki', 'titan.tyr'];
+const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis', 'titan.loki', 'titan.tyr', 'titan.veles'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
 const QUALITY = [['auto', 'Авто'], ['high', 'Высокое'], ['low', 'Экономное']];
 const SIDE_COLOR = [new THREE.Color(0x3d7bf2), new THREE.Color(0xd9442f)];
@@ -852,6 +854,7 @@ const TITAN_LOOK = {
 	'titan.hecate': { skin: 0x5b4a7a, dark: 0x2a2238, glow: 0xc89bff, metal: 0.3, rough: 0.5, kind: 'staff' },
 	'titan.loki': { skin: 0x4f7a4a, dark: 0x22341f, glow: 0x9dff6a, metal: 0.3, rough: 0.5, kind: 'sword' },
 	'titan.tyr': { skin: 0xb8bcc4, dark: 0x5a3a2a, glow: 0xfff0a0, metal: 0.6, rough: 0.35, kind: 'sword' },
+	'titan.veles': { skin: 0x6b4c34, dark: 0x2c2218, glow: 0x5fe0b0, metal: 0.1, rough: 0.8, kind: 'staff', horns: true },
 	'titan.artemis': { skin: 0x7a8c5a, dark: 0x3a4628, glow: 0xe8ffb0, metal: 0.2, rough: 0.6, kind: 'bow' },
 };
 
@@ -915,6 +918,10 @@ function buildTitan(t) {
 		} else if (look.kind === 'staff') {
 			add(GEO.cyl, dark, shR, 0, -0.42 * H, 0, 0.12 * R, 0.8 * H, 0.12 * R);
 			add(GEO.sphere, glow, shR, 0, -0.02 * H, 0, 0.45 * R, 0.45 * R, 0.45 * R);
+			if (look.horns) {
+				add(GEO.cone, new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6 }), body, -0.5 * R, 1.0 * H, -0.05 * R, 0.18 * R, 0.6 * R, 0.18 * R).rotation.z = 0.9;
+				add(GEO.cone, new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6 }), body, 0.5 * R, 1.0 * H, -0.05 * R, 0.18 * R, 0.6 * R, 0.18 * R).rotation.z = -0.9;
+			}
 		} else if (look.kind === 'bow') {
 			add(GEO.box, dark, shL, 0, -0.42 * H, -0.3 * R, 0.1 * R, 0.55 * H, 0.1 * R).rotation.x = 0.25;
 			add(GEO.box, glow, shL, 0, -0.42 * H, -0.18 * R, 0.03 * R, 0.5 * H, 0.03 * R);

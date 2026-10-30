@@ -2649,6 +2649,13 @@
    "class": "Paladin",
    "classRu": "Паладин",
    "stars": 3
+  },
+  {
+   "id": "titan.veles",
+   "name": "Велес",
+   "class": "Shaman",
+   "classRu": "Шаман",
+   "stars": 4
   }
  ],
  "titanXp": {
@@ -2888,6 +2895,15 @@
     "sunder": 2,
     "war_cry": 3,
     "banner": 2
+   },
+   "Shaman": {
+    "might": 2,
+    "vigor": 3,
+    "cuirass": 2,
+    "precision": 1,
+    "sunder": 1,
+    "war_cry": 4,
+    "banner": 4
    }
   }
  },

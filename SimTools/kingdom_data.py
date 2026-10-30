@@ -436,9 +436,11 @@ TITANS = [
     ("titan.thor", "Тор", "Berserker", 4),
     # The original's Infiltrator and Paladin classes (appended so the titans above keep their indices).
     ("titan.loki", "Локи", "Infiltrator", 2), ("titan.tyr", "Тюр", "Paladin", 3),
+    # The original's Shaman class: the eighth and last class of the roster.
+    ("titan.veles", "Велес", "Shaman", 4),
 ]
 CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт",
-            "Infiltrator": "Лазутчик", "Paladin": "Паладин"}
+            "Infiltrator": "Лазутчик", "Paladin": "Паладин", "Shaman": "Шаман"}
 ARMY = {
     "schemaVersion": 1,
     "source": "docs/Original_Reference.md",
@@ -472,6 +474,7 @@ ARMY = {
             "Infiltrator": {"might": 4, "vigor": 1, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 1, "banner": 1},
             "Ranger": {"might": 3, "vigor": 2, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 2, "banner": 1},
             "Sorcerer": {"might": 4, "vigor": 3, "cuirass": 1, "precision": 2, "sunder": 2, "war_cry": 3, "banner": 2},
+            "Shaman": {"might": 2, "vigor": 3, "cuirass": 2, "precision": 1, "sunder": 1, "war_cry": 4, "banner": 4},
         },
     },
     # Fusion unlocks at Castle 7 and costs food (wiki); XP and the food amount are estimates.

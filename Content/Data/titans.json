@@ -95,6 +95,14 @@
       "class": "Warden", "rarity": "Epic", "size": "Large",
       "variance": { "hp": 1.02, "atk": 0.98, "poise": 1.05 },
       "abilities": ["ability.tyr.sword_of_justice", "ability.tyr.oath_of_law"]
+    },
+    // The original's Shaman class rides on the sim's Mystic body: a caster that bogs the enemy down in a mire
+    // and sings its own troops forward.
+    {
+      "id": "titan.veles", "name": "Veles", "title": "Lord of Nav", "lineage": "Slavs",
+      "class": "Mystic", "rarity": "Legendary", "size": "Large",
+      "variance": { "hp": 1.22, "atk": 1.22, "poise": 1.0 },
+      "abilities": ["ability.veles.nav_mire", "ability.veles.ancestors_chant"]
     }
   ]
 }

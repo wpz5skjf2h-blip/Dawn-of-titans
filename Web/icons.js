@@ -276,6 +276,10 @@ const DotIcons = (() => {
 		'class.Paladin': c(24, 15, 11, 'none', 'stroke-width="5.4"') + c(24, 15, 11, 'none', 'stroke="' + K.gold + '" stroke-width="2.6"') + SWORD +
 			spark(38, 7, 3, K.white) + spark(10, 9, 2.4, K.white),
 		'class.Infiltrator': rot(-38, DAGGER) + rot(38, DAGGER) + c(24, 31, 3.2, '#5fbf4a', 'stroke-width="1.4"'),
+		// Shaman: a frame drum painted with a horned sign, and its beater.
+		'class.Shaman': c(21, 26, 16, K.woodD) + c(21, 26, 12.5, K.cream, 'stroke-width="1.4"') + line('M13 31C15 21 27 21 29 31', '#a2452e', 2.4) +
+			line('M16 22.5L13 17M26 22.5L29 17', '#a2452e', 2) + c(21, 28, 2.6, '#5fe0b0', 'stroke-width="1.2"') + stick('M31 39L42 10', K.wood, 2.6) + c(42, 9, 3.8, K.bone) +
+			hi('M11 20C13 15 17 12 21 11.5'),
 
 		// --- Relic Temple altars, lands, menu -------------------------------------------------------
 		'altar.daily': r(9, 21, 30, 22, 2, '#ff6b5e') + r(7, 15, 34, 7, 2, '#ff8a7d') + r(21.5, 15, 5, 28, 0, K.gold) +

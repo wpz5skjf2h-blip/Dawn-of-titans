@@ -381,6 +381,30 @@
         { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.25, "duration": 6, "affects": ["Self"] }
       ],
       "ai": { "heuristic": "SelfDefense", "hpBelow": 0.9, "minTargets": 1 }
+    },
+    {
+      "id": "ability.veles.nav_mire", "name": "Mire of Nav",
+      "rage": 50, "cooldown": 16, "castTime": 0.6,
+      "shape": "Circle", "range": 24, "radius": 9, "delivery": "Zone", "zoneDuration": 6, "zonePulse": 1,
+      "effects": [
+        { "type": "Damage", "coef": 0.35, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": -0.35, "duration": 1.5, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Morale", "flat": 5, "affects": ["EnemyTroops"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 10, "preferTitan": true }
+    },
+    {
+      "id": "ability.veles.ancestors_chant", "name": "Chant of the Ancestors",
+      "rage": 45, "cooldown": 20, "castTime": 0.5,
+      "shape": "Circle", "range": 1, "radius": 15, "delivery": "Instant",
+      "effects": [
+        { "type": "Heal", "pctMaxHp": 0.06, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.25, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "MoveSpeedPct", "magnitude": 0.15, "duration": 8, "affects": ["AllyTroops"] },
+        { "type": "Heal", "pctMaxHp": 0.04, "affects": ["Self"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": 0.2, "duration": 8, "affects": ["Self"] }
+      ],
+      "ai": { "heuristic": "AlliesInCombat", "minTargets": 3 }
     }
   ]
 }

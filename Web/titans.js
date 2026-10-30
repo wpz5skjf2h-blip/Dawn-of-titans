@@ -1311,6 +1311,154 @@ const DotTitans = (() => {
 		},
 	};
 
+	T['titan.veles'] = {
+		// A Mystic in the sim; drawn on the broad Warden build because the shaman is a large titan, not a hovering one.
+		name: 'Велес', cls: 'Mystic', build: 'Warden', classRu: 'Шаман', stars: 4,
+		abil: ['Топь Нави', 'Песнь предков'],
+		crop: [44, 0, 112, 112],
+		draw(g) {
+			const fur = '#7a5434';
+			const furD = '#4f3420';
+			const robe = '#33503f';
+			const robeL = '#46684f';
+			const skin = '#cfa47c';
+			const beard = '#c4beac';
+			const horn = '#eadfc4';
+			const nav = '#5fe0b0';
+			const ochre = '#a2452e';
+			const o = { arm: robeL, hand: skin, bracer: fur };
+			// Zigzag hem of a fur edge from x0 to x1 at height y.
+			const zig = (x0, x1, y, h) => {
+				let d = '';
+				const n = Math.max(2, Math.round(Math.abs(x1 - x0) / 9));
+				for (let i = 1; i <= n; i++) d += 'L' + n1(x0 + ((x1 - x0) * i) / n) + ' ' + n1(i % 2 ? y + h : y);
+				return d;
+			};
+			// Bear-fur cloak behind the body, ragged at the hem.
+			const cl = 100 - g.S - 18;
+			const cr = 100 + g.S + 18;
+			const back = P('M' + (100 - g.S + 4) + ' ' + (g.shY - 10) + 'C' + (100 - g.S - 12) + ' 130 ' + cl + ' 180 ' + cl + ' 216' + zig(cl, cr, 216, 8) +
+				'C' + cr + ' 180 ' + (100 + g.S + 12) + ' 130 ' + (100 + g.S - 4) + ' ' + (g.shY - 10) + 'Z', fur) +
+				SHADE('M100 ' + (g.shY - 10) + 'H' + (100 + g.S - 4) + 'C' + (100 + g.S + 12) + ' 130 ' + cr + ' 180 ' + cr + ' 216L100 220Z');
+			// A long robe to the ground with a fur hem; fur boots peek out under it.
+			const W = g.W;
+			const gown = E(84, GROUND - 3, 12, 5, furD) + E(116, GROUND - 3, 12, 5, furD) +
+				P('M' + (100 - W - 2) + ' ' + (g.waistY - 4) + 'C' + (100 - W - 10) + ' 170 ' + (100 - W - 20) + ' 196 ' + (100 - W - 24) + ' ' + (GROUND - 6) + 'H' + (100 + W + 24) +
+					'C' + (100 + W + 20) + ' 196 ' + (100 + W + 10) + ' 170 ' + (100 + W + 2) + ' ' + (g.waistY - 4) + 'Z', robe) +
+				SHADE('M106 ' + g.waistY + 'C' + (100 + W + 8) + ' 170 ' + (100 + W + 18) + ' 196 ' + (100 + W + 22) + ' ' + (GROUND - 6) + 'H108Z') +
+				TEAMFILL('M92 ' + (g.waistY + 2) + 'H108L112 ' + (GROUND - 14) + 'H88Z') + L('M95 ' + (g.waistY + 10) + 'L93 ' + (GROUND - 22), WHITE, 1.6, 'stroke-opacity=".35"') +
+				P('M' + (100 - W - 26) + ' ' + (GROUND - 4) + 'L' + (100 - W - 24) + ' ' + (GROUND - 16) + zig(100 - W - 24, 100 + W + 24, GROUND - 16, 5) + 'L' + (100 + W + 26) + ' ' + (GROUND - 4) + 'Z', fur);
+			// Fur mantle over the shoulders and a bone amulet with the horned sign of Veles.
+			const S = g.S;
+			const mantle = P('M' + (100 - S - 5) + ' ' + (g.shY + 8) + 'Q' + (100 - S) + ' ' + (g.shY - 15) + ' ' + (100 - S + 16) + ' ' + (g.shY - 15) + 'H' + (100 + S - 16) + 'Q' + (100 + S) + ' ' + (g.shY - 15) + ' ' + (100 + S + 5) + ' ' + (g.shY + 8) +
+				zig(100 + S + 5, 100, g.shY + 14, 8) + zig(100, 100 - S - 5, g.shY + 14, 8) + 'Z', fur) +
+				L('M' + (100 - S + 4) + ' ' + (g.shY - 4) + 'l3 7M' + (100 - 14) + ' ' + (g.shY - 8) + 'l2 8M' + (100 + 12) + ' ' + (g.shY - 8) + 'l-2 8M' + (100 + S - 6) + ' ' + (g.shY - 4) + 'l-3 7', furD, 1.6);
+			const amulet = C(100, g.shY + 36, 8, horn) + L('M94 ' + (g.shY + 39) + 'Q100 ' + (g.shY + 30) + ' 106 ' + (g.shY + 39) + 'M95.5 ' + (g.shY + 34) + 'l-2 -4M104.5 ' + (g.shY + 34) + 'l2 -4', ochre, 2) +
+				C(100, g.shY + 38, 1.8, nav, 'stroke="none"');
+			const chest = P(torsoPath(g), robeL) + torsoShade(g) + L('M100 ' + (g.shY + 16) + 'V' + (g.waistY - 8), '#2a4033', 1.6, 'stroke-opacity=".6"') + amulet + mantle;
+			const r = g.headR;
+			// Ox horns curving out of the bear hood.
+			const hornS = (s) => {
+				const x = (v) => n1(100 + s * v);
+				return P('M' + x(r - 3) + ' 42C' + x(r + 16) + ' 44 ' + x(r + 30) + ' 30 ' + x(r + 27) + ' 6C' + x(r + 23) + ' 22 ' + x(r + 13) + ' 32 ' + x(r - 3) + ' 32Z', horn) +
+					L('M' + x(r + 8) + ' 41l-1 -9M' + x(r + 15) + ' 38l-2 -8M' + x(r + 21) + ' 32l-3 -6', '#b8a888', 1.4) + HI('M' + x(r + 2) + ' 34C' + x(r + 12) + ' 33 ' + x(r + 20) + ' 26 ' + x(r + 24) + ' 14', 1.6);
+			};
+			const head = P('M' + (100 - r - 8) + ' 72C' + (100 - r - 10) + ' 40 ' + (100 - r - 4) + ' 22 100 22C' + (100 + r + 4) + ' 22 ' + (100 + r + 10) + ' 40 ' + (100 + r + 8) + ' 72Z', furD) +
+				hornS(-1) + hornS(1) + P(skull(100, 56, r), skin) + SHADE('M108 42C118 46 118 66 110 74L106 62Z') +
+				// Long grey beard over the mantle.
+				P('M' + (100 - r + 1) + ' 58C' + (100 - r) + ' 90 ' + (100 - 12) + ' 112 100 120C' + (100 + 12) + ' 112 ' + (100 + r) + ' 90 ' + (100 + r - 1) + ' 58C' + (100 + r - 6) + ' 70 ' + (100 + 6) + ' 72 100 72C' + (100 - 6) + ' 72 ' + (100 - r + 6) + ' 70 ' + (100 - r + 1) + ' 58Z', beard) +
+				L('M100 80V114M93 80l-3 26M107 80l3 26', '#8f8a78', 1.6) + P('M91 72Q100 65 109 72Q100 76 91 72Z', '#8f8a78') +
+				// Brim of the bear hood with two small ears.
+				C(100 - 15, 27, 5, furD) + C(100 + 15, 27, 5, furD) +
+				P('M' + (100 - r - 3) + ' 50C' + (100 - r - 2) + ' 26 ' + (100 + r + 2) + ' 26 ' + (100 + r + 3) + ' 50C' + (100 + r - 6) + ' 40 ' + (100 - r + 6) + ' 40 ' + (100 - r - 3) + ' 50Z', fur) +
+				HI('M' + (100 - r) + ' 42C' + (100 - r + 2) + ' 34 ' + (100 - 8) + ' 30 ' + (100 - 3) + ' 30', 2.2) +
+				L('M88 57l6 0.5M112 57l-6 0.5', nav, 3) + L('M87 53l8 2M113 53l-8 2', INK, 2.2);
+			const hr = g.hdR;
+			// The staff in his right hand: a crook with a glowing wisp and bone charms.
+			const top = [hr[0], hr[1] - 92];
+			const staff = ROD('M' + xy([hr[0], hr[1] + 60]) + 'V' + n1(top[1]), '#6b4a2a', 4.5) +
+				ROD('M' + xy(top) + 'C' + n1(top[0] + 14) + ' ' + n1(top[1] - 6) + ' ' + n1(top[0] + 16) + ' ' + n1(top[1] - 22) + ' ' + n1(top[0] + 4) + ' ' + n1(top[1] - 24), '#6b4a2a', 4) +
+				L('M' + n1(hr[0] - 1) + ' ' + n1(top[1] + 14) + 'l-6 12M' + n1(hr[0] + 1) + ' ' + n1(top[1] + 14) + 'l5 14', '#8f8a78', 1.4) + C(hr[0] - 7, top[1] + 27, 2.6, horn, 'stroke-width="1.4"') + C(hr[0] + 6, top[1] + 29, 2.6, horn, 'stroke-width="1.4"') +
+				G('p-wisp', [top[0] + 5, top[1] - 12], GLOW(top[0] + 5, top[1] - 12, 13, nav, 0.35) + C(top[0] + 5, top[1] - 12, 5.5, nav, 'stroke-width="1.6"') + C(top[0] + 3.5, top[1] - 13.5, 1.8, WHITE, 'stroke="none"'));
+			const hl = g.hdL;
+			// A frame drum in his left hand, painted with the horned sign in ochre.
+			const dx = hl[0] - 6;
+			const dy = hl[1] - 4;
+			const drum = E(dx, dy, 19, 23, '#6b4a2a') + E(dx, dy, 15.5, 19.5, '#ecdcb4', 'stroke-width="1.6"') + SHADE('M' + n1(dx + 4) + ' ' + n1(dy - 19) + 'A15.5 19.5 0 0 1 ' + n1(dx + 4) + ' ' + n1(dy + 19) + 'A19 23 0 0 0 ' + n1(dx + 4) + ' ' + n1(dy - 19) + 'Z') +
+				L('M' + n1(dx - 9) + ' ' + n1(dy + 8) + 'Q' + n1(dx) + ' ' + n1(dy - 10) + ' ' + n1(dx + 9) + ' ' + n1(dy + 8) + 'M' + n1(dx - 6) + ' ' + n1(dy - 1) + 'l-3 -7M' + n1(dx + 6) + ' ' + n1(dy - 1) + 'l3 -7', ochre, 2.4) +
+				C(dx, dy + 4, 2.4, nav, 'stroke-width="1.2"') + [-1, 1].map((s) => L('M' + n1(dx + s * 17) + ' ' + n1(dy + 10) + 'l' + s * 3 + ' 9', '#8f8a78', 1.4) + C(dx + s * 20, dy + 21, 2.2, horn, 'stroke-width="1.2"')).join('') +
+				HI('M' + n1(dx - 12) + ' ' + n1(dy - 10) + 'A15 19 0 0 1 ' + n1(dx - 3) + ' ' + n1(dy - 18), 2);
+			return {
+				back,
+				legs: gown,
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, furD, horn),
+				head,
+				armL: arm(g, -1, o, drum, true),
+				armR: arm(g, 1, o, staff, true),
+			};
+		},
+		fx(g) {
+			const nav = '#5fe0b0';
+			const top = [g.hdR[0] + 5, g.hdR[1] - 104];
+			const bubbles = [[40, 2], [70, -4], [100, 4], [132, -3], [160, 1]].map(([x, dy]) => C(x, GROUND + dy, 3.2, 'none', 'stroke="' + nav + '" stroke-width="1.6"')).join('');
+			// Grasping roots of Nav rising out of the mire.
+			const root = (x, s) => L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40) +
+				'M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + s * 9 + ' -6M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l-' + s * 2 + ' -10M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l-' + s * 9 + ' -4', '#2c3a26', 7) +
+				L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40), '#5a7a4a', 3);
+			// Ancestor spirits: pale wisps with two dark eyes.
+			const ghost = (x, y, s) => P('M' + n1(x - 8 * s) + ' ' + n1(y + 10 * s) + 'C' + n1(x - 10 * s) + ' ' + n1(y - 6 * s) + ' ' + n1(x - 6 * s) + ' ' + n1(y - 14 * s) + ' ' + n1(x) + ' ' + n1(y - 14 * s) +
+				'C' + n1(x + 6 * s) + ' ' + n1(y - 14 * s) + ' ' + n1(x + 10 * s) + ' ' + n1(y - 6 * s) + ' ' + n1(x + 8 * s) + ' ' + n1(y + 10 * s) + 'L' + n1(x + 4 * s) + ' ' + n1(y + 6 * s) + 'L' + n1(x) + ' ' + n1(y + 12 * s) +
+				'L' + n1(x - 4 * s) + ' ' + n1(y + 6 * s) + 'Z', '#d8fff0', 'stroke="' + nav + '" stroke-width="1.6" fill-opacity=".85"') +
+				C(x - 3 * s, y - 5 * s, 1.6 * s, '#24463a', 'stroke="none"') + C(x + 3 * s, y - 5 * s, 1.6 * s, '#24463a', 'stroke="none"');
+			const dc = [g.hdL[0] - 6, g.hdL[1] - 4];
+			return {
+				// The bolt rides on the staff: at the cast pose the staff stands upright, so it flies straight to the right.
+				orb: [top, C(top[0], top[1], 9, nav) + GLOW(top[0], top[1], 17, nav, 0.45) + spark(top[0], top[1], 7, WHITE) +
+					L('M' + n1(top[0] - 30) + ' ' + n1(top[1] - 4) + 'H' + n1(top[0] - 12) + 'M' + n1(top[0] - 26) + ' ' + n1(top[1] + 5) + 'H' + n1(top[0] - 12), nav, 2.4), 'wpnR'],
+				circle: [[100, GROUND], E(100, GROUND, 88, 14, '#2f5a44', 'fill-opacity=".5" stroke="' + nav + '" stroke-width="2.6"') + E(100, GROUND, 66, 9, 'none', 'stroke="#1f3a2c" stroke-width="2" stroke-dasharray="10 7"') + bubbles],
+				roots: [[100, GROUND], '<g clip-path="url(#dtGround)">' + root(34, 1) + root(68, -1) + root(134, 1) + root(166, -1) + '</g>'],
+				beat: [dc, E(dc[0], dc[1], 26, 30, 'none', 'stroke="' + nav + '" stroke-width="3" stroke-opacity=".8"') + E(dc[0], dc[1], 34, 39, 'none', 'stroke="' + nav + '" stroke-width="1.6" stroke-opacity=".5"'), 'wpnL'],
+				aura: [[100, GROUND], E(100, GROUND, 92, 15, nav, 'fill-opacity=".16" stroke="#e8b85c" stroke-width="3"') + E(100, GROUND, 70, 11, 'none', 'stroke="' + nav + '" stroke-width="1.6" stroke-dasharray="8 6"')],
+				spirits: [[100, 150], ghost(28, 150, 1.1) + ghost(172, 140, 1.1) + ghost(54, 112, 0.85) + ghost(148, 104, 0.85)],
+			};
+		},
+		clips: {
+			idle: { dur: 2.4, k: {
+				upper: [[0, {}], [0.5, { y: 1.8 }], [1, {}]],
+				head: [[0, {}], [0.5, R(-1.5)], [1, {}]],
+				armL: [[0, {}], [0.5, R(2)], [1, {}]], armR: [[0, {}], [0.5, R(-2)], [1, {}]],
+				wisp: [[0, {}], [0.25, { s: 1.15 }], [0.5, { s: 0.92 }], [0.75, { s: 1.1 }], [1, {}]],
+			} },
+			atk: { dur: 1.3, k: {
+				armR: [[0, {}], [0.4, R(-80)], [0.5, R(-95), 1, EASE_HIT], [0.8, R(-90)], [1, {}]],
+				wpnR: [[0, {}], [0.4, R(80)], [0.8, R(90)], [1, {}]],
+				upper: [[0, {}], [0.4, R(-3)], [1, {}]],
+				orb: [[0, { s: 0.3 }, 0], [0.45, { s: 0.5 }, 0], [0.5, { s: 1 }, 1], [0.8, { x: 80, s: 1.2 }, 1], [0.86, { x: 86, s: 1.8 }, 0]],
+			} },
+			// Mire of Nav: the staff comes down on the ground, a bog spreads and roots reach out of it.
+			a1: { dur: 2.4, k: {
+				armR: [[0, {}], [0.3, R(-45)], [0.46, R(8), 1, EASE_HIT], [0.82, R(8)], [1, {}]],
+				armL: [[0, {}], [0.3, R(30)], [0.82, R(30)], [1, {}]],
+				upper: [[0, {}], [0.3, R(-4, { y: -2 })], [0.46, R(4, { y: 4 })], [0.82, R(4, { y: 4 })], [1, {}]],
+				head: [[0, {}], [0.3, R(-4)], [0.46, R(3)], [0.82, R(3)], [1, {}]],
+				circle: [[0, { s: 0.2 }, 0], [0.44, { s: 0.2 }, 0], [0.58, { s: 1 }, 1], [0.88, { s: 1.05 }, 1], [1, { s: 1.15 }, 0]],
+				roots: [[0, { y: 46 }, 1], [0.5, { y: 46 }, 1], [0.68, { y: 0 }, 1, EASE_OUT], [0.88, { y: 0 }, 1], [1, { y: 46 }, 1]],
+			} },
+			// Chant of the Ancestors: the drum goes up and beats, spirits rise over the troops.
+			a2: { dur: 2.6, k: {
+				armL: [[0, {}], [0.18, R(145)], [0.3, R(135)], [0.4, R(145)], [0.5, R(135)], [0.6, R(145)], [0.7, R(135)], [0.85, R(145)], [1, {}]],
+				wpnL: [[0, {}], [0.18, R(-145)], [0.85, R(-145)], [1, {}]],
+				armR: [[0, {}], [0.18, R(-12)], [0.85, R(-12)], [1, {}]],
+				head: [[0, {}], [0.18, R(-5, { y: -2 })], [0.85, R(-5, { y: -2 })], [1, {}]],
+				upper: [[0, {}], [0.18, { y: -3 }], [0.85, { y: -3 }], [1, {}]],
+				beat: [[0, { s: 0.6 }, 0], [0.26, { s: 0.6 }, 0], [0.3, { s: 1 }, 1], [0.4, { s: 1.35 }, 0], [0.46, { s: 0.6 }, 0], [0.5, { s: 1 }, 1], [0.6, { s: 1.35 }, 0],
+					[0.66, { s: 0.6 }, 0], [0.7, { s: 1 }, 1], [0.82, { s: 1.35 }, 0]],
+				aura: [[0, { s: 0.4 }, 0], [0.3, { s: 0.6 }, 0], [0.42, { s: 1 }, 1], [0.86, { s: 1.06 }, 1], [1, { s: 1.15 }, 0]],
+				spirits: [[0, { y: 12 }, 0], [0.34, { y: 12 }, 0], [0.5, { y: 0 }, 1], [0.86, { y: -24 }, 1], [1, { y: -34 }, 0]],
+			} },
+		},
+	};
+
 	// --- Assembly -------------------------------------------------------------------------------------
 	// Effects drawn behind the figure (on the ground under it); every other effect is drawn over it.
 	const UNDER = ['circle', 'press', 'herald', 'aura', 'halo', 'glowG', 'heat'];
@@ -1319,7 +1467,7 @@ const DotTitans = (() => {
 		let c = cache.get(id);
 		if (!c) {
 			const d = T[id];
-			const g = rig(d.cls);
+			const g = rig(d.build || d.cls);
 			// fx entries: [pivot, markup, part it rides on (optional), shared class (optional)].
 			const fx = d.fx(g);
 			const fxG = (k) => G('p-' + (fx[k][3] || k) + ' fx', fx[k][0], fx[k][1]);
@@ -1336,7 +1484,7 @@ const DotTitans = (() => {
 			const over = loose.filter((k) => !UNDER.includes(k)).map(fxG).join('');
 			const upper = G('p-upper', [100, g.waistY + 6], (body.torso || '') + G('p-head', [100, 80], body.head + g.fxAt('head')) + body.armL + body.armR + g.fxAt('upper'));
 			const root = G('p-root', [100, GROUND], (hov ? '<g transform="translate(0 ' + -hov + ')">' : '') + (body.back || '') + body.legs + upper + (hov ? '</g>' : ''));
-			const markup = G('p-shadow', [100, GROUND], E(100, GROUND, d.cls === 'Mystic' ? 40 : 60, 8, '#000', 'stroke="none" fill-opacity=".28"')) + under + root + over;
+			const markup = G('p-shadow', [100, GROUND], E(100, GROUND, (d.build || d.cls) === 'Mystic' ? 40 : 60, 8, '#000', 'stroke="none" fill-opacity=".28"')) + under + root + over;
 			const clips = typeof d.clips === 'function' ? d.clips(g) : d.clips;
 			c = { markup, def: d, g, clips, fx: new Set(Object.keys(fx).map((k) => fx[k][3] || k)) };
 			cache.set(id, c);

@@ -314,13 +314,15 @@ void TestArmyContent()
 	const BuildingDef& Med = C.buildings[static_cast<size_t>(Def("medical_school"))];
 	KD_CHECK(Med.levels[0].survival == 85 && Med.levels[10].survival == 75);
 	// Titans: rarity R1..R4, max level 10 + 10 x stars (wiki 1.8); altars for 1 000 and 4 000 gems; fusion at Castle 7.
-	KD_CHECK(C.titans.size() == 12);
+	KD_CHECK(C.titans.size() == 13);
 	KD_CHECK(C.titans[static_cast<size_t>(C.FindTitan("titan.thor"))].MaxLevel() == 50);
-	// The original's Infiltrator and Paladin classes.
+	// The original's Infiltrator, Paladin and Shaman classes.
 	KD_CHECK(C.FindTitan("titan.loki") >= 0 && C.titans[static_cast<size_t>(C.FindTitan("titan.loki"))].cls == "Infiltrator" &&
 		C.titans[static_cast<size_t>(C.FindTitan("titan.loki"))].stars == 2);
 	KD_CHECK(C.FindTitan("titan.tyr") >= 0 && C.titans[static_cast<size_t>(C.FindTitan("titan.tyr"))].cls == "Paladin" &&
 		C.titans[static_cast<size_t>(C.FindTitan("titan.tyr"))].stars == 3);
+	KD_CHECK(C.FindTitan("titan.veles") >= 0 && C.titans[static_cast<size_t>(C.FindTitan("titan.veles"))].cls == "Shaman" &&
+		C.titans[static_cast<size_t>(C.FindTitan("titan.veles"))].stars == 4);
 	KD_CHECK(C.titans[static_cast<size_t>(C.FindTitan("titan.talos"))].MaxLevel() == 20);
 	KD_CHECK(C.altars.size() == 4 && C.altars[0].cooldownSec == 86400 && C.altars[1].gems == 1000 && C.altars[2].gems == 4000);
 	KD_CHECK(C.altars[0].weights[3] == 0); // R4 only from the paid altars
@@ -1459,7 +1461,7 @@ void TestTitanSkills()
 	const SkillRules& Sk = Ct.skills;
 	// The original: skills by class in slots, opened by fusion (1-star titans for the 2nd slot, 2-star for the 3rd,
 	// 3-star for the 4th), a new slot with ascension (wiki, Strategy and Ascension).
-	KD_CHECK(Sk.slots == 4 && Sk.openPct == 35 && Sk.upgradePct == 25 && Sk.kinds.size() == 7 && Sk.classWeights.size() == 7);
+	KD_CHECK(Sk.slots == 4 && Sk.openPct == 35 && Sk.upgradePct == 25 && Sk.kinds.size() == 7 && Sk.classWeights.size() == 8);
 	const auto KindOf = [&](const char* Id) {
 		for (size_t I = 0; I < Sk.kinds.size(); ++I)
 		{

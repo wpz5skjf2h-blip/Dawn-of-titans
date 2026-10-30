@@ -165,7 +165,7 @@ void TestContent()
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.grenadiers"))].firebomb);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.chainbreakers"))].chains);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.priests"))].support);
-	DOT_CHECK(C.titans.size() == 12);
+	DOT_CHECK(C.titans.size() == 13);
 	DOT_CHECK(C.FindAbility("spell.meteor_strike") >= 0);
 	const TroopDef& Spear = C.troops[static_cast<size_t>(C.FindTroop("troop.spearmen"))];
 	DOT_CHECK(Near(C.counters.Get(Spear.counterRow, DefenderClass::Cavalry).ToDouble(), 2.0, 1e-9));
@@ -1113,7 +1113,7 @@ void TestTitanAbilities()
 	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
 	const SimContent& C = Content();
 	const char* const Roster[] = {"titan.minotaur", "titan.cyclops", "titan.perun", "titan.atlas", "titan.ymir", "titan.surtr", "titan.hecate", "titan.artemis",
-		"titan.loki", "titan.tyr"};
+		"titan.loki", "titan.tyr", "titan.veles"};
 	std::vector<int> Seen;
 	for (const char* Id : Roster)
 	{
