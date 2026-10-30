@@ -359,6 +359,34 @@
     ]
   },
 
+  // Daily quests. The master prompt (3.4): "5 daily quests plus a daily chest" in the daily loop; the welcome chest at the
+  // end of the tutorial unlocks them (9.4). Ours: the pool, the targets, the rewards and the chest. Every day (00:00 UTC)
+  // brings "count" quests from the pool for the Castle's level ("castle"; "needs" a building); a quest's "target" goes by
+  // the Castle's level ([from level, amount]); a done quest is claimed for its reward, and claiming all of them opens the
+  // chest (its relic rarity by the Castle's level). Unfinished quests can be swapped "rerolls" times a day. Gems: about
+  // 20 a day from quests and the chest, half of the free player's target of 40 (8.6). Collect targets are about three
+  // hours of the mines' (farms') production at that Castle. Events: win, threeStars (battles won), raid (attacks on
+  // world lands), collectGold, collectFood, train (squads queued), upgrade (buildings, lands, troops and spells started),
+  // craft (spells queued), stones (portal stones spent), site (Titan Monuments and XP Arenas), mission (campaigns).
+  "dailyQuests": {
+    "count": 5,
+    "rerolls": 2,
+    "chest": { "gems": 10, "stones": 6, "relic": [[3, 1], [12, 2]] },
+    "pool": [
+      { "id": "q_win",     "event": "win",         "name": "Победите в битвах: {n}",              "target": [[1, 2], [6, 3], [12, 4]], "reward": { "gems": 2, "stones": 3 } },
+      { "id": "q_stars",   "event": "threeStars",  "name": "Победите на 3 звезды: {n}",           "target": [[1, 1], [8, 2]], "reward": { "gems": 3, "stones": 3 } },
+      { "id": "q_raid",    "event": "raid",        "name": "Атакуйте земли мира: {n}",            "target": [[1, 2], [10, 3]], "reward": { "gems": 2, "stones": 3 } },
+      { "id": "q_gold",    "event": "collectGold", "name": "Соберите золото: {n}",                "target": [[1, 500], [3, 1500], [5, 3000], [8, 7500], [12, 20000], [16, 30000], [20, 50000]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_food",    "event": "collectFood", "name": "Соберите еду: {n}",                   "target": [[1, 500], [3, 1500], [5, 3000], [8, 7500], [12, 20000], [16, 30000], [20, 50000]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_train",   "event": "train",       "name": "Обучите отряды: {n}",                 "target": [[1, 3], [8, 5], [14, 6]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_upgrade", "event": "upgrade",     "name": "Начните улучшения: {n}",              "target": [[1, 2]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_stones",  "event": "stones",      "name": "Потратьте камни портала: {n}",        "target": [[1, 9], [8, 12], [14, 18]], "reward": { "gems": 2, "stones": 4 } },
+      { "id": "q_craft",   "event": "craft",       "name": "Создайте заклинания: {n}", "castle": 5, "needs": "spell_forge", "target": [[5, 2], [11, 3], [17, 4]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_site",    "event": "site",        "name": "Сразитесь у монументов и на аренах: {n}", "castle": 5, "target": [[5, 1], [12, 2]], "reward": { "gems": 3, "stones": 2 } },
+      { "id": "q_mission", "event": "mission",     "name": "Пройдите миссии кампании: {n}", "castle": 8, "needs": "adventurers_guild", "target": [[8, 2], [12, 3]], "reward": { "gems": 3, "stones": 2 } }
+    ]
+  },
+
   // Gems for missing resources (estimate, piecewise linear on amount).
   "gemsForResources": [[0, 0], [100, 1], [1000, 5], [10000, 25], [100000, 125], [1000000, 600], [10000000, 3000]],
 

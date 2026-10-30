@@ -439,6 +439,20 @@ bool ParseRelicStat(const std::string& S, RelicStat& Out)
 	return false;
 }
 
+bool ParseQuestEvent(const std::string& S, QuestEvent& Out)
+{
+	static const char* const Names[] = {"win", "threeStars", "raid", "collectGold", "collectFood", "train", "upgrade", "craft", "stones", "site", "mission"};
+	for (int I = 0; I < static_cast<int>(QuestEvent::Count); ++I)
+	{
+		if (S == Names[I])
+		{
+			Out = static_cast<QuestEvent>(I);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ParseRes(const std::string& S, Res& Out)
 {
 	for (int I = 0; I < kResCount; ++I)
@@ -953,6 +967,53 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 					return false;
 				}
 				G.acts.push_back(A);
+			}
+		}
+	}
+	if (const JsonValue* Qj = Rules.Find("dailyQuests"))
+	{
+		QuestRules& Q = Out.quests;
+		Q.count = std::max(0, Qj->GetInt("count", Q.count));
+		Q.rerolls = std::max(0, Qj->GetInt("rerolls", Q.rerolls));
+		// (from Castle level, value) pairs, ascending by level.
+		const auto ReadSteps = [](const JsonValue* StepsJ, std::vector<std::pair<int, int64_t>>& Steps) {
+			for (size_t I = 0; StepsJ && I < StepsJ->Size(); ++I)
+			{
+				const JsonValue& Step = (*StepsJ)[I];
+				if (Step.Size() == 2)
+				{
+					Steps.emplace_back(Step[0].AsInt(1), Step[1].AsInt64(0));
+				}
+			}
+		};
+		if (const JsonValue* Chest = Qj->Find("chest"))
+		{
+			ReadCost(Chest, Q.chest);
+			std::vector<std::pair<int, int64_t>> Relic;
+			ReadSteps(Chest->Find("relic"), Relic);
+			for (const std::pair<int, int64_t>& R : Relic)
+			{
+				Q.chestRelic.emplace_back(R.first, static_cast<int>(std::max<int64_t>(0, std::min<int64_t>(5, R.second))));
+			}
+		}
+		if (const JsonValue* Pool = Qj->Find("pool"))
+		{
+			for (size_t I = 0; I < Pool->Size(); ++I)
+			{
+				const JsonValue& J = (*Pool)[I];
+				QuestDef D;
+				D.id = J.GetString("id");
+				D.castle = std::max(1, J.GetInt("castle", 1));
+				const std::string Needs = J.GetString("needs");
+				D.building = Needs.empty() ? -1 : Out.FindBuilding(Needs);
+				ReadSteps(J.Find("target"), D.target);
+				ReadCost(J.Find("reward"), D.reward);
+				if (D.id.empty() || !ParseQuestEvent(J.GetString("event"), D.event) || D.target.empty() || (!Needs.empty() && D.building < 0))
+				{
+					Error = "kingdom/kingdom.json: daily quest " + D.id + " needs an id, a known event and building, and targets";
+					return false;
+				}
+				Q.pool.push_back(D);
 			}
 		}
 	}

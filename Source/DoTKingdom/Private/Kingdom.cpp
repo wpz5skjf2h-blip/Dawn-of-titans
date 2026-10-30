@@ -126,6 +126,9 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	SiteCounter = 0;
 	MissionStarList.assign(C.campaigns.acts.size(), {});
 	ChestMask.assign(C.campaigns.acts.size(), 0);
+	QuestDay = -1;
+	QuestCounter = 0;
+	RollQuests();
 	FillWorld();
 }
 
@@ -855,6 +858,7 @@ void Kingdom::Advance(int64_t Now)
 	ProcessCraft(Now);
 	RegenStones(Now);
 	Time = Now;
+	RollQuests();
 }
 
 // --- Actions ------------------------------------------------------------------------------------
@@ -925,6 +929,7 @@ Error Kingdom::Build(int Def, int X, int Y, bool UseGems, int32_t* OutId)
 	{
 		*OutId = B.id;
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -956,6 +961,7 @@ Error Kingdom::Upgrade(int32_t Id, bool UseGems)
 	{
 		Complete(*B, Time);
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -1033,6 +1039,7 @@ Error Kingdom::Collect(int32_t Id, int64_t* OutAmount)
 	const bool bWasFull = B->stored >= ProducerCap(*B);
 	B->stored -= Take;
 	Res_[static_cast<size_t>(ResIndex(D.resource))] += Take;
+	NoteQuest(D.resource == Res::Gold ? QuestEvent::CollectGold : D.resource == Res::Food ? QuestEvent::CollectFood : QuestEvent::Count, Take);
 	if (bWasFull)
 	{
 		B->carry = 0;
@@ -1168,6 +1175,7 @@ Error Kingdom::CollectLand(int32_t Id, int64_t* OutAmount)
 		const bool bWasFull = L.stored >= LandStoreCap(L);
 		L.stored -= Take;
 		Res_[static_cast<size_t>(ResIndex(R))] += Take;
+		NoteQuest(R == Res::Gold ? QuestEvent::CollectGold : R == Res::Food ? QuestEvent::CollectFood : QuestEvent::Count, Take);
 		if (bWasFull)
 		{
 			L.carry = 0;
@@ -1219,6 +1227,7 @@ Error Kingdom::UpgradeLand(int32_t Id, bool UseGems)
 			}
 		}
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -2044,6 +2053,8 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 			}
 		}
 	}
+	NoteQuest(QuestEvent::Stones, Cost);
+	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission : QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -2060,6 +2071,11 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 
 void Kingdom::EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R)
 {
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
 	// Casualties: a squad comes back only if enough of it survived (Medical School threshold).
 	const int Survival = SurvivalPct();
 	for (size_t I = 0; I < PendingArmy.size(); ++I)
@@ -2482,6 +2498,197 @@ Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 	return Error::None;
 }
 
+// --- Daily quests ----------------------------------------------------------------------------------
+
+bool Kingdom::QuestOpen(int Def) const
+{
+	const QuestDef& D = C.quests.pool[static_cast<size_t>(Def)];
+	return CastleLevel() >= D.castle && (D.building < 0 || BuildingLevel(D.building));
+}
+
+int64_t Kingdom::QuestTarget(int Def) const
+{
+	if (Def < 0 || Def >= static_cast<int>(C.quests.pool.size()))
+	{
+		return 0;
+	}
+	const std::vector<std::pair<int, int64_t>>& Steps = C.quests.pool[static_cast<size_t>(Def)].target;
+	int64_t Target = Steps.empty() ? 1 : Steps.front().second;
+	for (const std::pair<int, int64_t>& Step : Steps)
+	{
+		if (CastleLevel() >= Step.first)
+		{
+			Target = Step.second;
+		}
+	}
+	return std::max<int64_t>(1, Target);
+}
+
+void Kingdom::RollQuests()
+{
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	if (Day == QuestDay)
+	{
+		return;
+	}
+	QuestDay = Day;
+	QuestList.clear();
+	QuestRerolls = 0;
+	bQuestChest = false;
+	std::vector<int> Open;
+	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	{
+		if (QuestOpen(I))
+		{
+			Open.push_back(I);
+		}
+	}
+	for (int N = 0; N < C.quests.count && !Open.empty(); ++N)
+	{
+		const uint64_t H = Mix(Seed ^ 0x7175657374ULL, static_cast<uint64_t>(Day) * 16 + static_cast<uint64_t>(N));
+		const size_t Pick = static_cast<size_t>(H % Open.size());
+		DailyQuest Q;
+		Q.def = Open[Pick];
+		Q.target = QuestTarget(Q.def);
+		QuestList.push_back(Q);
+		Open.erase(Open.begin() + static_cast<std::ptrdiff_t>(Pick));
+	}
+}
+
+void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
+{
+	if (Amount == 0 || Event == QuestEvent::Count)
+	{
+		return;
+	}
+	for (DailyQuest& Q : QuestList)
+	{
+		if (!Q.claimed && C.quests.pool[static_cast<size_t>(Q.def)].event == Event)
+		{
+			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
+		}
+	}
+}
+
+Error Kingdom::ClaimQuest(int Slot, Reward* Out)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	{
+		return Error::BadId;
+	}
+	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	if (Q.claimed)
+	{
+		return Error::Nothing;
+	}
+	if (Q.progress < Q.target)
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const ResArray& Pay = C.quests.pool[static_cast<size_t>(Q.def)].reward;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (Pay[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), Pay[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	Q.claimed = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::RerollQuest(int Slot)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	{
+		return Error::BadId;
+	}
+	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	if (Q.claimed || Q.progress >= Q.target)
+	{
+		return Error::Nothing;
+	}
+	if (QuestRerolls >= C.quests.rerolls)
+	{
+		return Error::LimitReached;
+	}
+	std::vector<int> Open;
+	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	{
+		const bool bTaken = std::any_of(QuestList.begin(), QuestList.end(), [I](const DailyQuest& X) { return X.def == I; });
+		if (!bTaken && QuestOpen(I))
+		{
+			Open.push_back(I);
+		}
+	}
+	if (Open.empty())
+	{
+		return Error::NotEnough;
+	}
+	const uint64_t H = Mix(Seed ^ 0x72656c6c6fULL, QuestCounter++);
+	Q = DailyQuest();
+	Q.def = Open[static_cast<size_t>(H % Open.size())];
+	Q.target = QuestTarget(Q.def);
+	++QuestRerolls;
+	return Error::None;
+}
+
+Error Kingdom::ClaimQuestChest(Reward* Out)
+{
+	if (bQuestChest)
+	{
+		return Error::Nothing;
+	}
+	if (QuestList.empty() || std::any_of(QuestList.begin(), QuestList.end(), [](const DailyQuest& Q) { return !Q.claimed; }))
+	{
+		return Error::NotReady;
+	}
+	int Rarity = 0;
+	for (const std::pair<int, int>& Step : C.quests.chestRelic)
+	{
+		if (CastleLevel() >= Step.first)
+		{
+			Rarity = Step.second;
+		}
+	}
+	if (Rarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	Reward R;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (C.quests.chest[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), C.quests.chest[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	if (Rarity > 0)
+	{
+		const uint64_t H = Mix(Seed ^ 0x7163686573ULL, static_cast<uint64_t>(QuestDay));
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), Rarity);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	bQuestChest = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
 // --- Army -----------------------------------------------------------------------------------------
 
 const LevelDef* Kingdom::BuildingLevel(int Def) const
@@ -2694,6 +2901,7 @@ Error Kingdom::Train(int Troop)
 	}
 	Queue.push_back(Troop);
 	ProcessQueue(Time);
+	NoteQuest(QuestEvent::Train, 1);
 	return Error::None;
 }
 
@@ -2707,6 +2915,7 @@ Error Kingdom::CancelTrain(int Index)
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
 	Res_[static_cast<size_t>(ResIndex(Res::Food))] += T.levels[static_cast<size_t>(std::max(1, TroopLevel(Troop)) - 1)].cost;
 	Queue.erase(Queue.begin() + Index);
+	NoteQuest(QuestEvent::Train, -1); // a cancelled squad does not count
 	if (Index == 0)
 	{
 		QueueStart = Time;
@@ -2870,6 +3079,7 @@ Error Kingdom::UpgradeTroop(int Troop, bool UseGems)
 		TroopLevels[static_cast<size_t>(Troop)] += 1;
 		Research = -1;
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -3427,6 +3637,7 @@ Error Kingdom::CraftSpell(int Spell)
 	}
 	Craft.push_back(Spell);
 	ProcessCraft(Time);
+	NoteQuest(QuestEvent::Craft, 1);
 	return Error::None;
 }
 
@@ -3438,6 +3649,7 @@ Error Kingdom::CancelCraft(int Index)
 	}
 	Res_[static_cast<size_t>(ResIndex(Res::Gold))] += CraftGold(Craft[static_cast<size_t>(Index)]);
 	Craft.erase(Craft.begin() + Index);
+	NoteQuest(QuestEvent::Craft, -1); // a cancelled spell does not count
 	if (Index == 0)
 	{
 		CraftStart = Time;
@@ -3570,6 +3782,7 @@ Error Kingdom::UpgradeSpell(int Spell, bool UseGems)
 	Lab.from = Time;
 	Lab.until = Time + Ck.timeSec;
 	SpellLabs.push_back(Lab);
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -4604,6 +4817,34 @@ std::string Kingdom::Save() const
 		W.EndObject();
 	}
 	W.EndObject();
+	// Daily quests (optional): today's quests by pool id.
+	W.Key("quests");
+	W.BeginObject();
+	W.Key("day");
+	W.Int(QuestDay);
+	W.Key("rerolls");
+	W.Int(QuestRerolls);
+	W.Key("chest");
+	W.Bool(bQuestChest);
+	W.Key("counter");
+	W.UInt(QuestCounter);
+	W.Key("list");
+	W.BeginArray();
+	for (const DailyQuest& Q : QuestList)
+	{
+		W.BeginObject();
+		W.Key("id");
+		W.String(C.quests.pool[static_cast<size_t>(Q.def)].id);
+		W.Key("target");
+		W.Int(Q.target);
+		W.Key("progress");
+		W.Int(Q.progress);
+		W.Key("claimed");
+		W.Bool(Q.claimed);
+		W.EndObject();
+	}
+	W.EndArray();
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -5113,6 +5354,40 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			ChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("chests", 0)));
 		}
 	}
+	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
+	QuestDay = -1;
+	QuestList.clear();
+	QuestRerolls = 0;
+	bQuestChest = false;
+	QuestCounter = 0;
+	if (const JsonValue* QuestsJ = J.Find("quests"))
+	{
+		QuestDay = QuestsJ->GetInt64("day", -1);
+		QuestRerolls = std::max(0, QuestsJ->GetInt("rerolls", 0));
+		bQuestChest = QuestsJ->GetBool("chest", false);
+		const JsonValue* CounterJ4 = QuestsJ->Find("counter");
+		QuestCounter = CounterJ4 ? static_cast<uint64_t>(std::strtoull(CounterJ4->text.c_str(), nullptr, 10)) : 0;
+		if (const JsonValue* ListJ = QuestsJ->Find("list"))
+		{
+			for (size_t I = 0; I < ListJ->Size(); ++I)
+			{
+				const JsonValue& QJ = (*ListJ)[I];
+				const std::string Id = QJ.GetString("id");
+				for (size_t D = 0; D < C.quests.pool.size(); ++D)
+				{
+					if (C.quests.pool[D].id == Id)
+					{
+						DailyQuest Q;
+						Q.def = static_cast<int>(D);
+						Q.target = std::max<int64_t>(1, QJ.GetInt64("target", 1));
+						Q.progress = std::max<int64_t>(0, QJ.GetInt64("progress", 0));
+						Q.claimed = QJ.GetBool("claimed", false);
+						QuestList.push_back(Q);
+					}
+				}
+			}
+		}
+	}
 	if (Pending < 0)
 	{
 		// A site or mission the content no longer has.
@@ -5348,6 +5623,17 @@ uint64_t Kingdom::Hash() const
 			W.I32(MissionStars(static_cast<int>(A), M));
 		}
 		W.U32(Mask);
+	}
+	W.I64(QuestDay);
+	W.I32(QuestRerolls);
+	W.U32(bQuestChest ? 1u : 0u);
+	W.U64(QuestCounter);
+	for (const DailyQuest& Q : QuestList)
+	{
+		W.I32(Q.def);
+		W.I64(Q.target);
+		W.I64(Q.progress);
+		W.U32(Q.claimed ? 1u : 0u);
 	}
 	return W.Hash();
 }

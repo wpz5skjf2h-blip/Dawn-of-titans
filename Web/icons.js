@@ -307,6 +307,9 @@ const DotIcons = (() => {
 		'ui.campaign': p('M6 11L17 7L31 11L42 7V37L31 41L17 37L6 41Z', K.cream) + line('M17 7V37M31 11V41', '#c9b48a', 1.3) +
 			line('M11 33C15 26 20 30 23 23C26 17 31 21 34 15', K.woodD, 1.8, 'stroke-dasharray="2.6 2.4"') +
 			line('M33 11L38 16M38 11L33 16', K.red, 2.4) + c(11, 33, 2.2, K.gold),
+		// Daily quests: a scroll with a green tick.
+		'ui.quest': r(9, 4, 30, 7, 3.5, K.burlap) + p('M12 8H36V40H12Z', K.cream) + r(9, 37, 30, 7, 3.5, K.burlap) +
+			line('M17 15H31M17 20H29M17 25H25', '#c9b48a', 1.6) + line('M20 31L24 35L33 24', '#3f9a4a', 3.4) + spark(40, 9, 3, K.fireY),
 		// A star chest of a campaign act.
 		'ui.chest': p('M8 22H40V40C40 41.5 39 42 37.5 42H10.5C9 42 8 41.5 8 40Z', K.wood) + p('M8 22C8 12 40 12 40 22Z', K.woodL) +
 			r(8, 20.5, 32, 4, 1, K.gold) + r(13, 14.5, 4, 27.5, 1, K.gold) + r(31, 14.5, 4, 27.5, 1, K.gold) + r(20.5, 23, 7, 8, 1.5, K.gold) +

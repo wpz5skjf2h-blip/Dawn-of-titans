@@ -289,6 +289,11 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
 #kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+/* Daily quests: claimed of today's; a gold edge and a dot when a reward waits. */
+#kQuestBtn { position: relative; font-weight: 700; font-variant-numeric: tabular-nums; }
+#kQuestBtn svg { width: 22px; height: 22px; }
+#kQuestBtn.ready { border-color: var(--bronze); color: var(--valor); }
+#kQuestBtn.ready::after { content: ''; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
 #kBottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding-left: var(--gut-l); padding-right: var(--gut-r); pointer-events: none; }
 #kBottom > * { pointer-events: auto; }
@@ -524,6 +529,7 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
       </button>
       <div class="chip" id="kCastle">Замок 1</div>
+      <button class="chip" id="kQuestBtn" aria-label="Ежедневные задания" hidden></button>
       <div class="res gold" id="rGold" title="Золото"></div>
       <div class="res food" id="rFood" title="Еда"></div>
       <div class="res gems" id="rGems" title="Самоцветы"></div>

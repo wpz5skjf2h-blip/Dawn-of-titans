@@ -1125,7 +1125,17 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		WriteCheck(O, Km->CheckMission(A, Next));
 		O.Raw("}");
 	}
-	O.Raw("],").Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
+	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
+	O.Raw("],").Key("quests").Raw("{").Key("list").Raw("[");
+	for (size_t I = 0; I < Km->Quests().size(); ++I)
+	{
+		const dot::kingdom::DailyQuest& Q = Km->Quests()[I];
+		O.Raw(I ? "," : "").Raw("{").Key("def").Int(Q.def).Comma().Key("target").Int(Q.target).Comma().Key("progress").Int(Q.progress).Comma();
+		O.Key("claimed").Int(Q.claimed ? 1 : 0).Raw("}");
+	}
+	O.Raw("],").Key("rerolls").Int(Km->QuestRerollsLeft()).Comma().Key("chest").Int(Km->QuestChestClaimed() ? 1 : 0).Comma();
+	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
+	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
@@ -1452,6 +1462,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_chest(int Act, int Chest)
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimChest(Act, Chest, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims a done daily quest: the reward as for a battle (gems, stones). */
+EMSCRIPTEN_KEEPALIVE const char* dk_quest_claim(int Slot)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimQuest(Slot, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_quest_reroll(int Slot)
+{
+	return K() ? static_cast<int>(K()->RerollQuest(Slot)) : -1;
+}
+
+/** Opens the daily chest: the reward as for a battle (gems, stones, relics). */
+EMSCRIPTEN_KEEPALIVE const char* dk_quest_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimQuestChest(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

@@ -250,6 +250,45 @@ struct CampaignRules
 	std::vector<ActDef> acts;
 };
 
+/** What a daily quest counts. */
+enum class QuestEvent : uint8_t
+{
+	Win, // battles won (lands, sites, missions)
+	ThreeStars, // battles won with three stars
+	Raid, // attacks on world lands (raids and captures)
+	CollectGold, // gold collected from mines and lands
+	CollectFood, // food collected from farms and lands
+	Train, // squads queued in the Barracks
+	Upgrade, // constructions and upgrades started (buildings, lands, troops, spells)
+	Craft, // spells queued in the Spell Forge
+	Stones, // portal stones spent on battles
+	Site, // battles at Titan Monuments and XP Arenas
+	Mission, // campaign missions fought
+	Count
+};
+DOTKINGDOM_API bool ParseQuestEvent(const std::string& S, QuestEvent& Out);
+
+/** A daily quest of the pool: its target by Castle level and its reward. */
+struct QuestDef
+{
+	std::string id;
+	QuestEvent event = QuestEvent::Win;
+	int castle = 1; // Castle level from which it can come
+	int building = -1; // a building it needs (-1: none)
+	std::vector<std::pair<int, int64_t>> target; // (from Castle level, amount), ascending
+	ResArray reward{};
+};
+
+/** Daily quests (kingdom.json "dailyQuests"). */
+struct QuestRules
+{
+	int count = 5; // quests a day
+	int rerolls = 2; // free rerolls a day
+	ResArray chest{}; // the daily chest for claiming every quest
+	std::vector<std::pair<int, int>> chestRelic; // (from Castle level, relic rarity), ascending
+	std::vector<QuestDef> pool;
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -434,6 +473,7 @@ struct KingdomContent
 	AllianceRules alliances;
 	SiteRules sites;
 	CampaignRules campaigns;
+	QuestRules quests;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

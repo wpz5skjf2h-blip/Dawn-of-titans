@@ -12,6 +12,7 @@
 #include "DoTKingdom/KingdomContent.h"
 #include "DoTSim/BattleTypes.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -210,6 +211,15 @@ struct Reward
 	int reinforcements = 0; // allies' squads that fought (they are gone now)
 	bool firstClear = false; // a campaign mission won for the first time (res holds its reward)
 	int32_t newTitan = 0; // a titan a star chest gave
+};
+
+/** One of today's daily quests. */
+struct DailyQuest
+{
+	int def = 0; // index into the content's quest pool
+	int64_t target = 0;
+	int64_t progress = 0; // may pass the target; cancelled squads and spells take it back
+	bool claimed = false;
 };
 
 /** A raid on the kingdom: when and where, how it went and what it cost. */
@@ -550,6 +560,25 @@ public:
 	/** The pending battle's mission as Act * 100 + Mission (-1 when it is not a mission). */
 	int PendingMission() const { return -Pending >= MissionBase ? -Pending - MissionBase : -1; }
 
+	// --- Daily quests ---
+	// Every day (00:00 UTC) brings new quests from the pool for the Castle's level; progress counts what the player does
+	// (battles won, resources collected, squads trained, upgrades started...). A done quest is claimed for its reward,
+	// and claiming all of them opens the daily chest. Unclaimed quests are gone when the day ends.
+	const std::vector<DailyQuest>& Quests() const { return QuestList; }
+	int QuestRerollsLeft() const { return std::max(0, C.quests.rerolls - QuestRerolls); }
+	bool QuestChestClaimed() const { return bQuestChest; }
+	/** When today's quests are replaced. */
+	int64_t QuestDayEnd() const { return (QuestDay + 1) * 86400; }
+	/** NotReady (not done yet), Nothing (claimed already). */
+	Error ClaimQuest(int Slot, Reward* Out);
+	/** Swaps an unfinished quest for another one: LimitReached (no rerolls left), Nothing (done or claimed), NotEnough
+	 *  (no other quest is open to this kingdom). */
+	Error RerollQuest(int Slot);
+	/** The daily chest: NotReady (a quest is not claimed yet), Nothing (opened already), InventoryFull (no room for its relic). */
+	Error ClaimQuestChest(Reward* Out);
+	/** Today's target of a pool quest for this Castle level. */
+	int64_t QuestTarget(int Def) const;
+
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
 	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
@@ -645,6 +674,12 @@ private:
 	/** Brings the pending army back: casualties, spells cast, the titan's XP (XpPct of a land battle of this level),
 	 *  relic wear and rest; allies' squads leave. */
 	void EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R);
+	/** Counts an event for today's quests (a negative amount takes it back). */
+	void NoteQuest(QuestEvent Event, int64_t Amount);
+	/** Brings the quests of the day Time is in (when the day has changed). */
+	void RollQuests();
+	/** Whether the pool quest can come to this kingdom now. */
+	bool QuestOpen(int Def) const;
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -721,6 +756,13 @@ private:
 	// Campaigns: best stars by act and mission, opened star chests by act (bits).
 	std::vector<std::vector<uint8_t>> MissionStarList;
 	std::vector<uint32_t> ChestMask;
+	// Daily quests: the day they belong to (days since the epoch, UTC), the quests, rerolls used, the chest, and a counter
+	// for rerolls.
+	int64_t QuestDay = -1;
+	std::vector<DailyQuest> QuestList;
+	int QuestRerolls = 0;
+	bool bQuestChest = false;
+	uint64_t QuestCounter = 0;
 	// Raids
 	const SimContent* BattleContent = nullptr;
 	int64_t NextRaid = 0;

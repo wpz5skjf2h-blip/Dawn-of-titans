@@ -1227,6 +1227,180 @@ void TestCampaigns()
 	KD_CHECK(Old != AtCastle(8) && O.Load(Old, Error) && O.ActStars(0) == 0 && O.CheckMission(0, 0).error == Error::None);
 }
 
+/** The save with its daily quests replaced (they are the last key of a save). */
+std::string WithQuests(const std::string& Save, const std::string& Quests)
+{
+	const size_t P = Save.find("\"quests\":{");
+	return P == std::string::npos ? Save : Save.substr(0, P) + "\"quests\":" + Quests + "}";
+}
+
+int QuestSlot(const Kingdom& K, const char* Id)
+{
+	for (size_t I = 0; I < K.Quests().size(); ++I)
+	{
+		if (Content().quests.pool[static_cast<size_t>(K.Quests()[I].def)].id == Id)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+void TestDailyQuests()
+{
+	const KingdomContent& Ct = Content();
+	const QuestRules& Q = Ct.quests;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	// The master prompt (3.4): five daily quests and a daily chest; about 20 gems a day of the free player's 40 (8.6).
+	KD_CHECK(Q.count == 5 && Q.rerolls == 2 && Q.pool.size() == 11 && Q.chest[GemsI] == 10 && Q.chest[StonesI] == 6);
+	KD_CHECK(Q.chestRelic.size() == 2 && Q.chestRelic[0] == std::make_pair(3, 1) && Q.chestRelic[1] == std::make_pair(12, 2));
+	int64_t Most = 0;
+	for (const QuestDef& D : Q.pool)
+	{
+		KD_CHECK(!D.target.empty() && D.target.front().first <= D.castle && D.reward[GemsI] >= 2 && D.reward[GemsI] <= 3);
+		Most = std::max(Most, D.reward[GemsI]);
+	}
+	KD_CHECK(Q.count * Most + Q.chest[GemsI] <= 25);
+	const auto PoolIndex = [&](const char* Id) {
+		for (size_t I = 0; I < Q.pool.size(); ++I)
+		{
+			if (Q.pool[I].id == Id)
+			{
+				return static_cast<int>(I);
+			}
+		}
+		return -1;
+	};
+	const int Craft = PoolIndex("q_craft");
+	KD_CHECK(Craft >= 0 && Q.pool[static_cast<size_t>(Craft)].event == QuestEvent::Craft && Q.pool[static_cast<size_t>(Craft)].building == Def("spell_forge"));
+
+	// A new kingdom gets five different quests open at Castle 1, for the day it started in.
+	Kingdom K(Ct);
+	K.NewGame(T0, 7);
+	const int64_t DayEnd = (T0 / 86400 + 1) * 86400;
+	const auto Defs = [](const Kingdom& X) {
+		std::vector<int> Out;
+		for (const DailyQuest& A : X.Quests())
+		{
+			Out.push_back(A.def);
+		}
+		return Out;
+	};
+	KD_CHECK(K.Quests().size() == 5 && K.QuestRerollsLeft() == 2 && !K.QuestChestClaimed() && K.QuestDayEnd() == DayEnd);
+	for (size_t I = 0; I < K.Quests().size(); ++I)
+	{
+		const DailyQuest& A = K.Quests()[I];
+		const QuestDef& D = Q.pool[static_cast<size_t>(A.def)];
+		KD_CHECK(D.castle == 1 && D.building < 0 && A.progress == 0 && !A.claimed && A.target == K.QuestTarget(A.def) && A.target == D.target.front().second);
+		for (size_t J = 0; J < I; ++J)
+		{
+			KD_CHECK(K.Quests()[J].def != A.def);
+		}
+	}
+	// The seed and the day decide them; they stay through the day and change with it.
+	Kingdom Same(Ct);
+	Same.NewGame(T0 + 600, 7);
+	KD_CHECK(Defs(Same) == Defs(K));
+	bool bOtherSeed = false;
+	for (uint64_t S = 8; S < 16 && !bOtherSeed; ++S)
+	{
+		Kingdom Other(Ct);
+		Other.NewGame(T0, S);
+		bOtherSeed = Defs(Other) != Defs(K);
+	}
+	KD_CHECK(bOtherSeed);
+	Same.Advance(DayEnd - 1);
+	KD_CHECK(Defs(Same) == Defs(K) && Same.QuestDayEnd() == DayEnd);
+	bool bNewDay = false;
+	for (int D = 0; D < 4; ++D)
+	{
+		Same.Advance(DayEnd + D * 86400);
+		KD_CHECK(Same.QuestDayEnd() == DayEnd + (D + 1) * 86400 && Same.Quests().size() == 5);
+		bNewDay = bNewDay || Defs(Same) != Defs(K);
+	}
+	KD_CHECK(bNewDay);
+
+	// Progress from what the kingdom does: these quests by hand.
+	const std::string List = "{\"day\":" + std::to_string(T0 / 86400) + ",\"rerolls\":0,\"chest\":false,\"counter\":0,\"list\":["
+		"{\"id\":\"q_train\",\"target\":3,\"progress\":0,\"claimed\":false},"
+		"{\"id\":\"q_upgrade\",\"target\":2,\"progress\":0,\"claimed\":false},"
+		"{\"id\":\"q_gold\",\"target\":500,\"progress\":0,\"claimed\":false},"
+		"{\"id\":\"q_win\",\"target\":2,\"progress\":0,\"claimed\":false},"
+		"{\"id\":\"q_stones\",\"target\":9,\"progress\":0,\"claimed\":false}]}";
+	std::string Error;
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(WithQuests(K.Save(), List), Error) && P.Quests().size() == 5 && QuestSlot(P, "q_train") == 0 && QuestSlot(P, "q_stones") == 4);
+	const int Mil = Troop("troop.militia");
+	KD_CHECK(P.Train(Mil) == Error::None && P.Train(Mil) == Error::None && P.Quests()[0].progress == 2);
+	KD_CHECK(P.CancelTrain(1) == Error::None && P.Quests()[0].progress == 1); // a cancelled squad does not count
+	KD_CHECK(P.Train(Mil) == Error::None && P.Train(Mil) == Error::None && P.Train(Mil) == Error::None && P.Quests()[0].progress == 4);
+	KD_CHECK(P.ClaimQuest(1, nullptr) == Error::NotReady && P.ClaimQuest(5, nullptr) == Error::BadId);
+	P.Advance(T0 + 6 * Hour);
+	int64_t Got = 0;
+	KD_CHECK(P.Collect(FindId(P, "gold_mine"), &Got) == Error::None && Got > 0 && P.Quests()[2].progress == Got && P.Quests()[3].progress == 0);
+	KD_CHECK(P.Collect(FindId(P, "farm"), &Got) == Error::None && P.Quests()[2].progress < 500 + 600);
+	KD_CHECK(P.Upgrade(FindId(P, "castle"), false) == Error::None && P.Quests()[1].progress == 1);
+	const WorldLand Land = P.World()[0];
+	KD_CHECK(P.StartAttack(Land.id, false) == Error::None && P.Quests()[4].progress == 3 && P.Quests()[3].progress == 0);
+	KD_CHECK(P.FinishAttack(Land.id, false, 3) == Error::None && P.Quests()[3].progress == 1);
+	KD_CHECK(P.StartAttack(P.World()[0].id, false) == Error::None && P.FinishAttack(P.World()[0].id, false, 0) == Error::None);
+	KD_CHECK(P.Quests()[3].progress == 1 && P.Quests()[4].progress == 6); // a lost battle is no win
+	// A done quest pays its reward once.
+	const QuestDef& TrainDef = Q.pool[static_cast<size_t>(P.Quests()[0].def)];
+	const int64_t Gems = P.Amount(Res::Gems);
+	Reward R;
+	KD_CHECK(P.ClaimQuest(0, &R) == Error::None && P.Quests()[0].claimed && R.res[GemsI] == TrainDef.reward[GemsI] && P.Amount(Res::Gems) == Gems + TrainDef.reward[GemsI]);
+	KD_CHECK(R.res[StonesI] == TrainDef.reward[StonesI] && P.ClaimQuest(0, &R) == Error::Nothing);
+	KD_CHECK(P.Train(Mil) == Error::None && P.Quests()[0].progress == 4); // a claimed quest counts no more
+	KD_CHECK(P.ClaimQuest(2, &R) == Error::None && P.ClaimQuestChest(&R) == Error::NotReady);
+	// Rerolls swap an unfinished quest for one not on the list, twice a day, the same way on every client.
+	KD_CHECK(P.RerollQuest(0) == Error::Nothing && P.RerollQuest(9) == Error::BadId);
+	Kingdom Twin(Ct);
+	KD_CHECK(Twin.Load(P.Save(), Error) && Twin.Hash() == P.Hash());
+	const std::vector<int> Before = Defs(P);
+	KD_CHECK(P.RerollQuest(3) == Error::None && P.Quests()[3].def != Before[3] && P.Quests()[3].progress == 0 && P.QuestRerollsLeft() == 1);
+	KD_CHECK(std::count(Before.begin(), Before.end(), P.Quests()[3].def) == 0 && Q.pool[static_cast<size_t>(P.Quests()[3].def)].castle == 1);
+	KD_CHECK(Twin.RerollQuest(3) == Error::None && Twin.Hash() == P.Hash());
+	KD_CHECK(P.RerollQuest(1) == Error::None && P.QuestRerollsLeft() == 0 && P.RerollQuest(4) == Error::LimitReached);
+	// Saved and loaded as they are; the hash covers them.
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(P.Save(), Error) && S.Hash() == P.Hash() && S.Save() == P.Save() && S.QuestRerollsLeft() == 0 && S.Quests()[0].claimed);
+
+	// The daily chest opens when every quest is claimed; a relic from Castle 3, rarity 2 from Castle 12.
+	const auto AllDone = [&](int64_t Day) {
+		return "{\"day\":" + std::to_string(Day) + ",\"rerolls\":1,\"chest\":false,\"counter\":5,\"list\":["
+			"{\"id\":\"q_train\",\"target\":3,\"progress\":3,\"claimed\":false},{\"id\":\"q_win\",\"target\":2,\"progress\":7,\"claimed\":false},"
+			"{\"id\":\"q_gold\",\"target\":500,\"progress\":500,\"claimed\":true},{\"id\":\"q_gone\",\"target\":1,\"progress\":1,\"claimed\":false}]}";
+	};
+	Kingdom Ch(Ct);
+	KD_CHECK(Ch.Load(WithQuests(K.Save(), AllDone(T0 / 86400)), Error) && Ch.Quests().size() == 3 && Ch.QuestRerollsLeft() == 1); // unknown ids are dropped
+	KD_CHECK(Ch.ClaimQuest(0, nullptr) == Error::None && Ch.ClaimQuestChest(&R) == Error::NotReady && Ch.ClaimQuest(1, nullptr) == Error::None);
+	const int64_t Gems2 = Ch.Amount(Res::Gems);
+	const size_t Relics = Ch.Relics().size();
+	KD_CHECK(Ch.ClaimQuestChest(&R) == Error::None && R.res[GemsI] == 10 && Ch.Amount(Res::Gems) == Gems2 + 10 && R.relics.empty() && Ch.Relics().size() == Relics);
+	KD_CHECK(Ch.QuestChestClaimed() && Ch.ClaimQuestChest(&R) == Error::Nothing);
+	const std::string Save12 = Replace(WithBuilding(K.Save(), "relic_temple", 1, 34), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":12");
+	Kingdom Hi(Ct);
+	KD_CHECK(Hi.Load(WithQuests(Save12, AllDone(T0 / 86400)), Error) && Hi.ClaimQuest(0, nullptr) == Error::None && Hi.ClaimQuest(1, nullptr) == Error::None);
+	KD_CHECK(Hi.ClaimQuestChest(&R) == Error::None && R.relics.size() == 1 && Hi.FindRelic(R.relics[0])->rarity == 2);
+	// Higher Castles get bigger targets and their own quests (the Spell Forge's craft quest).
+	KD_CHECK(K.QuestTarget(PoolIndex("q_gold")) == 500 && Hi.QuestTarget(PoolIndex("q_gold")) == 20000);
+	KD_CHECK(Hi.QuestTarget(Craft) == 3 && K.QuestTarget(Craft) == 2 && Hi.QuestTarget(99) == 0);
+	// Yesterday's quests are gone on the next Advance.
+	Kingdom Old(Ct);
+	KD_CHECK(Old.Load(WithQuests(K.Save(), AllDone(T0 / 86400 - 1)), Error) && Old.Quests().size() == 3);
+	Old.Advance(T0 + 60);
+	KD_CHECK(Old.Quests().size() == 5 && Old.QuestRerollsLeft() == 2 && !Old.QuestChestClaimed() && Defs(Old) == Defs(K));
+	// A save from before daily quests rolls today's on the next Advance.
+	Kingdom Pre(Ct);
+	const std::string Before2 = K.Save();
+	const std::string NoQuests = Before2.substr(0, Before2.find(",\"quests\":{")) + "}";
+	KD_CHECK(NoQuests.size() < Before2.size() && Pre.Load(NoQuests, Error) && Pre.Quests().empty());
+	Pre.Advance(T0 + 60);
+	KD_CHECK(Defs(Pre) == Defs(K));
+}
+
 const SimContent& Battle()
 {
 	static SimContent S;
@@ -1696,6 +1870,7 @@ int main()
 		{"LandUpgrades", TestLandUpgrades},
 		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
 		{"Campaigns", TestCampaigns},
+		{"DailyQuests", TestDailyQuests},
 		{"Raids", TestRaids},
 	};
 	for (const auto& T : Tests)
