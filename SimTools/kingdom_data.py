@@ -273,9 +273,13 @@ building("garrison", "Гарнизон", "troops", "other", [3, 3], 2, [[2, 1]],
          {1: 800, 5: 17500, 10: 334300, 15: 1665400, 20: 4497800, 22: 5886600, 23: 6640000},
          {1: secs("5m"), 5: secs("2h 15m"), 10: secs("23h 25m"), 15: secs("3d 17h 50m"), 20: secs("9d 7h 35m"), 22: secs("13d 10h")},
          lambda lv: max(1, lv), gems={1: 5, 5: 291, 10: 1458, 15: 2869, 20: 5562, 22: 7453},
-         stats={"defenders": {1: E(5), 23: E(60)}},
+         # Squads that defend the city, the tier of the Garrison's own guards in the slots the player leaves empty and
+         # a bonus to the city's defense (1.8: a defense buff and extra defense slots; the numbers are ours).
+         stats={"defenseSlots": {lv: E(3 + (lv >= 4) + (lv >= 8) + (lv >= 12) + (lv >= 16) + (lv >= 20)) for lv in range(1, 24)},
+                "guardTier": {lv: E(1 + (lv >= 8) + (lv >= 16)) for lv in range(1, 24)},
+                "defenseBonusPct": {lv: E(lv - 1) for lv in range(1, 24)}},
          reqs={5: [("gold_reserve", 2, 1)], 10: [("food_reserve", 7, 2)]},
-         desc="Войска гарнизона защищают город от нападений других игроков.")
+         desc="Войска и титан гарнизона защищают город от налётчиков.")
 building("armoury", "Арсенал", "troops", "other", [3, 3], 2, [[2, 1]], 24,
          {1: E(1500), 15: 1999000, 16: 2513900, 17: 3096900, 18: 3662800, 19: 4261100, 24: E(7200000)},
          {1: secs("5m"), 15: secs("3d 23h 10m"), 16: secs("4d 18h 10m"), 17: secs("5d 17h"), 18: secs("6d 20h 25m"),
@@ -294,6 +298,28 @@ building("alliance_camp", "Лагерь альянса", "troops", "other", [3, 
          {1: 6, 2: 7, 3: 7, 4: 8, 5: 9, 6: 12, 7: 15, 8: 18, 9: 21, 10: 24},
          stats={"reinforcements": {1: E(1), 10: E(10)}}, time_from_cost=True,
          desc="Сюда союзники присылают подкрепления. Улучшение увеличивает их число.")
+
+# --- Envoy councils -----------------------------------------------------------------------
+# The original has four buildings of other peoples, one per people (wiki: Troops; Unak Citadel, Elithen Palace, ...):
+# Unak grenadiers (fire), Elithen pikemen (ice), Ragnar goliaths (earth), Mossmane panthers (poison). Every troop still
+# trains in the Barracks; a people's troop needs its building. Panthers open at Castle 8 (wiki, Panthers).
+# The peoples and names here are ours: the regions of the master prompt with the same elements. Castle levels for the
+# other councils, prices, times and the troop level cap per council level (2 x level + 1) are our estimates.
+COUNCILS = [
+    ("council_sunreach", "Совет Солнечного Предела", 5, 20000,
+     "Посланники пустынных городов-храмов. Их гренадеры бросают огненные горшки; с 3-го уровня Совета приходят боевые жрецы."),
+    ("council_rimeheim", "Совет Римхейма", 6, 35000,
+     "Посланники ледяного севера. Их пикинеры бьют морозной сталью и замедляют врага; с 3-го уровня приходят цепеломы."),
+    ("council_jade", "Совет Нефритовых Пиков", 7, 55000,
+     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг; с 3-го уровня приходят расчёты баллист."),
+    ("council_mistmoor", "Совет Туманных Топей", 8, 80000,
+     "Посланники лесных племён. Их пантеры — самые быстрые войска, укус оставляет яд."),
+]
+for cid, cname, cunlock, ccost, cdesc in COUNCILS:
+    building(cid, cname, "councils", "other", [4, 4], cunlock, [[cunlock, 1]], 10,
+             {1: E(ccost), 10: E(6000000)}, {}, lambda lv, u=cunlock: min(25, u + 2 * (lv - 1)),
+             stats={"maxTroopLevel": {lv: E(min(21, 2 * lv + 1)) for lv in range(1, 11)}}, time_from_cost=True,
+             reqs={1: [("barracks", 3, 1)]}, desc=cdesc)
 
 # --- Spells -------------------------------------------------------------------------------
 building("arcane_tower", "Магическая башня", "spells", "other", [2, 2], 6, [[6, 1]], 18,
@@ -361,7 +387,7 @@ def tier_of(level):
     return 1 if level <= 2 else 2 if level <= 5 else 3 if level <= 9 else 4 if level <= 14 else 5
 
 
-def troop(id, name, unlock, train, cost1, up1, scale_src):
+def troop(id, name, unlock, train, cost1, up1, scale_src, council=None, council_level=1):
     train_t, train_est = fill(train, TROOP_LEVELS, round_to=5)
     levels = []
     for i in range(TROOP_LEVELS):
@@ -375,22 +401,31 @@ def troop(id, name, unlock, train, cost1, up1, scale_src):
             src = "wiki" if scale_src and not mil_cost_est[i] and (i >= TROOP_LEVELS - 1 or not mil_up_est[i]) else "est"
         levels.append({"level": lv, "cost": cost, "trainSec": train_t[i], "upgradeCost": up if lv < TROOP_LEVELS else 0,
                        "upgradeSec": up_time[i] if lv < TROOP_LEVELS else 0, "tier": tier_of(lv), "src": src})
-    return {"id": id, "name": name, "unlockCastle": unlock, "levels": levels}
+    council_keys = {"council": council, "councilLevel": council_level} if council else {}
+    return {"id": id, "name": name, "unlockCastle": unlock, **council_keys, "levels": levels}
 
 
 TROOPS = [
     troop("troop.militia", "Ополчение", 1, {1: 60, 8: 60, 10: 80}, 135, 3500, True),
     troop("troop.archers", "Лучники", 1, {1: E(180)}, 200, 8800, False),
     troop("troop.spearmen", "Копейщики", 3, {1: 300}, 145, 6600, False),
-    # Beyond the original's three human troops: the rest of the battle roster (master prompt 4.9). The original gave other
-    # peoples' troops through envoy councils (grenadiers among them); here the Barracks train them, opening with the Castle.
+    # Beyond the original's three human troops: the human rest of the battle roster (master prompt 4.9), opening with the Castle.
     # Costs and times are ours, scaled from the master prompt's training table against the Militia.
     troop("troop.swordsmen", "Мечники", 4, {1: E(120)}, 230, 9000, False),
-    troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 12000, False),
     troop("troop.outriders", "Всадники", 6, {1: E(150)}, 330, 11000, False),
-    troop("troop.priests", "Боевые жрецы", 8, {1: E(200)}, 280, 10000, False),
-    troop("troop.chainbreakers", "Цепеломы", 9, {1: E(200)}, 320, 12000, False),
     troop("troop.knights", "Рыцари", 11, {1: E(240)}, 480, 16000, False),
+    # Envoy council troops (see COUNCILS). The original's four peoples' troops cost about twice the Militia to upgrade
+    # (guide: 822 000 vs 411 000 at level 10, 7 785 000 vs 3 892 000 at 25), so their upgrades start at 2 x 3 500.
+    # War priests, chainbreakers and the ballista crew are the master prompt's own troops; three councils send them from
+    # level 3. The ballista costs about four militia (master prompt 6.2: 500 food + 500 gold against 240 food) and is the
+    # slowest to train.
+    troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 7000, False, "council_sunreach"),
+    troop("troop.priests", "Боевые жрецы", 9, {1: E(200)}, 280, 10000, False, "council_sunreach", 3),
+    troop("troop.chainbreakers", "Цепеломы", 10, {1: E(200)}, 320, 12000, False, "council_rimeheim", 3),
+    troop("troop.ballista", "Расчёт баллисты", 11, {1: E(300)}, 560, 12000, False, "council_jade", 3),
+    troop("troop.pikemen", "Пикинеры", 6, {1: E(240)}, 320, 7000, False, "council_rimeheim"),
+    troop("troop.goliaths", "Голиафы", 7, {1: E(420)}, 600, 7000, False, "council_jade"),
+    troop("troop.panthers", "Пантеры", 8, {1: E(300)}, 450, 7000, False, "council_mistmoor"),
 ]
 # Titans: the original sorts them by rarity R1-R4 (stars) and class; max level 10 + 10 x stars (wiki, version 1.8).
 # The names are ours (mythology); the original roster has its own characters.
@@ -399,8 +434,13 @@ TITANS = [
     ("titan.perun", "Перун", "Berserker", 2), ("titan.atlas", "Атлант", "Guardian", 2), ("titan.ymir", "Имир", "Champion", 2),
     ("titan.surtr", "Сурт", "Berserker", 3), ("titan.hecate", "Геката", "Sorcerer", 3), ("titan.artemis", "Артемида", "Ranger", 3),
     ("titan.thor", "Тор", "Berserker", 4),
+    # The original's Infiltrator and Paladin classes (appended so the titans above keep their indices).
+    ("titan.loki", "Локи", "Infiltrator", 2), ("titan.tyr", "Тюр", "Paladin", 3),
+    # The original's Shaman class: the eighth and last class of the roster.
+    ("titan.veles", "Велес", "Shaman", 4),
 ]
-CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт"}
+CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт",
+            "Infiltrator": "Лазутчик", "Paladin": "Паладин", "Shaman": "Шаман"}
 ARMY = {
     "schemaVersion": 1,
     "source": "docs/Original_Reference.md",
@@ -411,16 +451,42 @@ ARMY = {
     "titanXp": {"next": [30 * lv * lv + 70 * lv for lv in range(1, 60)], "battle": [60, 90, 120, 160, 200, 250, 300, 360, 420],
                 "starsPct": [30, 100, 120, 150], "recoveryFromLevel": 10, "recoverySecPerLevel": 120},
     # Ascension (wiki, Ascension): only a max-level titan; shards and food by rarity R1..R4; ten more levels,
-    # better health and damage (from the levels) and a new relic slot. The new skill slot is not modelled yet.
+    # better health and damage (from the levels), a new relic slot and a new skill slot ("skills").
     "ascension": {"shards": [5, 25, 50, 100], "food": [180000, 820000, 2300000, 4800000], "levels": 10, "relicSlots": 1},
+    # Titan skills (wiki: skills come by class, fusion opens and raises them, ascension adds one). Kinds, tiers in
+    # percent (crit: percentage points) and the odds are ours; the weights pick a kind by the titan's class.
+    "skills": {
+        "slots": 4, "openPct": 35, "upgradePct": 25,
+        "kinds": [
+            {"id": "might", "name": "Мощь", "stat": "atkPct", "tiers": [3, 5, 8]},
+            {"id": "vigor", "name": "Живучесть", "stat": "hpPct", "tiers": [3, 5, 8]},
+            {"id": "cuirass", "name": "Кираса", "stat": "armorPct", "tiers": [3, 5, 8]},
+            {"id": "precision", "name": "Меткость", "stat": "critPct", "tiers": [2, 3, 4]},
+            {"id": "sunder", "name": "Сокрушение брони", "stat": "piercePct", "tiers": [3, 5, 7]},
+            {"id": "war_cry", "name": "Боевой клич", "stat": "troopAtkPct", "tiers": [2, 3, 4]},
+            {"id": "banner", "name": "Знамя стойкости", "stat": "troopHpPct", "tiers": [2, 3, 4]},
+        ],
+        "classes": {
+            "Champion": {"might": 2, "vigor": 3, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 3},
+            "Guardian": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 1, "banner": 3},
+            "Paladin": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 4},
+            "Berserker": {"might": 4, "vigor": 2, "cuirass": 1, "precision": 3, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Infiltrator": {"might": 4, "vigor": 1, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 1, "banner": 1},
+            "Ranger": {"might": 3, "vigor": 2, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Sorcerer": {"might": 4, "vigor": 3, "cuirass": 1, "precision": 2, "sunder": 2, "war_cry": 3, "banner": 2},
+            "Shaman": {"might": 2, "vigor": 3, "cuirass": 2, "precision": 1, "sunder": 1, "war_cry": 4, "banner": 4},
+        },
+    },
     # Fusion unlocks at Castle 7 and costs food (wiki); XP and the food amount are estimates.
     "fusion": {"castle": 7, "foodPerStar": 2000, "xpPerStarSq": 150, "keepXpPct": 50},
     # Relic Temple: a free relic every day (wiki); altars for 1 000 and 4 000 gems (wiki); R4 only from altars (wiki).
     # Odds by rarity R1..R4 are estimates. The daily altar may give a relic item instead (see "relics").
+    # The Altar of Power sells relic items for 1 000 gems (wiki, Announcements 1.8); its odds R1..R5 are estimates.
     "altars": [
         {"id": "daily", "name": "Ежедневная реликвия", "gems": 0, "cooldownSec": 86400, "weights": [70, 25, 5, 0]},
         {"id": "silver", "name": "Серебряный алтарь", "gems": 1000, "cooldownSec": 0, "weights": [0, 60, 35, 5]},
         {"id": "gold", "name": "Золотой алтарь", "gems": 4000, "cooldownSec": 0, "weights": [0, 0, 70, 30]},
+        {"id": "power", "name": "Алтарь силы", "gems": 1000, "cooldownSec": 0, "relics": True, "weights": [0, 50, 35, 13, 2]},
     ],
     # The original's spells (wiki: Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud, Raise Dead).
     # The Spell Forge crafts them into stock (queue and capacity by level, wiki) and each cast uses one.
@@ -440,16 +506,69 @@ ARMY = {
     "spellResearch": {"goldBase": 20000, "goldGrowth": 1.55, "secBase": 7200, "secGrowth": 1.45, "craftPctPerLevel": 15},
     # Spells a battle can take (distinct kinds); every charge in stock goes along.
     "battleSpellKinds": 3,
-    # Relics (wiki: they raise a titan's damage, health, armor; one slot at first, more as the titan levels up;
-    # they wear out with use; repair by sacrificing relics with a chance, from Castle 8; rarity R1-R5).
-    # Repair also costs food (wiki: food goes to troops, relic repair and fusion). New slots at titan levels 20, 30, 40, 50
-    # (guide). Bonus, durability, repair weights, repair food and drop odds are estimates.
+    # Relics, as in the original since 1.8 (wiki: Relics, Relic Repair, Strategy "Relics 101", Announcements 1.8):
+    # - combat relics are worn by titans and last a number of battles (R1 20, R2 16, R3 12, R4 8; R5 is ours);
+    #   economy relics ("pickaxes, ploughs") attach to buildings, raise production or cut training times and last a time;
+    # - a relic has one to three effects; the later ones are locked (from 2-star relics) until a repair opens them,
+    #   usually with higher-star relics as sacrifices; every effect has a base value and grows with repairs
+    #   ("the max level is often 30-75% greater than the base"); a titan cannot wear two identical relics;
+    # - repair from Castle 8: each sacrificed relic adds a chance by its rarity and the target's (table below, wiki);
+    #   a whole relic can be repaired too, for the improvement; the improvement chance depends on the target's rarity;
+    # - won battles drop one to three relics, better as the player goes on; the inventory starts at 200.
+    # Our estimates: effect values, levels (4, +15% of the base each), caps, economy durations, effects open per rarity,
+    # improvement chances, the R5 row and column of the repair table, drop odds, repair food, the effect catalogue.
+    # Repair also costs food (wiki: food goes to troops, relic repair and fusion). New slots at titan levels 20, 30, 40, 50 (guide).
     "relics": {
-        "kinds": [{"id": "atk", "name": "Реликвия ярости", "stat": "atkPct"}, {"id": "hp", "name": "Реликвия стойкости", "stat": "hpPct"},
-                  {"id": "armor", "name": "Реликвия брони", "stat": "armorPct"}],
-        "bonusPct": [3, 5, 8, 12, 16], "durability": [10, 14, 18, 24, 30], "slotLevels": [1, 20, 30, 40, 50],
-        "repairCastle": 8, "repairWeight": [10, 20, 35, 50, 70], "repairFood": [1000, 2500, 6000, 15000, 30000], "maxRelics": 100,
+        "effects": [
+            {"id": "atk", "name": "урон титана", "stat": "atkPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "hp", "name": "здоровье титана", "stat": "hpPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "armor", "name": "броня титана", "stat": "armorPct", "base": [3, 5, 8, 12, 16]},
+            {"id": "crit", "name": "шанс крита", "stat": "critPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "pierce", "name": "пробитие брони", "stat": "piercePct", "base": [4, 6, 9, 13, 17], "cap": 50},
+            {"id": "troop_atk", "name": "урон войск", "stat": "troopAtkPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "troop_hp", "name": "здоровье войск", "stat": "troopHpPct", "base": [2, 3, 4, 6, 8], "cap": 20},
+            {"id": "xp", "name": "опыт титана", "stat": "xpPct", "base": [20, 30, 40, 60, 80]},
+            {"id": "produce", "name": "добыча", "stat": "producePct", "base": [5, 8, 12, 16, 20]},
+            {"id": "store", "name": "вместимость", "stat": "storePct", "base": [10, 15, 20, 30, 40]},
+            {"id": "train", "name": "время обучения", "stat": "trainPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "craft", "name": "время создания заклинаний", "stat": "craftPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "research", "name": "время улучшений", "stat": "researchPct", "base": [5, 8, 12, 16, 20], "cap": 50},
+            {"id": "rest", "name": "отдых титанов", "stat": "restPct", "base": [10, 15, 20, 30, 40], "cap": 60},
+        ],
+        # Kinds: the first three keep their ids from before (saves); names and the catalogue are ours.
+        "kinds": [
+            {"id": "atk", "name": "Реликвия ярости", "type": "combat", "effects": ["atk", "crit", "pierce"], "weight": 12},
+            {"id": "hp", "name": "Реликвия стойкости", "type": "combat", "effects": ["hp", "troop_hp", "armor"], "weight": 12},
+            {"id": "armor", "name": "Реликвия брони", "type": "combat", "effects": ["armor", "hp", "troop_atk"], "weight": 12},
+            {"id": "eye", "name": "Око охотника", "type": "combat", "effects": ["crit", "atk"], "weight": 8},
+            {"id": "fang", "name": "Клык змея", "type": "combat", "effects": ["pierce", "atk"], "weight": 8},
+            {"id": "banner", "name": "Знамя легиона", "type": "combat", "effects": ["troop_atk", "troop_hp"], "weight": 8},
+            {"id": "amulet", "name": "Амулет вождя", "type": "combat", "effects": ["troop_hp", "troop_atk", "hp"], "weight": 6},
+            # XP relics are good for two battles (t50 guide).
+            {"id": "scroll", "name": "Свиток опыта", "type": "combat", "effects": ["xp"], "battles": 2, "weight": 6},
+            {"id": "pickaxe", "name": "Кирка рудокопа", "type": "economy", "effects": ["produce", "store"], "buildings": ["gold_mine"], "weight": 8},
+            {"id": "plough", "name": "Плуг пахаря", "type": "economy", "effects": ["produce", "store"], "buildings": ["farm"], "weight": 8},
+            {"id": "bugle", "name": "Горн вербовщика", "type": "economy", "effects": ["train"], "buildings": ["barracks"], "weight": 5},
+            # The original's council training relics (e.g. the Unak Training Relic, one effect).
+            {"id": "seal", "name": "Печать посланника", "type": "economy", "effects": ["train"],
+             "buildings": ["council_sunreach", "council_rimeheim", "council_jade", "council_mistmoor"], "weight": 5},
+            {"id": "hammer", "name": "Молот чародея", "type": "economy", "effects": ["craft"], "buildings": ["spell_forge"], "weight": 4},
+            {"id": "tome", "name": "Книга мастера", "type": "economy", "effects": ["research"], "buildings": ["armoury", "arcane_tower"], "weight": 4},
+            {"id": "chalice", "name": "Чаша покоя", "type": "economy", "effects": ["rest"], "buildings": ["hall_of_titans"], "weight": 4},
+        ],
+        "levels": 4, "stepPct": 15,
+        "startEffects": [1, 1, 1, 2, 3], "maxEffects": [1, 2, 3, 3, 3],
+        "durability": [20, 16, 12, 8, 6], "hours": [24, 36, 48, 72, 96], "slotLevels": [1, 20, 30, 40, 50],
+        "repairCastle": 8,
+        # Chance per sacrificed relic, percent: rows are the repaired relic's rarity, columns the sacrifice's (wiki, R1-R4).
+        "repairPct": [[50, 100, 100, 100, 100], [20, 40, 80, 100, 100], [10, 20, 40, 80, 100], [5, 10, 20, 40, 80], [3, 5, 10, 20, 40]],
+        "enhancePct": [80, 70, 60, 50, 40],
+        "repairFood": [1000, 2500, 6000, 15000, 30000], "maxRelics": 200,
         "dailyRelicPct": 60, "dailyRarity": [60, 35, 5, 0, 0],
+        # Won land battles: one relic per star, rarity odds by land level 1..9.
+        "dropMax": 3,
+        "dropRarity": [[85, 15, 0, 0, 0], [80, 20, 0, 0, 0], [72, 25, 3, 0, 0], [65, 30, 5, 0, 0], [55, 35, 10, 0, 0],
+                       [45, 40, 14, 1, 0], [38, 42, 18, 2, 0], [30, 44, 22, 4, 0], [25, 43, 26, 6, 0]],
     },
     # A titan on a land adds 1% production per titan level (wiki).
     "landTitanPctPerLevel": 1,

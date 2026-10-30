@@ -289,6 +289,14 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
 #kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+/* Titan skills: one line per slot. */
+ul.skills { margin: 4px 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+ul.skills li.fine { list-style: circle; }
+/* Daily quests: claimed of today's; a gold edge and a dot when a reward waits. */
+#kQuestBtn { position: relative; font-weight: 700; font-variant-numeric: tabular-nums; }
+#kQuestBtn svg { width: 22px; height: 22px; }
+#kQuestBtn.ready { border-color: var(--bronze); color: var(--valor); }
+#kQuestBtn.ready::after { content: ''; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
 #kBottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding-left: var(--gut-l); padding-right: var(--gut-r); pointer-events: none; }
 #kBottom > * { pointer-events: auto; }
@@ -340,6 +348,63 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .landCard .info span { font-size: 12px; color: var(--dim); }
 .landCard .row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .landCard .row .btn { flex: 1 1 140px; }
+/* Campaign missions: a won mission gets a gold edge; Ilsa Wren's briefing spans the card. */
+.landCard.won { border-color: rgba(244, 196, 79, 0.3); }
+.landCard .brief { grid-column: 1 / -1; margin: 0; font-style: italic; }
+.landCard .info b.gold { color: var(--valor); font-size: inherit; }
+/* World map (kingdom.js openWorldMap): islands on a sky chart; lords and their lands carry the lord's colour (--lord). */
+.landCard.rival, .landCard.lord { border-left: 3px solid var(--lord); }
+.ico.land.lordIco { background: radial-gradient(circle at 40% 35%, #5a626e, #1d2229); box-shadow: inset 0 0 0 2px var(--lord); }
+.lordLine { display: flex; align-items: center; gap: 6px; }
+.lordLine i, .lordChip i { width: 10px; height: 10px; border-radius: 50%; background: var(--lord); flex: 0 0 auto; }
+.worldMap { flex: none; width: 100%; max-width: 480px; margin: 0 auto; border-radius: 16px; overflow: hidden; border: 1px solid var(--hair); aspect-ratio: 1 / 1; }
+#kSheetPanel .worldMap svg.wmap { display: block; width: 100%; height: 100%; vertical-align: top; }
+.wmap .cloud { fill: rgba(220, 232, 245, 0.05); }
+.wmap .orbit { fill: none; stroke: rgba(239, 231, 214, 0.08); stroke-dasharray: 2 6; }
+.wmap .link { stroke-width: 1.4; stroke-dasharray: 3 4; opacity: 0.6; }
+.wmap .mn { cursor: pointer; }
+.wmap .mn .hit { fill: transparent; }
+.wmap .mn .isle { stroke-width: 2; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45)); }
+.wmap .mn.dim .isle, .wmap .mn.dim .gi { opacity: 0.45; }
+.wmap .mn .halo { fill: rgba(255, 255, 255, 0.12); stroke: #fff; stroke-width: 2.2; animation: wmPulse 1.4s ease-in-out infinite; }
+.wmap .mn .shield { fill: rgba(143, 211, 255, 0.1); stroke: #8fd3ff; stroke-width: 1.4; stroke-dasharray: 3 2.5; }
+.wmap .mn .full { fill: #ffd970; stroke: #2a1a05; stroke-width: 1; }
+.wmap .mn .lb circle { fill: #1b232b; stroke: var(--bronze); stroke-width: 1; }
+.wmap .mn .lb text { fill: var(--parch); font: 700 9px var(--font-ui); text-anchor: middle; dominant-baseline: central; }
+@keyframes wmPulse { 50% { stroke-opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .wmap .mn .halo { animation: none; } }
+.mapLegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); margin-top: -4px; }
+.mapLegend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; margin-right: 5px; vertical-align: -2px; }
+.mapLegend i.multi { border-color: #e0645a #e8a33c #a487ea #46b5a6; }
+.mapLegend i.dia { border-radius: 2px; transform: rotate(45deg) scale(0.85); border-color: #f2d38a; }
+.mapLegend i.sh { border: 1.5px dashed #8fd3ff; }
+.lordChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lordChip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--panel-hi); border: 1px solid var(--hair); font-size: 13px; font-weight: 600; }
+.lordChip.on { border-color: var(--lord); box-shadow: inset 0 0 0 1px var(--lord); }
+/* Alliances: emblem shields (colour by emblem index), league tables, the founding form. */
+.emb { width: 44px; height: 44px; border-radius: 10px 10px 22px 22px; display: grid; place-items: center; flex: 0 0 auto; font-family: var(--font-display);
+  font-weight: 800; font-size: 12px; letter-spacing: 0.02em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.landCard .emb, h2.ti > .emb { width: 56px; height: 56px; font-size: 14px; }
+.emb.e0 { background: linear-gradient(#d4553f, #7a2219); } .emb.e1 { background: linear-gradient(#4f8fe0, #1d3f7a); }
+.emb.e2 { background: linear-gradient(#5fb05a, #22551f); } .emb.e3 { background: linear-gradient(#e2b04a, #85591a); }
+.emb.e4 { background: linear-gradient(#9b6be0, #44236f); } .emb.e5 { background: linear-gradient(#3fb3a8, #145550); }
+.emb.e6 { background: linear-gradient(#ec8a3c, #8a3f12); } .emb.e7 { background: linear-gradient(#7d8a9a, #333c48); }
+.emb.e8 { background: linear-gradient(#c2364f, #5e1222); } .emb.e9 { background: linear-gradient(#3c5bb0, #142554); }
+.emb.e10 { background: linear-gradient(#9aa04a, #4a4d16); } .emb.e11 { background: linear-gradient(#d0569f, #64184a); }
+.league { display: grid; grid-template-columns: 26px 1fr auto; gap: 5px 10px; font-size: 14px; align-items: center; }
+.league .pl { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+.league .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.league .nm small { color: var(--dim); margin-left: 6px; }
+.league .v { font-variant-numeric: tabular-nums; text-align: right; }
+.league .me { color: var(--valor); font-weight: 700; }
+.league .up { color: var(--good); } .league .down { color: #ffb4a6; }
+.league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); min-width: 0; }
+.field input { height: 42px; border-radius: 10px; border: 1px solid var(--hair); background: rgba(255, 255, 255, 0.06); color: var(--parch);
+  padding: 0 12px; font: inherit; font-size: 16px; min-width: 0; }
+.field input:focus { outline: 2px solid var(--bronze); outline-offset: 1px; }
+.form2 { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
 #kPlace { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center;
   background: var(--panel); border: 1px solid var(--hair); border-radius: 16px; padding: 8px 10px; }
 #kPlace p { margin: 0; font-size: 13px; color: var(--dim); max-width: 26ch; }
@@ -383,12 +448,19 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .titanCard.locked { opacity: 0.62; border-style: dashed; }
 .titanCard.locked .ico { filter: grayscale(1); }
 .titanCard .head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.titanCard .head[data-act] { cursor: pointer; }
 .titanCard .head b { font-family: var(--font-display); font-size: 17px; }
 .titanCard .meta { font-size: 12px; color: var(--dim); }
 .titanCard .meta:empty { display: none; }
 .titanCard .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .titanCard .row .btn { flex: 1 1 auto; height: 36px; font-size: 13px; padding: 0 10px; }
 .titanCard .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+/* Titan figure from titans.js: idles, and the buttons under it play the attack and both abilities. */
+.titanStage { display: grid; grid-template-columns: minmax(0, 190px) 1fr; gap: 12px; align-items: center; margin: 4px 0 10px; }
+#kSheetPanel .titanStage svg.dtF { width: 100%; height: auto; display: block; border-radius: 12px; background: radial-gradient(circle at 50% 38%, #3b4a66, #151b28); }
+.titanStage .clips { display: flex; flex-direction: column; gap: 6px; }
+.titanStage .clips .btn { height: 36px; font-size: 13px; }
+@media (max-width: 420px) { .titanStage { grid-template-columns: 1fr; } .titanStage .dtF { max-width: 220px; margin: 0 auto; } }
 .opt[disabled] { opacity: 0.45; }
 .ico.spell { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 20px;
   background: radial-gradient(circle at 40% 35%, #b08cff, #4b2a8a); color: #f3ecff; }
@@ -406,8 +478,10 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .ico.bld.resources { background: radial-gradient(circle at 40% 35%, #a6dc7c, #3f7a2a); }
 .ico.bld.troops { background: radial-gradient(circle at 40% 35%, #e08a78, #7a2a22); }
 .ico.bld.spells { background: radial-gradient(circle at 40% 35%, #b08cff, #4b2a8a); }
+.ico.bld.councils { background: radial-gradient(circle at 40% 35%, #7fd6c4, #1f5f62); }
 .ico.bld.other, .ico.altar { background: radial-gradient(circle at 40% 35%, #e6bd7e, #7a5226); }
 .ico.altar.silver { background: radial-gradient(circle at 40% 35%, #c3ceda, #4a5868); }
+.ico.altar.power { background: radial-gradient(circle at 40% 35%, #d2a6ff, #5b2f9e); }
 .ico.titan { background: radial-gradient(circle at 40% 35%, #7d8fae, #2a364d); }
 .landCard > .ico { width: 56px; height: 56px; border-radius: 12px; }
 .ico.land { display: grid; place-items: center; }
@@ -436,6 +510,10 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
 .troopRow > .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .troopRow > .row .btn { height: 36px; font-size: 13px; padding: 0 10px; }
 .troopRow .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+.troopRow .info .effs { display: flex; flex-wrap: wrap; gap: 1px 10px; }
+.troopRow .info .eff { color: var(--parch); }
+.troopRow .info .eff i { font-style: normal; color: var(--dim); }
+.troopRow .info .eff.locked { color: var(--dim); opacity: 0.75; }
 @media (max-width: 600px) {
   .troopRow { grid-template-columns: 40px 1fr; }
   .troopRow > .btn, .troopRow > .stepper, .troopRow > .count, .troopRow > .row { grid-column: 1 / -1; justify-self: stretch; }
@@ -460,7 +538,9 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   .res svg { width: 18px; height: 18px; }
   .res small { display: none; }
   #kCastle { font-size: 14px; }
-  .bigbtn { min-width: 96px; height: 56px; font-size: 17px; }
+  .bigbtn { min-width: 0; height: 56px; font-size: 16px; padding: 6px 4px 0; }
+  .bigbtn .bt { max-width: 100%; }
+  .bigbtn small { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #kToasts { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 84px); }
 }
 @media (max-height: 430px) {
@@ -481,6 +561,7 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
       </button>
       <div class="chip" id="kCastle">Замок 1</div>
+      <button class="chip" id="kQuestBtn" aria-label="Ежедневные задания" hidden></button>
       <div class="res gold" id="rGold" title="Золото"></div>
       <div class="res food" id="rFood" title="Еда"></div>
       <div class="res gems" id="rGems" title="Самоцветы"></div>
@@ -492,6 +573,7 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
     <div id="kToasts" aria-live="polite"></div>
     <footer id="kBottom">
       <button class="bigbtn" id="kAttack"><span class="bt">Атака<small id="kAttackSub">Земли</small></span></button>
+      <button class="bigbtn alt" id="kAllyBtn"><span class="bt">Альянс<small id="kAllySub">Лиги</small></span></button>
       <button class="bigbtn alt" id="kArmyBtn"><span class="bt">Армия<small id="kArmySub">Титаны и войска</small></span></button>
       <button class="bigbtn alt" id="kShopBtn"><span class="bt">Строить<small>Магазин</small></span></button>
     </footer>
@@ -644,6 +726,7 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
 <script id="content-data" type="application/json">/*CONTENT_JSON*/</script>
 <script>
 /*ICONS_JS*/
+/*TITANS_JS*/
 </script>
 <script>
 /*APP_JS*/

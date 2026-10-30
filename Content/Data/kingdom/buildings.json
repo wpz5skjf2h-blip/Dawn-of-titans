@@ -2652,7 +2652,7 @@
      1
     ]
    ],
-   "description": "Войска гарнизона защищают город от нападений других игроков.",
+   "description": "Войска и титан гарнизона защищают город от налётчиков.",
    "levels": [
     {
      "level": 1,
@@ -2663,7 +2663,9 @@
      "skipGems": 5,
      "castle": 1,
      "src": "est",
-     "defenders": 5
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 0
     },
     {
      "level": 2,
@@ -2675,7 +2677,9 @@
      "castle": 2,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 6
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 1
     },
     {
      "level": 3,
@@ -2687,7 +2691,9 @@
      "castle": 3,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 6
+     "defenseSlots": 3,
+     "guardTier": 1,
+     "defenseBonusPct": 2
     },
     {
      "level": 4,
@@ -2699,7 +2705,9 @@
      "castle": 4,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 7
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 3
     },
     {
      "level": 5,
@@ -2710,7 +2718,9 @@
      "skipGems": 291,
      "castle": 5,
      "src": "est",
-     "defenders": 8,
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 4,
      "requires": [
       {
        "building": "gold_reserve",
@@ -2728,7 +2738,9 @@
      "castle": 6,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 9
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 5
     },
     {
      "level": 7,
@@ -2740,7 +2752,9 @@
      "castle": 7,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 10
+     "defenseSlots": 4,
+     "guardTier": 1,
+     "defenseBonusPct": 6
     },
     {
      "level": 8,
@@ -2752,7 +2766,9 @@
      "castle": 8,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 11
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 7
     },
     {
      "level": 9,
@@ -2764,7 +2780,9 @@
      "castle": 9,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 12
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 8
     },
     {
      "level": 10,
@@ -2775,7 +2793,9 @@
      "skipGems": 1458,
      "castle": 10,
      "src": "est",
-     "defenders": 14,
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 9,
      "requires": [
       {
        "building": "food_reserve",
@@ -2794,7 +2814,9 @@
      "castle": 11,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 15
+     "defenseSlots": 5,
+     "guardTier": 2,
+     "defenseBonusPct": 10
     },
     {
      "level": 12,
@@ -2806,7 +2828,9 @@
      "castle": 12,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 17
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 11
     },
     {
      "level": 13,
@@ -2818,7 +2842,9 @@
      "castle": 13,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 19
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 12
     },
     {
      "level": 14,
@@ -2830,7 +2856,9 @@
      "castle": 14,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 22
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 13
     },
     {
      "level": 15,
@@ -2841,7 +2869,9 @@
      "skipGems": 2869,
      "castle": 15,
      "src": "est",
-     "defenders": 24
+     "defenseSlots": 6,
+     "guardTier": 2,
+     "defenseBonusPct": 14
     },
     {
      "level": 16,
@@ -2853,7 +2883,9 @@
      "castle": 16,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 27
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 15
     },
     {
      "level": 17,
@@ -2865,7 +2897,9 @@
      "castle": 17,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 30
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 16
     },
     {
      "level": 18,
@@ -2877,7 +2911,9 @@
      "castle": 18,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 34
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 17
     },
     {
      "level": 19,
@@ -2889,7 +2925,9 @@
      "castle": 19,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 38
+     "defenseSlots": 7,
+     "guardTier": 3,
+     "defenseBonusPct": 18
     },
     {
      "level": 20,
@@ -2900,7 +2938,9 @@
      "skipGems": 5562,
      "castle": 20,
      "src": "est",
-     "defenders": 43
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 19
     },
     {
      "level": 21,
@@ -2912,7 +2952,9 @@
      "castle": 21,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 48
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 20
     },
     {
      "level": 22,
@@ -2923,7 +2965,9 @@
      "skipGems": 7453,
      "castle": 22,
      "src": "est",
-     "defenders": 54
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 21
     },
     {
      "level": 23,
@@ -2935,7 +2979,9 @@
      "castle": 23,
      "src": "est",
      "skipGemsSrc": "est",
-     "defenders": 60
+     "defenseSlots": 8,
+     "guardTier": 3,
+     "defenseBonusPct": 22
     }
    ]
   },
@@ -3553,6 +3599,590 @@
      "src": "est",
      "skipGemsSrc": "est",
      "reinforcements": 10
+    }
+   ]
+  },
+  {
+   "id": "council_sunreach",
+   "name": "Совет Солнечного Предела",
+   "category": "councils",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 5,
+   "counts": [
+    [
+     5,
+     1
+    ]
+   ],
+   "description": "Посланники пустынных городов-храмов. Их гренадеры бросают огненные горшки; с 3-го уровня Совета приходят боевые жрецы.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 20000
+     },
+     "timeSec": 3600,
+     "skipGems": 70,
+     "castle": 5,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 3,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 37700
+     },
+     "timeSec": 6900,
+     "skipGems": 119,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 5
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 71000
+     },
+     "timeSec": 12900,
+     "skipGems": 199,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 7
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 133900
+     },
+     "timeSec": 24000,
+     "skipGems": 332,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 9
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 252300
+     },
+     "timeSec": 45300,
+     "skipGems": 558,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 11
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 475600
+     },
+     "timeSec": 85500,
+     "skipGems": 940,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 13
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 896300
+     },
+     "timeSec": 161400,
+     "skipGems": 1583,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 15
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 1689200
+     },
+     "timeSec": 304200,
+     "skipGems": 2661,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 17
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 3183600
+     },
+     "timeSec": 573000,
+     "skipGems": 4473,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 19
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 6000000
+     },
+     "timeSec": 1080000,
+     "skipGems": 7522,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 21
+    }
+   ]
+  },
+  {
+   "id": "council_rimeheim",
+   "name": "Совет Римхейма",
+   "category": "councils",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 6,
+   "counts": [
+    [
+     6,
+     1
+    ]
+   ],
+   "description": "Посланники ледяного севера. Их пикинеры бьют морозной сталью и замедляют врага; с 3-го уровня приходят цепеломы.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 35000
+     },
+     "timeSec": 6300,
+     "skipGems": 111,
+     "castle": 6,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 3,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 62000
+     },
+     "timeSec": 11100,
+     "skipGems": 176,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 5
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 109800
+     },
+     "timeSec": 19800,
+     "skipGems": 283,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 7
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 194400
+     },
+     "timeSec": 35100,
+     "skipGems": 453,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 9
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 344300
+     },
+     "timeSec": 62100,
+     "skipGems": 723,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 11
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 609900
+     },
+     "timeSec": 109800,
+     "skipGems": 1154,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 13
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 1080100
+     },
+     "timeSec": 194400,
+     "skipGems": 1844,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 15
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 1912900
+     },
+     "timeSec": 344400,
+     "skipGems": 2947,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 17
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 3387800
+     },
+     "timeSec": 609900,
+     "skipGems": 4708,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 19
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 6000000
+     },
+     "timeSec": 1080000,
+     "skipGems": 7522,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 21
+    }
+   ]
+  },
+  {
+   "id": "council_jade",
+   "name": "Совет Нефритовых Пиков",
+   "category": "councils",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 7,
+   "counts": [
+    [
+     7,
+     1
+    ]
+   ],
+   "description": "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг; с 3-го уровня приходят расчёты баллист.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 55000
+     },
+     "timeSec": 9900,
+     "skipGems": 160,
+     "castle": 7,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 3,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 92600
+     },
+     "timeSec": 16800,
+     "skipGems": 248,
+     "castle": 9,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 5
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 156000
+     },
+     "timeSec": 28200,
+     "skipGems": 379,
+     "castle": 11,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 7
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 262800
+     },
+     "timeSec": 47400,
+     "skipGems": 580,
+     "castle": 13,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 9
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 442600
+     },
+     "timeSec": 79800,
+     "skipGems": 888,
+     "castle": 15,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 11
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 745500
+     },
+     "timeSec": 134100,
+     "skipGems": 1360,
+     "castle": 17,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 13
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 1255700
+     },
+     "timeSec": 225900,
+     "skipGems": 2085,
+     "castle": 19,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 15
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 2115000
+     },
+     "timeSec": 380700,
+     "skipGems": 3199,
+     "castle": 21,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 17
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 3562300
+     },
+     "timeSec": 641100,
+     "skipGems": 4905,
+     "castle": 23,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 19
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 6000000
+     },
+     "timeSec": 1080000,
+     "skipGems": 7522,
+     "castle": 25,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 21
+    }
+   ]
+  },
+  {
+   "id": "council_mistmoor",
+   "name": "Совет Туманных Топей",
+   "category": "councils",
+   "role": "other",
+   "size": [
+    4,
+    4
+   ],
+   "unlockCastle": 8,
+   "counts": [
+    [
+     8,
+     1
+    ]
+   ],
+   "description": "Посланники лесных племён. Их пантеры — самые быстрые войска, укус оставляет яд.",
+   "levels": [
+    {
+     "level": 1,
+     "cost": {
+      "gold": 80000
+     },
+     "timeSec": 14400,
+     "skipGems": 218,
+     "castle": 8,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 3,
+     "requires": [
+      {
+       "building": "barracks",
+       "level": 3
+      }
+     ]
+    },
+    {
+     "level": 2,
+     "cost": {
+      "gold": 129200
+     },
+     "timeSec": 23400,
+     "skipGems": 325,
+     "castle": 10,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 5
+    },
+    {
+     "level": 3,
+     "cost": {
+      "gold": 208800
+     },
+     "timeSec": 37500,
+     "skipGems": 478,
+     "castle": 12,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 7
+    },
+    {
+     "level": 4,
+     "cost": {
+      "gold": 337400
+     },
+     "timeSec": 60600,
+     "skipGems": 709,
+     "castle": 14,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 9
+    },
+    {
+     "level": 5,
+     "cost": {
+      "gold": 545100
+     },
+     "timeSec": 98100,
+     "skipGems": 1052,
+     "castle": 16,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 11
+    },
+    {
+     "level": 6,
+     "cost": {
+      "gold": 880600
+     },
+     "timeSec": 158400,
+     "skipGems": 1559,
+     "castle": 18,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 13
+    },
+    {
+     "level": 7,
+     "cost": {
+      "gold": 1422800
+     },
+     "timeSec": 256200,
+     "skipGems": 2312,
+     "castle": 20,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 15
+    },
+    {
+     "level": 8,
+     "cost": {
+      "gold": 2298600
+     },
+     "timeSec": 413700,
+     "skipGems": 3425,
+     "castle": 22,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 17
+    },
+    {
+     "level": 9,
+     "cost": {
+      "gold": 3713700
+     },
+     "timeSec": 668400,
+     "skipGems": 5075,
+     "castle": 24,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 19
+    },
+    {
+     "level": 10,
+     "cost": {
+      "gold": 6000000
+     },
+     "timeSec": 1080000,
+     "skipGems": 7522,
+     "castle": 25,
+     "src": "est",
+     "skipGemsSrc": "est",
+     "maxTroopLevel": 21
     }
    ]
   },

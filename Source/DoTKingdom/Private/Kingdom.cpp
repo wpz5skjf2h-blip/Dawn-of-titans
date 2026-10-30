@@ -70,6 +70,12 @@ uint64_t Mix(uint64_t Seed, uint64_t Counter)
 	uint64_t Data[2] = {Seed, Counter};
 	return XXHash64(Data, sizeof(Data), 0x6b696e67646f6dULL);
 }
+
+/** A time shortened by a relic bonus in tenths of a percent (rounded up, never below one second). */
+int64_t Shorten(int64_t Sec, int64_t Bonus)
+{
+	return Bonus > 0 && Sec > 0 ? std::max<int64_t>(1, CeilDiv(Sec * (1000 - std::min<int64_t>(Bonus, 1000)), 1000)) : Sec;
+}
 } // namespace
 
 const char* ToString(Error E)
@@ -77,7 +83,7 @@ const char* ToString(Error E)
 	static const char* const Names[] = {"none", "bad_id", "max_level", "castle_too_low", "need_requirement", "need_expansion", "locked",
 		"limit_reached", "no_builder", "not_enough", "bad_placement", "busy", "not_busy", "nothing", "storage_full", "need_stones",
 		"no_land_slot", "no_attack", "queue_full", "researching", "too_many_squads", "no_troops", "titan_recovering", "not_ready",
-		"roster_full", "not_max_level"};
+		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full", "need_vp", "alliance_full", "in_alliance", "no_alliance"};
 	const int I = static_cast<int>(E);
 	return I >= 0 && I < static_cast<int>(Error::Count) ? Names[I] : "?";
 }
@@ -101,6 +107,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	PendingIsCapture = false;
 	SeasonNo = SeasonOf(Now);
 	Last = SeasonResult();
+	ResetAlliances();
 	for (const StartBuilding& S : C.startBuildings)
 	{
 		Building B;
@@ -114,7 +121,16 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	}
 	Res_[static_cast<size_t>(ResIndex(Res::Stones))] = std::min(Amount(Res::Stones), Capacity(Res::Stones));
 	ResetArmy();
+	ResetRaids(Now);
+	SiteReady.assign(C.sites.list.size(), 0);
+	SiteCounter = 0;
+	MissionStarList.assign(C.campaigns.acts.size(), {});
+	ChestMask.assign(C.campaigns.acts.size(), 0);
+	QuestDay = -1;
+	QuestCounter = 0;
+	RollQuests();
 	FillWorld();
+	ResetRivals();
 }
 
 void Kingdom::ResetArmy()
@@ -123,6 +139,7 @@ void Kingdom::ResetArmy()
 	Army = C.startArmy;
 	Army.resize(C.troops.size(), 0);
 	Queue.clear();
+	QueuePaid.clear();
 	QueueStart = Time;
 	bQueueBlocked = false;
 	Research = -1;
@@ -137,6 +154,7 @@ void Kingdom::ResetArmy()
 		T.id = NextId++;
 		T.def = S.def;
 		T.level = std::max(1, std::min(S.level, C.titans[static_cast<size_t>(S.def)].MaxLevel()));
+		StartSkills(T);
 		TitanList.push_back(T);
 	}
 	RelicAt = Time;
@@ -149,6 +167,7 @@ void Kingdom::ResetSpellsAndRelics()
 	SpellStockList.assign(C.spells.size(), 0);
 	SpellLevelList.assign(C.spells.size(), 1);
 	Craft.clear();
+	CraftPaid.clear();
 	CraftStart = Time;
 	bCraftBlocked = false;
 	SpellLabs.clear();
@@ -231,6 +250,10 @@ int Kingdom::BusyBuilders() const
 	{
 		Busy += B.upgrading ? 1 : 0;
 	}
+	for (const Land& L : LandList)
+	{
+		Busy += L.upgrading ? 1 : 0;
+	}
 	return Busy;
 }
 
@@ -298,13 +321,14 @@ int64_t Kingdom::ProducerRate(const Building& B) const
 {
 	const BuildingDef& D = C.buildings[static_cast<size_t>(B.def)];
 	const LevelDef* L = CurrentLevel(B);
-	return (D.role == Role::Producer && L && !B.upgrading) ? L->produce : 0;
+	// An economy relic on the producer adds to its output (the original's pickaxes and ploughs).
+	return (D.role == Role::Producer && L && !B.upgrading) ? L->produce * (1000 + BuildingRelicBonus(B, RelicStat::Produce)) / 1000 : 0;
 }
 
 int64_t Kingdom::ProducerCap(const Building& B) const
 {
 	const LevelDef* L = CurrentLevel(B);
-	return L ? L->store : 0;
+	return L ? L->store * (1000 + BuildingRelicBonus(B, RelicStat::Store)) / 1000 : 0;
 }
 
 /** Production per period in hundredths of a unit: the titan bonus is a percentage. */
@@ -343,12 +367,95 @@ int64_t Kingdom::RaidLoot(const WorldLand& W) const
 {
 	const LandTypeDef& T = C.landTypes[static_cast<size_t>(W.type)];
 	const std::vector<int64_t>& Loot = T.raidLoot.empty() ? C.raidLoot : T.raidLoot;
-	return Loot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(Loot.size())) - 1)];
+	const int64_t Base = Loot[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(Loot.size())) - 1)];
+	return W.owner >= 0 ? Base * C.rivals.lootPct / 100 : Base;
+}
+
+int64_t Kingdom::WorldVp(const WorldLand& W) const
+{
+	const int64_t Base = VictoryVp(W.level);
+	return W.owner >= 0 ? Base * C.rivals.vpPct / 100 : Base;
 }
 
 int64_t Kingdom::VictoryVp(int LandLevel) const
 {
 	return C.victoryVp.empty() ? 0 : C.victoryVp[static_cast<size_t>(std::max(1, std::min<int>(LandLevel, static_cast<int>(C.victoryVp.size()))) - 1)];
+}
+
+int Kingdom::LandBandLow(int Castle) const
+{
+	const int MaxLevel = static_cast<int>(C.raidLoot.size());
+	return std::max(1, std::min(MaxLevel, (Castle + 1) / 3));
+}
+
+int Kingdom::LandBandTop(int Castle) const
+{
+	const int Lo = LandBandLow(Castle);
+	return std::max(Lo, std::min(static_cast<int>(C.raidLoot.size()), Lo + 2));
+}
+
+int Kingdom::MaxLandLevel() const
+{
+	return LandBandTop(CastleLevel());
+}
+
+Check Kingdom::CheckLandUpgrade(int32_t Id) const
+{
+	Check Out;
+	const Land* L = FindLand(Id);
+	if (!L)
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (L->upgrading)
+	{
+		Out.error = Error::Busy;
+		return Out;
+	}
+	const LandTypeDef& T = C.landTypes[static_cast<size_t>(L->type)];
+	const size_t Next = static_cast<size_t>(L->level); // index of the next level
+	// A level that would produce no more is not offered (ruins make one shard a day at every level).
+	if (Next >= T.produce.size() || Next >= C.landUpgradeGold.size() || Next >= C.landUpgradeSec.size() || T.produce[Next] <= T.produce[Next - 1])
+	{
+		Out.error = Error::MaxLevel;
+		return Out;
+	}
+	const size_t Gold = static_cast<size_t>(ResIndex(Res::Gold));
+	Out.cost[Gold] = C.landUpgradeGold[Next];
+	Out.timeSec = C.landUpgradeSec[Next];
+	if (L->level + 1 > MaxLandLevel())
+	{
+		Out.error = Error::CastleTooLow;
+		for (int Cl = CastleLevel() + 1; Cl <= C.buildings[static_cast<size_t>(C.castle)].MaxLevel(); ++Cl)
+		{
+			if (LandBandTop(Cl) > L->level)
+			{
+				Out.castle = Cl;
+				break;
+			}
+		}
+		return Out;
+	}
+	if (BusyBuilders() >= Builders())
+	{
+		Out.error = Error::NoBuilder;
+		return Out;
+	}
+	if (Amount(Res::Gold) < Out.cost[Gold])
+	{
+		Out.error = Error::NotEnough;
+		ResArray Missing{};
+		Missing[Gold] = Out.cost[Gold] - Amount(Res::Gold);
+		Out.gemsForMissing = GemsForResources(Missing);
+	}
+	return Out;
+}
+
+int64_t Kingdom::LandSkipCost(int32_t Id) const
+{
+	const Land* L = FindLand(Id);
+	return L && L->upgrading ? GemsForSeconds(std::max<int64_t>(0, L->finishAt - Time)) : 0;
 }
 
 int64_t Kingdom::ProductionPerHour(Res R) const
@@ -575,7 +682,8 @@ void Kingdom::Settle(Building& B, int64_t At) const
 	{
 		const int64_t Cap = ProducerCap(B);
 		const int64_t Gained = Rate * (At - B.lastAt) + B.carry;
-		B.stored = std::min(Cap, B.stored + Gained / kSecondsPerHour);
+		// What was stored stays even above the cap (a relic's extra room may have run out since).
+		B.stored = std::max(B.stored, std::min(Cap, B.stored + Gained / kSecondsPerHour));
 		B.carry = B.stored >= Cap ? 0 : Gained % kSecondsPerHour;
 	}
 	B.lastAt = std::max(B.lastAt, At);
@@ -589,7 +697,9 @@ void Kingdom::SettleLand(Land& L, int64_t At) const
 	{
 		const int64_t Cap = LandStoreCap(L);
 		const int64_t Gained = Num * (At - L.lastAt) + L.carry;
-		L.stored = std::min(Cap, L.stored + Gained / Den);
+		// A store above the cap (filled while a guard raised it, then the guard left) keeps what it holds and stops
+		// growing until it is collected.
+		L.stored = std::max(L.stored, std::min(Cap, L.stored + Gained / Den));
 		L.carry = L.stored >= Cap ? 0 : Gained % Den;
 	}
 	L.lastAt = std::max(L.lastAt, At);
@@ -616,6 +726,18 @@ void Kingdom::Complete(Building& B, int64_t At)
 	B.level = std::min(B.level + 1, C.buildings[static_cast<size_t>(B.def)].MaxLevel());
 	B.lastAt = At;
 	B.carry = 0;
+	if (B.def == C.castle)
+	{
+		FillRivals(); // the lords grow with the player
+	}
+}
+
+void Kingdom::CompleteLand(Land& L, int64_t At)
+{
+	// A land keeps producing while it is upgraded: at the old level until now, at the new one from now on.
+	SettleLand(L, At);
+	L.upgrading = false;
+	L.level = std::min(L.level + 1, static_cast<int>(C.landTypes[static_cast<size_t>(L.type)].produce.size()));
 }
 
 void Kingdom::RegenStones(int64_t Until)
@@ -662,6 +784,15 @@ void Kingdom::Advance(int64_t Now)
 				NextB = &B;
 			}
 		}
+		// Land upgrades come after buildings on a tie.
+		Land* NextL = nullptr;
+		for (Land& L : LandList)
+		{
+			if (L.upgrading && L.finishAt <= Now && (!NextL || L.finishAt < NextL->finishAt || (L.finishAt == NextL->finishAt && L.id < NextL->id)))
+			{
+				NextL = &L;
+			}
+		}
 		const bool bResearch = Research >= 0 && ResearchUntil <= Now;
 		int Lab = -1;
 		for (size_t I = 0; I < SpellLabs.size(); ++I)
@@ -673,19 +804,55 @@ void Kingdom::Advance(int64_t Now)
 		}
 		const int64_t InfT = std::numeric_limits<int64_t>::max();
 		const int64_t TB = NextB ? NextB->finishAt : InfT;
+		const int64_t TL = NextL ? NextL->finishAt : InfT;
 		const int64_t TR = bResearch ? ResearchUntil : InfT;
 		const int64_t TS = Lab >= 0 ? SpellLabs[static_cast<size_t>(Lab)].until : InfT;
 		// The end of a season is an event too: its league reward may add portal stones.
 		const int64_t TN = SeasonOf(Now) > SeasonNo ? std::max(Time, SeasonStart(SeasonNo + 1)) : InfT;
-		if (TB == InfT && TR == InfT && TS == InfT && TN == InfT)
+		// So is an economy relic running out: its building works without it from then on.
+		RelicItem* Spent = nullptr;
+		for (RelicItem& Rl : RelicList)
+		{
+			if (Rl.building != 0 && Rl.durability > 0 && Rl.since + Rl.durability <= Now && (!Spent || Rl.since + Rl.durability < Spent->since + Spent->durability))
+			{
+				Spent = &Rl;
+			}
+		}
+		const int64_t TX = Spent ? Spent->since + Spent->durability : InfT;
+		// Raids come last on a tie, and only until the player has been away too long.
+		const int64_t TA = BattleContent && NextRaid <= Now && NextRaid <= VisitAt + C.raids.awaySec ? std::max(Time, NextRaid) : InfT;
+		// A lord winning back a land taken from it (before raids on a tie).
+		int Regrow = -1;
+		for (size_t I = 0; I < RivalList.size(); ++I)
+		{
+			const std::vector<int64_t>& G = RivalList[I].regrow;
+			if (!G.empty() && G.front() <= Now && (Regrow < 0 || G.front() < RivalList[static_cast<size_t>(Regrow)].regrow.front()))
+			{
+				Regrow = static_cast<int>(I);
+			}
+		}
+		const int64_t TG = Regrow >= 0 ? std::max(Time, RivalList[static_cast<size_t>(Regrow)].regrow.front()) : InfT;
+		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT && TG == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(TB, TR), std::min(TS, TN));
+		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), std::min(TA, TG)));
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
-		if (TN == At)
+		if (TX == At && TB != At && TL != At && TR != At && TS != At && TN != At)
+		{
+			for (Building& B : BuildingList)
+			{
+				if (B.id == Spent->building)
+				{
+					Settle(B, At);
+				}
+			}
+			Spent->durability = 0;
+			Spent->since = At;
+		}
+		else if (TN == At)
 		{
 			RollSeason(At);
 		}
@@ -700,17 +867,32 @@ void Kingdom::Advance(int64_t Now)
 			Level = std::min(Level + 1, std::max(Level, MaxSpellLevel()));
 			SpellLabs.erase(SpellLabs.begin() + Lab);
 		}
-		else
+		else if (TB == At)
 		{
 			Complete(*NextB, At);
 			UnblockQueue(At); // a finished Army Camp may have room now
 			UnblockCraft(At); // and a finished Spell Forge
+		}
+		else if (TL == At)
+		{
+			CompleteLand(*NextL, At);
+		}
+		else if (TG == At)
+		{
+			std::vector<int64_t>& G = RivalList[static_cast<size_t>(Regrow)].regrow;
+			G.erase(G.begin());
+			FillRivals();
+		}
+		else
+		{
+			RunRaid(At);
 		}
 	}
 	ProcessQueue(Now);
 	ProcessCraft(Now);
 	RegenStones(Now);
 	Time = Now;
+	RollQuests();
 }
 
 // --- Actions ------------------------------------------------------------------------------------
@@ -781,6 +963,7 @@ Error Kingdom::Build(int Def, int X, int Y, bool UseGems, int32_t* OutId)
 	{
 		*OutId = B.id;
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -812,6 +995,7 @@ Error Kingdom::Upgrade(int32_t Id, bool UseGems)
 	{
 		Complete(*B, Time);
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -889,6 +1073,7 @@ Error Kingdom::Collect(int32_t Id, int64_t* OutAmount)
 	const bool bWasFull = B->stored >= ProducerCap(*B);
 	B->stored -= Take;
 	Res_[static_cast<size_t>(ResIndex(D.resource))] += Take;
+	NoteQuest(D.resource == Res::Gold ? QuestEvent::CollectGold : D.resource == Res::Food ? QuestEvent::CollectFood : QuestEvent::Count, Take);
 	if (bWasFull)
 	{
 		B->carry = 0;
@@ -1024,6 +1209,7 @@ Error Kingdom::CollectLand(int32_t Id, int64_t* OutAmount)
 		const bool bWasFull = L.stored >= LandStoreCap(L);
 		L.stored -= Take;
 		Res_[static_cast<size_t>(ResIndex(R))] += Take;
+		NoteQuest(R == Res::Gold ? QuestEvent::CollectGold : R == Res::Food ? QuestEvent::CollectFood : QuestEvent::Count, Take);
 		if (bWasFull)
 		{
 			L.carry = 0;
@@ -1039,9 +1225,67 @@ Error Kingdom::AbandonLand(int32_t Id)
 	{
 		if (LandList[I].id == Id)
 		{
+			if (LandList[I].upgrading)
+			{
+				return Error::Busy; // the gold for the upgrade would be lost
+			}
 			LandList.erase(LandList.begin() + static_cast<std::ptrdiff_t>(I));
 			return Error::None;
 		}
+	}
+	return Error::BadId;
+}
+
+Error Kingdom::UpgradeLand(int32_t Id, bool UseGems)
+{
+	const Check Ck = CheckLandUpgrade(Id);
+	if (Ck.error != Error::None && !(Ck.error == Error::NotEnough && UseGems))
+	{
+		return Ck.error;
+	}
+	if (!Pay(Ck.cost, UseGems))
+	{
+		return Error::NotEnough;
+	}
+	for (Land& L : LandList)
+	{
+		if (L.id == Id)
+		{
+			SettleLand(L, Time);
+			L.upgrading = true;
+			L.startAt = Time;
+			L.finishAt = Time + Ck.timeSec;
+			if (Ck.timeSec <= 0)
+			{
+				CompleteLand(L, Time);
+			}
+		}
+	}
+	NoteQuest(QuestEvent::Upgrade, 1);
+	return Error::None;
+}
+
+Error Kingdom::SpeedupLand(int32_t Id)
+{
+	for (Land& L : LandList)
+	{
+		if (L.id != Id)
+		{
+			continue;
+		}
+		if (!L.upgrading)
+		{
+			return Error::NotBusy;
+		}
+		const int64_t Gems = LandSkipCost(Id);
+		int64_t& Have = Res_[static_cast<size_t>(ResIndex(Res::Gems))];
+		if (Have < Gems)
+		{
+			return Error::NotEnough;
+		}
+		Have -= Gems;
+		CompleteLand(L, Time);
+		return Error::None;
 	}
 	return Error::BadId;
 }
@@ -1072,7 +1316,10 @@ void Kingdom::RollSeason(int64_t At)
 {
 	(void)At; // stones were regenerated up to At by the caller
 	int64_t& Vp = Res_[static_cast<size_t>(ResIndex(Res::Vp))];
-	if (Vp > 0)
+	// Every alliance league is ranked and moves; a member is paid by the alliance's league (the original's leagues
+	// are alliance leagues). Alone, or new to the alliance, the personal league pays instead.
+	const bool bAlliancePaid = RollAllianceLeagues(SeasonStart(SeasonNo + 1));
+	if (!bAlliancePaid && Vp > 0)
 	{
 		Last = SeasonResult();
 		Last.season = SeasonNo;
@@ -1093,19 +1340,602 @@ void Kingdom::RollSeason(int64_t At)
 	++SeasonNo;
 }
 
-WorldLand Kingdom::MakeWorldLand()
+// --- Alliances ----------------------------------------------------------------------------------
+// The other alliances and their members are computer players (there is no server yet): who they are, how strong and
+// how many follow from the kingdom's seed; their VP grow through the week at their own pace. Only the leagues the
+// alliances are in change, once a week, and they are saved.
+
+namespace
 {
-	const uint64_t H = Mix(Seed, WorldCounter++);
-	WorldLand W;
-	W.id = NextId++;
+uint64_t AllyHash(uint64_t Seed, uint64_t A, uint64_t B, uint64_t Cc)
+{
+	return Mix(Mix(Mix(Seed ^ 0x616c6c69616e6365ULL, A), B), Cc);
+}
+
+/** Trims spaces; true when the text is a usable alliance name or tag (UTF-8, no control characters). */
+bool CleanName(const std::string& In, size_t MaxBytes, std::string& Out)
+{
+	size_t B = 0;
+	size_t E = In.size();
+	while (B < E && In[B] == ' ')
+	{
+		++B;
+	}
+	while (E > B && In[E - 1] == ' ')
+	{
+		--E;
+	}
+	Out = In.substr(B, E - B);
+	for (const char Ch : Out)
+	{
+		if (static_cast<unsigned char>(Ch) < 0x20 || Ch == 0x7f)
+		{
+			return false;
+		}
+	}
+	return !Out.empty() && Out.size() <= MaxBytes;
+}
+
+const size_t kMaxNameBytes = 48; // 24 Cyrillic letters
+const size_t kMaxTagBytes = 10; // 5 Cyrillic letters
+} // namespace
+
+void Kingdom::ResetAlliances()
+{
+	const int N = BaseAlliances();
+	const int Leagues = static_cast<int>(C.alliances.leagues.size());
+	// Which name each alliance gets: a shuffle by the seed, so every kingdom has its own neighbours.
+	AlliancePerm.resize(static_cast<size_t>(N));
+	for (int I = 0; I < N; ++I)
+	{
+		AlliancePerm[static_cast<size_t>(I)] = I;
+	}
+	for (int I = N - 1; I > 0; --I)
+	{
+		const int J = static_cast<int>(Mix(Seed ^ 0x6e616d6573ULL, static_cast<uint64_t>(I)) % static_cast<uint64_t>(I + 1));
+		std::swap(AlliancePerm[static_cast<size_t>(I)], AlliancePerm[static_cast<size_t>(J)]);
+	}
+	// At the start every league holds groupSize alliances, the strongest in the top one.
+	AllianceTiers.assign(static_cast<size_t>(N), 0);
+	for (int I = 0; I < N; ++I)
+	{
+		AllianceTiers[static_cast<size_t>(I)] = Leagues > 0 ? std::min(I / C.alliances.groupSize, Leagues - 1) : 0;
+	}
+	AllianceIdx = -1;
+	AllianceJoinedAt = 0;
+	OwnName.clear();
+	OwnTag.clear();
+	OwnFounded = 0;
+	ReinforceList.clear();
+	ReinforceAt = 0;
+	bReinforceAsked = false;
+	PendingReinforce.clear();
+}
+
+int Kingdom::AllianceCount() const
+{
+	return BaseAlliances() + (HasOwnAlliance() ? 1 : 0);
+}
+
+int Kingdom::AllianceTier(int Index) const
+{
+	return Index >= 0 && Index < static_cast<int>(AllianceTiers.size()) ? AllianceTiers[static_cast<size_t>(Index)] : 0;
+}
+
+int64_t Kingdom::AllianceStrength(int Index) const
+{
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Leagues.empty())
+	{
+		return 0;
+	}
+	if (Index >= BaseAlliances())
+	{
+		// Recruits of an own alliance play like the weakest of its league.
+		return Leagues[static_cast<size_t>(std::max(0, std::min(AllianceTier(Index), static_cast<int>(Leagues.size()) - 1)))].memberVpMin;
+	}
+	// A computer alliance keeps the strength of the league it started in, wherever it goes.
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(std::min(Index / C.alliances.groupSize, static_cast<int>(Leagues.size()) - 1))];
+	const uint64_t H = AllyHash(Seed, static_cast<uint64_t>(Index), 1, 0);
+	return L.memberVpMin + (L.memberVpMax - L.memberVpMin) * static_cast<int64_t>(H % 1001) / 1000;
+}
+
+int Kingdom::RecruitsAt(int64_t At) const
+{
+	if (!HasOwnAlliance() || At <= OwnFounded)
+	{
+		return 0;
+	}
+	return static_cast<int>(std::min<int64_t>(C.alliances.recruits, (At - OwnFounded) / C.alliances.recruitSec));
+}
+
+int Kingdom::AllianceSize(int Index) const
+{
+	if (Index >= BaseAlliances())
+	{
+		return RecruitsAt(Time);
+	}
+	const AllianceRules& A = C.alliances;
+	return A.minMembers + static_cast<int>(AllyHash(Seed, static_cast<uint64_t>(Index), 2, 0) % static_cast<uint64_t>(A.maxMembers - A.minMembers + 1));
+}
+
+int64_t Kingdom::AllianceJoinVp(int Index) const
+{
+	const AllianceRules& A = C.alliances;
+	if (Index >= BaseAlliances())
+	{
+		return A.joinVp;
+	}
+	// Strong alliances ask more: one and a half weeks of their average member, rounded down to 500.
+	return std::max(A.joinVp, std::min(A.joinVpMax, AllianceStrength(Index) * 3 / 2 / 500 * 500));
+}
+
+int64_t Kingdom::MemberVp(int Index, int Member, int64_t Season, int64_t At) const
+{
+	const bool bOwn = Index >= BaseAlliances();
+	const uint64_t Key = bOwn ? 0x100000000ULL + static_cast<uint64_t>(OwnFounded) : static_cast<uint64_t>(Index);
+	const uint64_t H = AllyHash(Seed, Key, 3 + static_cast<uint64_t>(Member), static_cast<uint64_t>(Season));
+	// A member's pace this week: 50-150% of the alliance's strength, starting up to a quarter of the week late.
+	const int64_t Weekly = AllianceStrength(Index) * (50 + static_cast<int64_t>(H % 101)) / 100;
+	const int64_t Len = C.seasonSec;
+	const int64_t Start = SeasonStart(Season);
+	int64_t From = Start + static_cast<int64_t>((H >> 20) % 251) * Len / 1000;
+	if (bOwn)
+	{
+		From = std::max(From, OwnFounded + (Member + 1) * C.alliances.recruitSec);
+	}
+	const int64_t T = std::min(At, Start + Len);
+	return T > From ? Weekly * (T - From) / Len : 0;
+}
+
+int64_t Kingdom::AllianceVp(int Index, int64_t Season, int64_t At) const
+{
+	const int Size = Index >= BaseAlliances() ? RecruitsAt(std::min(At, SeasonStart(Season + 1))) : AllianceSize(Index);
+	int64_t Total = 0;
+	for (int M = 0; M < Size; ++M)
+	{
+		Total += MemberVp(Index, M, Season, At);
+	}
+	// The player's VP count for the alliance too (the original).
+	if (Index == AllianceIdx && Season == SeasonNo)
+	{
+		Total += Amount(Res::Vp);
+	}
+	return Total;
+}
+
+AllianceInfo Kingdom::Alliance(int Index) const
+{
+	AllianceInfo A;
+	if (Index < 0 || Index >= AllianceCount())
+	{
+		return A;
+	}
+	A.index = Index;
+	A.own = Index >= BaseAlliances();
+	if (A.own)
+	{
+		A.name = OwnName;
+		A.tag = OwnTag;
+		A.emblem = static_cast<int>(AllyHash(Seed, 0x100000000ULL + static_cast<uint64_t>(OwnFounded), 0, 0) % 12);
+	}
+	else
+	{
+		const std::pair<std::string, std::string>& N = C.alliances.names[static_cast<size_t>(AlliancePerm[static_cast<size_t>(Index)])];
+		A.name = N.first;
+		A.tag = N.second;
+		A.emblem = static_cast<int>(AllyHash(Seed, static_cast<uint64_t>(Index), 0, 0) % 12);
+	}
+	A.tier = AllianceTier(Index);
+	A.members = AllianceSize(Index) + (AllianceIdx == Index ? 1 : 0);
+	A.joinVp = AllianceJoinVp(Index);
+	A.vp = AllianceVp(Index, SeasonNo, Time);
+	return A;
+}
+
+int64_t Kingdom::AllianceRating() const
+{
+	return std::max(Amount(Res::Vp), Last.season == SeasonNo - 1 ? Last.vp : 0);
+}
+
+std::vector<int> Kingdom::LeagueTable(int Tier) const
+{
+	std::vector<std::pair<int64_t, int>> Rows;
+	for (int I = 0; I < AllianceCount(); ++I)
+	{
+		if (AllianceTier(I) == Tier)
+		{
+			Rows.emplace_back(AllianceVp(I, SeasonNo, Time), I);
+		}
+	}
+	std::sort(Rows.begin(), Rows.end(), [](const std::pair<int64_t, int>& X, const std::pair<int64_t, int>& Y)
+		{ return X.first != Y.first ? X.first > Y.first : X.second < Y.second; });
+	std::vector<int> Out;
+	for (const std::pair<int64_t, int>& R : Rows)
+	{
+		Out.push_back(R.second);
+	}
+	return Out;
+}
+
+std::vector<AllianceMember> Kingdom::Members(int Index) const
+{
+	std::vector<AllianceMember> Out;
+	if (Index < 0 || Index >= AllianceCount())
+	{
+		return Out;
+	}
+	const bool bOwn = Index >= BaseAlliances();
+	const std::vector<std::string>& Names = C.alliances.memberNames;
+	const uint64_t NameCount = static_cast<uint64_t>(Names.size());
+	const uint64_t Key = bOwn ? 0x100000000ULL + static_cast<uint64_t>(OwnFounded) : static_cast<uint64_t>(Index);
+	const uint64_t H = AllyHash(Seed, Key, 0, 1);
+	// Names walk the list with a step coprime to its (prime) length, so they never repeat within an alliance.
+	const uint64_t First = H % NameCount;
+	const uint64_t Step = NameCount > 1 ? 1 + (H >> 32) % (NameCount - 1) : 1;
+	if (bOwn)
+	{
+		AllianceMember You;
+		You.role = 0;
+		You.vp = Amount(Res::Vp);
+		You.joinedAt = OwnFounded;
+		Out.push_back(You);
+	}
+	const int Size = AllianceSize(Index);
+	for (int M = 0; M < Size; ++M)
+	{
+		AllianceMember A;
+		A.name = Names[static_cast<size_t>((First + static_cast<uint64_t>(M) * Step) % NameCount)];
+		A.role = bOwn ? 2 : (M == 0 ? 0 : (M <= 2 ? 1 : 2));
+		A.vp = MemberVp(Index, M, SeasonNo, Time);
+		A.joinedAt = bOwn ? OwnFounded + (M + 1) * C.alliances.recruitSec : 0;
+		Out.push_back(A);
+	}
+	if (!bOwn && AllianceIdx == Index)
+	{
+		AllianceMember You;
+		You.vp = Amount(Res::Vp);
+		You.joinedAt = AllianceJoinedAt;
+		Out.push_back(You);
+	}
+	return Out;
+}
+
+SeasonResult Kingdom::LeagueReward(int Tier, int Place, int GroupSize) const
+{
+	SeasonResult R;
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Tier < 0 || Tier >= static_cast<int>(Leagues.size()) || Place < 1)
+	{
+		return R;
+	}
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(Tier)];
+	const int64_t Pct = std::max<int64_t>(C.alliances.minPlacePct, 100 - static_cast<int64_t>(C.alliances.placeStepPct) * (Place - 1));
+	R.allianceTier = Tier;
+	R.place = Place;
+	R.groupSize = GroupSize;
+	R.gems = L.gems * Pct / 100;
+	R.stones = L.stones > 0 ? std::max<int64_t>(1, L.stones * Pct / 100) : 0;
+	R.crystal = L.crystal;
+	return R;
+}
+
+int Kingdom::TitanChancePct(int Tier, int Place, int GroupSize) const
+{
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	if (Tier < 0 || Tier >= static_cast<int>(Leagues.size()))
+	{
+		return 0;
+	}
+	const AllianceLeagueDef& L = Leagues[static_cast<size_t>(Tier)];
+	const int Span = std::max(1, GroupSize - 1);
+	const int P = std::max(0, std::min(Span, Place - 1));
+	return L.titanPctFirst + (L.titanPctLast - L.titanPctFirst) * P / Span;
+}
+
+bool Kingdom::RollAllianceLeagues(int64_t End)
+{
+	const int N = AllianceCount();
+	const int Tiers = static_cast<int>(C.alliances.leagues.size());
+	if (N == 0 || Tiers == 0)
+	{
+		return false;
+	}
+	std::vector<std::vector<std::pair<int64_t, int>>> Table(static_cast<size_t>(Tiers));
+	for (int I = 0; I < N; ++I)
+	{
+		const int T = std::max(0, std::min(Tiers - 1, AllianceTier(I)));
+		Table[static_cast<size_t>(T)].emplace_back(AllianceVp(I, SeasonNo, End), I);
+	}
+	for (std::vector<std::pair<int64_t, int>>& Rows : Table)
+	{
+		std::sort(Rows.begin(), Rows.end(), [](const std::pair<int64_t, int>& X, const std::pair<int64_t, int>& Y)
+			{ return X.first != Y.first ? X.first > Y.first : X.second < Y.second; });
+	}
+	// The player's alliance pays every member who was in it for long enough before the end.
+	bool bPaid = false;
+	if (AllianceIdx >= 0 && AllianceJoinedAt <= End - C.alliances.memberSec)
+	{
+		const int T = std::max(0, std::min(Tiers - 1, AllianceTier(AllianceIdx)));
+		const std::vector<std::pair<int64_t, int>>& Rows = Table[static_cast<size_t>(T)];
+		int Place = 1;
+		int64_t Total = 0;
+		for (size_t K = 0; K < Rows.size(); ++K)
+		{
+			if (Rows[K].second == AllianceIdx)
+			{
+				Place = static_cast<int>(K) + 1;
+				Total = Rows[K].first;
+			}
+		}
+		const int Size = static_cast<int>(Rows.size());
+		const int64_t Vp = Amount(Res::Vp);
+		Last = LeagueReward(T, Place, Size);
+		Last.season = SeasonNo;
+		Last.vp = Vp;
+		Last.league = League(Vp);
+		Last.alliance = AllianceIdx;
+		Last.allianceVp = Total;
+		Res_[static_cast<size_t>(ResIndex(Res::Gems))] += Last.gems;
+		const int64_t Before = Amount(Res::Stones);
+		AddResource(Res::Stones, Last.stones);
+		Last.stones = Amount(Res::Stones) - Before;
+		// The crystal: a titan by chance (better at a higher place) while the Hall has room, else a relic of its
+		// rarity, else (the inventory is full) gems.
+		if (Last.crystal > 0)
+		{
+			const uint64_t H = Mix(Seed ^ 0x6372797374616cULL, static_cast<uint64_t>(SeasonNo));
+			if (static_cast<int>(H % 100) < TitanChancePct(T, Place, Size) && static_cast<int>(TitanList.size()) < TitanCapacity())
+			{
+				Last.crystalTitan = SummonTitan(Last.crystal, H >> 24);
+			}
+			else
+			{
+				Last.crystalRelic = AddRelic(RollRelicKind(H >> 32), Last.crystal);
+				if (Last.crystalRelic == 0)
+				{
+					const std::vector<int64_t>& G = C.alliances.crystalGems;
+					Last.crystalGems = G.empty() ? 0 : G[static_cast<size_t>(std::min<int>(Last.crystal, static_cast<int>(G.size())) - 1)];
+					Res_[static_cast<size_t>(ResIndex(Res::Gems))] += Last.crystalGems;
+				}
+			}
+		}
+		bPaid = true;
+	}
+	// The best of each league go up and as many of the worst of the league above come down.
+	std::vector<int> NewTiers = AllianceTiers;
+	NewTiers.resize(static_cast<size_t>(N), 0);
+	for (int T = 0; T + 1 < Tiers; ++T)
+	{
+		const std::vector<std::pair<int64_t, int>>& Low = Table[static_cast<size_t>(T)];
+		const std::vector<std::pair<int64_t, int>>& High = Table[static_cast<size_t>(T + 1)];
+		const int Moves = std::min(C.alliances.promote, static_cast<int>(std::min(Low.size(), High.size()) / 2));
+		for (int K = 0; K < Moves; ++K)
+		{
+			NewTiers[static_cast<size_t>(Low[static_cast<size_t>(K)].second)] = T + 1;
+			NewTiers[static_cast<size_t>(High[High.size() - 1 - static_cast<size_t>(K)].second)] = T;
+		}
+	}
+	if (bPaid)
+	{
+		Last.move = NewTiers[static_cast<size_t>(AllianceIdx)] - AllianceTier(AllianceIdx);
+	}
+	AllianceTiers = NewTiers;
+	return bPaid;
+}
+
+Check Kingdom::CheckJoin(int Index) const
+{
+	Check Out;
+	if (AllianceIdx >= 0)
+	{
+		Out.error = Error::InAlliance;
+		return Out;
+	}
+	if (Index < 0 || Index >= BaseAlliances())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	Out.cost[static_cast<size_t>(ResIndex(Res::Vp))] = AllianceJoinVp(Index);
+	if (AllianceRating() < AllianceJoinVp(Index))
+	{
+		Out.error = Error::NeedVp;
+	}
+	else if (AllianceSize(Index) >= C.alliances.maxMembers)
+	{
+		Out.error = Error::AllianceFull;
+	}
+	return Out;
+}
+
+Check Kingdom::CheckCreate() const
+{
+	Check Out;
+	Out.cost[static_cast<size_t>(ResIndex(Res::Gems))] = C.alliances.createGems;
+	if (AllianceIdx >= 0)
+	{
+		Out.error = Error::InAlliance;
+	}
+	else if (C.alliances.leagues.empty())
+	{
+		Out.error = Error::Locked;
+	}
+	else if (AllianceRating() < C.alliances.joinVp)
+	{
+		Out.error = Error::NeedVp;
+		Out.cost[static_cast<size_t>(ResIndex(Res::Vp))] = C.alliances.joinVp;
+	}
+	else if (Amount(Res::Gems) < C.alliances.createGems)
+	{
+		Out.error = Error::NotEnough;
+	}
+	return Out;
+}
+
+Error Kingdom::JoinAlliance(int Index)
+{
+	const Check Ck = CheckJoin(Index);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	AllianceIdx = Index;
+	AllianceJoinedAt = Time;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+Error Kingdom::CreateAlliance(const std::string& Name, const std::string& Tag)
+{
+	const Check Ck = CheckCreate();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	std::string CleanTitle;
+	std::string CleanTag;
+	if (!CleanName(Name, kMaxNameBytes, CleanTitle) || !CleanName(Tag, kMaxTagBytes, CleanTag))
+	{
+		return Error::BadId;
+	}
+	Res_[static_cast<size_t>(ResIndex(Res::Gems))] -= C.alliances.createGems;
+	OwnName = CleanTitle;
+	OwnTag = CleanTag;
+	OwnFounded = Time;
+	AllianceTiers.resize(static_cast<size_t>(BaseAlliances()), 0);
+	AllianceTiers.push_back(0); // a new alliance starts in the lowest league
+	AllianceIdx = BaseAlliances();
+	AllianceJoinedAt = Time;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+Error Kingdom::LeaveAlliance()
+{
+	if (AllianceIdx < 0)
+	{
+		return Error::NoAlliance;
+	}
+	if (HasOwnAlliance())
+	{
+		// An own alliance is disbanded: its recruits leave too.
+		AllianceTiers.resize(static_cast<size_t>(BaseAlliances()));
+		OwnName.clear();
+		OwnTag.clear();
+		OwnFounded = 0;
+	}
+	AllianceIdx = -1;
+	AllianceJoinedAt = 0;
+	ReinforceList.clear();
+	return Error::None;
+}
+
+int Kingdom::ReinforceCapacity() const
+{
+	const LevelDef* L = C.allianceCamp >= 0 ? BuildingLevel(C.allianceCamp) : nullptr;
+	return L ? static_cast<int>(L->reinforcements) : 0;
+}
+
+int Kingdom::ReinforcementsReady() const
+{
+	int N = 0;
+	for (const Reinforcement& R : ReinforceList)
+	{
+		N += R.at <= Time ? 1 : 0;
+	}
+	return N;
+}
+
+int64_t Kingdom::ReinforceReadyAt() const
+{
+	return bReinforceAsked ? ReinforceAt + C.alliances.reinforceCooldownSec : 0;
+}
+
+Check Kingdom::CheckReinforce() const
+{
+	Check Out;
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (ReinforceCapacity() <= 0)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.allianceCamp >= 0 ? C.buildings[static_cast<size_t>(C.allianceCamp)].unlockCastle : 0;
+	}
+	else if (static_cast<int>(ReinforceList.size()) >= ReinforceCapacity())
+	{
+		Out.error = Error::StorageFull;
+	}
+	else if (ReinforceReadyAt() > Time)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = ReinforceReadyAt() - Time;
+	}
+	else if (AllianceSize(AllianceIdx) <= 0)
+	{
+		Out.error = Error::Nothing; // an own alliance with no recruits yet
+	}
+	return Out;
+}
+
+Error Kingdom::RequestReinforcements()
+{
+	const Check Ck = CheckReinforce();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	// Allies send troops a player of this Castle could have, at their league's level but no stronger than the
+	// player's Armoury allows; one squad a minute until the camp is full.
+	std::vector<int> Pool;
+	for (size_t I = 0; I < C.troops.size(); ++I)
+	{
+		if (C.troops[I].unlockCastle <= CastleLevel())
+		{
+			Pool.push_back(static_cast<int>(I));
+		}
+	}
+	if (Pool.empty())
+	{
+		return Error::Nothing;
+	}
+	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
+	const int Tier = std::max(0, std::min(static_cast<int>(Leagues.size()) - 1, AllianceTier(AllianceIdx)));
+	const int Level = std::max(1, std::min(Leagues[static_cast<size_t>(Tier)].troopLevel, MaxTroopLevel()));
+	const int Senders = AllianceSize(AllianceIdx);
+	const int Free = ReinforceCapacity() - static_cast<int>(ReinforceList.size());
+	int64_t At = Time;
+	for (const Reinforcement& R : ReinforceList)
+	{
+		At = std::max(At, R.at);
+	}
+	for (int K = 0; K < Free; ++K)
+	{
+		const uint64_t H = Mix(Mix(Seed ^ 0x7265696e66ULL, static_cast<uint64_t>(Time)), static_cast<uint64_t>(K));
+		Reinforcement R;
+		R.troop = Pool[static_cast<size_t>(H % static_cast<uint64_t>(Pool.size()))];
+		R.level = std::min(Level, C.troops[static_cast<size_t>(R.troop)].MaxLevel());
+		At += C.alliances.reinforceArriveSec;
+		R.at = At;
+		// Members() lists the player first in an own alliance, last in a computer one.
+		R.from = static_cast<int>((H >> 32) % static_cast<uint64_t>(Senders)) + (HasOwnAlliance() ? 1 : 0);
+		ReinforceList.push_back(R);
+	}
+	ReinforceAt = Time;
+	bReinforceAsked = true;
+	return Error::None;
+}
+
+int Kingdom::PickLandType(uint64_t H, int Castle) const
+{
 	// Land types by weight among those the Castle has opened (ruins and VP lands come later).
-	const int Castle = CastleLevel();
 	int64_t Total = 0;
 	for (const LandTypeDef& T : C.landTypes)
 	{
 		Total += T.castle <= Castle ? T.weight : 0;
 	}
-	W.type = 0;
 	int64_t Pick = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
 	for (size_t I = 0; I < C.landTypes.size() && Total > 0; ++I)
 	{
@@ -1116,17 +1946,168 @@ WorldLand Kingdom::MakeWorldLand()
 		}
 		if (Pick < T.weight)
 		{
-			W.type = static_cast<int>(I);
-			break;
+			return static_cast<int>(I);
 		}
 		Pick -= T.weight;
 	}
+	return 0;
+}
+
+WorldLand Kingdom::MakeWorldLand()
+{
+	const uint64_t H = Mix(Seed, WorldCounter++);
+	WorldLand W;
+	W.id = NextId++;
+	const int Castle = CastleLevel();
+	W.type = PickLandType(H, Castle);
 	// Land levels follow the Castle: a band of three levels that rises with it.
-	const int MaxLevel = static_cast<int>(C.raidLoot.size());
-	const int Lo = std::max(1, std::min(MaxLevel, (Castle + 1) / 3));
-	const int Hi = std::max(Lo, std::min(MaxLevel, Lo + 2));
+	const int Lo = LandBandLow(Castle);
+	const int Hi = LandBandTop(Castle);
 	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
 	return W;
+}
+
+WorldLand Kingdom::MakeRivalLand(int R)
+{
+	// Rival lands have their own counter and id range, so the neutral world stays as it was.
+	const uint64_t H = Mix(Seed ^ 0x726976616cULL, RivalCounter);
+	WorldLand W;
+	W.id = kRivalLandBase + static_cast<int32_t>(RivalCounter++);
+	W.owner = R;
+	// A lord holds lands of its own Castle's band: a stronger neighbour holds richer, better defended ones.
+	const int Castle = RivalCastle(R);
+	W.type = PickLandType(H, Castle);
+	const int Lo = LandBandLow(Castle);
+	const int Hi = LandBandTop(Castle);
+	W.level = Lo + static_cast<int>((H >> 16) % static_cast<uint64_t>(Hi - Lo + 1));
+	return W;
+}
+
+void Kingdom::ResetRivals()
+{
+	RivalList.clear();
+	RivalLandList.clear();
+	RivalCounter = 0;
+	// Each rival is a different lord, picked by the seed.
+	std::vector<int> Free;
+	for (size_t I = 0; I < C.rivals.lords.size(); ++I)
+	{
+		Free.push_back(static_cast<int>(I));
+	}
+	for (size_t I = 0; I < C.rivals.castleOffsets.size() && !Free.empty(); ++I)
+	{
+		const size_t Pick = static_cast<size_t>(Mix(Seed ^ 0x6c6f7264ULL, I) % Free.size());
+		Rival R;
+		R.lord = Free[Pick];
+		Free.erase(Free.begin() + static_cast<std::ptrdiff_t>(Pick));
+		RivalList.push_back(R);
+	}
+	FillRivals();
+}
+
+void Kingdom::FillRivals()
+{
+	for (size_t R = 0; R < RivalList.size(); ++R)
+	{
+		int Held = static_cast<int>(RivalList[R].regrow.size());
+		for (const WorldLand& W : RivalLandList)
+		{
+			Held += W.owner == static_cast<int>(R) ? 1 : 0;
+		}
+		for (; Held < RivalLandTarget(static_cast<int>(R)); ++Held)
+		{
+			RivalLandList.push_back(MakeRivalLand(static_cast<int>(R)));
+		}
+	}
+}
+
+int Kingdom::RivalCastle(int R) const
+{
+	const int Offset = R >= 0 && R < static_cast<int>(C.rivals.castleOffsets.size()) ? C.rivals.castleOffsets[static_cast<size_t>(R)] : 0;
+	return std::max(1, std::min(CastleLevel() + Offset, C.buildings[static_cast<size_t>(C.castle)].MaxLevel()));
+}
+
+int Kingdom::RivalLandTarget(int R) const
+{
+	const RivalRules& RR = C.rivals;
+	return std::min(RR.landsMax, RR.landsBase + RivalCastle(R) / RR.landsPerCastle);
+}
+
+int Kingdom::RivalTitan(int R) const
+{
+	if (C.titans.empty())
+	{
+		return -1;
+	}
+	// The lord's titan rises in rarity with its Castle (as the titans a player of that Castle has).
+	const int Castle = RivalCastle(R);
+	const int Stars = Castle < 7 ? 1 : (Castle < 12 ? 2 : (Castle < 18 ? 3 : 4));
+	std::vector<int> Pool;
+	for (size_t I = 0; I < C.titans.size(); ++I)
+	{
+		if (C.titans[I].stars == Stars)
+		{
+			Pool.push_back(static_cast<int>(I));
+		}
+	}
+	if (Pool.empty())
+	{
+		return 0;
+	}
+	const int Lord = R >= 0 && R < static_cast<int>(RivalList.size()) ? RivalList[static_cast<size_t>(R)].lord : R;
+	return Pool[static_cast<size_t>(Mix(Seed ^ 0x7469746eULL, static_cast<uint64_t>(Lord)) % Pool.size())];
+}
+
+int Kingdom::RivalTitanLevel(const WorldLand& W) const
+{
+	const int T = RivalTitan(W.owner);
+	if (T < 0 || C.battles.empty())
+	{
+		return 0;
+	}
+	// The lord's own table by land level (a little above the battle rows' titans), past its end the battle row's titan
+	// level; never above the titan's cap.
+	const BattleRowDef& Row = C.battles[static_cast<size_t>(std::min<int>(W.level, static_cast<int>(C.battles.size())) - 1)];
+	const std::vector<int64_t>& Table = C.rivals.titanLevels;
+	const int Level = W.level <= static_cast<int>(Table.size()) ? static_cast<int>(Table[static_cast<size_t>(W.level - 1)])
+		: (Row.titanLevel > 0 ? Row.titanLevel : (Table.empty() ? 1 : static_cast<int>(Table.back())));
+	return std::max(1, std::min(Level, C.titans[static_cast<size_t>(T)].MaxLevel()));
+}
+
+const WorldLand* Kingdom::FindWorldLand(int32_t Id) const
+{
+	for (const std::vector<WorldLand>* List : {&WorldList, &RivalLandList})
+	{
+		for (const WorldLand& W : *List)
+		{
+			if (W.id == Id)
+			{
+				return &W;
+			}
+		}
+	}
+	return nullptr;
+}
+
+WorldLand* Kingdom::FindWorld(int32_t Id, bool* OutRival)
+{
+	for (WorldLand& W : WorldList)
+	{
+		if (W.id == Id)
+		{
+			*OutRival = false;
+			return &W;
+		}
+	}
+	for (WorldLand& W : RivalLandList)
+	{
+		if (W.id == Id)
+		{
+			*OutRival = true;
+			return &W;
+		}
+	}
+	return nullptr;
 }
 
 void Kingdom::FillWorld()
@@ -1149,22 +2130,34 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 
 Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
 {
-	const WorldLand* W = nullptr;
-	for (const WorldLand& It : WorldList)
-	{
-		if (It.id == WorldId)
-		{
-			W = &It;
-		}
-	}
+	return StartAttack(WorldId, Capture, Squads, TitanId, Spells, false);
+}
+
+Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
+{
+	const WorldLand* W = FindWorldLand(WorldId);
 	if (!W)
 	{
 		return Error::BadId;
+	}
+	if (W->owner >= 0 && CastleLevel() < C.rivals.castle)
+	{
+		return Error::CastleTooLow;
+	}
+	if (W->shieldUntil > Time)
+	{
+		return Error::NotReady; // a lord's land raided not long ago
 	}
 	if (Capture && static_cast<int>(LandList.size()) >= LandCapacity())
 	{
 		return Error::NoLandSlot;
 	}
+	return BeginBattle(WorldId, Capture, Capture ? C.captureStones : C.raidStones, Squads, TitanId, Spells, Reinforce);
+}
+
+Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells,
+	bool Reinforce)
+{
 	if (static_cast<int>(Squads.size()) > BattleSlots())
 	{
 		return Error::TooManySquads;
@@ -1209,7 +2202,6 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 			return Error::NoTroops;
 		}
 	}
-	const int64_t Cost = Capture ? C.captureStones : C.raidStones;
 	int64_t& Stones = Res_[static_cast<size_t>(ResIndex(Res::Stones))];
 	if (Stones < Cost)
 	{
@@ -1221,11 +2213,30 @@ Error Kingdom::StartAttack(int32_t WorldId, bool Capture, const std::vector<int>
 	{
 		StonesAt = Time;
 	}
-	Pending = WorldId;
+	Pending = Target;
 	PendingIsCapture = Capture;
 	PendingArmy = Squads;
 	PendingTitanId = TitanId;
 	PendingSpellList = Spells;
+	// Allies' squads that have arrived go along; the ones still on their way stay in the camp's queue.
+	PendingReinforce.clear();
+	if (Reinforce)
+	{
+		for (size_t I = 0; I < ReinforceList.size();)
+		{
+			if (ReinforceList[I].at <= Time)
+			{
+				PendingReinforce.push_back(ReinforceList[I]);
+				ReinforceList.erase(ReinforceList.begin() + static_cast<std::ptrdiff_t>(I));
+			}
+			else
+			{
+				++I;
+			}
+		}
+	}
+	NoteQuest(QuestEvent::Stones, Cost);
+	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission : QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -1240,22 +2251,13 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	return FinishAttack(WorldId, Capture, Stars, SurvivorPct, std::vector<int>(), Out);
 }
 
-Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+void Kingdom::EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R)
 {
-	if (Pending == 0 || Pending != WorldId || PendingIsCapture != Capture)
+	if (Stars > 0)
 	{
-		return Error::NoAttack;
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
 	}
-	Pending = 0;
-	size_t Index = WorldList.size();
-	for (size_t I = 0; I < WorldList.size(); ++I)
-	{
-		if (WorldList[I].id == WorldId)
-		{
-			Index = I;
-		}
-	}
-	Reward R;
 	// Casualties: a squad comes back only if enough of it survived (Medical School threshold).
 	const int Survival = SurvivalPct();
 	for (size_t I = 0; I < PendingArmy.size(); ++I)
@@ -1289,6 +2291,8 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 			{
 				continue;
 			}
+			// XP relics count for the battle they were worn in.
+			const int64_t XpBonus = TitanRelicBonus(T.id, RelicStat::Xp);
 			// Every working relic on the titan wears by one battle.
 			for (const int32_t RelicId : T.relics)
 			{
@@ -1300,21 +2304,37 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 					}
 				}
 			}
-			const int LandLevel = Index < WorldList.size() ? WorldList[Index].level : 1;
-			const int64_t Base = C.titanBattleXp[static_cast<size_t>(std::min<int>(LandLevel, static_cast<int>(C.titanBattleXp.size())) - 1)];
+			const int64_t Base = C.titanBattleXp[static_cast<size_t>(std::max(1, std::min<int>(Level, static_cast<int>(C.titanBattleXp.size()))) - 1)];
 			R.titanId = T.id;
-			R.titanXp = Base * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100;
+			R.titanXp = Base * XpPct / 100 * C.titanStarsPct[static_cast<size_t>(std::max(0, std::min(3, Stars)))] / 100 * (1000 + XpBonus) / 1000;
 			AddTitanXp(T, R.titanXp, &R.titanLevels);
 			if (T.level > C.titanRecoveryFromLevel)
 			{
-				T.recoverUntil = Time + (T.level - C.titanRecoveryFromLevel) * C.titanRecoverySecPerLevel;
+				// A relic on the Hall of Titans shortens the rest.
+				T.recoverUntil = Time + Shorten((T.level - C.titanRecoveryFromLevel) * C.titanRecoverySecPerLevel, DefRelicBonus(C.hallOfTitans, RelicStat::Rest));
 			}
 		}
 	}
 	PendingArmy.clear();
 	PendingTitanId = 0;
 	UnblockQueue(Time);
-	if (Index >= WorldList.size())
+	// Reinforcements help in one battle only (the original).
+	R.reinforcements = static_cast<int>(PendingReinforce.size());
+	PendingReinforce.clear();
+}
+
+Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Pending <= 0 || Pending != WorldId || PendingIsCapture != Capture)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	bool bRival = false;
+	WorldLand* Found = FindWorld(WorldId, &bRival);
+	Reward R;
+	EndBattle(Found ? Found->level : 1, Stars, 100, SurvivorPct, SpellsUsed, R);
+	if (!Found)
 	{
 		if (Out)
 		{
@@ -1324,7 +2344,7 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 	}
 	if (Stars > 0)
 	{
-		const WorldLand W = WorldList[Index];
+		const WorldLand W = *Found;
 		const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
 		const auto Scaled = [Pct](int64_t Base) { return Base > 0 ? std::max<int64_t>(1, Base * Pct / 100) : 0; };
 		if (Capture)
@@ -1346,13 +2366,513 @@ Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std:
 			R.res[static_cast<size_t>(ResIndex(Kind))] += Amount(Kind) - Before;
 		}
 		// Every victory brings victory points as well (the original's rule; the amounts are ours).
-		const int64_t Vp = Scaled(VictoryVp(W.level));
+		const int64_t Vp = Scaled(WorldVp(W));
 		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
 		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
-		// A beaten land leaves the map; a new one appears.
-		WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Index));
-		FillWorld();
+		// And relics: the original (1.8) drops one to three per won battle, better ones as the player goes on.
+		// Here one per star; the rarity odds by land level are ours.
+		if (!C.relicDropRarity.empty())
+		{
+			const std::array<int64_t, 5>& Odds = C.relicDropRarity[static_cast<size_t>(std::max(1, std::min<int>(W.level, static_cast<int>(C.relicDropRarity.size()))) - 1)];
+			for (int K = 0; K < std::min(std::min(Stars, 3), C.relicDropMax); ++K)
+			{
+				const uint64_t H = Mix(Seed ^ 0x64726f70ULL, RelicCounter++);
+				const int32_t Id = AddRelic(RollRelicKind(H >> 32), RollRarity(Odds, H));
+				if (Id)
+				{
+					R.relics.push_back(Id);
+				}
+				else
+				{
+					++R.relicsLost;
+				}
+			}
+		}
+		if (!bRival)
+		{
+			// A beaten land leaves the map; a new one appears.
+			WorldList.erase(WorldList.begin() + static_cast<std::ptrdiff_t>(Found - WorldList.data()));
+			FillWorld();
+		}
+		else if (Capture)
+		{
+			// The lord wins another land back after a while.
+			std::vector<int64_t>& Regrow = RivalList[static_cast<size_t>(W.owner)].regrow;
+			Regrow.insert(std::upper_bound(Regrow.begin(), Regrow.end(), Time + C.rivals.regrowSec), Time + C.rivals.regrowSec);
+			RivalLandList.erase(RivalLandList.begin() + static_cast<std::ptrdiff_t>(Found - RivalLandList.data()));
+		}
+		else
+		{
+			// A raided land stays the lord's, shielded for a while.
+			Found->shieldUntil = Time + C.rivals.shieldSec;
+		}
 	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Titan Monuments and XP Arenas -------------------------------------------------------------------
+
+int64_t Kingdom::SiteReadyAt(int Site) const
+{
+	return Site >= 0 && Site < static_cast<int>(SiteReady.size()) ? SiteReady[static_cast<size_t>(Site)] : 0;
+}
+
+Check Kingdom::CheckSite(int Site) const
+{
+	Check Out;
+	if (Site < 0 || Site >= SiteCount())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const SiteDef& D = C.sites.list[static_cast<size_t>(Site)];
+	Out.cost[static_cast<size_t>(ResIndex(Res::Stones))] = C.sites.stones;
+	if (CastleLevel() < D.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = D.castle;
+	}
+	else if (SiteReadyAt(Site) > Time)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = SiteReadyAt(Site) - Time;
+	}
+	else if (Amount(Res::Stones) < C.sites.stones)
+	{
+		Out.error = Error::NeedStones;
+	}
+	return Out;
+}
+
+int64_t Kingdom::SiteResetGems(int Site) const
+{
+	return SiteReadyAt(Site) > Time ? C.sites.list[static_cast<size_t>(Site)].resetGems : 0;
+}
+
+Error Kingdom::ResetSite(int Site)
+{
+	if (Site < 0 || Site >= SiteCount())
+	{
+		return Error::BadId;
+	}
+	if (SiteReadyAt(Site) <= Time)
+	{
+		return Error::Nothing;
+	}
+	const int64_t Gems = SiteResetGems(Site);
+	if (Amount(Res::Gems) < Gems)
+	{
+		return Error::NotEnough;
+	}
+	Res_[static_cast<size_t>(ResIndex(Res::Gems))] -= Gems;
+	SiteReady[static_cast<size_t>(Site)] = 0;
+	return Error::None;
+}
+
+Error Kingdom::StartSiteAttack(int Site, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
+{
+	const Check Ck = CheckSite(Site);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const Error E = BeginBattle(-(Site + 1), false, C.sites.stones, Squads, TitanId, Spells, Reinforce);
+	if (E == Error::None)
+	{
+		// The original: once battled in, a monument or arena is closed for a day, whatever the result.
+		SiteReady.resize(C.sites.list.size(), 0);
+		SiteReady[static_cast<size_t>(Site)] = Time + C.sites.cooldownSec;
+	}
+	return E;
+}
+
+Error Kingdom::FinishSiteAttack(int Site, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Site < 0 || Site >= SiteCount() || Pending != -(Site + 1))
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const SiteDef& D = C.sites.list[static_cast<size_t>(Site)];
+	Reward R;
+	EndBattle(D.level, Stars, D.arena ? D.xpPct : 100, SurvivorPct, SpellsUsed, R);
+	if (Stars > 0 && !D.arena)
+	{
+		// A monument: victory points like a land of its level, and a chance of shards (the original 1.8: "a % drop
+		// of a random Shard"; the chances and amounts are ours).
+		const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
+		const int64_t Vp = VictoryVp(D.level) > 0 ? std::max<int64_t>(1, VictoryVp(D.level) * Pct / 100) : 0;
+		Res_[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		R.res[static_cast<size_t>(ResIndex(Res::Vp))] += Vp;
+		const uint64_t H = Mix(Seed ^ 0x6d6f6e75ULL, SiteCounter++);
+		if (static_cast<int64_t>(H % 100) < C.sites.shardPct[static_cast<size_t>(std::min(3, Stars) - 1)])
+		{
+			const int64_t Before = Amount(Res::Shards);
+			AddResource(Res::Shards, D.shards);
+			R.res[static_cast<size_t>(ResIndex(Res::Shards))] += Amount(Res::Shards) - Before;
+		}
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Campaigns of the Adventurers' Guild -----------------------------------------------------------
+
+int Kingdom::MissionCount(int Act) const
+{
+	return Act >= 0 && Act < ActCount() ? static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].missions.size()) : 0;
+}
+
+int Kingdom::MissionStars(int Act, int Mission) const
+{
+	if (Act < 0 || Act >= static_cast<int>(MissionStarList.size()))
+	{
+		return 0;
+	}
+	const std::vector<uint8_t>& Stars = MissionStarList[static_cast<size_t>(Act)];
+	return Mission >= 0 && Mission < static_cast<int>(Stars.size()) ? Stars[static_cast<size_t>(Mission)] : 0;
+}
+
+int Kingdom::ActStars(int Act) const
+{
+	int Total = 0;
+	for (int M = 0; M < MissionCount(Act); ++M)
+	{
+		Total += MissionStars(Act, M);
+	}
+	return Total;
+}
+
+bool Kingdom::ChestClaimed(int Act, int Chest) const
+{
+	return Act >= 0 && Act < static_cast<int>(ChestMask.size()) && Chest >= 0 && Chest < 32 && ((ChestMask[static_cast<size_t>(Act)] >> Chest) & 1u) != 0;
+}
+
+Check Kingdom::CheckMission(int Act, int Mission) const
+{
+	Check Out;
+	if (Mission < 0 || Mission >= MissionCount(Act))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const ActDef& A = C.campaigns.acts[static_cast<size_t>(Act)];
+	Out.cost[static_cast<size_t>(ResIndex(Res::Stones))] = C.campaigns.stones;
+	// Missions go in order, and an act opens when the one before it is won to its last mission.
+	const bool bOpen = Mission > 0 ? MissionStars(Act, Mission - 1) > 0 : (Act == 0 || MissionStars(Act - 1, MissionCount(Act - 1) - 1) > 0);
+	if (C.campaigns.guild >= 0 && !BuildingLevel(C.campaigns.guild))
+	{
+		Out.error = Error::NeedRequirement;
+		Out.missing = {C.campaigns.guild, 1, 1};
+	}
+	else if (CastleLevel() < A.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = A.castle;
+	}
+	else if (!bOpen)
+	{
+		Out.error = Error::Locked;
+	}
+	else if (Amount(Res::Stones) < C.campaigns.stones)
+	{
+		Out.error = Error::NeedStones;
+	}
+	return Out;
+}
+
+Error Kingdom::StartMission(int Act, int Mission, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce)
+{
+	const Check Ck = CheckMission(Act, Mission);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	return BeginBattle(-(MissionBase + Act * 100 + Mission), false, C.campaigns.stones, Squads, TitanId, Spells, Reinforce);
+}
+
+Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
+{
+	if (Mission < 0 || Mission >= MissionCount(Act) || Pending != -(MissionBase + Act * 100 + Mission))
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const MissionDef& D = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Mission)];
+	Reward R;
+	EndBattle(D.level, Stars, 100, SurvivorPct, SpellsUsed, R);
+	MissionStarList.resize(C.campaigns.acts.size());
+	std::vector<uint8_t>& Best = MissionStarList[static_cast<size_t>(Act)];
+	Best.resize(static_cast<size_t>(MissionCount(Act)), 0);
+	uint8_t& Mine = Best[static_cast<size_t>(Mission)];
+	const uint8_t Won = static_cast<uint8_t>(std::max(0, std::min(3, Stars)));
+	if (Won > 0 && Mine == 0)
+	{
+		// The first win pays the mission's reward (repeats give the titan XP only).
+		R.firstClear = true;
+		for (int I = 0; I < kResCount; ++I)
+		{
+			if (D.first[static_cast<size_t>(I)] > 0)
+			{
+				const int64_t Before = Amount(static_cast<Res>(I));
+				AddResource(static_cast<Res>(I), D.first[static_cast<size_t>(I)]);
+				R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+			}
+		}
+	}
+	Mine = std::max(Mine, Won);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
+{
+	if (Act < 0 || Act >= ActCount() || Chest < 0 || Chest >= static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].chests.size()))
+	{
+		return Error::BadId;
+	}
+	if (ChestClaimed(Act, Chest))
+	{
+		return Error::Nothing;
+	}
+	const ChestDef& D = C.campaigns.acts[static_cast<size_t>(Act)].chests[static_cast<size_t>(Chest)];
+	if (ActStars(Act) < D.stars)
+	{
+		return Error::NotEnough;
+	}
+	// A titan while the Hall of Titans has room, else a relic of its rarity; a relic needs room in the inventory.
+	const uint64_t H = Mix(Seed ^ 0x6368657374ULL, static_cast<uint64_t>(Act * 32 + Chest));
+	const bool bTitan = D.titan > 0 && static_cast<int>(TitanList.size()) < TitanCapacity();
+	const int RelicRarity = bTitan ? D.relic : std::max(D.relic, D.titan);
+	if (RelicRarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	Reward R;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (D.res[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), D.res[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	if (bTitan)
+	{
+		R.newTitan = SummonTitan(D.titan, H >> 24);
+	}
+	if (RelicRarity > 0)
+	{
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), RelicRarity);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	ChestMask.resize(C.campaigns.acts.size(), 0);
+	ChestMask[static_cast<size_t>(Act)] |= 1u << Chest;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Daily quests ----------------------------------------------------------------------------------
+
+bool Kingdom::QuestOpen(int Def) const
+{
+	const QuestDef& D = C.quests.pool[static_cast<size_t>(Def)];
+	return CastleLevel() >= D.castle && (D.building < 0 || BuildingLevel(D.building));
+}
+
+int64_t Kingdom::QuestTarget(int Def) const
+{
+	if (Def < 0 || Def >= static_cast<int>(C.quests.pool.size()))
+	{
+		return 0;
+	}
+	const std::vector<std::pair<int, int64_t>>& Steps = C.quests.pool[static_cast<size_t>(Def)].target;
+	int64_t Target = Steps.empty() ? 1 : Steps.front().second;
+	for (const std::pair<int, int64_t>& Step : Steps)
+	{
+		if (CastleLevel() >= Step.first)
+		{
+			Target = Step.second;
+		}
+	}
+	return std::max<int64_t>(1, Target);
+}
+
+void Kingdom::RollQuests()
+{
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	if (Day == QuestDay)
+	{
+		return;
+	}
+	QuestDay = Day;
+	QuestList.clear();
+	QuestRerolls = 0;
+	bQuestChest = false;
+	std::vector<int> Open;
+	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	{
+		if (QuestOpen(I))
+		{
+			Open.push_back(I);
+		}
+	}
+	for (int N = 0; N < C.quests.count && !Open.empty(); ++N)
+	{
+		const uint64_t H = Mix(Seed ^ 0x7175657374ULL, static_cast<uint64_t>(Day) * 16 + static_cast<uint64_t>(N));
+		const size_t Pick = static_cast<size_t>(H % Open.size());
+		DailyQuest Q;
+		Q.def = Open[Pick];
+		Q.target = QuestTarget(Q.def);
+		QuestList.push_back(Q);
+		Open.erase(Open.begin() + static_cast<std::ptrdiff_t>(Pick));
+	}
+}
+
+void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
+{
+	if (Amount == 0 || Event == QuestEvent::Count)
+	{
+		return;
+	}
+	for (DailyQuest& Q : QuestList)
+	{
+		if (!Q.claimed && C.quests.pool[static_cast<size_t>(Q.def)].event == Event)
+		{
+			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
+		}
+	}
+}
+
+Error Kingdom::ClaimQuest(int Slot, Reward* Out)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	{
+		return Error::BadId;
+	}
+	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	if (Q.claimed)
+	{
+		return Error::Nothing;
+	}
+	if (Q.progress < Q.target)
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const ResArray& Pay = C.quests.pool[static_cast<size_t>(Q.def)].reward;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (Pay[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), Pay[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	Q.claimed = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::RerollQuest(int Slot)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	{
+		return Error::BadId;
+	}
+	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	if (Q.claimed || Q.progress >= Q.target)
+	{
+		return Error::Nothing;
+	}
+	if (QuestRerolls >= C.quests.rerolls)
+	{
+		return Error::LimitReached;
+	}
+	std::vector<int> Open;
+	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	{
+		const bool bTaken = std::any_of(QuestList.begin(), QuestList.end(), [I](const DailyQuest& X) { return X.def == I; });
+		if (!bTaken && QuestOpen(I))
+		{
+			Open.push_back(I);
+		}
+	}
+	if (Open.empty())
+	{
+		return Error::NotEnough;
+	}
+	const uint64_t H = Mix(Seed ^ 0x72656c6c6fULL, QuestCounter++);
+	Q = DailyQuest();
+	Q.def = Open[static_cast<size_t>(H % Open.size())];
+	Q.target = QuestTarget(Q.def);
+	++QuestRerolls;
+	return Error::None;
+}
+
+Error Kingdom::ClaimQuestChest(Reward* Out)
+{
+	if (bQuestChest)
+	{
+		return Error::Nothing;
+	}
+	if (QuestList.empty() || std::any_of(QuestList.begin(), QuestList.end(), [](const DailyQuest& Q) { return !Q.claimed; }))
+	{
+		return Error::NotReady;
+	}
+	int Rarity = 0;
+	for (const std::pair<int, int>& Step : C.quests.chestRelic)
+	{
+		if (CastleLevel() >= Step.first)
+		{
+			Rarity = Step.second;
+		}
+	}
+	if (Rarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	Reward R;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (C.quests.chest[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), C.quests.chest[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	if (Rarity > 0)
+	{
+		const uint64_t H = Mix(Seed ^ 0x7163686573ULL, static_cast<uint64_t>(QuestDay));
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), Rarity);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	bQuestChest = true;
 	if (Out)
 	{
 		*Out = R;
@@ -1433,6 +2953,27 @@ int Kingdom::MaxTroopLevel() const
 	return L ? static_cast<int>(std::max<int64_t>(1, L->maxTroopLevel)) : 1;
 }
 
+int Kingdom::CouncilLevel(int Troop) const
+{
+	if (Troop < 0 || Troop >= static_cast<int>(C.troops.size()) || C.troops[static_cast<size_t>(Troop)].council < 0)
+	{
+		return -1;
+	}
+	const LevelDef* L = BuildingLevel(C.troops[static_cast<size_t>(Troop)].council);
+	return L ? L->level : 0;
+}
+
+int Kingdom::TroopLevelCap(int Troop) const
+{
+	int Cap = MaxTroopLevel();
+	if (CouncilLevel(Troop) >= 0)
+	{
+		const LevelDef* L = BuildingLevel(C.troops[static_cast<size_t>(Troop)].council);
+		Cap = L && L->maxTroopLevel > 0 ? std::min<int>(Cap, static_cast<int>(L->maxTroopLevel)) : (L ? Cap : 1);
+	}
+	return Cap;
+}
+
 int Kingdom::SurvivalPct() const
 {
 	const LevelDef* L = BuildingLevel(C.medicalSchool);
@@ -1442,7 +2983,10 @@ int Kingdom::SurvivalPct() const
 int64_t Kingdom::TrainSec(int Troop) const
 {
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
-	return T.levels[static_cast<size_t>(std::max(1, std::min(TroopLevel(Troop), T.MaxLevel())) - 1)].trainSec;
+	const int64_t Sec = T.levels[static_cast<size_t>(std::max(1, std::min(TroopLevel(Troop), T.MaxLevel())) - 1)].trainSec;
+	// A relic on the Barracks speeds up every troop; one on an envoy council, that council's troops.
+	const int64_t Bonus = DefRelicBonus(C.barracks, RelicStat::Train) + (T.council >= 0 ? DefRelicBonus(T.council, RelicStat::Train) : 0);
+	return Shorten(Sec, CapBonus(RelicStat::Train, Bonus));
 }
 
 int64_t Kingdom::QueueHeadFinish() const
@@ -1471,6 +3015,7 @@ void Kingdom::ProcessQueue(int64_t Until)
 		}
 		Army[static_cast<size_t>(Queue.front())] += 1;
 		Queue.erase(Queue.begin());
+		QueuePaid.erase(QueuePaid.begin());
 		QueueStart = Done;
 	}
 }
@@ -1499,11 +3044,17 @@ Check Kingdom::CheckTrain(int Troop) const
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
 	const TroopLevelDef& L = T.levels[static_cast<size_t>(std::max(1, TroopLevel(Troop)) - 1)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = L.cost;
-	Out.timeSec = L.trainSec;
+	Out.timeSec = TrainSec(Troop);
 	if (CastleLevel() < T.unlockCastle)
 	{
 		Out.error = Error::Locked;
 		Out.castle = T.unlockCastle;
+		return Out;
+	}
+	if (T.council >= 0 && CouncilLevel(Troop) < T.councilLevel)
+	{
+		Out.error = Error::NeedRequirement;
+		Out.missing = {T.council, T.councilLevel, 1};
 		return Out;
 	}
 	if (QueueCapacity() <= 0)
@@ -1541,7 +3092,9 @@ Error Kingdom::Train(int Troop)
 		bQueueBlocked = false;
 	}
 	Queue.push_back(Troop);
+	QueuePaid.push_back(Ck.cost[static_cast<size_t>(ResIndex(Res::Food))]);
 	ProcessQueue(Time);
+	NoteQuest(QuestEvent::Train, 1);
 	return Error::None;
 }
 
@@ -1551,10 +3104,11 @@ Error Kingdom::CancelTrain(int Index)
 	{
 		return Error::BadId;
 	}
-	const int Troop = Queue[static_cast<size_t>(Index)];
-	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
-	Res_[static_cast<size_t>(ResIndex(Res::Food))] += T.levels[static_cast<size_t>(std::max(1, TroopLevel(Troop)) - 1)].cost;
+	// Back comes what was paid (research since may have raised the price), as far as the granaries hold it.
+	AddResource(Res::Food, QueuePaid[static_cast<size_t>(Index)]);
 	Queue.erase(Queue.begin() + Index);
+	QueuePaid.erase(QueuePaid.begin() + Index);
+	NoteQuest(QuestEvent::Train, -1); // a cancelled squad does not count
 	if (Index == 0)
 	{
 		QueueStart = Time;
@@ -1598,6 +3152,7 @@ Error Kingdom::SkipTraining()
 	{
 		Army[static_cast<size_t>(Queue.front())] += 1;
 		Queue.erase(Queue.begin());
+		QueuePaid.erase(QueuePaid.begin());
 	}
 	QueueStart = Time;
 	bQueueBlocked = false;
@@ -1644,11 +3199,26 @@ Check Kingdom::CheckTroopUpgrade(int Troop) const
 	}
 	const TroopLevelDef& L = T.levels[static_cast<size_t>(Level - 1)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = L.upgradeCost;
-	Out.timeSec = L.upgradeSec;
+	Out.timeSec = Shorten(L.upgradeSec, DefRelicBonus(C.armoury, RelicStat::Research));
 	if (CastleLevel() < T.unlockCastle)
 	{
 		Out.error = Error::Locked;
 		Out.castle = T.unlockCastle;
+		return Out;
+	}
+	if (T.council >= 0 && Level + 1 > TroopLevelCap(Troop) && Level + 1 <= MaxTroopLevel() && BuildingLevel(C.armoury))
+	{
+		// The council level that allows the next troop level.
+		Out.error = Error::NeedRequirement;
+		Out.missing = {T.council, std::max(T.councilLevel, CouncilLevel(Troop) + 1), 1};
+		for (const LevelDef& A : C.buildings[static_cast<size_t>(T.council)].levels)
+		{
+			if (A.maxTroopLevel >= Level + 1)
+			{
+				Out.missing.level = std::max(T.councilLevel, A.level);
+				break;
+			}
+		}
 		return Out;
 	}
 	if (!BuildingLevel(C.armoury) || Level + 1 > MaxTroopLevel())
@@ -1703,6 +3273,7 @@ Error Kingdom::UpgradeTroop(int Troop, bool UseGems)
 		TroopLevels[static_cast<size_t>(Troop)] += 1;
 		Research = -1;
 	}
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -1880,6 +3451,7 @@ Error Kingdom::Ascend(int32_t TitanId, bool UseGems)
 		{
 			T.ascended = true;
 			T.xp = 0;
+			AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8 + T.skills.size()));
 		}
 	}
 	return Error::None;
@@ -1901,7 +3473,12 @@ Check Kingdom::CheckAltar(int Altar) const
 		Out.missing = {C.relicTemple, 1, 1};
 		return Out;
 	}
-	if (static_cast<int>(TitanList.size()) >= TitanCapacity())
+	if (A.relics && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		Out.error = Error::InventoryFull;
+		return Out;
+	}
+	if (!A.relics && static_cast<int>(TitanList.size()) >= TitanCapacity())
 	{
 		Out.error = Error::RosterFull;
 		return Out;
@@ -1938,33 +3515,19 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 	{
 		*OutRelicId = 0;
 	}
-	// The free daily relic is either a relic item or a titan (the original's daily bonus).
-	if (A.cooldownSec > 0 && static_cast<int64_t>((H >> 40) % 100) < C.dailyRelicPct && static_cast<int>(RelicList.size()) < C.maxRelics)
+	// The free daily relic is either a relic item or a titan (the original's daily bonus);
+	// the Altar of Power always gives a relic item (the original's 1.8).
+	const bool bDailyRelic = A.cooldownSec > 0 && static_cast<int64_t>((H >> 40) % 100) < C.dailyRelicPct && static_cast<int>(RelicList.size()) < C.maxRelics;
+	if (A.relics || bDailyRelic)
 	{
-		int64_t Total = 0;
-		for (const int64_t W : C.dailyRelicRarity)
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), RollRarity(A.relics ? A.weights : C.dailyRelicRarity, H >> 8));
+		if (A.cooldownSec > 0)
 		{
-			Total += W;
+			RelicAt = Time + A.cooldownSec;
 		}
-		int64_t Roll = Total > 0 ? static_cast<int64_t>((H >> 8) % static_cast<uint64_t>(Total)) : 0;
-		RelicItem Rl;
-		Rl.id = NextId++;
-		Rl.kind = static_cast<int>((H >> 52) % static_cast<uint64_t>(C.relicKinds.size()));
-		for (int K = 0; K < 5; ++K)
-		{
-			if (Roll < C.dailyRelicRarity[static_cast<size_t>(K)])
-			{
-				Rl.rarity = K + 1;
-				break;
-			}
-			Roll -= C.dailyRelicRarity[static_cast<size_t>(K)];
-		}
-		Rl.durability = static_cast<int>(C.relicDurability[static_cast<size_t>(Rl.rarity - 1)]);
-		RelicList.push_back(Rl);
-		RelicAt = Time + A.cooldownSec;
 		if (OutRelicId)
 		{
-			*OutRelicId = Rl.id;
+			*OutRelicId = Id;
 		}
 		return Error::None;
 	}
@@ -1987,6 +3550,20 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 			Roll -= A.weights[static_cast<size_t>(K)];
 		}
 	}
+	const int32_t Id = SummonTitan(Stars, H >> 24);
+	if (A.cooldownSec > 0)
+	{
+		RelicAt = Time + A.cooldownSec;
+	}
+	if (OutTitanId)
+	{
+		*OutTitanId = Id;
+	}
+	return Error::None;
+}
+
+int32_t Kingdom::SummonTitan(int Stars, uint64_t Pick)
+{
 	std::vector<int> Pool;
 	for (size_t I = 0; I < C.titans.size(); ++I)
 	{
@@ -2004,17 +3581,10 @@ Error Kingdom::OpenAltar(int Altar, int32_t* OutTitanId, int32_t* OutRelicId)
 	}
 	TitanState T;
 	T.id = NextId++;
-	T.def = Pool[static_cast<size_t>((H >> 24) % static_cast<uint64_t>(Pool.size()))];
+	T.def = Pool[static_cast<size_t>(Pick % static_cast<uint64_t>(Pool.size()))];
+	StartSkills(T);
 	TitanList.push_back(T);
-	if (A.cooldownSec > 0)
-	{
-		RelicAt = Time + A.cooldownSec;
-	}
-	if (OutTitanId)
-	{
-		*OutTitanId = T.id;
-	}
-	return Error::None;
+	return T.id;
 }
 
 Check Kingdom::CheckFusion(int32_t Target, const std::vector<int32_t>& Sacrifices) const
@@ -2074,12 +3644,18 @@ Error Kingdom::FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices
 			L.titanId = 0;
 		}
 	}
+	for (const int32_t Id : Sacrifices)
+	{
+		ClearGuard(Id);
+	}
 	int64_t Xp = 0;
+	std::vector<int> FodderStars;
 	for (const int32_t Id : Sacrifices)
 	{
 		const TitanState* S = FindTitan(Id);
 		const int64_t Stars = C.titans[static_cast<size_t>(S->def)].stars;
 		Xp += C.fusionXpPerStarSq * Stars * Stars + TitanTotalXp(*S) * C.fusionKeepXpPct / 100;
+		FodderStars.push_back(static_cast<int>(Stars));
 	}
 	TitanList.erase(std::remove_if(TitanList.begin(), TitanList.end(),
 		[&Sacrifices](const TitanState& T) { return std::find(Sacrifices.begin(), Sacrifices.end(), T.id) != Sacrifices.end(); }), TitanList.end());
@@ -2088,9 +3664,117 @@ Error Kingdom::FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices
 		if (T.id == Target)
 		{
 			AddTitanXp(T, Xp, nullptr);
+			// Skills: each fused titan may open the next slot (1 star for the 2nd, 2 for the 3rd, 3 for the 4th) or else
+			// raise a skill up to its own stars (the original's guides; the chances are ours).
+			for (const int Stars : FodderStars)
+			{
+				const uint64_t H = Mix(Seed ^ 0x6675736500ULL, RelicCounter++);
+				const int BaseOpen = static_cast<int>(T.skills.size()) - (T.ascended ? 1 : 0);
+				if (BaseOpen < C.skills.slots && Stars >= BaseOpen && static_cast<int>(H % 100) < C.skills.openPct)
+				{
+					AddSkill(T, H >> 16);
+					if (T.ascended && T.skills.size() >= 2)
+					{
+						std::swap(T.skills[T.skills.size() - 1], T.skills[T.skills.size() - 2]); // the ascension skill stays last
+					}
+					continue;
+				}
+				std::vector<size_t> Up;
+				for (size_t I = 0; I < T.skills.size(); ++I)
+				{
+					if (T.skills[I].tier < std::min(3, Stars))
+					{
+						Up.push_back(I);
+					}
+				}
+				if (!Up.empty() && static_cast<int>((H >> 8) % 100) < C.skills.upgradePct)
+				{
+					T.skills[Up[static_cast<size_t>((H >> 32) % Up.size())]].tier += 1;
+				}
+			}
 		}
 	}
 	return Error::None;
+}
+
+// --- Titan skills ---------------------------------------------------------------------------------
+
+int Kingdom::SkillSlots(const TitanState& T) const
+{
+	return C.skills.kinds.empty() ? 0 : C.skills.slots + (T.ascended ? 1 : 0);
+}
+
+int64_t Kingdom::SkillValue(const TitanSkill& S) const
+{
+	if (S.kind < 0 || S.kind >= static_cast<int>(C.skills.kinds.size()))
+	{
+		return 0;
+	}
+	return C.skills.kinds[static_cast<size_t>(S.kind)].tiers[static_cast<size_t>(std::max(1, std::min(3, S.tier)) - 1)];
+}
+
+void Kingdom::AddSkill(TitanState& T, uint64_t H) const
+{
+	if (static_cast<int>(T.skills.size()) >= SkillSlots(T))
+	{
+		return;
+	}
+	const std::string& Cls = C.titans[static_cast<size_t>(T.def)].cls;
+	const std::vector<int64_t>* Weights = nullptr;
+	for (const std::pair<std::string, std::vector<int64_t>>& W : C.skills.classWeights)
+	{
+		Weights = W.first == Cls ? &W.second : Weights;
+	}
+	std::vector<int64_t> W(C.skills.kinds.size(), 0);
+	int64_t Total = 0;
+	for (size_t K = 0; K < W.size(); ++K)
+	{
+		const bool bTaken = std::any_of(T.skills.begin(), T.skills.end(), [K](const TitanSkill& S) { return S.kind == static_cast<int>(K); });
+		W[K] = bTaken ? 0 : Weights ? (*Weights)[K] : 1;
+		Total += W[K];
+	}
+	if (Total <= 0)
+	{
+		return;
+	}
+	int64_t Roll = static_cast<int64_t>(H % static_cast<uint64_t>(Total));
+	for (size_t K = 0; K < W.size(); ++K)
+	{
+		if (Roll < W[K])
+		{
+			TitanSkill S;
+			S.kind = static_cast<int>(K);
+			T.skills.push_back(S);
+			return;
+		}
+		Roll -= W[K];
+	}
+}
+
+void Kingdom::StartSkills(TitanState& T) const
+{
+	AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8));
+	if (T.ascended)
+	{
+		AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8 + T.skills.size()));
+	}
+}
+
+int64_t Kingdom::TitanSkillBonus(int32_t TitanId, RelicStat Stat) const
+{
+	const TitanState* T = FindTitan(TitanId);
+	int64_t Total = 0;
+	for (size_t I = 0; T && I < T->skills.size(); ++I)
+	{
+		const TitanSkill& S = T->skills[I];
+		Total += S.kind >= 0 && S.kind < static_cast<int>(C.skills.kinds.size()) && C.skills.kinds[static_cast<size_t>(S.kind)].stat == Stat ? SkillValue(S) : 0;
+	}
+	return Total;
+}
+
+int64_t Kingdom::TitanBonus(int32_t TitanId, RelicStat Stat) const
+{
+	return CapBonus(Stat, TitanRelicSum(TitanId, Stat) + TitanSkillBonus(TitanId, Stat));
 }
 
 const Building* Kingdom::Find(int32_t Id) const
@@ -2165,7 +3849,7 @@ int Kingdom::MaxSpellLevel() const
 
 int64_t Kingdom::CraftSec(int Spell) const
 {
-	return C.spells[static_cast<size_t>(Spell)].craftSec;
+	return Shorten(C.spells[static_cast<size_t>(Spell)].craftSec, DefRelicBonus(C.spellForge, RelicStat::Craft));
 }
 
 int64_t Kingdom::CraftGold(int Spell) const
@@ -2194,6 +3878,7 @@ void Kingdom::ProcessCraft(int64_t Until)
 		}
 		SpellStockList[static_cast<size_t>(Craft.front())] += 1;
 		Craft.erase(Craft.begin());
+		CraftPaid.erase(CraftPaid.begin());
 		CraftStart = Done;
 	}
 }
@@ -2221,7 +3906,7 @@ Check Kingdom::CheckCraft(int Spell) const
 	}
 	const SpellType& S = C.spells[static_cast<size_t>(Spell)];
 	Out.cost[static_cast<size_t>(ResIndex(Res::Gold))] = CraftGold(Spell);
-	Out.timeSec = S.craftSec;
+	Out.timeSec = CraftSec(Spell);
 	const LevelDef* Forge = BuildingLevel(C.spellForge);
 	if (!Forge || Forge->level < S.forge)
 	{
@@ -2258,7 +3943,9 @@ Error Kingdom::CraftSpell(int Spell)
 		bCraftBlocked = false;
 	}
 	Craft.push_back(Spell);
+	CraftPaid.push_back(Ck.cost[static_cast<size_t>(ResIndex(Res::Gold))]);
 	ProcessCraft(Time);
+	NoteQuest(QuestEvent::Craft, 1);
 	return Error::None;
 }
 
@@ -2268,8 +3955,11 @@ Error Kingdom::CancelCraft(int Index)
 	{
 		return Error::BadId;
 	}
-	Res_[static_cast<size_t>(ResIndex(Res::Gold))] += CraftGold(Craft[static_cast<size_t>(Index)]);
+	// Back comes what was paid (an upgrade since may have raised the price), as far as the vaults hold it.
+	AddResource(Res::Gold, CraftPaid[static_cast<size_t>(Index)]);
 	Craft.erase(Craft.begin() + Index);
+	CraftPaid.erase(CraftPaid.begin() + Index);
+	NoteQuest(QuestEvent::Craft, -1); // a cancelled spell does not count
 	if (Index == 0)
 	{
 		CraftStart = Time;
@@ -2313,6 +4003,7 @@ Error Kingdom::SkipCraft()
 	{
 		SpellStockList[static_cast<size_t>(Craft.front())] += 1;
 		Craft.erase(Craft.begin());
+		CraftPaid.erase(CraftPaid.begin());
 	}
 	CraftStart = Time;
 	bCraftBlocked = false;
@@ -2337,7 +4028,7 @@ Check Kingdom::CheckSpellUpgrade(int Spell) const
 		Sec = Sec * C.spellSecGrowthPct / 100;
 	}
 	Out.cost[static_cast<size_t>(ResIndex(Res::Gold))] = Gold;
-	Out.timeSec = Sec;
+	Out.timeSec = Shorten(Sec, DefRelicBonus(C.arcaneTower, RelicStat::Research));
 	const SpellType& S = C.spells[static_cast<size_t>(Spell)];
 	const LevelDef* Forge = BuildingLevel(C.spellForge);
 	if (!Forge || Forge->level < S.forge)
@@ -2402,6 +4093,7 @@ Error Kingdom::UpgradeSpell(int Spell, bool UseGems)
 	Lab.from = Time;
 	Lab.until = Time + Ck.timeSec;
 	SpellLabs.push_back(Lab);
+	NoteQuest(QuestEvent::Upgrade, 1);
 	return Error::None;
 }
 
@@ -2443,6 +4135,18 @@ const RelicItem* Kingdom::FindRelic(int32_t Id) const
 	return nullptr;
 }
 
+RelicItem* Kingdom::MutableRelic(int32_t Id)
+{
+	for (RelicItem& R : RelicList)
+	{
+		if (R.id == Id)
+		{
+			return &R;
+		}
+	}
+	return nullptr;
+}
+
 int Kingdom::RelicSlots(const TitanState& T) const
 {
 	int Slots = T.ascended ? C.ascendRelicSlots : 0;
@@ -2453,19 +4157,71 @@ int Kingdom::RelicSlots(const TitanState& T) const
 	return Slots;
 }
 
-int64_t Kingdom::RelicStatPct(const RelicItem& R, int Stat) const
+int Kingdom::RelicSlotCount(const RelicItem& R) const
 {
-	const int64_t Main = C.relicBonusPct[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)];
-	const int MainStat = C.relicKinds[static_cast<size_t>(R.kind)].stat;
-	if (Stat == MainStat)
-	{
-		return Main;
-	}
-	// From rarity 3 a relic also carries half its bonus on the next stat.
-	return R.rarity >= 3 && Stat == (MainStat + 1) % 3 ? Main / 2 : 0;
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	return std::min(static_cast<int>(K.effects.size()), C.relicMaxEffects[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)]);
 }
 
-int64_t Kingdom::TitanBonusPct(int32_t TitanId, int Stat) const
+int64_t Kingdom::RelicMax(const RelicItem& R) const
+{
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	const size_t Rr = static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1);
+	if (K.economy)
+	{
+		return C.relicHours[Rr] * kSecondsPerHour;
+	}
+	return K.battles > 0 ? K.battles : C.relicDurability[Rr];
+}
+
+int64_t Kingdom::RelicLeft(const RelicItem& R) const
+{
+	return R.building != 0 ? std::max<int64_t>(0, R.durability - std::max<int64_t>(0, Time - R.since)) : R.durability;
+}
+
+int64_t Kingdom::RelicEffectValue(const RelicItem& R, int Slot) const
+{
+	if (Slot < 0 || Slot >= static_cast<int>(R.levels.size()) || R.levels[static_cast<size_t>(Slot)] <= 0)
+	{
+		return 0;
+	}
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+	const RelicEffectDef& E = C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(Slot)])];
+	const int64_t Base = E.base[static_cast<size_t>(std::max(1, std::min(5, R.rarity)) - 1)];
+	// Each level above the first adds a share of the first level's value (the original: up to 30-75% more).
+	return Base * (100 + C.relicStepPct * (R.levels[static_cast<size_t>(Slot)] - 1)) / 100;
+}
+
+int64_t Kingdom::CapBonus(RelicStat Stat, int64_t Value) const
+{
+	for (const RelicEffectDef& E : C.relicEffects)
+	{
+		if (E.stat == Stat && E.cap > 0)
+		{
+			Value = std::min(Value, E.cap);
+		}
+	}
+	return Value;
+}
+
+int32_t Kingdom::RelicTitan(int32_t RelicId) const
+{
+	for (const TitanState& T : TitanList)
+	{
+		if (std::find(T.relics.begin(), T.relics.end(), RelicId) != T.relics.end())
+		{
+			return T.id;
+		}
+	}
+	return 0;
+}
+
+int64_t Kingdom::TitanRelicBonus(int32_t TitanId, RelicStat Stat) const
+{
+	return CapBonus(Stat, TitanRelicSum(TitanId, Stat));
+}
+
+int64_t Kingdom::TitanRelicSum(int32_t TitanId, RelicStat Stat) const
 {
 	const TitanState* T = FindTitan(TitanId);
 	int64_t Total = 0;
@@ -2476,11 +4232,140 @@ int64_t Kingdom::TitanBonusPct(int32_t TitanId, int Stat) const
 			const RelicItem* R = FindRelic(Id);
 			if (R && R->durability > 0)
 			{
-				Total += RelicStatPct(*R, Stat);
+				const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+				for (int S = 0; S < static_cast<int>(R->levels.size()); ++S)
+				{
+					if (C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(S)])].stat == Stat)
+					{
+						Total += RelicEffectValue(*R, S);
+					}
+				}
+			}
+		}
+	}
+	return CapBonus(Stat, Total);
+}
+
+const RelicItem* Kingdom::BuildingRelic(int32_t BuildingId) const
+{
+	for (const RelicItem& R : RelicList)
+	{
+		if (R.building == BuildingId)
+		{
+			return &R;
+		}
+	}
+	return nullptr;
+}
+
+int64_t Kingdom::BuildingRelicBonus(const Building& B, RelicStat Stat) const
+{
+	const RelicItem* R = BuildingRelic(B.id);
+	int64_t Total = 0;
+	if (R && RelicLeft(*R) > 0)
+	{
+		const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+		for (int S = 0; S < static_cast<int>(R->levels.size()); ++S)
+		{
+			if (C.relicEffects[static_cast<size_t>(K.effects[static_cast<size_t>(S)])].stat == Stat)
+			{
+				Total += RelicEffectValue(*R, S);
 			}
 		}
 	}
 	return Total;
+}
+
+int64_t Kingdom::DefRelicBonus(int Def, RelicStat Stat) const
+{
+	int64_t Total = 0;
+	for (const Building& B : BuildingList)
+	{
+		if (B.def == Def && B.level > 0)
+		{
+			Total += BuildingRelicBonus(B, Stat);
+		}
+	}
+	return CapBonus(Stat, Total);
+}
+
+int Kingdom::RollRelicKind(uint64_t H) const
+{
+	int64_t Total = 0;
+	for (const RelicKind& K : C.relicKinds)
+	{
+		Total += K.weight;
+	}
+	int64_t Roll = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
+	for (size_t I = 0; I < C.relicKinds.size(); ++I)
+	{
+		if (Roll < C.relicKinds[I].weight)
+		{
+			return static_cast<int>(I);
+		}
+		Roll -= C.relicKinds[I].weight;
+	}
+	return 0;
+}
+
+int Kingdom::RollRarity(const std::array<int64_t, 5>& Weights, uint64_t H) const
+{
+	int64_t Total = 0;
+	for (const int64_t W : Weights)
+	{
+		Total += W;
+	}
+	int64_t Roll = Total > 0 ? static_cast<int64_t>(H % static_cast<uint64_t>(Total)) : 0;
+	for (int K = 0; K < 5; ++K)
+	{
+		if (Roll < Weights[static_cast<size_t>(K)])
+		{
+			return K + 1;
+		}
+		Roll -= Weights[static_cast<size_t>(K)];
+	}
+	return 1;
+}
+
+int32_t Kingdom::AddRelic(int Kind, int Rarity)
+{
+	if (static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return 0;
+	}
+	RelicItem R;
+	R.id = NextId++;
+	R.kind = Kind;
+	R.rarity = std::max(1, std::min(5, Rarity));
+	R.durability = RelicMax(R);
+	R.levels.assign(static_cast<size_t>(RelicSlotCount(R)), 0);
+	for (int S = 0; S < std::min(static_cast<int>(R.levels.size()), C.relicStartEffects[static_cast<size_t>(R.rarity - 1)]); ++S)
+	{
+		R.levels[static_cast<size_t>(S)] = 1;
+	}
+	if (!R.levels.empty() && R.levels[0] == 0)
+	{
+		R.levels[0] = 1; // the first effect is always open
+	}
+	RelicList.push_back(R);
+	return R.id;
+}
+
+void Kingdom::TouchRelic(RelicItem& R)
+{
+	if (R.building == 0)
+	{
+		return;
+	}
+	for (Building& B : BuildingList)
+	{
+		if (B.id == R.building)
+		{
+			Settle(B, Time);
+		}
+	}
+	R.durability = RelicLeft(R);
+	R.since = Time;
 }
 
 void Kingdom::UnequipEverywhere(int32_t RelicId)
@@ -2489,13 +4374,24 @@ void Kingdom::UnequipEverywhere(int32_t RelicId)
 	{
 		T.relics.erase(std::remove(T.relics.begin(), T.relics.end(), RelicId), T.relics.end());
 	}
+	if (RelicItem* R = MutableRelic(RelicId))
+	{
+		TouchRelic(*R);
+		R->building = 0;
+		R->since = 0;
+	}
 }
 
 Error Kingdom::EquipRelic(int32_t TitanId, int32_t RelicId)
 {
-	if (!FindRelic(RelicId))
+	const RelicItem* R = FindRelic(RelicId);
+	if (!R)
 	{
 		return Error::BadId;
+	}
+	if (C.relicKinds[static_cast<size_t>(R->kind)].economy)
+	{
+		return Error::WrongRelic;
 	}
 	for (TitanState& T : TitanList)
 	{
@@ -2511,11 +4407,58 @@ Error Kingdom::EquipRelic(int32_t TitanId, int32_t RelicId)
 		{
 			return Error::LimitReached;
 		}
+		for (const int32_t Other : T.relics)
+		{
+			const RelicItem* O = FindRelic(Other);
+			if (O && O->kind == R->kind)
+			{
+				return Error::SameRelic; // the original: "Can not use identical relics"
+			}
+		}
 		UnequipEverywhere(RelicId);
 		T.relics.push_back(RelicId);
 		return Error::None;
 	}
 	return Error::BadId;
+}
+
+Error Kingdom::AttachRelic(int32_t BuildingId, int32_t RelicId)
+{
+	RelicItem* R = MutableRelic(RelicId);
+	const Building* B = Find(BuildingId);
+	if (!R || !B)
+	{
+		return Error::BadId;
+	}
+	const RelicKind& K = C.relicKinds[static_cast<size_t>(R->kind)];
+	if (!K.economy || std::find(K.buildings.begin(), K.buildings.end(), B->def) == K.buildings.end())
+	{
+		return Error::WrongRelic;
+	}
+	if (B->level <= 0)
+	{
+		return Error::NotReady; // still being built
+	}
+	if (R->building == BuildingId)
+	{
+		return Error::None;
+	}
+	if (const RelicItem* Old = BuildingRelic(BuildingId))
+	{
+		UnequipEverywhere(Old->id);
+	}
+	UnequipEverywhere(RelicId);
+	for (Building& Target : BuildingList)
+	{
+		if (Target.id == BuildingId)
+		{
+			Settle(Target, Time); // it produced without the relic until now
+		}
+	}
+	R = MutableRelic(RelicId);
+	R->building = BuildingId;
+	R->since = Time;
+	return Error::None;
 }
 
 Error Kingdom::UnequipRelic(int32_t RelicId)
@@ -2546,25 +4489,49 @@ int Kingdom::RepairChancePct(int32_t Target, const std::vector<int32_t>& Sacrifi
 	{
 		return 0;
 	}
+	// The original's table: every sacrificed relic adds a chance set by its rarity and the target's.
 	int64_t Sum = 0;
 	for (const int32_t Id : Sacrifices)
 	{
 		const RelicItem* R = FindRelic(Id);
 		if (R && Id != Target)
 		{
-			Sum += C.relicRepairWeight[static_cast<size_t>(std::max(1, std::min(5, R->rarity)) - 1)];
+			Sum += C.relicRepairPct[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)][static_cast<size_t>(std::max(1, std::min(5, R->rarity)) - 1)];
 		}
 	}
-	// Two relics of the target's rarity always do it; lower rarities add less.
-	const int64_t Need = 2 * C.relicRepairWeight[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)];
-	return static_cast<int>(std::min<int64_t>(100, Need > 0 ? Sum * 100 / Need : 100));
+	return static_cast<int>(std::min<int64_t>(100, Sum));
 }
 
-Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, bool* OutRepaired)
+int Kingdom::EnhanceChancePct(int32_t Target) const
 {
-	if (OutRepaired)
+	const RelicItem* T = FindRelic(Target);
+	return T ? static_cast<int>(C.relicEnhancePct[static_cast<size_t>(std::max(1, std::min(5, T->rarity)) - 1)]) : 0;
+}
+
+bool Kingdom::CanUnlockWith(int32_t Target, const std::vector<int32_t>& Sacrifices) const
+{
+	const RelicItem* T = FindRelic(Target);
+	if (!T || std::find(T->levels.begin(), T->levels.end(), 0) == T->levels.end())
 	{
-		*OutRepaired = false;
+		return false;
+	}
+	// The original: the second and third effects usually need higher-star relics in the repair.
+	for (const int32_t Id : Sacrifices)
+	{
+		const RelicItem* R = FindRelic(Id);
+		if (R && Id != Target && R->rarity >= T->rarity)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifices, RepairResult* Out)
+{
+	if (Out)
+	{
+		*Out = RepairResult();
 	}
 	const RelicItem* T = FindRelic(Target);
 	if (!T || Sacrifices.empty())
@@ -2575,7 +4542,13 @@ Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifice
 	{
 		return Error::CastleTooLow;
 	}
-	if (T->durability >= C.relicDurability[static_cast<size_t>(T->rarity - 1)])
+	// A whole relic can still be repaired for the chance to improve it (the original), unless it is at its best.
+	bool bCanImprove = CanUnlockWith(Target, Sacrifices);
+	for (const int L : T->levels)
+	{
+		bCanImprove = bCanImprove || (L > 0 && L < C.relicLevels);
+	}
+	if (RelicLeft(*T) >= RelicMax(*T) && !bCanImprove)
 	{
 		return Error::Nothing;
 	}
@@ -2594,25 +4567,50 @@ Error Kingdom::RepairRelic(int32_t Target, const std::vector<int32_t>& Sacrifice
 	}
 	Pay(Cost, false);
 	const int Chance = RepairChancePct(Target, Sacrifices);
+	const bool bUnlock = CanUnlockWith(Target, Sacrifices);
 	const uint64_t H = Mix(Seed ^ 0x726570616972ULL, RelicCounter++);
 	const bool bOk = static_cast<int>(H % 100) < Chance;
 	for (const int32_t Id : Sacrifices)
 	{
 		DiscardRelic(Id);
 	}
+	RepairResult Result;
+	Result.repaired = bOk;
 	if (bOk)
 	{
-		for (RelicItem& R : RelicList)
+		RelicItem& R = *MutableRelic(Target);
+		TouchRelic(R);
+		R.durability = RelicMax(R);
+		// A success may also improve one effect or open the next locked one (chance by the target's rarity).
+		if (static_cast<int64_t>((H >> 16) % 100) < C.relicEnhancePct[static_cast<size_t>(R.rarity - 1)])
 		{
-			if (R.id == Target)
+			std::vector<int> Choices;
+			bool bLockedAdded = false;
+			for (int S = 0; S < static_cast<int>(R.levels.size()); ++S)
 			{
-				R.durability = static_cast<int>(C.relicDurability[static_cast<size_t>(R.rarity - 1)]);
+				const int L = R.levels[static_cast<size_t>(S)];
+				if (L > 0 && L < C.relicLevels)
+				{
+					Choices.push_back(S);
+				}
+				else if (L == 0 && bUnlock && !bLockedAdded)
+				{
+					Choices.push_back(S);
+					bLockedAdded = true;
+				}
+			}
+			if (!Choices.empty())
+			{
+				const int S = Choices[static_cast<size_t>((H >> 32) % Choices.size())];
+				Result.slot = S;
+				Result.unlocked = R.levels[static_cast<size_t>(S)] == 0;
+				R.levels[static_cast<size_t>(S)] += 1;
 			}
 		}
 	}
-	if (OutRepaired)
+	if (Out)
 	{
-		*OutRepaired = bOk;
+		*Out = Result;
 	}
 	return Error::None;
 }
@@ -2632,11 +4630,12 @@ Error Kingdom::AssignTitan(int32_t LandId, int32_t TitanId)
 		return Error::BadId;
 	}
 	SettleLands();
+	ClearGuard(TitanId); // a titan guards one place at a time
 	for (Land& L : LandList)
 	{
 		if (L.titanId == TitanId)
 		{
-			L.titanId = 0; // a titan guards one land at a time
+			L.titanId = 0;
 		}
 		if (L.id == LandId)
 		{
@@ -2671,7 +4670,7 @@ std::string Kingdom::Save() const
 	JsonWriter W;
 	W.BeginObject();
 	W.Key("formatVersion");
-	W.Int(4);
+	W.Int(6);
 	W.Key("contentHash");
 	W.String(C.hash);
 	W.Key("time");
@@ -2709,7 +4708,83 @@ std::string Kingdom::Save() const
 	W.Int(Last.gems);
 	W.Key("stones");
 	W.Int(Last.stones);
+	// What the alliance league paid (format 6).
+	if (Last.alliance >= 0)
+	{
+		W.Key("alliance");
+		W.Int(Last.alliance);
+		W.Key("allianceTier");
+		W.Int(Last.allianceTier);
+		W.Key("place");
+		W.Int(Last.place);
+		W.Key("groupSize");
+		W.Int(Last.groupSize);
+		W.Key("move");
+		W.Int(Last.move);
+		W.Key("allianceVp");
+		W.Int(Last.allianceVp);
+		W.Key("crystal");
+		W.Int(Last.crystal);
+		W.Key("crystalTitan");
+		W.Int(Last.crystalTitan);
+		W.Key("crystalRelic");
+		W.Int(Last.crystalRelic);
+		W.Key("crystalGems");
+		W.Int(Last.crystalGems);
+	}
 	W.EndObject();
+	W.EndObject();
+	// Alliances (format 6): the player's alliance, every alliance's league, an own alliance, reinforcements.
+	const auto WriteSquads = [this, &W](const std::vector<Reinforcement>& List)
+	{
+		W.BeginArray();
+		for (const Reinforcement& R : List)
+		{
+			W.BeginObject();
+			W.Key("troop");
+			W.String(C.troops[static_cast<size_t>(R.troop)].id);
+			W.Key("level");
+			W.Int(R.level);
+			W.Key("at");
+			W.Int(R.at);
+			W.Key("from");
+			W.Int(R.from);
+			W.EndObject();
+		}
+		W.EndArray();
+	};
+	W.Key("alliance");
+	W.BeginObject();
+	W.Key("index");
+	W.Int(HasOwnAlliance() ? -1 : AllianceIdx);
+	W.Key("own");
+	W.Bool(HasOwnAlliance());
+	W.Key("since");
+	W.Int(AllianceJoinedAt);
+	W.Key("tiers");
+	W.BeginArray();
+	for (const int T : AllianceTiers)
+	{
+		W.Int(T);
+	}
+	W.EndArray();
+	if (HasOwnAlliance())
+	{
+		W.Key("name");
+		W.String(OwnName);
+		W.Key("tag");
+		W.String(OwnTag);
+		W.Key("founded");
+		W.Int(OwnFounded);
+	}
+	W.Key("reinforcements");
+	WriteSquads(ReinforceList);
+	W.Key("pending");
+	WriteSquads(PendingReinforce);
+	W.Key("askedAt");
+	W.Int(ReinforceAt);
+	W.Key("asked");
+	W.Bool(bReinforceAsked);
 	W.EndObject();
 	W.Key("resources");
 	W.BeginObject();
@@ -2768,6 +4843,14 @@ std::string Kingdom::Save() const
 		W.Int(L.lastAt);
 		W.Key("titan");
 		W.Int(L.titanId);
+		W.Key("upgrading");
+		W.Bool(L.upgrading);
+		W.Key("startAt");
+		W.Int(L.startAt);
+		W.Key("finishAt");
+		W.Int(L.finishAt);
+		W.Key("shield");
+		W.Int(L.shieldUntil);
 		W.EndObject();
 	}
 	W.EndArray();
@@ -2782,6 +4865,44 @@ std::string Kingdom::Save() const
 		W.String(C.landTypes[static_cast<size_t>(L.type)].id);
 		W.Key("level");
 		W.Int(L.level);
+		W.EndObject();
+	}
+	W.EndArray();
+	// Neighbouring lords (optional fields: older saves get them on load).
+	W.Key("rivalCounter");
+	W.UInt(RivalCounter);
+	W.Key("rivals");
+	W.BeginArray();
+	for (const Rival& R : RivalList)
+	{
+		W.BeginObject();
+		W.Key("lord");
+		W.Int(R.lord);
+		W.Key("regrow");
+		W.BeginArray();
+		for (const int64_t At : R.regrow)
+		{
+			W.Int(At);
+		}
+		W.EndArray();
+		W.EndObject();
+	}
+	W.EndArray();
+	W.Key("rivalLands");
+	W.BeginArray();
+	for (const WorldLand& L : RivalLandList)
+	{
+		W.BeginObject();
+		W.Key("id");
+		W.Int(L.id);
+		W.Key("type");
+		W.String(C.landTypes[static_cast<size_t>(L.type)].id);
+		W.Key("level");
+		W.Int(L.level);
+		W.Key("owner");
+		W.Int(L.owner);
+		W.Key("shield");
+		W.Int(L.shieldUntil);
 		W.EndObject();
 	}
 	W.EndArray();
@@ -2809,6 +4930,13 @@ std::string Kingdom::Save() const
 	for (const int T : Queue)
 	{
 		W.String(C.troops[static_cast<size_t>(T)].id);
+	}
+	W.EndArray();
+	W.Key("queuePaid");
+	W.BeginArray();
+	for (const int64_t Paid : QueuePaid)
+	{
+		W.Int(Paid);
 	}
 	W.EndArray();
 	W.Key("queueStart");
@@ -2855,6 +4983,16 @@ std::string Kingdom::Save() const
 			W.Int(R);
 		}
 		W.EndArray();
+		W.Key("skills");
+		W.BeginArray();
+		for (const TitanSkill& S : T.skills)
+		{
+			W.BeginArray();
+			W.String(C.skills.kinds[static_cast<size_t>(S.kind)].id);
+			W.Int(S.tier);
+			W.EndArray();
+		}
+		W.EndArray();
 		W.EndObject();
 	}
 	W.EndArray();
@@ -2882,6 +5020,13 @@ std::string Kingdom::Save() const
 	for (const int Sp : Craft)
 	{
 		W.String(C.spells[static_cast<size_t>(Sp)].id);
+	}
+	W.EndArray();
+	W.Key("queuePaid");
+	W.BeginArray();
+	for (const int64_t Paid : CraftPaid)
+	{
+		W.Int(Paid);
 	}
 	W.EndArray();
 	W.Key("queueStart");
@@ -2923,6 +5068,21 @@ std::string Kingdom::Save() const
 		W.Int(R.rarity);
 		W.Key("durability");
 		W.Int(R.durability);
+		// Effect levels and the building of an economy relic (format 5).
+		W.Key("levels");
+		W.BeginArray();
+		for (const int L : R.levels)
+		{
+			W.Int(L);
+		}
+		W.EndArray();
+		if (R.building != 0)
+		{
+			W.Key("building");
+			W.Int(R.building);
+			W.Key("since");
+			W.Int(R.since);
+		}
 		W.EndObject();
 	}
 	W.EndArray();
@@ -2930,6 +5090,139 @@ std::string Kingdom::Save() const
 	W.Int(RelicAt);
 	W.Key("relicCounter");
 	W.UInt(RelicCounter);
+	// Raids on the kingdom (format 4, optional).
+	W.Key("raids");
+	W.BeginObject();
+	W.Key("next");
+	W.Int(NextRaid);
+	W.Key("visit");
+	W.Int(VisitAt);
+	W.Key("counter");
+	W.UInt(RaidCounter);
+	W.Key("cityShield");
+	W.Int(CityShield);
+	W.Key("read");
+	W.Int(RaidsRead);
+	W.Key("garrison");
+	W.BeginArray();
+	for (const int T : GarrisonList)
+	{
+		W.String(C.troops[static_cast<size_t>(T)].id);
+	}
+	W.EndArray();
+	W.Key("titan");
+	W.Int(GarrisonTitanId);
+	W.Key("log");
+	W.BeginArray();
+	for (const RaidReport& Rep : RaidLog)
+	{
+		W.BeginObject();
+		W.Key("at");
+		W.Int(Rep.at);
+		W.Key("land");
+		W.Int(Rep.landId);
+		W.Key("type");
+		W.String(Rep.landType >= 0 ? C.landTypes[static_cast<size_t>(Rep.landType)].id : std::string());
+		W.Key("level");
+		W.Int(Rep.level);
+		W.Key("stars");
+		W.Int(Rep.stars);
+		W.Key("raid");
+		W.Int(Rep.raidPower);
+		W.Key("defense");
+		W.Int(Rep.defensePower);
+		W.Key("lost");
+		W.BeginObject();
+		for (int I = 0; I < kResCount; ++I)
+		{
+			if (Rep.lost[static_cast<size_t>(I)])
+			{
+				W.Key(ToString(static_cast<Res>(I)));
+				W.Int(Rep.lost[static_cast<size_t>(I)]);
+			}
+		}
+		W.EndObject();
+		W.Key("vp");
+		W.Int(Rep.vp);
+		W.Key("titan");
+		W.Int(Rep.titanId);
+		W.Key("squads");
+		W.Int(Rep.squads);
+		W.Key("shield");
+		W.Int(Rep.shieldUntil);
+		W.EndObject();
+	}
+	W.EndArray();
+	W.EndObject();
+	// Titan Monuments and XP Arenas (format 6, optional): cooldowns by site id.
+	W.Key("sites");
+	W.BeginObject();
+	W.Key("counter");
+	W.UInt(SiteCounter);
+	W.Key("ready");
+	W.BeginObject();
+	for (size_t I = 0; I < SiteReady.size() && I < C.sites.list.size(); ++I)
+	{
+		if (SiteReady[I] > 0)
+		{
+			W.Key(C.sites.list[I].id.c_str());
+			W.Int(SiteReady[I]);
+		}
+	}
+	W.EndObject();
+	W.EndObject();
+	// Campaigns (optional): best stars as a string of digits and opened chests as a bit mask, by act id.
+	W.Key("campaigns");
+	W.BeginObject();
+	for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
+	{
+		std::string Stars;
+		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
+		{
+			Stars += static_cast<char>('0' + MissionStars(static_cast<int>(A), M));
+		}
+		const uint32_t Mask = A < ChestMask.size() ? ChestMask[A] : 0;
+		if (Stars.find_first_not_of('0') == std::string::npos && Mask == 0)
+		{
+			continue;
+		}
+		W.Key(C.campaigns.acts[A].id.c_str());
+		W.BeginObject();
+		W.Key("stars");
+		W.String(Stars.c_str());
+		W.Key("chests");
+		W.Int(static_cast<int64_t>(Mask));
+		W.EndObject();
+	}
+	W.EndObject();
+	// Daily quests (optional): today's quests by pool id.
+	W.Key("quests");
+	W.BeginObject();
+	W.Key("day");
+	W.Int(QuestDay);
+	W.Key("rerolls");
+	W.Int(QuestRerolls);
+	W.Key("chest");
+	W.Bool(bQuestChest);
+	W.Key("counter");
+	W.UInt(QuestCounter);
+	W.Key("list");
+	W.BeginArray();
+	for (const DailyQuest& Q : QuestList)
+	{
+		W.BeginObject();
+		W.Key("id");
+		W.String(C.quests.pool[static_cast<size_t>(Q.def)].id);
+		W.Key("target");
+		W.Int(Q.target);
+		W.Key("progress");
+		W.Int(Q.progress);
+		W.Key("claimed");
+		W.Bool(Q.claimed);
+		W.EndObject();
+	}
+	W.EndArray();
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -2942,7 +5235,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		return false;
 	}
 	const int Version = J.GetInt("formatVersion", 0);
-	if (Version < 1 || Version > 4)
+	if (Version < 1 || Version > 6)
 	{
 		OutError = "unsupported kingdom save version";
 		return false;
@@ -2999,8 +5292,13 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.carry = LJ.GetInt64("carry", 0) * (Version < 4 ? 100 : 1);
 			L.lastAt = LJ.GetInt64("lastAt", 0);
 			L.titanId = static_cast<int32_t>(LJ.GetInt64("titan", 0));
+			L.shieldUntil = LJ.GetInt64("shield", 0);
+			L.startAt = LJ.GetInt64("startAt", 0);
+			L.finishAt = LJ.GetInt64("finishAt", 0);
 			if (L.type >= 0)
 			{
+				// Land upgrades are optional fields of format 4: older saves have none.
+				L.upgrading = LJ.GetBool("upgrading", false) && L.level < static_cast<int>(C.landTypes[static_cast<size_t>(L.type)].produce.size());
 				NewLands.push_back(L);
 			}
 		}
@@ -3018,6 +5316,47 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			if (W.type >= 0)
 			{
 				NewWorld.push_back(W);
+			}
+		}
+	}
+	std::vector<Rival> NewRivals;
+	std::vector<WorldLand> NewRivalLands;
+	const JsonValue* RivalsJ = J.Find("rivals");
+	if (RivalsJ)
+	{
+		for (size_t I = 0; I < RivalsJ->Size(); ++I)
+		{
+			const JsonValue& RJ = (*RivalsJ)[I];
+			Rival R;
+			R.lord = std::max(0, std::min(RJ.GetInt("lord", 0), static_cast<int>(C.rivals.lords.size()) - 1));
+			if (const JsonValue* G = RJ.Find("regrow"))
+			{
+				for (size_t K = 0; K < G->Size(); ++K)
+				{
+					R.regrow.push_back((*G)[K].AsInt64(0));
+				}
+			}
+			std::sort(R.regrow.begin(), R.regrow.end());
+			if (NewRivals.size() < C.rivals.castleOffsets.size() && !C.rivals.lords.empty())
+			{
+				NewRivals.push_back(R);
+			}
+		}
+		if (const JsonValue* List = J.Find("rivalLands"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const JsonValue& WJ = (*List)[I];
+				WorldLand W;
+				W.id = static_cast<int32_t>(WJ.GetInt64("id", 0));
+				W.type = FindLandType(WJ.GetString("type"));
+				W.level = std::max(1, WJ.GetInt("level", 1));
+				W.owner = WJ.GetInt("owner", -1);
+				W.shieldUntil = WJ.GetInt64("shield", 0);
+				if (W.type >= 0 && W.owner >= 0 && W.owner < static_cast<int>(NewRivals.size()))
+				{
+					NewRivalLands.push_back(W);
+				}
 			}
 		}
 	}
@@ -3044,6 +5383,16 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			Last.league = LastJ->GetInt("league", -1);
 			Last.gems = LastJ->GetInt64("gems", 0);
 			Last.stones = LastJ->GetInt64("stones", 0);
+			Last.alliance = LastJ->GetInt("alliance", -1);
+			Last.allianceTier = LastJ->GetInt("allianceTier", -1);
+			Last.place = LastJ->GetInt("place", 0);
+			Last.groupSize = LastJ->GetInt("groupSize", 0);
+			Last.move = LastJ->GetInt("move", 0);
+			Last.allianceVp = LastJ->GetInt64("allianceVp", 0);
+			Last.crystal = LastJ->GetInt("crystal", 0);
+			Last.crystalTitan = static_cast<int32_t>(LastJ->GetInt64("crystalTitan", 0));
+			Last.crystalRelic = static_cast<int32_t>(LastJ->GetInt64("crystalRelic", 0));
+			Last.crystalGems = LastJ->GetInt64("crystalGems", 0);
 		}
 	}
 	Res_.fill(0);
@@ -3057,6 +5406,10 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	BuildingList = NewBuildings;
 	LandList = NewLands;
 	WorldList = NewWorld;
+	RivalList = NewRivals;
+	RivalLandList = NewRivalLands;
+	const JsonValue* RivalCounterJ = J.Find("rivalCounter");
+	RivalCounter = RivalCounterJ ? static_cast<uint64_t>(std::strtoull(RivalCounterJ->text.c_str(), nullptr, 10)) : 0;
 	const JsonValue* ArmyJ = J.Find("army");
 	if (!ArmyJ)
 	{
@@ -3092,6 +5445,22 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		};
 		ReadTroopList(ArmyJ->Find("queue"), Queue);
+		// What was paid for each queued unit; older saves (or a queue that lost unknown troops) take today's price.
+		QueuePaid.clear();
+		if (const JsonValue* Paid = ArmyJ->Find("queuePaid"); Paid && Paid->Size() == Queue.size())
+		{
+			for (size_t I = 0; I < Paid->Size(); ++I)
+			{
+				QueuePaid.push_back(std::max<int64_t>(0, (*Paid)[I].AsInt64()));
+			}
+		}
+		else
+		{
+			for (const int T : Queue)
+			{
+				QueuePaid.push_back(C.troops[static_cast<size_t>(T)].levels[static_cast<size_t>(std::max(1, TroopLevel(T)) - 1)].cost);
+			}
+		}
 		ReadTroopList(ArmyJ->Find("pendingSquads"), PendingArmy);
 		QueueStart = ArmyJ->GetInt64("queueStart", Time);
 		bQueueBlocked = ArmyJ->GetBool("queueBlocked", false);
@@ -3122,6 +5491,29 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 					{
 						T.relics.push_back(static_cast<int32_t>((*Rl)[K].AsInt64(0)));
 					}
+				}
+				// Skills (saves before them get the start skill, and the ascension one, from the seed); kinds the content
+				// no longer has are dropped.
+				if (const JsonValue* Sk = TJ.Find("skills"))
+				{
+					for (size_t K = 0; K < Sk->Size() && static_cast<int>(T.skills.size()) < SkillSlots(T); ++K)
+					{
+						const JsonValue& SJ = (*Sk)[K];
+						for (size_t D = 0; SJ.Size() == 2 && D < C.skills.kinds.size(); ++D)
+						{
+							if (C.skills.kinds[D].id == SJ[0].AsString())
+							{
+								TitanSkill S;
+								S.kind = static_cast<int>(D);
+								S.tier = std::max(1, std::min(3, static_cast<int>(SJ[1].AsInt64(1))));
+								T.skills.push_back(S);
+							}
+						}
+					}
+				}
+				else
+				{
+					StartSkills(T);
 				}
 				TitanList.push_back(T);
 			}
@@ -3174,6 +5566,21 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		};
 		ReadSpellList(SpellsJ->Find("queue"), Craft);
+		CraftPaid.clear();
+		if (const JsonValue* Paid = SpellsJ->Find("queuePaid"); Paid && Paid->Size() == Craft.size())
+		{
+			for (size_t I = 0; I < Paid->Size(); ++I)
+			{
+				CraftPaid.push_back(std::max<int64_t>(0, (*Paid)[I].AsInt64()));
+			}
+		}
+		else
+		{
+			for (const int Sp : Craft)
+			{
+				CraftPaid.push_back(CraftGold(Sp));
+			}
+		}
 		ReadSpellList(SpellsJ->Find("pending"), PendingSpellList);
 		CraftStart = SpellsJ->GetInt64("queueStart", Time);
 		bCraftBlocked = SpellsJ->GetBool("queueBlocked", false);
@@ -3200,24 +5607,55 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				const JsonValue& RJ = (*List)[I];
 				RelicItem R;
 				R.id = static_cast<int32_t>(RJ.GetInt64("id", 0));
-				R.kind = -1;
-				for (size_t K = 0; K < C.relicKinds.size(); ++K)
-				{
-					R.kind = C.relicKinds[K].id == RJ.GetString("kind") ? static_cast<int>(K) : R.kind;
-				}
+				R.kind = C.FindRelicKind(RJ.GetString("kind"));
 				R.rarity = std::max(1, std::min(5, RJ.GetInt("rarity", 1)));
-				R.durability = std::max(0, RJ.GetInt("durability", 0));
-				if (R.kind >= 0)
+				if (R.kind < 0)
 				{
-					RelicList.push_back(R);
+					continue;
 				}
+				R.durability = std::max<int64_t>(0, std::min(RelicMax(R), RJ.GetInt64("durability", 0)));
+				// Relics from before format 5 get the effects a new relic of their rarity has.
+				R.levels.assign(static_cast<size_t>(RelicSlotCount(R)), 0);
+				const JsonValue* Levels = RJ.Find("levels");
+				for (int S = 0; S < static_cast<int>(R.levels.size()); ++S)
+				{
+					const int Start = S == 0 || S < C.relicStartEffects[static_cast<size_t>(R.rarity - 1)] ? 1 : 0;
+					R.levels[static_cast<size_t>(S)] = Levels ? std::max(0, std::min(C.relicLevels, (S < static_cast<int>(Levels->Size()) ? (*Levels)[static_cast<size_t>(S)].AsInt(0) : 0))) : Start;
+				}
+				if (!R.levels.empty())
+				{
+					R.levels[0] = std::max(1, R.levels[0]);
+				}
+				R.building = static_cast<int32_t>(RJ.GetInt64("building", 0));
+				R.since = R.building ? RJ.GetInt64("since", Time) : 0;
+				RelicList.push_back(R);
 			}
 		}
 	}
-	// Drop references to relics or titans that are gone.
+	// Drop references to relics or titans that are gone, and relics on the wrong titan or building.
 	for (TitanState& T : TitanList)
 	{
-		T.relics.erase(std::remove_if(T.relics.begin(), T.relics.end(), [this](int32_t Id) { return !FindRelic(Id); }), T.relics.end());
+		T.relics.erase(std::remove_if(T.relics.begin(), T.relics.end(), [this](int32_t Id)
+			{
+				const RelicItem* R = FindRelic(Id);
+				return !R || C.relicKinds[static_cast<size_t>(R->kind)].economy;
+			}), T.relics.end());
+	}
+	for (size_t I = 0; I < RelicList.size(); ++I)
+	{
+		RelicItem& R = RelicList[I];
+		const Building* B = R.building ? Find(R.building) : nullptr;
+		const RelicKind& K = C.relicKinds[static_cast<size_t>(R.kind)];
+		bool bTaken = false;
+		for (size_t Prev = 0; Prev < I; ++Prev)
+		{
+			bTaken = bTaken || RelicList[Prev].building == R.building;
+		}
+		if (R.building && (!B || !K.economy || bTaken || std::find(K.buildings.begin(), K.buildings.end(), B->def) == K.buildings.end()))
+		{
+			R.building = 0;
+			R.since = 0;
+		}
 	}
 	for (Land& L : LandList)
 	{
@@ -3226,7 +5664,225 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			L.titanId = 0;
 		}
 	}
+	// Alliances (format 6). Older saves start outside any alliance, every alliance in the league it starts in.
+	ResetAlliances();
+	if (const JsonValue* AJ = J.Find("alliance"))
+	{
+		const int Base = BaseAlliances();
+		const int Tiers = static_cast<int>(C.alliances.leagues.size());
+		bool bOwn = AJ->GetBool("own", false);
+		std::vector<int> Saved;
+		if (const JsonValue* TJ = AJ->Find("tiers"))
+		{
+			for (size_t I = 0; I < TJ->Size(); ++I)
+			{
+				Saved.push_back(std::max(0, std::min(std::max(0, Tiers - 1), (*TJ)[I].AsInt(0))));
+			}
+		}
+		// A save from content with another number of alliances keeps nothing but the player's own alliance.
+		const bool bSameWorld = static_cast<int>(Saved.size()) == Base + (bOwn ? 1 : 0);
+		if (bSameWorld)
+		{
+			AllianceTiers = Saved;
+		}
+		if (bOwn)
+		{
+			bOwn = CleanName(AJ->GetString("name"), kMaxNameBytes, OwnName) && CleanName(AJ->GetString("tag"), kMaxTagBytes, OwnTag);
+			if (bOwn)
+			{
+				AllianceTiers.resize(static_cast<size_t>(Base), 0);
+				AllianceTiers.push_back(bSameWorld ? Saved.back() : 0);
+				OwnFounded = AJ->GetInt64("founded", Time);
+				AllianceIdx = Base;
+			}
+			else
+			{
+				AllianceTiers.resize(static_cast<size_t>(Base), 0);
+				OwnName.clear();
+				OwnTag.clear();
+			}
+		}
+		else
+		{
+			const int Idx = AJ->GetInt("index", -1);
+			AllianceIdx = Idx >= 0 && Idx < Base ? Idx : -1;
+		}
+		if (AllianceIdx >= 0)
+		{
+			AllianceJoinedAt = AJ->GetInt64("since", Time);
+		}
+		const auto ReadSquads = [this](const JsonValue* List, std::vector<Reinforcement>& Into)
+		{
+			Into.clear();
+			for (size_t I = 0; List && I < List->Size(); ++I)
+			{
+				const JsonValue& RJ = (*List)[I];
+				Reinforcement R;
+				R.troop = C.FindTroop(RJ.GetString("troop"));
+				if (R.troop < 0)
+				{
+					continue;
+				}
+				R.level = std::max(1, std::min(C.troops[static_cast<size_t>(R.troop)].MaxLevel(), RJ.GetInt("level", 1)));
+				R.at = RJ.GetInt64("at", Time);
+				R.from = std::max(0, RJ.GetInt("from", 0));
+				Into.push_back(R);
+			}
+		};
+		if (AllianceIdx >= 0)
+		{
+			ReadSquads(AJ->Find("reinforcements"), ReinforceList);
+		}
+		if (Pending != 0)
+		{
+			ReadSquads(AJ->Find("pending"), PendingReinforce);
+		}
+		ReinforceAt = AJ->GetInt64("askedAt", 0);
+		bReinforceAsked = AJ->GetBool("asked", false);
+	}
+	// Raids (saves before them start like a new kingdom: the first raid comes a day after loading).
+	ResetRaids(Time);
+	if (const JsonValue* RaidsJ = J.Find("raids"))
+	{
+		NextRaid = RaidsJ->GetInt64("next", NextRaid);
+		VisitAt = RaidsJ->GetInt64("visit", Time);
+		const JsonValue* CounterJ2 = RaidsJ->Find("counter");
+		RaidCounter = CounterJ2 ? static_cast<uint64_t>(std::strtoull(CounterJ2->text.c_str(), nullptr, 10)) : 0;
+		CityShield = RaidsJ->GetInt64("cityShield", 0);
+		RaidsRead = RaidsJ->GetInt64("read", Time);
+		if (const JsonValue* List = RaidsJ->Find("garrison"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const int T = C.FindTroop((*List)[I].AsString());
+				if (T >= 0)
+				{
+					GarrisonList.push_back(T);
+				}
+			}
+		}
+		GarrisonTitanId = static_cast<int32_t>(RaidsJ->GetInt64("titan", 0));
+		if (const JsonValue* List = RaidsJ->Find("log"))
+		{
+			for (size_t I = 0; I < List->Size(); ++I)
+			{
+				const JsonValue& RJ = (*List)[I];
+				RaidReport Rep;
+				Rep.at = RJ.GetInt64("at", 0);
+				Rep.landId = static_cast<int32_t>(RJ.GetInt64("land", 0));
+				Rep.landType = Rep.landId ? FindLandType(RJ.GetString("type")) : -1;
+				Rep.level = std::max(1, RJ.GetInt("level", 1));
+				Rep.stars = std::max(0, std::min(3, RJ.GetInt("stars", 0)));
+				Rep.raidPower = RJ.GetInt64("raid", 0);
+				Rep.defensePower = RJ.GetInt64("defense", 0);
+				if (const JsonValue* Lost = RJ.Find("lost"))
+				{
+					for (int K = 0; K < kResCount; ++K)
+					{
+						Rep.lost[static_cast<size_t>(K)] = Lost->GetInt64(ToString(static_cast<Res>(K)), 0);
+					}
+				}
+				Rep.vp = RJ.GetInt64("vp", 0);
+				Rep.titanId = static_cast<int32_t>(RJ.GetInt64("titan", 0));
+				Rep.squads = RJ.GetInt("squads", 0);
+				Rep.shieldUntil = RJ.GetInt64("shield", 0);
+				RaidLog.push_back(Rep);
+			}
+		}
+	}
+	if (GarrisonTitanId && !FindTitan(GarrisonTitanId))
+	{
+		GarrisonTitanId = 0;
+	}
+	// Titan Monuments and XP Arenas (saves before them start with every site open).
+	SiteReady.assign(C.sites.list.size(), 0);
+	SiteCounter = 0;
+	if (const JsonValue* SitesJ = J.Find("sites"))
+	{
+		const JsonValue* CounterJ3 = SitesJ->Find("counter");
+		SiteCounter = CounterJ3 ? static_cast<uint64_t>(std::strtoull(CounterJ3->text.c_str(), nullptr, 10)) : 0;
+		if (const JsonValue* ReadyJ = SitesJ->Find("ready"))
+		{
+			for (size_t I = 0; I < C.sites.list.size(); ++I)
+			{
+				SiteReady[I] = std::max<int64_t>(0, ReadyJ->GetInt64(C.sites.list[I].id.c_str(), 0));
+			}
+		}
+	}
+	// Campaigns (saves before them have played no mission).
+	MissionStarList.assign(C.campaigns.acts.size(), {});
+	ChestMask.assign(C.campaigns.acts.size(), 0);
+	if (const JsonValue* CampJ = J.Find("campaigns"))
+	{
+		for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
+		{
+			const JsonValue* ActJ = CampJ->Find(C.campaigns.acts[A].id.c_str());
+			if (!ActJ)
+			{
+				continue;
+			}
+			const std::string Stars = ActJ->GetString("stars");
+			std::vector<uint8_t>& Best = MissionStarList[A];
+			Best.assign(C.campaigns.acts[A].missions.size(), 0);
+			for (size_t M = 0; M < Best.size() && M < Stars.size(); ++M)
+			{
+				Best[M] = static_cast<uint8_t>(Stars[M] >= '1' && Stars[M] <= '3' ? Stars[M] - '0' : 0);
+			}
+			ChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("chests", 0)));
+		}
+	}
+	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
+	QuestDay = -1;
+	QuestList.clear();
+	QuestRerolls = 0;
+	bQuestChest = false;
+	QuestCounter = 0;
+	if (const JsonValue* QuestsJ = J.Find("quests"))
+	{
+		QuestDay = QuestsJ->GetInt64("day", -1);
+		QuestRerolls = std::max(0, QuestsJ->GetInt("rerolls", 0));
+		bQuestChest = QuestsJ->GetBool("chest", false);
+		const JsonValue* CounterJ4 = QuestsJ->Find("counter");
+		QuestCounter = CounterJ4 ? static_cast<uint64_t>(std::strtoull(CounterJ4->text.c_str(), nullptr, 10)) : 0;
+		if (const JsonValue* ListJ = QuestsJ->Find("list"))
+		{
+			for (size_t I = 0; I < ListJ->Size(); ++I)
+			{
+				const JsonValue& QJ = (*ListJ)[I];
+				const std::string Id = QJ.GetString("id");
+				for (size_t D = 0; D < C.quests.pool.size(); ++D)
+				{
+					if (C.quests.pool[D].id == Id)
+					{
+						DailyQuest Q;
+						Q.def = static_cast<int>(D);
+						Q.target = std::max<int64_t>(1, QJ.GetInt64("target", 1));
+						Q.progress = std::max<int64_t>(0, QJ.GetInt64("progress", 0));
+						Q.claimed = QJ.GetBool("claimed", false);
+						QuestList.push_back(Q);
+					}
+				}
+			}
+		}
+	}
+	if (Pending < 0)
+	{
+		// A site or mission the content no longer has.
+		const int Mission = PendingMission();
+		if (Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
+		{
+			Pending = 0;
+		}
+	}
 	FillWorld();
+	if (!RivalsJ)
+	{
+		ResetRivals(); // a save from before the world map
+	}
+	else
+	{
+		FillRivals(); // the content may ask for more lands now
+	}
 	return true;
 }
 
@@ -3249,6 +5905,44 @@ uint64_t Kingdom::Hash() const
 	W.I32(Last.league);
 	W.I64(Last.gems);
 	W.I64(Last.stones);
+	W.I32(Last.alliance);
+	W.I32(Last.allianceTier);
+	W.I32(Last.place);
+	W.I32(Last.groupSize);
+	W.I32(Last.move);
+	W.I64(Last.allianceVp);
+	W.I32(Last.crystal);
+	W.I32(Last.crystalTitan);
+	W.I32(Last.crystalRelic);
+	W.I64(Last.crystalGems);
+	W.I32(AllianceIdx);
+	W.I64(AllianceJoinedAt);
+	for (const int T : AllianceTiers)
+	{
+		W.I32(T);
+	}
+	for (const std::string* Text : {&OwnName, &OwnTag})
+	{
+		W.I32(static_cast<int32_t>(Text->size()));
+		for (const char Ch : *Text)
+		{
+			W.U8(static_cast<uint8_t>(Ch));
+		}
+	}
+	W.I64(OwnFounded);
+	for (const std::vector<Reinforcement>* List : {&ReinforceList, &PendingReinforce})
+	{
+		W.I32(static_cast<int32_t>(List->size()));
+		for (const Reinforcement& R : *List)
+		{
+			W.I32(R.troop);
+			W.I32(R.level);
+			W.I64(R.at);
+			W.I32(R.from);
+		}
+	}
+	W.I64(ReinforceAt);
+	W.Bool(bReinforceAsked);
 	for (const Building& B : BuildingList)
 	{
 		W.I32(B.id);
@@ -3278,6 +5972,23 @@ uint64_t Kingdom::Hash() const
 		W.I32(L.type);
 		W.I32(L.level);
 	}
+	W.U64(RivalCounter);
+	for (const Rival& R : RivalList)
+	{
+		W.I32(R.lord);
+		for (const int64_t At : R.regrow)
+		{
+			W.I64(At);
+		}
+	}
+	for (const WorldLand& L : RivalLandList)
+	{
+		W.I32(L.id);
+		W.I32(L.type);
+		W.I32(L.level);
+		W.I32(L.owner);
+		W.I64(L.shieldUntil);
+	}
 	for (size_t I = 0; I < TroopLevels.size(); ++I)
 	{
 		W.I32(TroopLevels[I]);
@@ -3286,6 +5997,10 @@ uint64_t Kingdom::Hash() const
 	for (const int T : Queue)
 	{
 		W.I32(T);
+	}
+	for (const int64_t Paid : QueuePaid)
+	{
+		W.I64(Paid);
 	}
 	W.I64(QueueStart);
 	W.Bool(bQueueBlocked);
@@ -3318,6 +6033,12 @@ uint64_t Kingdom::Hash() const
 		{
 			W.I32(R);
 		}
+		W.U32(static_cast<uint32_t>(T.skills.size()));
+		for (const TitanSkill& S : T.skills)
+		{
+			W.I32(S.kind);
+			W.I32(S.tier);
+		}
 	}
 	for (size_t I = 0; I < SpellStockList.size(); ++I)
 	{
@@ -3327,6 +6048,10 @@ uint64_t Kingdom::Hash() const
 	for (const int Sp : Craft)
 	{
 		W.I32(Sp);
+	}
+	for (const int64_t Paid : CraftPaid)
+	{
+		W.I64(Paid);
 	}
 	W.I64(CraftStart);
 	W.Bool(bCraftBlocked);
@@ -3345,7 +6070,86 @@ uint64_t Kingdom::Hash() const
 		W.I32(R.id);
 		W.I32(R.kind);
 		W.I32(R.rarity);
-		W.I32(R.durability);
+		W.I64(R.durability);
+		for (const int L : R.levels)
+		{
+			W.I32(L);
+		}
+		W.I32(R.building);
+		W.I64(R.since);
+	}
+	// Land upgrades (only lands being upgraded, so states without them hash as before).
+	for (const Land& L : LandList)
+	{
+		if (L.upgrading)
+		{
+			W.I32(L.id);
+			W.I64(L.startAt);
+			W.I64(L.finishAt);
+		}
+	}
+	// Raids
+	W.I64(NextRaid);
+	W.I64(VisitAt);
+	W.U64(RaidCounter);
+	W.I64(CityShield);
+	W.I64(RaidsRead);
+	for (const int T : GarrisonList)
+	{
+		W.I32(T);
+	}
+	W.I32(GarrisonTitanId);
+	for (const Land& L : LandList)
+	{
+		W.I64(L.shieldUntil);
+	}
+	for (const RaidReport& Rep : RaidLog)
+	{
+		W.I64(Rep.at);
+		W.I32(Rep.landId);
+		W.I32(Rep.level);
+		W.I32(Rep.stars);
+		for (const int64_t V : Rep.lost)
+		{
+			W.I64(V);
+		}
+		W.I64(Rep.vp);
+	}
+	// Sites (only once one has been fought, so states without them hash as before).
+	if (SiteCounter != 0 || std::any_of(SiteReady.begin(), SiteReady.end(), [](int64_t T) { return T != 0; }))
+	{
+		W.U64(SiteCounter);
+		for (const int64_t T : SiteReady)
+		{
+			W.I64(T);
+		}
+	}
+	// Campaigns (only once a mission is won or a chest opened).
+	for (size_t A = 0; A < MissionStarList.size() || A < ChestMask.size(); ++A)
+	{
+		const int Stars = ActStars(static_cast<int>(A));
+		const uint32_t Mask = A < ChestMask.size() ? ChestMask[A] : 0;
+		if (Stars == 0 && Mask == 0)
+		{
+			continue;
+		}
+		W.I32(static_cast<int32_t>(A));
+		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
+		{
+			W.I32(MissionStars(static_cast<int>(A), M));
+		}
+		W.U32(Mask);
+	}
+	W.I64(QuestDay);
+	W.I32(QuestRerolls);
+	W.U32(bQuestChest ? 1u : 0u);
+	W.U64(QuestCounter);
+	for (const DailyQuest& Q : QuestList)
+	{
+		W.I32(Q.def);
+		W.I64(Q.target);
+		W.I64(Q.progress);
+		W.U32(Q.claimed ? 1u : 0u);
 	}
 	return W.Hash();
 }

@@ -472,7 +472,7 @@ Full meta (training, research, tiers) is in Section 6. Values below are **Tier 1
 | 5 | **Outriders** (light cavalry) | Cavalry · Light | 12 | 260 | 10% | 22 | 1.5 | 1.8 | 9.0 | Flanker, hunts ranged and siege |
 | 6 | **Knights** (heavy cavalry) | Cavalry · Heavy | 10 | 420 | 35% | 30 | 1.6 | 1.8 | 7.0 | Shock charge, trample |
 | 7 | **Grenadiers** | Ranged · AoE | 12 | 100 | 5% | 40 (splash 3 m) | 3.5 | 22 | 3.2 | Breaks dense formations and walls |
-| 8 | **Ballista Crew** | Siege | 3 engines × 3 crew | 600 per engine | 20% | 180 (piercing) | 4.5 | 55 (min 8) | 1.6 | Titan slayer, structure breaker |
+| 8 | **Ballista Crew** | Siege | 3 engines × 3 crew | 600 per engine | 20% | 150 (piercing; was 180, tuned by harness, `docs/M0_Notes.md` 6a) | 4.5 | 42 (min 8; was 55, tuned by harness) | 1.6 | Titan slayer, structure breaker |
 | 9 | **Chainbreakers** | Specialist · LightInf | 12 | 150 | 15% | 10 | 1.4 | 1.5 (chains 18) | 3.4 | Binds and staggers titans |
 | 10 | **War Priests** | Support | 8 | 110 | 5% | — | — | aura 8 | 3.2 | Healing, morale, armor aura |
 
@@ -484,7 +484,7 @@ Full meta (training, research, tiers) is in Section 6. Values below are **Tier 1
 - **Outriders — Charge:** when moving faster than 6 m/s at contact, the first hit deals ×2.5 damage and knocks down infantry for 1 s (not braced or Square troops). Skirmish stance by default.
 - **Knights — Lance Charge and Trample:** charge first hit ×3.0. Passing through Light infantry deals 30 damage per soldier and knocks it down.
 - **Grenadiers — Firebomb:** 3 m splash (50% damage at the edge). Leaves a fire patch for 4 s (radius 2.5 m, 8 damage/s to every unit inside, friendly units take 50%). ×2.0 damage against structures.
-- **Ballista Crew — Bolt:** pierces up to 3 soldiers in a line. Must be stationary for 1 s before firing (setup). A hit on a titan applies *Pinned*: −10% move speed for 3 s, stacking up to 3 times. Crew can be killed separately; an engine with no crew stops firing.
+- **Ballista Crew — Bolt:** pierces up to 3 soldiers in a line. Must be stationary for 2 s before firing (setup; was 1 s, tuned by harness). A hit on a titan applies *Pinned*: −10% move speed for 3 s, stacking up to 3 times. Crew can be killed separately; an engine with no crew stops firing.
 - **Chainbreakers — Chain Harpoons:** while within 18 m of an enemy titan and with at least 3 soldiers alive, the squad throws one chain every 2.5 s. Each chain gives the titan −8% move speed and −5% attack speed for 10 s. At **5 chains** the titan is **Bound**: rooted and staggered for 2.5 s, then all chains break and the titan is immune to chains for 12 s. A titan Stomp removes all chains.
 - **War Priests — Sanctuary aura (8 m):** allied troops heal 1.5% of max HP per second (titans are not healed), burns are cleansed, morale +3/s, armor +10%. Priests never attack and automatically keep 8 m away from enemies.
 
@@ -500,7 +500,7 @@ Rows are attackers, columns are defender classes. Troop to defender class mappin
 | Grenadiers | **1.5** | 1.2 | **1.5** | 1.0 | 0.9 | 1.0 | 1.5 | 0.6 | **2.0** |
 | Outriders | 1.2 | 0.8 | 0.5 | **1.75** | 1.0 | **1.75** | **1.75** | 0.5 | 0.5 |
 | Knights | **1.5** | 1.2 | 0.6 | **1.75** | 1.2 | **1.75** | **1.75** | 0.6 | 0.6 |
-| Ballista | 0.6 | 0.6 | 0.6 | 0.6 | 1.0 | 1.0 | 0.6 | **2.5** | **3.0** |
+| Ballista | 0.6 | 0.6 | 0.6 | 0.6 | 1.0 | 1.0 | 0.6 | **2.0** (was 2.5; tuned by harness) | **3.0** |
 | Chainbreakers | 0.8 | 0.6 | 0.8 | 0.8 | 0.6 | 1.0 | 0.8 | **2.0** | 0.5 |
 | Titan (any) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.2 | 1.0 | 1.0 | **2.0** |
 | Archer Tower | 1.4 | 0.6 | 1.4 | 1.0 | 0.8 | 1.0 | 1.4 | 0.5 | — |
@@ -522,7 +522,7 @@ Rows are attackers, columns are defender classes. Troop to defender class mappin
 | **Ravager** (melee damage) | 12,000 | 220 | 25% | 1.8 | Sweep 6 m / 120° | 200 | 5.5 | 60 | 10% / 175% | Large |
 | **Warden** (army support) | 13,500 | 150 | 35% | 2.2 | Sweep 6.5 m / 140° | 250 | 5.0 | 55 | 5% / 150% | Large |
 | **Mystic** (ranged caster) | 9,500 | 200 | 15% | 2.6 | Bolt, 30 m range, 5 m splash | 150 | 5.0 | 60 | 8% / 160% | Medium or Large |
-| **Hunter** (ranged, anti-titan) | 10,000 | 190 | 20% | 1.6 | Shot, 45 m range, single target, ×2.0 vs titans | 170 | 6.5 | 70 | 12% / 180% | Medium |
+| **Hunter** (ranged, anti-titan) | 10,000 | 190 | 20% | 1.6 | Shot, 45 m range, single target, ×1.2 vs titans (was ×2.0; lowered by the titan round robin, `docs/M0_Notes.md` 5a) | 170 | 6.5 | 70 | 12% / 180% | Medium |
 
 Every Warden also has a built-in **Command Aura**: allied troops within 20 m get +8% ATK and +8% armor (scaled by the titan's ability level).
 
@@ -1070,28 +1070,46 @@ estimates `"src": "est"`.
   Mines and Farms keep their output up to their own capacity until it is collected with a tap.
 - **Buildings (original names):** Castle (max 25, gates everything), Gold Mine, Farm, Gold Vault, Granary, Gold Reserve,
   Food Reserve, Barracks, Army Camp, Garrison, Armoury, Medical School, Alliance Camp, Arcane Tower, Spell Forge, Portal,
-  Builder's Yard, Hall of Titans, Relic Temple, Eternal Shrine, Adventurers' Guild. Emissary Councils come later under our own faction names.
+  Builder's Yard, Hall of Titans, Relic Temple, Eternal Shrine, Adventurers' Guild, plus four Emissary Councils under our own names
+  (Sunreach, Rimeheim, Jade Peaks, Mistmoor) with the original's elements (fire, ice, earth, poison).
 - **Builders:** 1 at the start; Builder's Yard hires the 2nd–5th for 1,500 / 4,000 / 9,000 / 20,000 Gems. One construction per builder.
   Missing Gold/Food can be bought with Gems; speed-ups cost Gems pro rata of the remaining time.
 - **Castle requirements** repeat in a three-level cycle: Garrison + Army Camp → Armoury + Hall of Titans → Arcane Tower + Portal.
 - **Lands:** gold and farm lands around the kingdom; raid (loot) or capture (permanent income, docks to the kingdom).
   Fill time 6 h (L1) → 15 h (L5) → 24 h (L9+); land limit 3–15 by Castle level, up to 30 with Gems; a titan on a land adds 1% per titan level.
+  Captured lands are upgraded one level at a time for Gold by a builder, and keep producing meanwhile; a land goes no
+  higher than the top of the level band the Castle opens on the world map; ruins are not upgraded (prices are ours).
 - **Army (original rules; supersedes 6.x where they differ):** the human line trains Militia, Archers and Spearmen in the
   Barracks for Food, one unit (squad) at a time, queue 6 → 20 by Barracks level (wiki: Militia 135 Food at L1, 1 min; Spearmen
   145 Food, 5 min; Archers 200 Food). Trained units wait in the Army Camp (capacity 10 → 225; battle slots 3 → 14).
   The Armoury raises troop levels for Food (Militia 1→2: 3,500), capped by the Armoury level. **Casualties:** without a
   Medical School every squad that took damage is destroyed after the battle; with it a squad returns if it kept at least
-  the threshold (85% at L1 → 75% at L11). Emissary troops come with the Emissary Councils.
+  the threshold (85% at L1 → 75% at L11). **Emissary troops** (original rule): every troop trains in the Barracks, but a
+  people's troop needs its council: Sunreach sends Grenadiers (War Priests from council L3), Rimeheim sends Pikemen
+  (Chainbreakers from L3), Jade Peaks sends Goliaths (Ballista Crew from L3), Mistmoor sends Panthers (Castle 8, wiki).
+  The council level caps its troops' level at 2 × level + 1 (ours); pikes slow, goliaths cleave and knock down, panthers
+  poison (numbers ours).
 - **Titans (original rules; supersedes 5.x where they differ):** rarity R1–R4 (stars) sets the max level 20/30/40/50;
   titans earn XP in battles and rest after battles once above level 10. The Relic Temple gives a free relic every day and
-  has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan.
+  has altars for 1,000 and 4,000 Gems (R4 only from altars); the daily relic is either a relic item or a titan. The Altar of
+  Power sells a relic (R2–R5) for 1,000 Gems.
   Fusion unlocks at Castle 7, costs Food and moves sacrificed titans' strength into the chosen titan. Classes follow the original
   (Berserker, Champion, Guardian, Sorcerer, Ranger…); names and looks are ours.
-- **Relic items (original rules):** relics equip on titans and raise damage, health or armor. A titan starts with one relic
-  slot; more open at titan levels 20, 30, 40, 50. Rarity R1–R5. Relics wear out with battles (a broken relic gives
-  nothing until repaired). From Castle 8 a relic is repaired for Food by sacrificing other relics: each sacrifice adds
-  a chance that depends on both rarities (two of the same rarity always succeed); sacrifices are lost either way.
-  Bonuses reach the battle through `TitanSetup.hpPct/atkPct/armorPct` (armor capped at 75%).
+- **Relic items (original 1.8 rules):** combat relics are worn by titans, economy relics sit on buildings. A titan starts with
+  one relic slot; more open at titan levels 20, 30, 40, 50 and with ascension. Rarity R1–R5. A relic has one to three
+  effects; locked ones open through repair (how many start open is ours: R1–R3 one, R4 two, R5 three). Combat relics wear
+  out per battle (R1 20, R2 16, R3 12, R4 8 battles; XP relics 2; R5 6 is ours); a broken relic gives nothing until
+  repaired, and a titan can't wear two relics of the same kind. Combat effects: titan damage, health, armor, crit chance,
+  armor piercing, army damage and health, XP. Economy relics work for a time on a fitting building (24–96 h by rarity and
+  a stopped clock while detached are ours): mine and farm production and storage, Barracks and council training,
+  Spell Forge crafting, Armoury and Arcane Tower research, Hall of Titans rest. The catalogue (15 kinds), names and
+  numbers are ours. From Castle 8 a relic is repaired for Food by sacrificing other relics: each sacrifice adds a chance
+  from the original's rarity table (R1–R4 wiki, R5 ours); sacrifices are lost either way. A whole relic can be repaired
+  for the improvement roll: a success may raise one effect a level (4 levels, +15% of the first each) or, with a
+  sacrifice of at least the target's rarity, open the next locked effect (80% → 40% by rarity, ours). Won land battles
+  drop one relic per star (rarity by land level, ours); the inventory holds 200. Bonuses reach the battle through
+  `TitanSetup.hpPct/atkPct/armorPct/critPct/piercePct` (armor capped at 75%, piercing at 75%) and
+  `SideSetup.troopHpPct/troopAtkPct`.
 - **Spells (original rules; supersede the valor-only spells of 4.12 for land battles):** the original's spells are
   Fireball, Shield, Freeze, Terror, Lightning, Rage, Acid Cloud and Raise Dead (Raise Dead comes later). The Spell Forge
   crafts them into stock for Gold (queue 2 → 10 and capacity 10 → 65 by Forge level, Castle 5 → 21); each cast in battle
@@ -1103,6 +1121,19 @@ estimates `"src": "est"`.
   and it can still fight.
 - **Land battles** use the player's chosen titan, squads and spells; survivors per squad and spent charges come from the
   deterministic battle and feed the casualty rule and the spell stock, so a server can recompute both.
+- **Seasons, alliances and alliance leagues (original rules; supersede 3.6, 11.4 and 12.12 until a server exists):** a
+  season is one week (Monday 00:00 UTC). Victory points from almost every win count for the player and for the alliance
+  and reset when the season ends. From about 1,000 VP (guides) the player joins an alliance. Alliances meet in leagues;
+  every week the best go up and the worst go down, and every member is paid by the alliance's result: Gems, Portal
+  Stones and a crystal of rarity 1–4 holding a relic or sometimes a titan (rarity grows with the league, R4 only at the
+  top, a higher place gives a better titan chance; wiki Leagues, Announcements 1.8). Allies send troops to the Alliance
+  Camp, and its level sets how many join a battle (wiki). Without a server the other 48 alliances and their members are
+  AI: their weekly VP follow from the kingdom seed and each alliance's strength. Ours: 6 leagues of 8 (Bronze → Titan),
+  2 up and 2 down, rewards −10% per place (at least 30%), titan chance 30% → 2%, the alliance pays only members who
+  joined at least a day before the season ends (otherwise the personal league pays), strong alliances ask up to 8,000 VP,
+  an own alliance costs 100 Gems (12.1) and gets an AI recruit every 6 h up to 24, leaving disbands it; reinforcements:
+  1–10 squads by Alliance Camp level, a request every 20 minutes (12.6), one squad arrives per minute at the league's troop
+  level (capped by the player's Armoury) and fights one land battle. Numbers live in `kingdom.json` → `alliances`.
 - **Implementation:** deterministic engine-free C++ module `Source/DoTKingdom` (integer math, explicit time), content in
   `Content/Data/kingdom/*.json` (`buildings.json`, `army.json`, generated by `SimTools/kingdom_data.py`), tests in
   `SimTools/kingdom_tests.cpp`. The same code runs in Unreal, in the browser (WebAssembly) and on a future server.
@@ -1472,6 +1503,10 @@ Defender:      ±70% of the opposite change (defense losses are softened)
 ---
 
 ## 12. ALLIANCES & SOCIAL
+
+> **Implemented now (7.0):** the original's weekly alliance leagues with AI alliances, joining from 1,000 VP, an own
+> alliance and reinforcements through the Alliance Camp. Chat, roles, help, donations, tech, wars, raid bosses and
+> conquest below need the backend and stay as designed.
 
 ### 12.1 Alliance basics
 - **Create:** Keep 5 and 100 gems (free from Keep 8). Name, tag (3–4 characters), emblem (shape + icon + colors), description, language, type (Open / Request / Invite-only), requirements (minimum Kingdom Power and Keep level).
@@ -2387,7 +2422,7 @@ Every table below is generated from the formulas in Sections 4–9 (generator sc
 | Outriders | 260 / 22 | 351 / 30 | 468 / 40 | 624 / 53 | 832 / 70 |
 | Knights | 420 / 30 | 567 / 40 | 756 / 54 | 1,008 / 72 | 1,344 / 96 |
 | Grenadiers | 100 / 40 | 135 / 54 | 180 / 72 | 240 / 96 | 320 / 128 |
-| Ballista (per engine) | 600 / 180 | 810 / 243 | 1,080 / 324 | 1,440 / 432 | 1,920 / 576 |
+| Ballista (per engine; ATK was 180 → 576, tuned by harness) | 600 / 150 | 810 / 203 | 1,080 / 270 | 1,440 / 360 | 1,920 / 480 |
 | Chainbreakers | 150 / 10 | 202 / 14 | 270 / 18 | 360 / 24 | 480 / 32 |
 | War Priests | 110 / — | 148 / — | 198 / — | 264 / — | 352 / — |
 (Before Drill levels, War Banners, research and titan auras.)

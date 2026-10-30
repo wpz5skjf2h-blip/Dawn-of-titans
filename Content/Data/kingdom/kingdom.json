@@ -35,9 +35,9 @@
       { "id": "forest", "name": "Лес", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
         "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.forest_01", "field": "Чаща", "fieldNote": "леса по флангам укрывают отряды, в центре дорога и холм", "swap": { "troop.knights": "troop.swordsmen", "troop.outriders": "troop.archers" } },
       { "id": "lake", "name": "Озеро", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
-        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.lake_01", "field": "Зеркальное озеро", "fieldNote": "глубокая вода посередине, через неё один брод", "swap": { "troop.outriders": "troop.archers" } },
+        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.lake_01", "field": "Зеркальное озеро", "fieldNote": "глубокая вода посередине, через неё один брод", "swap": { "troop.outriders": "troop.archers", "troop.panthers": "troop.pikemen" } },
       { "id": "mountain", "name": "Гора", "resource": "vp", "castle": 3, "weight": 8, "produce": [5, 6, 7, 8, 10, 12, 14, 16, 20], "fillHours": [4],
-        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen" } },
+        "raidLoot": [30, 36, 42, 48, 60, 72, 84, 96, 120], "map": "map.mountain_01", "field": "Перевал", "fieldNote": "высоты и скалы с боков, проход по центру", "swap": { "troop.militia": "troop.spearmen", "troop.knights": "troop.swordsmen", "troop.panthers": "troop.goliaths", "troop.grenadiers": "troop.ballista" } },
       { "id": "ruins", "name": "Руины", "resource": "shards", "castle": 5, "weight": 10, "periodHours": 24, "produce": [1, 1, 1, 1, 1, 1, 1, 1, 1], "fillHours": [72],
         "raidLoot": [1, 1, 1, 1, 2, 2, 2, 3, 3], "map": "map.ruins_01", "field": "Павший город", "fieldNote": "в развалинах стрелки получают меньше урона", "swap": { "troop.militia": "troop.archers" } }
     ],
@@ -47,7 +47,82 @@
     // VP for any won land battle by land level, scaled by stars like loot (wiki: VP for almost all victories;
     // the amounts are estimates).
     "victoryVp": [4, 6, 8, 10, 13, 16, 20, 25, 30],
-    "worldSize": 8
+    "worldSize": 8,
+    // Upgrading a captured land (guides: upgrade lands to raise their output). The original's prices are unknown;
+    // these are estimates. Gold and hours by the level reached. A builder works on it, the land keeps producing at its
+    // old level meanwhile, and it goes no higher than the top of the level band the Castle opens on the world map.
+    // A level that would produce no more (ruins) is not offered.
+    "upgradeGold": [0, 4000, 9000, 25000, 60000, 130000, 260000, 480000, 800000],
+    "upgradeHours": [0, 1, 2, 4, 8, 12, 18, 24, 36]
+  },
+
+  // The world map. The original: every kingdom is an island with its captured lands floating around it, so a glance
+  // tells how strong a player is; between them float neutral lands and sites; a land is targeted by tapping it. Until
+  // there is a server the other kingdoms are computer lords. Ours: the lords, their Castle against the player's, how
+  // many lands they hold, how long a taken land takes to come back and a raided one stays shielded, the extra loot and
+  // VP their lands give, and the level of the lord's titan that guards every one of their lands, by land level (rarity
+  // by the lord's Castle). All of it is our estimate; the titan levels are fitted on the sim so that a typical kingdom
+  // wins 75-100% on lords' lands of its own level band and about half on the strongest neighbour's top land.
+  "rivals": {
+    "castle": 3,
+    "castleOffsets": [-1, 0, 0, 1, 2],
+    "lands": { "base": 2, "perCastle": 6, "max": 4 },
+    "regrowHours": 8,
+    "shieldHours": 8,
+    "lootPct": 150,
+    "vpPct": 150,
+    "titanLevels": [5, 8, 11, 14, 16, 22, 28, 36, 40],
+    "lords": [
+      { "name": "Лорд Вейран",      "realm": "Северная марка" },
+      { "name": "Леди Исмена",      "realm": "Янтарный берег" },
+      { "name": "Ярл Хродгар",      "realm": "Вороний фьорд" },
+      { "name": "Князь Осмунд",     "realm": "Серые холмы" },
+      { "name": "Королева Мираэль", "realm": "Лунная долина" },
+      { "name": "Барон Гаррик",     "realm": "Ржавые копи" },
+      { "name": "Леди Сельвина",    "realm": "Туманные топи" },
+      { "name": "Тан Бруннар",      "realm": "Каменный предел" }
+    ]
+  },
+
+  // Raids on the kingdom. The original (wiki, guides): the city and captured lands have default defenses that the player
+  // reinforces with titans and troops (Garrison), a lost defense gives a shield, reserves keep part of the gold and food
+  // from raiders, a raid on the Garrison takes 5% of the defender's VP (1.8). There the raiders are other players; until
+  // there is a server they are AI raiders, and they also come while the game is closed (the player's choice, 2026-10-28).
+  // Everything except the 5% is our estimate. Raiders come at a level of the band the Castle opens on the world map and
+  // bring that level's land battle army ("battles" below): on the city citySquads squads by level, on a land as many as
+  // the row has. A land defends with the army of its own level, so upgrading it strengthens the defense.
+  "raids": {
+    "castle": 3,
+    "firstHours": 24,
+    "everyHours": [6, 10],
+    "awayHours": 48,
+    "cityPct": 40,
+    "cityShieldHours": 12,
+    "landShieldHours": 12,
+    // Of the gold and food above the reserves; of VP; of what a land holds. At three stars; 2 stars 75%, 1 star 50%.
+    "stealPct": 20,
+    "vpPct": 5,
+    "landStealPct": 100,
+    // A held defense gives this share of a land battle's VP at the raiders' level.
+    "defenseVpPct": 50,
+    "citySquads": [3, 4, 4, 5, 5, 6, 6, 7, 8],
+    // Raiders are players in the original, so they always bring a titan: its level by the raiders' level (rarity R1 to
+    // level 3, R1-R2 to 6, R2-R3 to 8, then R3-R4).
+    "titanLevels": [6, 9, 12, 15, 18, 22, 28, 34, 40],
+    // The Garrison's own guards stand in its empty slots (tier by Garrison level in buildings.json); without a Garrison
+    // the city has noGarrisonSlots of them.
+    "guards": ["troop.militia", "troop.spearmen", "troop.archers"],
+    "noGarrisonSlots": 2,
+    "noGarrisonTier": 1,
+    "defenderAi": "veteran",
+    // How a raid goes, fitted by maximum likelihood to 4 000 simulated battles of raid-like armies (raiders of every
+    // level against random defenses): each side's power is the battle's own start power with titans counted
+    // titanPct %, the raiders' scaled by their AI; at ratio x = raiders / defense they win with x^k / (x^k + c^k)
+    // (c in hundredths). When they win, they take three stars from threeStars (hundredths of x), two below that, one
+    // below twoStars if a titan defends (as in battle: without a defending titan its star comes with the first).
+    "odds": { "titanPct": 590, "aiPct": { "recruit": 89, "veteran": 100, "warlord": 145, "nightmare": 216 },
+              "k": 4.5, "c": 103, "threeStars": 90, "twoStars": 50 },
+    "log": 10
   },
 
   // Seasons (wiki, Leagues): VP ranks players and alliances; at the end of a season everyone's VP returns to zero
@@ -65,6 +140,278 @@
       { "id": "platinum", "name": "Платиновая лига",  "vp": 2500,  "gems": 150, "stones": 18 },
       { "id": "diamond",  "name": "Алмазная лига",    "vp": 6000,  "gems": 300, "stones": 24 },
       { "id": "titan",    "name": "Лига титанов",     "vp": 15000, "gems": 500, "stones": 30 }
+    ]
+  },
+
+  // Alliances. From the original: a player may join one at 1 000 VP (guides: Level Winner, Touch Tap Play); members'
+  // VP count for themselves and for the alliance (wiki, Announcements); alliances meet in leagues ranked every week,
+  // the best go up and the worst go down, and every member is paid by the alliance's result: gems, portal stones and a
+  // crystal of rarity 1-4 with a relic or sometimes a titan; crystal rarity grows with the league, rarity 4 only in the
+  // top ones, and a higher place gives a better chance of a titan (wiki: Leagues, Announcements). Allies send troops
+  // to the Alliance Camp: they fight in one battle, and the camp's level sets how many (wiki: Troops, Announcements).
+  // There is no server yet, so the other alliances and their members are computer players: their weekly VP follow
+  // from the kingdom's seed and the alliance's strength. Everything below that the original does not give is ours:
+  // the names, group size, how many go up and down, the rewards by place, the requirements of strong alliances,
+  // creating an alliance (100 gems, master prompt 12.1), recruits of an own alliance, a day in the alliance before
+  // its reward is paid, the request cooldown (20 min, master prompt 12.6) and the level of the troops allies send.
+  "alliances": {
+    "joinVp": 1000,
+    "createGems": 100,
+    "members": [8, 30],
+    "groupSize": 8,
+    "promote": 2,
+    "memberHours": 24,
+    "recruitHours": 6,
+    "recruits": 24,
+    "placeStepPct": 10,
+    "minPlacePct": 30,
+    "crystalGems": [20, 40, 80, 160],
+    "reinforceCooldownSec": 1200,
+    "reinforceArriveSec": 60,
+    // memberVp: weekly VP of a computer member, by its alliance's strength; joinVp of an alliance grows with its
+    // strength (1.5 × the strength, rounded down to 500, from joinVp up to joinVpMax); gems and stones are for first
+    // place; titanPct is the crystal's titan chance for first and last place; troopLevel is what allies send.
+    "joinVpMax": 8000,
+    "leagues": [
+      { "id": "bronze",   "name": "Бронзовая лига",  "memberVp": [150, 500],   "gems": 100, "stones": 9,  "crystal": 1, "titanPct": [30, 10], "troopLevel": 3 },
+      { "id": "silver",   "name": "Серебряная лига", "memberVp": [300, 900],   "gems": 150, "stones": 12, "crystal": 2, "titanPct": [25, 8],  "troopLevel": 5 },
+      { "id": "gold",     "name": "Золотая лига",    "memberVp": [600, 1600],  "gems": 220, "stones": 15, "crystal": 2, "titanPct": [20, 6],  "troopLevel": 7 },
+      { "id": "platinum", "name": "Платиновая лига", "memberVp": [1200, 3000], "gems": 320, "stones": 18, "crystal": 3, "titanPct": [15, 5],  "troopLevel": 9 },
+      { "id": "diamond",  "name": "Алмазная лига",   "memberVp": [2500, 6000], "gems": 450, "stones": 24, "crystal": 3, "titanPct": [12, 4],  "troopLevel": 12 },
+      { "id": "titan",    "name": "Лига титанов",    "memberVp": [5000, 12000],"gems": 650, "stones": 30, "crystal": 4, "titanPct": [8, 2],   "troopLevel": 15 }
+    ],
+    // Computer alliances: name and tag. There are groupSize of them per league at the start.
+    "names": [
+      ["Сыны Грома", "ГРОМ"], ["Стражи Рассвета", "ЗАРЯ"], ["Пепельные Волки", "ВОЛК"], ["Железный Венец", "ВЕНЕЦ"],
+      ["Дети Бури", "БУРЯ"], ["Каменные Клыки", "КЛЫК"], ["Северный Щит", "ЩИТ"], ["Орден Феникса", "ФНКС"],
+      ["Багровый Рог", "РОГ"], ["Звёздные Странники", "ЗВЁЗД"], ["Тени Ущелья", "ТЕНЬ"], ["Морской Змей", "ЗМЕЙ"],
+      ["Золотая Грива", "ГРИВА"], ["Последний Бастион", "БАСТ"], ["Древние Корни", "КОРНИ"], ["Ледяная Корона", "ЛЁД"],
+      ["Кузня Титанов", "КУЗНЯ"], ["Чёрный Ворон", "ВОРОН"], ["Братство Секиры", "ТОПОР"], ["Вечный Огонь", "ОГОНЬ"],
+      ["Небесный Молот", "МОЛОТ"], ["Песчаная Буря", "ПЕСОК"], ["Дом Медведя", "МЕДВ"], ["Клинки Заката", "ЗАКАТ"],
+      ["Хранители Рун", "РУНА"], ["Гнев Олимпа", "ОЛИМП"], ["Сердце Горы", "ГОРА"], ["Полуночные Всадники", "НОЧЬ"],
+      ["Белый Олень", "ОЛЕНЬ"], ["Медные Легионы", "ЛЕГИ"], ["Шёпот Леса", "ЛЕС"], ["Острова Туманов", "ТУМАН"],
+      ["Солнечный Круг", "СОЛН"], ["Кровь Драконов", "ДРАК"], ["Серебряный Лист", "ЛИСТ"], ["Громовой Перевал", "ПИК"],
+      ["Стальной Кулак", "КУЛАК"], ["Племя Ясеня", "ЯСЕНЬ"], ["Вестники Бури", "ВЕСТ"], ["Алый Рассвет", "АЛЫЙ"],
+      ["Вороны Одина", "ОДИН"], ["Седьмой Легион", "VII"], ["Каменный Страж", "СТРАЖ"], ["Озёрные Девы", "ОЗЕРО"],
+      ["Лунные Псы", "ЛУНА"], ["Пламя Востока", "ВОСТ"], ["Горные Короли", "КРОНА"], ["Последние Титаны", "ТИТАН"]
+    ],
+    // Computer members (a prime count, so the members of one alliance never repeat a name).
+    "memberNames": [
+      "Ратибор", "Велена", "Добрыня", "Ярослава", "Светозар", "Мирослава", "Горислав", "Всеволод", "Злата", "Святогор",
+      "Любава", "Радомир", "Есения", "Богдан", "Милена", "Тихомир", "Дарина", "Ждан", "Ольгерд", "Рогнеда",
+      "Вышата", "Забава", "Ставр", "Беляна", "Твердислав", "Агния", "Лютобор", "Веселина", "Остромир", "Умила",
+      "Kronos", "NightHawk", "Valkyr", "Draugr", "Fenrir_7", "Sigrun", "Ragnar", "Brunhild", "Thorgal", "Morrigan",
+      "Lyra", "Orion", "Hyperion", "Selene", "Aegis", "Nyx", "Talon", "Ember", "Frostbite", "Vortex",
+      "Bastion", "Warden", "Oracle", "Seraph", "Zephyr", "Gryphon", "Wyvern", "Kraken", "Phoenix", "Hydra",
+      "Cyclops", "Minotaur", "Medusa", "Atlas_Jr", "Ares", "Leonid", "Spartan300", "Achilles", "Hector", "Ajax",
+      "Perseus", "Theseus", "Hermes", "Иггдрасиль", "Морозко", "Буревей", "Огнеяр", "Чернава", "Велес_2"
+    ]
+  },
+
+  // Titan Monuments and XP Arenas (the original, version 1.8, wiki Announcements): monuments replaced the old shard
+  // lands; both have fixed difficulties; a monument gives "a % drop of a random Shard", an XP Arena raises the XP titans
+  // gain and drops no relics or rewards ("these arenas are no walk in the park"); once battled in, each is unavailable
+  // for 24 hours unless the player spends gems. Ours: the sites, their levels (a row of "battles" below), the Castle
+  // that opens them, the defenders' AI, the battlefields, the stone cost (a raid's), the shard chances by stars and
+  // amounts, the arena XP (x3 a land battle's) and the gem prices. Shards are one currency here, so "random" is the
+  // chance itself. A won monument also gives a land battle's victory points (the original's rule for almost every win).
+  "sites": {
+    "cooldownHours": 24,
+    "stones": 3,
+    "shardPct": [40, 60, 80],
+    "list": [
+      { "id": "monument_bronze", "kind": "monument", "name": "Монумент Бронзы",  "level": 3, "castle": 5,  "shards": 1, "map": "map.ruins_01",    "resetGems": 30 },
+      { "id": "arena_trial",     "kind": "arena",    "name": "Арена испытаний",  "level": 4, "castle": 4,  "ai": "warlord",   "xpPct": 300, "map": "map.highvale_01", "resetGems": 30 },
+      { "id": "monument_storm",  "kind": "monument", "name": "Монумент Бури",    "level": 5, "castle": 9,  "shards": 2, "map": "map.ruins_01",    "resetGems": 50 },
+      { "id": "arena_heroes",    "kind": "arena",    "name": "Арена героев",     "level": 6, "castle": 10, "ai": "warlord",   "xpPct": 300, "map": "map.highvale_01", "resetGems": 60 },
+      { "id": "monument_frost",  "kind": "monument", "name": "Монумент Инея",    "level": 7, "castle": 13, "shards": 3, "map": "map.mountain_01", "resetGems": 80 },
+      { "id": "arena_titans",    "kind": "arena",    "name": "Арена титанов",    "level": 8, "castle": 15, "ai": "nightmare", "xpPct": 300, "map": "map.highvale_01", "resetGems": 100 },
+      { "id": "monument_flame",  "kind": "monument", "name": "Монумент Пламени", "level": 9, "castle": 17, "shards": 4, "map": "map.ruins_01",    "resetGems": 120 }
+    ]
+  },
+
+  // Campaigns of the Adventurers' Guild. The original (wiki): "Visit the Adventurers' Guild to participate in brand new
+  // campaigns"; "new campaigns are available whenever you see the golden statue on the Guild's tower"; a guide calls the
+  // campaign "an economic way to rack up XP without spending a lot of portal stones". The wiki does not describe the
+  // missions, so the story, acts, missions and star chests follow the master prompt (2.5 and 10.1-10.2): acts of 12
+  // missions and a boss in its regions, Ilsa Wren's briefings, first-clear gems, star chests at 12/24/36 of 39 stars.
+  // Ours: the enemy armies, levels, maps, the stone cost, the rewards and the Castle for each act. A mission's "level" is
+  // the land battle row for its titan XP; the clients build its army from squads/tier/ai/titan. Missions go in order;
+  // repeats give titan XP only. Types: field, hunt (a titan with a light escort), elite, boss.
+  "campaigns": {
+    "stones": 2,
+    "guild": "adventurers_guild",
+    "acts": [
+      { "id": "act1", "name": "Акт I. Хайвейл", "region": "Хайвейл: зелёные долины и пашни", "castle": 8,
+        "intro": "Пустота Морвейн докатилась до Хайвейла. Глашатай Васк жжёт фермы, а его Бронзовый Пустой — осквернённый Талос — стоит над долиной. Верните родные земли.",
+        "outro": "Бронзовый Пустой пал, и Талос свободен от скверны. Ильза уже чертит дорогу на запад, в туманы Мистмура.",
+        "chests": [
+          { "stars": 12, "gems": 50, "stones": 10 },
+          { "stars": 24, "gems": 100, "relic": 3 },
+          { "stars": 36, "gems": 150, "titan": 2 }
+        ],
+        "missions": [
+          { "id": "a1m1", "name": "Дым над Хайвейлом", "type": "field", "level": 3, "map": "map.highvale_01", "ai": "recruit", "tier": 1,
+            "squads": ["troop.militia", "troop.militia", "troop.archers", "troop.militia"],
+            "brief": "С холма видно дым над нашими фермами. Отряд Пустых грабит долину — прогоним их, пока они не ушли с зерном.",
+            "first": { "gems": 10, "food": 5000 } },
+          { "id": "a1m2", "name": "Мельница у брода", "type": "field", "level": 3, "map": "map.highvale_01", "ai": "recruit", "tier": 1,
+            "squads": ["troop.militia", "troop.spearmen", "troop.archers", "troop.militia", "troop.archers"],
+            "brief": "Пустые засели у мельницы. Копейщики у них в центре, лучники за ними: ударьте ополчением по стрелкам.",
+            "first": { "gems": 10, "gold": 5000 } },
+          { "id": "a1m3", "name": "Лесная засада", "type": "field", "level": 4, "map": "map.forest_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.spearmen", "troop.archers", "troop.archers", "troop.outriders", "troop.militia"],
+            "brief": "Дорога идёт через Чащу, а в лесу по флангам прячутся лучники. Не давайте всадникам зайти вам в тыл.",
+            "first": { "gems": 10, "food": 7500 } },
+          { "id": "a1m4", "name": "Рогатый страж", "type": "hunt", "level": 4, "map": "map.highvale_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.spearmen", "troop.archers"],
+            "titan": { "id": "titan.minotaur", "level": 14, "stars": 1 },
+            "brief": "Пустые привязали к себе Минотавра. Охраны при нём мало — свалите титана, и отряды разбегутся.",
+            "first": { "gems": 15, "gold": 7500 } },
+          { "id": "a1m5", "name": "Старая дорога", "type": "field", "level": 4, "map": "map.highvale_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"],
+            "brief": "У Васка появились мечники: их щиты держат стрелы. Встречайте их копьями и титаном, а не лучниками.",
+            "first": { "gems": 10, "food": 7500 } },
+          { "id": "a1m6", "name": "Павшая застава", "type": "field", "level": 5, "map": "map.ruins_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.swordsmen", "troop.archers", "troop.archers", "troop.spearmen", "troop.militia"],
+            "brief": "Старая застава в руинах, и стрелки Пустых сидят за камнями. В развалинах их трудно достать — идите в ближний бой.",
+            "first": { "gems": 10, "gold": 11000 } },
+          { "id": "a1m7", "name": "Сторожевой перевал", "type": "field", "level": 5, "map": "map.mountain_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders", "troop.militia"],
+            "titan": { "id": "titan.talos", "level": 12, "stars": 1 },
+            "brief": "Перевал держит отряд с титаном. Проход узкий: не толпитесь в нём, пусть титан ведёт.",
+            "first": { "gems": 10, "food": 11000 } },
+          { "id": "a1m8", "name": "Одноглазый на холме", "type": "hunt", "level": 5, "map": "map.highvale_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.swordsmen", "troop.archers"],
+            "titan": { "id": "titan.cyclops", "level": 18, "stars": 1 },
+            "brief": "Циклоп Пустых стережёт холм с маяком. Он крепкий, но медленный: окружите его и не стойте кучей.",
+            "first": { "gems": 15, "gold": 11000 } },
+          { "id": "a1m9", "name": "Набег на амбары", "type": "field", "level": 5, "map": "map.highvale_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders", "troop.outriders"],
+            "brief": "Всадники Пустых жгут амбары по всей долине. Поставьте копейщиков на их пути.",
+            "first": { "gems": 10, "food": 11000 } },
+          { "id": "a1m10", "name": "Рыцари Пустоты", "type": "field", "level": 6, "map": "map.highvale_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.militia", "troop.pikemen", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
+            "titan": { "id": "titan.atlas", "level": 16, "stars": 2 },
+            "brief": "Васк бросил в бой рыцарей и Атланта. Тяжёлую конницу останавливают пики, а не мечи.",
+            "first": { "gems": 10, "gold": 16000 } },
+          { "id": "a1m11", "name": "Мельничный городок", "type": "field", "level": 6, "map": "map.ruins_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.swordsmen", "troop.archers", "troop.grenadiers", "troop.spearmen", "troop.knights"],
+            "titan": { "id": "titan.ymir", "level": 18, "stars": 2 },
+            "brief": "Городок у мельниц разрушен, в нём гренадеры с огненными горшками. Не стойте плотным строем.",
+            "first": { "gems": 10, "food": 16000 } },
+          { "id": "a1m12", "name": "Гвардия Глашатая", "type": "elite", "level": 6, "map": "map.highvale_01", "ai": "warlord", "tier": 2,
+            "squads": ["troop.pikemen", "troop.swordsmen", "troop.archers", "troop.grenadiers", "troop.knights"],
+            "titan": { "id": "titan.perun", "level": 20, "stars": 2 },
+            "brief": "Последний заслон перед ставкой Васка: его гвардия с Перуном. Ими командует опытный полководец — возьмите лучшее войско.",
+            "first": { "gems": 20, "gold": 16000 } },
+          { "id": "a1m13", "name": "Бронзовый Пустой", "type": "boss", "level": 7, "map": "map.highvale_01", "ai": "warlord", "tier": 2,
+            "squads": ["troop.militia", "troop.grenadiers", "troop.pikemen", "troop.archers", "troop.panthers", "troop.knights"],
+            "titan": { "id": "titan.talos", "level": 27, "stars": 2, "name": "Бронзовый Пустой" },
+            "brief": "Вот он, Бронзовый Пустой — Талос, которого Васк осквернил. Скверна сделала его сильнее любого Талоса. Победите — и долина снова наша.",
+            "first": { "gems": 30, "food": 22000 } }
+        ] },
+      { "id": "act2", "name": "Акт II. Мистмур", "region": "Мистмур: топи, побережье и леса", "castle": 12,
+        "intro": "В туманах Мистмура друиды Туата держатся из последних сил. Глашатай Коррин утопил в проклятом море Атланта, и тот вышел из волн Утопленным Колоссом.",
+        "outro": "Утопленный Колосс снова Атлант, а друиды Туата встали под ваши знамёна. Дальше путь лежит на юг, к пескам Санрича.",
+        "chests": [
+          { "stars": 12, "gems": 80, "stones": 15 },
+          { "stars": 24, "gems": 150, "relic": 4 },
+          { "stars": 36, "gems": 200, "titan": 3 }
+        ],
+        "missions": [
+          { "id": "a2m1", "name": "Туман над побережьем", "type": "field", "level": 5, "map": "map.lake_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.militia", "troop.spearmen", "troop.archers", "troop.archers", "troop.outriders"],
+            "brief": "Мистмур встречает туманом. Озеро посередине глубокое, перейти можно только бродом — там нас и ждут.",
+            "first": { "gems": 15, "food": 11000 } },
+          { "id": "a2m2", "name": "Брод", "type": "field", "level": 5, "map": "map.lake_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.spearmen", "troop.swordsmen", "troop.archers", "troop.pikemen", "troop.outriders"],
+            "titan": { "id": "titan.talos", "level": 14, "stars": 1 },
+            "brief": "Брод держит Талос Коррина. Кто первым займёт брод, тот и выиграет бой.",
+            "first": { "gems": 15, "gold": 11000 } },
+          { "id": "a2m3", "name": "Друиды в беде", "type": "field", "level": 6, "map": "map.forest_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.pikemen", "troop.archers", "troop.archers", "troop.priests", "troop.swordsmen"],
+            "titan": { "id": "titan.atlas", "level": 18, "stars": 2 },
+            "brief": "Пустые загнали друидов Туата в Чащу. У врага жрецы: они лечат своих, бейте сначала их.",
+            "first": { "gems": 15, "food": 16000 } },
+          { "id": "a2m4", "name": "Болотные звери", "type": "field", "level": 6, "map": "map.lake_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.panthers", "troop.panthers", "troop.spearmen", "troop.archers", "troop.militia"],
+            "brief": "Из топей лезут пантеры. Копья против зверей — лучшее средство.",
+            "first": { "gems": 15, "gold": 16000 } },
+          { "id": "a2m5", "name": "Священная роща", "type": "field", "level": 6, "map": "map.forest_01", "ai": "veteran", "tier": 2,
+            "squads": ["troop.pikemen", "troop.grenadiers", "troop.archers", "troop.priests", "troop.knights"],
+            "titan": { "id": "titan.ymir", "level": 20, "stars": 2 },
+            "brief": "Коррин хочет сжечь священную рощу друидов. Гренадеры уже у опушки — не дайте им поджечь лес вокруг вас.",
+            "first": { "gems": 15, "food": 16000 } },
+          { "id": "a2m6", "name": "Хозяин топей", "type": "hunt", "level": 7, "map": "map.lake_01", "ai": "warlord", "tier": 2,
+            "squads": ["troop.panthers", "troop.archers"],
+            "titan": { "id": "titan.ymir", "level": 28, "stars": 2 },
+            "brief": "В топях бродит Имир, которого Пустота сделала своим. Охрана при нём маленькая, но сам он грозен.",
+            "first": { "gems": 20, "gold": 22000 } },
+          { "id": "a2m7", "name": "Курганы предков", "type": "field", "level": 7, "map": "map.ruins_01", "ai": "warlord", "tier": 2,
+            "squads": ["troop.goliaths", "troop.archers", "troop.grenadiers", "troop.pikemen", "troop.priests", "troop.knights"],
+            "titan": { "id": "titan.perun", "level": 24, "stars": 2 },
+            "brief": "Курганы Туата разорены, среди камней стоят голиафы. Стрелы их почти не берут — нужен титан и сталь.",
+            "first": { "gems": 15, "food": 22000 } },
+          { "id": "a2m8", "name": "Ведьма туманов", "type": "hunt", "level": 7, "map": "map.forest_01", "ai": "warlord", "tier": 2,
+            "squads": ["troop.priests", "troop.archers"],
+            "titan": { "id": "titan.hecate", "level": 24, "stars": 3 },
+            "brief": "Туман над лесом наводит Геката на службе Коррина. Её чары бьют по площади — разведите отряды.",
+            "first": { "gems": 20, "gold": 22000 } },
+          { "id": "a2m9", "name": "Прибой", "type": "field", "level": 8, "map": "map.lake_01", "ai": "warlord", "tier": 3,
+            "squads": ["troop.chainbreakers", "troop.pikemen", "troop.goliaths", "troop.grenadiers", "troop.panthers", "troop.knights"],
+            "titan": { "id": "titan.surtr", "level": 26, "stars": 3 },
+            "brief": "Коррин высадил с моря цепеломов и Сурта. Цепеломы опасны титанам — держите своего подальше от них.",
+            "first": { "gems": 15, "food": 30000 } },
+          { "id": "a2m10", "name": "Скалы Коррина", "type": "field", "level": 8, "map": "map.mountain_01", "ai": "warlord", "tier": 3,
+            "squads": ["troop.swordsmen", "troop.chainbreakers", "troop.goliaths", "troop.grenadiers", "troop.ballista", "troop.knights"],
+            "titan": { "id": "titan.atlas", "level": 32, "stars": 3 },
+            "brief": "На скалах у моря Коррин поставил баллисты. Их болты пробивают строй насквозь — быстрее сближайтесь.",
+            "first": { "gems": 15, "gold": 30000 } },
+          { "id": "a2m11", "name": "Затопленный храм", "type": "field", "level": 8, "map": "map.ruins_01", "ai": "warlord", "tier": 3,
+            "squads": ["troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.archers", "troop.knights"],
+            "titan": { "id": "titan.artemis", "level": 28, "stars": 3 },
+            "brief": "В затопленном храме прячется Артемида Пустоты: она бьёт издалека и охотится на титанов.",
+            "first": { "gems": 15, "food": 30000 } },
+          { "id": "a2m12", "name": "Гвардия Коррина", "type": "elite", "level": 9, "map": "map.lake_01", "ai": "nightmare", "tier": 3,
+            "squads": ["troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"],
+            "titan": { "id": "titan.surtr", "level": 28, "stars": 3 },
+            "brief": "Гвардия Коррина у самого берега. Их ведёт лучший полководец Пустоты: соберите всё, что есть.",
+            "first": { "gems": 25, "gold": 40000 } },
+          { "id": "a2m13", "name": "Утопленный Колосс", "type": "boss", "level": 9, "map": "map.lake_01", "ai": "nightmare", "tier": 3,
+            "squads": ["troop.goliaths", "troop.chainbreakers", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"],
+            "titan": { "id": "titan.atlas", "level": 40, "stars": 3, "name": "Утопленный Колосс" },
+            "brief": "Из волн встаёт Утопленный Колосс — Атлант, которого Коррин утопил в проклятом море. Освободите его.",
+            "first": { "gems": 40, "food": 40000 } }
+        ] }
+    ]
+  },
+
+  // Daily quests. The master prompt (3.4): "5 daily quests plus a daily chest" in the daily loop; the welcome chest at the
+  // end of the tutorial unlocks them (9.4). Ours: the pool, the targets, the rewards and the chest. Every day (00:00 UTC)
+  // brings "count" quests from the pool for the Castle's level ("castle"; "needs" a building); a quest's "target" goes by
+  // the Castle's level ([from level, amount]); a done quest is claimed for its reward, and claiming all of them opens the
+  // chest (its relic rarity by the Castle's level). Unfinished quests can be swapped "rerolls" times a day. Gems: about
+  // 20 a day from quests and the chest, half of the free player's target of 40 (8.6). Collect targets are about three
+  // hours of the mines' (farms') production at that Castle. Events: win, threeStars (battles won), raid (attacks on
+  // world lands), collectGold, collectFood, train (squads queued), upgrade (buildings, lands, troops and spells started),
+  // craft (spells queued), stones (portal stones spent), site (Titan Monuments and XP Arenas), mission (campaigns).
+  "dailyQuests": {
+    "count": 5,
+    "rerolls": 2,
+    "chest": { "gems": 10, "stones": 6, "relic": [[3, 1], [12, 2]] },
+    "pool": [
+      { "id": "q_win",     "event": "win",         "name": "Победите в битвах: {n}",              "target": [[1, 2], [6, 3], [12, 4]], "reward": { "gems": 2, "stones": 3 } },
+      { "id": "q_stars",   "event": "threeStars",  "name": "Победите на 3 звезды: {n}",           "target": [[1, 1], [8, 2]], "reward": { "gems": 3, "stones": 3 } },
+      { "id": "q_raid",    "event": "raid",        "name": "Атакуйте земли мира: {n}",            "target": [[1, 2], [10, 3]], "reward": { "gems": 2, "stones": 3 } },
+      { "id": "q_gold",    "event": "collectGold", "name": "Соберите золото: {n}",                "target": [[1, 500], [3, 1500], [5, 3000], [8, 7500], [12, 20000], [16, 30000], [20, 50000]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_food",    "event": "collectFood", "name": "Соберите еду: {n}",                   "target": [[1, 500], [3, 1500], [5, 3000], [8, 7500], [12, 20000], [16, 30000], [20, 50000]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_train",   "event": "train",       "name": "Обучите отряды: {n}",                 "target": [[1, 3], [8, 5], [14, 6]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_upgrade", "event": "upgrade",     "name": "Начните улучшения: {n}",              "target": [[1, 2]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_stones",  "event": "stones",      "name": "Потратьте камни портала: {n}",        "target": [[1, 9], [8, 12], [14, 18]], "reward": { "gems": 2, "stones": 4 } },
+      { "id": "q_craft",   "event": "craft",       "name": "Создайте заклинания: {n}", "castle": 5, "needs": "spell_forge", "target": [[5, 2], [11, 3], [17, 4]], "reward": { "gems": 2, "stones": 2 } },
+      { "id": "q_site",    "event": "site",        "name": "Сразитесь у монументов и на аренах: {n}", "castle": 5, "target": [[5, 1], [12, 2]], "reward": { "gems": 3, "stones": 2 } },
+      { "id": "q_mission", "event": "mission",     "name": "Пройдите миссии кампании: {n}", "castle": 8, "needs": "adventurers_guild", "target": [[8, 2], [12, 3]], "reward": { "gems": 3, "stones": 2 } }
     ]
   },
 
@@ -88,7 +435,8 @@
     ]
   },
 
-  // Battles for lands by land level (read by the clients to build the battle setup).
+  // Battles for lands by land level (read by the clients to build the battle setup). From land level 6 the
+  // defenders bring council troops, as higher lands in the original field stronger armies (which troops is ours).
   "battles": [
     { "ai": "recruit",   "tier": 1, "squads": ["troop.militia", "troop.militia", "troop.archers"] },
     { "ai": "recruit",   "tier": 1, "squads": ["troop.militia", "troop.spearmen", "troop.militia", "troop.archers"] },
@@ -96,13 +444,13 @@
     { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"] },
     { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"],
       "titan": { "id": "titan.talos", "level": 12, "stars": 1 } },
-    { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.militia", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
+    { "ai": "veteran",   "tier": 2, "squads": ["troop.militia", "troop.pikemen", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 20, "stars": 2 } },
-    { "ai": "warlord",   "tier": 2, "squads": ["troop.militia", "troop.grenadiers", "troop.spearmen", "troop.archers", "troop.outriders", "troop.knights"],
+    { "ai": "warlord",   "tier": 2, "squads": ["troop.militia", "troop.grenadiers", "troop.pikemen", "troop.archers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 28, "stars": 3 } },
-    { "ai": "warlord",   "tier": 3, "squads": ["troop.swordsmen", "troop.chainbreakers", "troop.spearmen", "troop.grenadiers", "troop.outriders", "troop.knights"],
+    { "ai": "warlord",   "tier": 3, "squads": ["troop.swordsmen", "troop.chainbreakers", "troop.goliaths", "troop.grenadiers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 36, "stars": 3 } },
-    { "ai": "nightmare", "tier": 3, "squads": ["troop.swordsmen", "troop.spearmen", "troop.priests", "troop.grenadiers", "troop.outriders", "troop.knights"],
+    { "ai": "nightmare", "tier": 3, "squads": ["troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 40, "stars": 4 } }
   ],
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]

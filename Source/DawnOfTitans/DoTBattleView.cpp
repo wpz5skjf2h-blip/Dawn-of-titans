@@ -335,6 +335,10 @@ void ADoTBattleView::BuildUnits()
 		else if (TD.id == "troop.grenadiers") { Scale = FVector(0.65, 0.65, 1.7); Tint = 1.25f; }
 		else if (TD.id == "troop.chainbreakers") { Mesh = CubeMesh; Scale = FVector(0.7, 0.9, 1.7); Tint = 0.65f; }
 		else if (TD.id == "troop.priests") { Mesh = ConeMesh; Scale = FVector(0.9, 0.9, 2.0); Tint = 1.5f; }
+		else if (TD.id == "troop.pikemen") { Scale = FVector(0.6, 0.6, 2.6); Tint = 1.1f; }
+		else if (TD.id == "troop.goliaths") { Mesh = CubeMesh; Scale = FVector(1.6, 1.4, 4.0); Tint = 0.6f; }
+		else if (TD.id == "troop.panthers") { Mesh = CubeMesh; Scale = FVector(2.0, 0.7, 1.3); Tint = 0.4f; }
+		else if (TD.id == "troop.ballista") { Mesh = CubeMesh; Scale = FVector(2.6, 1.8, 1.4); Tint = 0.75f; }
 		int32* Found = GroupIndex.Find(Key);
 		int32 Group = Found ? *Found : INDEX_NONE;
 		if (Group == INDEX_NONE)
@@ -837,6 +841,9 @@ void ADoTBattleView::HandleEvents()
 		case dot::SimEventType::TitanBound:
 			SpawnFx(Fx_Stagger, Where + FVector(0.0, 0.0, 2000.0), 1.4f, 2.f, 5.f);
 			SpawnFx(Fx_Shock, Where, 0.6f, 3.f, 14.f);
+			break;
+		case dot::SimEventType::BoltImpact:
+			SpawnFx(Fx_Dust, Where, 0.4f, 0.8f, 3.f);
 			break;
 		default: break;
 		}
