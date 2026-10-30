@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Assembles the browser demo.
 
-Inputs: Web/page.html (markup and styles), Web/icons.js (icons), Web/titans.js (titan figures), Web/app.js (battle), Web/kingdom.js (kingdom), Content/Data/**/*.json, Web/dist/dotsim*.js (from build.sh).
+Inputs: Web/page.html (markup and styles), Web/icons.js (icons), Web/titans.js (titan figures), Web/titans3d.js (titans in battle),
+Web/gfx.js (battlefield look), Web/art/*.svg and *.jpg (textures and sprites), Web/app.js (battle), Web/kingdom.js (kingdom), Content/Data/**/*.json,
+Web/dist/dotsim*.js (from build.sh).
 Outputs in Web/dist:
   artifact.html - page body for hosts that wrap it in their own document (claude.ai artifact)
   index.html    - complete standalone document; serve Web/dist over HTTP and open it
 """
+import base64
 import json
 import pathlib
 
@@ -19,7 +22,14 @@ app = (web / "app.js").read_text(encoding="utf-8")
 kingdom = (web / "kingdom.js").read_text(encoding="utf-8")
 icons = (web / "icons.js").read_text(encoding="utf-8")
 titans = (web / "titans.js").read_text(encoding="utf-8")
-body = page.replace("/*CONTENT_JSON*/", content).replace("/*ICONS_JS*/", icons).replace("/*TITANS_JS*/", titans).replace("/*APP_JS*/", app).replace("/*KINGDOM_JS*/", kingdom)
+titans3d = (web / "titans3d.js").read_text(encoding="utf-8")
+gfx = (web / "gfx.js").read_text(encoding="utf-8")
+art_files = {p.stem: p.read_text(encoding="utf-8") for p in sorted((web / "art").glob("*.svg"))}
+# Photo textures travel as data URIs.
+art_files.update({p.stem: "data:image/jpeg;base64," + base64.b64encode(p.read_bytes()).decode("ascii") for p in sorted((web / "art").glob("*.jpg"))})
+art = json.dumps(art_files, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+body = (page.replace("/*CONTENT_JSON*/", content).replace("/*ART_JSON*/", art).replace("/*ICONS_JS*/", icons).replace("/*TITANS_JS*/", titans)
+        .replace("/*TITANS3D_JS*/", titans3d).replace("/*GFX_JS*/", gfx).replace("/*APP_JS*/", app).replace("/*KINGDOM_JS*/", kingdom))
 dist = web / "dist"
 dist.mkdir(exist_ok=True)
 (dist / "artifact.html").write_text(body, encoding="utf-8")

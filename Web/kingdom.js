@@ -998,6 +998,27 @@ function islandGeometry(R, depth, seed, seg, flatTop, bumps, calm) {
 let islandMat = null;
 function islandMaterial() {
 	if (islandMat) return islandMat;
+	// With the battle's photo textures (gfx.js): grass and rock detail from them, while the vertex colours keep the island's hues.
+	if (typeof DotGfx !== 'undefined' && DotGfx.hasArt) {
+		const tG = DotGfx.tex('tex_grass', { repeat: true, scale: 2 });
+		const tR = DotGfx.tex('tex_rock', { repeat: true, scale: 2 });
+		islandMat = new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+		islandMat.onBeforeCompile = (sh) => {
+			Object.assign(sh.uniforms, { tG: { value: tG }, tR: { value: tR } });
+			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vIuv;')
+				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvIuv = uv;');
+			// Green faces take the grass photo, the rest the rock photo, as brightness around 1 (0.191 and 0.139 are their means), contrast raised.
+			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tR;\nvarying vec2 vIuv;')
+				.replace('#include <color_fragment>', [
+					'#include <color_fragment>',
+					'float grassy = clamp((vColor.g - vColor.r) * 8.0, 0.0, 1.0);',
+					'const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);',
+					'float lum = mix(dot(texture2D(tR, vIuv * 0.7).rgb, LUMA) / 0.139, dot(texture2D(tG, vIuv * 1.6).rgb, LUMA) / 0.191, grassy);',
+					'diffuseColor.rgb *= max(0.25, mix(1.0, lum, 1.5)) * 0.85;',
+				].join('\n'));
+		};
+		return islandMat;
+	}
 	const tex = canvasTex(128, 128, (g, w, h) => {
 		g.fillStyle = '#e6e6e6';
 		g.fillRect(0, 0, w, h);

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: ice shard particle (frost breath, glacier hide, Freeze). -->
+<path d="M64 6L86 40L80 108L64 124L48 108L42 40Z" fill="#dff6ff" fill-opacity="0.9"/>
+<path d="M64 6L86 40L80 108L64 124Z" fill="#9fdcf6" fill-opacity="0.85"/>
+<path d="M64 6L72 42L64 124L56 42Z" fill="#ffffff" fill-opacity="0.8"/>
+<path d="M42 40L64 52L86 40" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-opacity="0.8"/>
+</svg>
