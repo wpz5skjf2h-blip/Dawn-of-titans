@@ -426,7 +426,7 @@ const DotTitans3D = (() => {
 			{ s: 'sph', b: 'head', m: 'cloak', p: [0, 0.11, 0.012], d: [0.142, 0.1, 0.14] },
 			{ s: 'tube', b: 'head', m: 'cloak', pts: [[0.035, 0.14, 0.01], [0.07, 0.18, 0.02], [0.085, 0.24, 0.035], [0.11, 0.27, 0.03], [0.125, 0.255, 0.015]], d: [0.03, 0.007], x: 1 },
 			{ s: 'sph', b: 'head', m: 'gold', p: [0.127, 0.25, 0.012], d: [0.022, 0.022, 0.022], x: 1 },
-			// Sly green eyes, set forward of the usual ones so the hood's shadow does not swallow them.
+			// Sly green eyes on the face (the base body's eyes would sit inside this head).
 			{ s: 'sph', b: 'head', m: 'venom', p: [0.022, 0.078, -0.064], d: [0.02, 0.01, 0.01], x: 1 },
 			// Ragged cloak: his shadow, trailing dark wisps.
 			{ s: 'cape', b: 'cape', m: 'cloak', p: [0, -0.25, -0.12], d: [0.13, 0.2, 0.52, -72, 144, 7, 0.022] },
