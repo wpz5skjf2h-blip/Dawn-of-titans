@@ -1403,7 +1403,7 @@ const DotTitans = (() => {
 			const bubbles = [[40, 2], [70, -4], [100, 4], [132, -3], [160, 1]].map(([x, dy]) => C(x, GROUND + dy, 3.2, 'none', 'stroke="' + nav + '" stroke-width="1.6"')).join('');
 			// Grasping roots of Nav rising out of the mire.
 			const root = (x, s) => L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40) +
-				'M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + s * 9 + ' -6M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l-' + s * 2 + ' -10M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l-' + s * 9 + ' -4', '#2c3a26', 7) +
+				'M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + s * 9 + ' -6M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + -s * 2 + ' -10M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + -s * 9 + ' -4', '#2c3a26', 7) +
 				L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40), '#5a7a4a', 3);
 			// Ancestor spirits: pale wisps with two dark eyes.
 			const ghost = (x, y, s) => P('M' + n1(x - 8 * s) + ' ' + n1(y + 10 * s) + 'C' + n1(x - 10 * s) + ' ' + n1(y - 6 * s) + ' ' + n1(x - 6 * s) + ' ' + n1(y - 14 * s) + ' ' + n1(x) + ' ' + n1(y - 14 * s) +
