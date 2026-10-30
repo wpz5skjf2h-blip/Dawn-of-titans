@@ -2635,6 +2635,20 @@
    "class": "Berserker",
    "classRu": "Берсерк",
    "stars": 4
+  },
+  {
+   "id": "titan.loki",
+   "name": "Локи",
+   "class": "Infiltrator",
+   "classRu": "Лазутчик",
+   "stars": 2
+  },
+  {
+   "id": "titan.tyr",
+   "name": "Тюр",
+   "class": "Paladin",
+   "classRu": "Паладин",
+   "stars": 3
   }
  ],
  "titanXp": {

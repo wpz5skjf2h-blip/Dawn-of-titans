@@ -434,8 +434,11 @@ TITANS = [
     ("titan.perun", "Перун", "Berserker", 2), ("titan.atlas", "Атлант", "Guardian", 2), ("titan.ymir", "Имир", "Champion", 2),
     ("titan.surtr", "Сурт", "Berserker", 3), ("titan.hecate", "Геката", "Sorcerer", 3), ("titan.artemis", "Артемида", "Ranger", 3),
     ("titan.thor", "Тор", "Berserker", 4),
+    # The original's Infiltrator and Paladin classes (appended so the titans above keep their indices).
+    ("titan.loki", "Локи", "Infiltrator", 2), ("titan.tyr", "Тюр", "Paladin", 3),
 ]
-CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт"}
+CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт",
+            "Infiltrator": "Лазутчик", "Paladin": "Паладин"}
 ARMY = {
     "schemaVersion": 1,
     "source": "docs/Original_Reference.md",
@@ -446,8 +449,31 @@ ARMY = {
     "titanXp": {"next": [30 * lv * lv + 70 * lv for lv in range(1, 60)], "battle": [60, 90, 120, 160, 200, 250, 300, 360, 420],
                 "starsPct": [30, 100, 120, 150], "recoveryFromLevel": 10, "recoverySecPerLevel": 120},
     # Ascension (wiki, Ascension): only a max-level titan; shards and food by rarity R1..R4; ten more levels,
-    # better health and damage (from the levels) and a new relic slot. The new skill slot is not modelled yet.
+    # better health and damage (from the levels), a new relic slot and a new skill slot ("skills").
     "ascension": {"shards": [5, 25, 50, 100], "food": [180000, 820000, 2300000, 4800000], "levels": 10, "relicSlots": 1},
+    # Titan skills (wiki: skills come by class, fusion opens and raises them, ascension adds one). Kinds, tiers in
+    # percent (crit: percentage points) and the odds are ours; the weights pick a kind by the titan's class.
+    "skills": {
+        "slots": 4, "openPct": 35, "upgradePct": 25,
+        "kinds": [
+            {"id": "might", "name": "Мощь", "stat": "atkPct", "tiers": [3, 5, 8]},
+            {"id": "vigor", "name": "Живучесть", "stat": "hpPct", "tiers": [3, 5, 8]},
+            {"id": "cuirass", "name": "Кираса", "stat": "armorPct", "tiers": [3, 5, 8]},
+            {"id": "precision", "name": "Меткость", "stat": "critPct", "tiers": [2, 3, 4]},
+            {"id": "sunder", "name": "Сокрушение брони", "stat": "piercePct", "tiers": [3, 5, 7]},
+            {"id": "war_cry", "name": "Боевой клич", "stat": "troopAtkPct", "tiers": [2, 3, 4]},
+            {"id": "banner", "name": "Знамя стойкости", "stat": "troopHpPct", "tiers": [2, 3, 4]},
+        ],
+        "classes": {
+            "Champion": {"might": 2, "vigor": 3, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 3},
+            "Guardian": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 1, "banner": 3},
+            "Paladin": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 4},
+            "Berserker": {"might": 4, "vigor": 2, "cuirass": 1, "precision": 3, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Infiltrator": {"might": 4, "vigor": 1, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 1, "banner": 1},
+            "Ranger": {"might": 3, "vigor": 2, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Sorcerer": {"might": 4, "vigor": 3, "cuirass": 1, "precision": 2, "sunder": 2, "war_cry": 3, "banner": 2},
+        },
+    },
     # Fusion unlocks at Castle 7 and costs food (wiki); XP and the food amount are estimates.
     "fusion": {"castle": 7, "foodPerStar": 2000, "xpPerStarSq": 150, "keepXpPct": 50},
     # Relic Temple: a free relic every day (wiki); altars for 1 000 and 4 000 gems (wiki); R4 only from altars (wiki).

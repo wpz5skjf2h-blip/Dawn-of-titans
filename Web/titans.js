@@ -1104,6 +1104,213 @@ const DotTitans = (() => {
 		},
 	};
 
+	T['titan.loki'] = {
+		name: 'Локи', cls: 'Ravager', classRu: 'Лазутчик', stars: 2,
+		abil: ['Шаг из тени', 'Клинки обманщика'],
+		crop: [48, -4, 104, 104],
+		draw(g) {
+			const skin = '#dcc4a2';
+			const leather = '#3d5a34';
+			const leatherD = '#24361f';
+			const cloak = '#2c4428';
+			const gold = '#e0b040';
+			const o = { leg: '#4a6a3e', shin: leatherD, boot: '#2a2018', bootTall: 20, arm: skin, bracer: gold, hand: skin, knee: gold,
+				legExtra: (s, hip, kn, an) => L('M' + n1(an[0] - 8) + ' ' + n1(an[1] - 16) + 'l16 5M' + n1(an[0] - 8) + ' ' + n1(an[1] - 8) + 'l16 5', gold, 1.6) };
+			// A ragged cloak behind him: the infiltrator's shadow.
+			const back = P('M' + (100 - g.S + 2) + ' ' + (g.shY - 8) + 'C' + (100 - g.S - 18) + ' 140 ' + (100 - g.S - 22) + ' 186 ' + (100 - g.S - 14) + ' 216L' + (100 - 34) + ' 204L' + (100 - 22) + ' 218L' + (100 - 8) + ' 204L' + (100 + 8) + ' 218L' + (100 + 22) + ' 204L' + (100 + 34) + ' 218L' + (100 + g.S + 14) + ' 206C' + (100 + g.S + 22) + ' 180 ' + (100 + g.S + 18) + ' 140 ' + (100 + g.S - 2) + ' ' + (g.shY - 8) + 'Z', cloak) +
+				SHADE('M100 ' + (g.shY - 8) + 'H' + (100 + g.S - 2) + 'C' + (100 + g.S + 18) + ' 140 ' + (100 + g.S + 22) + ' 180 ' + (100 + g.S + 14) + ' 206L' + (100 + 34) + ' 218L' + (100 + 22) + ' 204L' + (100 + 8) + ' 218Z');
+			// Leather jerkin with crossed golden straps.
+			const chest = P(torsoPath(g), leather) + torsoShade(g) +
+				ROD('M' + (100 - g.S + 8) + ' ' + (g.shY - 8) + 'L' + (100 + g.W - 2) + ' ' + (g.waistY - 8), gold, 3) + ROD('M' + (100 + g.S - 8) + ' ' + (g.shY - 8) + 'L' + (100 - g.W + 2) + ' ' + (g.waistY - 8), gold, 3) +
+				C(100, g.shY + 22, 5, gold) + C(100, g.shY + 22, 2.2, '#9dff6a', 'stroke="none"') +
+				HI('M' + (100 - g.S + 6) + ' ' + (g.shY + 8) + 'C' + (100 - g.S + 6) + ' ' + (g.shY + 22) + ' ' + (100 - g.W) + ' ' + (g.waistY - 24) + ' ' + (100 - g.W + 2) + ' ' + (g.waistY - 14));
+			const r = g.headR;
+			// The trickster's cowl: two long tips curling up like horns, his silhouette from any distance.
+			const tip = (s) => {
+				const x = (v) => n1(100 + s * v);
+				return P('M' + x(10) + ' 40C' + x(22) + ' 30 ' + x(30) + ' 16 ' + x(30) + ' 0C' + x(30) + ' -10 ' + x(42) + ' -14 ' + x(46) + ' -6C' + x(40) + ' -8 ' + x(38) + ' -2 ' + x(40) + ' 4C' + x(42) + ' 20 ' + x(32) + ' 38 ' + x(r + 4) + ' 52Z', cloak) +
+					C(n1(100 + s * 44), -8, 3.4, gold) + HI('M' + x(28) + ' 22C' + x(31) + ' 14 ' + x(32) + ' 6 ' + x(32) + ' 0', 1.6);
+			};
+			const head = tip(-1) + tip(1) +
+				P('M' + (100 - r - 7) + ' 50C' + (100 - r - 8) + ' 22 ' + (100 + r + 8) + ' 22 ' + (100 + r + 7) + ' 50L' + (100 + r + 4) + ' 84C' + (100 + 8) + ' 92 ' + (100 - 8) + ' 92 ' + (100 - r - 4) + ' 84Z', cloak) +
+				P(skull(100, 56, r - 1, 1.1), skin) + SHADE('M106 44C116 48 116 66 108 76L104 62Z') +
+				P('M' + (100 - r + 1) + ' 52C' + (100 - r) + ' 34 ' + (100 + r) + ' 34 ' + (100 + r - 1) + ' 52C' + (100 + r - 8) + ' 42 ' + (100 - r + 8) + ' 42 ' + (100 - r + 1) + ' 52Z', leatherD) +
+				// Sly green eyes and a crooked smile.
+				L('M90 57l7 0.5M110 57l-7 0.5', '#9dff6a', 3) + L('M88 52l9 3M112 51l-9 2', INK, 2.2) + L('M92 70Q100 73 109 66', INK, 2) + L('M107 66l3 -1', INK, 1.6) +
+				P('M96 76Q100 84 104 76Q100 79 96 76Z', '#3a2a1a', 'stroke-width="1.6"');
+			const blade = (hd) => P('M' + n1(hd[0] - 3.5) + ' ' + n1(hd[1] + 9) + 'H' + n1(hd[0] + 3.5) + 'C' + n1(hd[0] + 6) + ' ' + n1(hd[1] + 22) + ' ' + n1(hd[0] + 4) + ' ' + n1(hd[1] + 36) + ' ' + n1(hd[0] - 1) + ' ' + n1(hd[1] + 46) +
+				'C' + n1(hd[0] - 1) + ' ' + n1(hd[1] + 34) + ' ' + n1(hd[0] - 5) + ' ' + n1(hd[1] + 22) + ' ' + n1(hd[0] - 3.5) + ' ' + n1(hd[1] + 9) + 'Z', '#cfdcc6') +
+				L('M' + n1(hd[0]) + ' ' + n1(hd[1] + 12) + 'C' + n1(hd[0] + 1.5) + ' ' + n1(hd[1] + 24) + ' ' + n1(hd[0] + 1) + ' ' + n1(hd[1] + 32) + ' ' + n1(hd[0] - 0.5) + ' ' + n1(hd[1] + 38), '#9dff6a', 1.4) +
+				P('M' + n1(hd[0] - 10) + ' ' + n1(hd[1] + 5) + 'H' + n1(hd[0] + 10) + 'L' + n1(hd[0] + 7) + ' ' + n1(hd[1] + 10) + 'H' + n1(hd[0] - 7) + 'Z', gold) +
+				ROD('M' + xy([hd[0], hd[1] - 10]) + 'V' + n1(hd[1] - 4), leatherD, 4) + C(hd[0], hd[1] - 12, 3, gold);
+			return {
+				back,
+				legs: G('p-legL', g.hipL, leg(g, -1, o)) + G('p-legR', g.hipR, leg(g, 1, o)),
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, leatherD, gold) + tabard(g, 30),
+				head,
+				armL: arm(g, -1, o, blade(g.hdL)),
+				armR: arm(g, 1, o, blade(g.hdR)),
+			};
+		},
+		fx() {
+			const puff = (x, y, s) => C(x, y, 14 * s, '#1c2a1a', 'stroke="none" fill-opacity=".55"') + C(x - 12 * s, y + 8 * s, 10 * s, '#2c4428', 'stroke="none" fill-opacity=".5"') +
+				C(x + 13 * s, y + 6 * s, 11 * s, '#1c2a1a', 'stroke="none" fill-opacity=".5"') + C(x + 2 * s, y - 12 * s, 9 * s, '#3d5a34', 'stroke="none" fill-opacity=".45"');
+			const smoke = puff(100, 190, 1.4) + puff(70, 150, 1) + puff(130, 120, 1.1) + puff(96, 90, 0.9) + spark(60, 120, 5, '#9dff6a') + spark(140, 170, 4, '#9dff6a');
+			const knives = [];
+			for (let i = 0; i < 6; i++) {
+				const a = (i * 60 * Math.PI) / 180;
+				const x = 100 + Math.cos(a) * 78;
+				const y = 140 + Math.sin(a) * 78;
+				knives.push('<g transform="translate(' + n1(x) + ' ' + n1(y) + ') rotate(' + (i * 60 + 90) + ')">' + P('M-3 -14H3L1 12L0 16L-1 12Z', '#cfdcc6', 'stroke-width="2"') + L('M-7 -14H7', '#e0b040', 3) + '</g>');
+			}
+			return {
+				smokeA: [[100, 150], smoke],
+				smokeB: [[100, 150], smoke],
+				slash: [[100, 140], L('M30 80C90 100 150 150 168 210', '#9dff6a', 9, 'stroke-opacity=".45"') + L('M34 84C92 104 146 152 162 204', WHITE, 3) +
+					L('M170 76C110 96 52 150 34 206', '#9dff6a', 9, 'stroke-opacity=".45"') + L('M166 80C108 100 56 152 40 200', WHITE, 3)],
+				whirl: [[100, 140], C(100, 140, 78, 'none', 'stroke="#9dff6a" stroke-width="3" stroke-dasharray="10 14" stroke-opacity=".6"') + knives.join('')],
+				daze: [[100, 40], [[22, 0], [40, -10], [160, -10], [178, 0]].map(([x, dy]) => spark(x, 120 + dy, 6, '#9dff6a')).join('') +
+					L('M14 150q8 -8 16 0t16 0M154 150q8 -8 16 0t16 0', '#9dff6a', 2.4)],
+			};
+		},
+		clips: {
+			idle: { dur: 1.3, k: {
+				upper: [[0, {}], [0.5, { y: 2 }], [1, {}]],
+				head: [[0, {}], [0.5, R(3)], [1, {}]],
+				armL: [[0, {}], [0.5, R(4)], [1, {}]], armR: [[0, {}], [0.5, R(-4)], [1, {}]],
+				wpnL: [[0, {}], [0.5, R(-6)], [1, {}]], wpnR: [[0, {}], [0.5, R(6)], [1, {}]],
+			} },
+			atk: { dur: 1.0, k: {
+				armR: [[0, {}], [0.25, R(-70)], [0.4, R(35), 1, EASE_HIT], [0.6, R(35)], [1, {}]],
+				armL: [[0, {}], [0.35, R(70)], [0.52, R(-35), 1, EASE_HIT], [0.7, R(-35)], [1, {}]],
+				upper: [[0, {}], [0.25, R(-4)], [0.4, R(5, { y: 2 })], [0.52, R(-5, { y: 2 })], [0.8, {}], [1, {}]],
+				slash: [[0, {}, 0], [0.38, {}, 0], [0.42, {}, 1], [0.7, {}, 0]],
+			} },
+			a1: { dur: 1.8, k: {
+				root: [[0, {}], [0.18, { y: 6, sy: 0.94 }], [0.26, { x: -8 }, 0], [0.5, { x: 34 }, 0], [0.56, { x: 34 }, 1], [0.84, { x: 34 }, 1], [0.9, { x: 34 }, 0], [0.94, {}, 0], [1, {}, 1]],
+				shadow: [[0, {}], [0.18, {}], [0.26, { x: -8 }, 0], [0.5, { x: 34 }, 0], [0.56, { x: 34 }, 1], [0.84, { x: 34 }, 1], [0.9, { x: 34 }, 0], [0.94, {}, 0], [1, {}, 1]],
+				armR: [[0, {}], [0.5, R(-80)], [0.62, R(40), 1, EASE_HIT], [0.84, R(40)], [1, {}]],
+				armL: [[0, {}], [0.5, R(80)], [0.66, R(-40), 1, EASE_HIT], [0.84, R(-40)], [1, {}]],
+				smokeA: [[0, { s: 0.4 }, 0], [0.22, { s: 0.7 }, 1], [0.5, { s: 1.2, y: -12 }, 0]],
+				smokeB: [[0, { x: 34, s: 0.4 }, 0], [0.48, { x: 34, s: 0.5 }, 0], [0.54, { x: 34, s: 0.8 }, 1], [0.78, { x: 34, s: 1.2, y: -12 }, 0]],
+				slash: [[0, { x: 34 }, 0], [0.6, { x: 34 }, 0], [0.64, { x: 34 }, 1], [0.82, { x: 34 }, 0]],
+			} },
+			a2: { dur: 2.0, k: {
+				armL: [[0, {}], [0.18, R(86)], [0.82, R(86)], [1, {}]], armR: [[0, {}], [0.18, R(-86)], [0.82, R(-86)], [1, {}]],
+				wpnL: [[0, {}], [0.18, R(-90)], [0.82, R(-90)], [1, {}]], wpnR: [[0, {}], [0.18, R(90)], [0.82, R(90)], [1, {}]],
+				upper: [[0, {}], [0.18, { y: 3 }], [0.82, { y: 3 }], [1, {}]],
+				whirl: [[0, { s: 0.3 }, 0], [0.2, R(60, { s: 1 }), 1], [0.82, R(600, { s: 1 }), 1], [1, R(660, { s: 1.2 }), 0]],
+				daze: [[0, {}, 0], [0.45, {}, 0], [0.5, {}, 1], [0.9, {}, 1], [1, {}, 0]],
+			} },
+		},
+	};
+
+	T['titan.tyr'] = {
+		name: 'Тюр', cls: 'Warden', classRu: 'Паладин', stars: 3,
+		abil: ['Меч правосудия', 'Клятва закона'],
+		crop: [50, 6, 100, 100],
+		draw(g) {
+			const steel = '#c9d1da';
+			const steelD = '#8e9aa6';
+			const gold = '#e8b85c';
+			const skin = '#e0b48a';
+			const beard = '#b0703a';
+			const cape = '#efe6cf';
+			const o = { leg: '#9aa4ae', shin: steel, boot: steelD, bootTall: 24, arm: '#9aa4ae', bracer: steel, pauldron: steel, hand: steelD, knee: gold,
+				legExtra: (s, hip, kn, an) => L('M' + n1(an[0] - 9) + ' ' + n1(an[1] - 20) + 'h18', gold, 2) };
+			// White cape over both shoulders.
+			const back = P('M' + (100 - g.S + 4) + ' ' + (g.shY - 10) + 'C' + (100 - g.S - 14) + ' 140 ' + (100 - g.S - 16) + ' 190 ' + (100 - g.S - 10) + ' 214Q100 222 ' + (100 + g.S + 10) + ' 214C' + (100 + g.S + 16) + ' 190 ' + (100 + g.S + 14) + ' 140 ' + (100 + g.S - 4) + ' ' + (g.shY - 10) + 'Z', cape) +
+				SHADE('M100 ' + (g.shY - 10) + 'H' + (100 + g.S - 4) + 'C' + (100 + g.S + 14) + ' 140 ' + (100 + g.S + 16) + ' 190 ' + (100 + g.S + 10) + ' 214Q100 222 100 220Z') +
+				L('M' + (100 - g.S - 8) + ' 206Q100 214 ' + (100 + g.S + 8) + ' 206', gold, 2.4);
+			// Polished breastplate with a golden rim and Tyr's rune.
+			const rune = (x, y, h, col, w) => L('M' + n1(x) + ' ' + n1(y + h) + 'V' + n1(y - h) + 'M' + n1(x - h * 0.7) + ' ' + n1(y - h * 0.3) + 'L' + n1(x) + ' ' + n1(y - h) + 'L' + n1(x + h * 0.7) + ' ' + n1(y - h * 0.3), INK, w + 3) +
+				L('M' + n1(x) + ' ' + n1(y + h) + 'V' + n1(y - h) + 'M' + n1(x - h * 0.7) + ' ' + n1(y - h * 0.3) + 'L' + n1(x) + ' ' + n1(y - h) + 'L' + n1(x + h * 0.7) + ' ' + n1(y - h * 0.3), col, w);
+			const chest = P(torsoPath(g), steel) + torsoShade(g) + pecs(g, '#6a7480') +
+				L('M' + (100 - g.S + 6) + ' ' + (g.shY - 8) + 'Q100 ' + (g.shY + 6) + ' ' + (100 + g.S - 6) + ' ' + (g.shY - 8), gold, 3) +
+				rune(100, g.shY + 30, 9, gold, 3) + HI('M' + (100 - g.S + 6) + ' ' + (g.shY + 6) + 'C' + (100 - g.S + 6) + ' ' + (g.shY + 22) + ' ' + (100 - g.W) + ' ' + (g.waistY - 24) + ' ' + (100 - g.W + 2) + ' ' + (g.waistY - 14), 3);
+			const r = g.headR;
+			const head = P(skull(100, 56, r), skin) + SHADE('M108 42C118 46 118 66 110 74L106 62Z') +
+				// Braided golden-brown beard.
+				P('M' + (100 - r + 1) + ' 60C' + (100 - r + 2) + ' 84 ' + (100 - 8) + ' 96 100 100C' + (100 + 8) + ' 96 ' + (100 + r - 2) + ' 84 ' + (100 + r - 1) + ' 60C' + (100 + r - 6) + ' 68 ' + (100 + 6) + ' 70 100 70C' + (100 - 6) + ' 70 ' + (100 - r + 6) + ' 68 ' + (100 - r + 1) + ' 60Z', beard) +
+				L('M100 84V98M94 84l-2 10M106 84l2 10', '#7a4a22', 1.6) + C(100, 99, 2.6, gold) + P('M93 72Q100 68 107 72Q100 74 93 72Z', '#7a4a22') +
+				// Steel helm with a nose guard and a golden crest.
+				P('M' + (100 - r - 3) + ' 54C' + (100 - r - 4) + ' 22 ' + (100 + r + 4) + ' 22 ' + (100 + r + 3) + ' 54L' + (100 + r - 2) + ' 66L' + (100 + r - 6) + ' 54C' + (100 + 8) + ' 46 ' + (100 - 8) + ' 46 ' + (100 - r + 6) + ' 54L' + (100 - r + 2) + ' 66Z', steel) +
+				P('M97 46H103V66L100 70L97 66Z', steelD) + P('M94 22C96 10 104 10 106 22L103 34H97Z', gold) + SHADE('M110 30C118 36 120 46 120 54L114 56Z') +
+				HI('M' + (100 - r) + ' 44C' + (100 - r + 2) + ' 34 ' + (100 - 8) + ' 30 ' + (100 - 3) + ' 30', 2.4) +
+				L('M88 57l6 0.5M112 57l-6 0.5', '#fff0a0', 3) + L('M87 53l8 2M113 53l-8 2', INK, 2.2);
+			const hl = g.hdL;
+			// The sword in his left hand, point down at rest.
+			const sword = GLOW(hl[0], hl[1] + 40, 16, '#fff0a0', 0.25) +
+				P('M' + n1(hl[0] - 5) + ' ' + n1(hl[1] + 10) + 'H' + n1(hl[0] + 5) + 'L' + n1(hl[0] + 4) + ' ' + n1(hl[1] + 60) + 'L' + n1(hl[0]) + ' ' + n1(hl[1] + 70) + 'L' + n1(hl[0] - 4) + ' ' + n1(hl[1] + 60) + 'Z', '#eef2f6') +
+				L('M' + n1(hl[0]) + ' ' + n1(hl[1] + 14) + 'V' + n1(hl[1] + 58), steelD, 1.6) +
+				P('M' + n1(hl[0] - 15) + ' ' + n1(hl[1] + 5) + 'H' + n1(hl[0] + 15) + 'L' + n1(hl[0] + 11) + ' ' + n1(hl[1] + 11) + 'H' + n1(hl[0] - 11) + 'Z', gold) +
+				ROD('M' + xy([hl[0], hl[1] - 12]) + 'V' + n1(hl[1] + 4), '#6b4222', 4.5) + C(hl[0], hl[1] - 14, 3.6, gold);
+			const hr = g.hdR;
+			// A round shield strapped to the right arm: the hand Fenrir took is hidden behind it.
+			const sx = hr[0] + 2;
+			const sy = hr[1] - 14;
+			const shield = C(sx, sy, 30, steelD) + C(sx, sy, 25, '#f6f1e2') + SHADE('M' + n1(sx + 6) + ' ' + n1(sy - 24) + 'A25 25 0 0 1 ' + n1(sx + 6) + ' ' + n1(sy + 24) + 'A30 30 0 0 0 ' + n1(sx + 6) + ' ' + n1(sy - 24) + 'Z') +
+				C(sx, sy, 25, 'none', 'stroke="' + gold + '" stroke-width="2.4"') + rune(sx, sy, 13, gold, 4) +
+				[0, 60, 120, 180, 240, 300].map((a) => C(n1(sx + Math.cos((a * Math.PI) / 180) * 27.5), n1(sy + Math.sin((a * Math.PI) / 180) * 27.5), 1.8, gold, 'stroke-width="1"')).join('') +
+				HI('M' + n1(sx - 20) + ' ' + n1(sy - 8) + 'A21 21 0 0 1 ' + n1(sx - 8) + ' ' + n1(sy - 20), 2.4);
+			return {
+				back,
+				legs: G('p-legL', g.hipL, leg(g, -1, o)) + G('p-legR', g.hipR, leg(g, 1, o)),
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, '#6b4222', gold) + tabard(g, 44),
+				head,
+				armL: arm(g, -1, o, sword),
+				armR: arm(g, 1, o, shield, true),
+			};
+		},
+		fx(g) {
+			const hl = g.hdL;
+			const cross = (x, y, s) => L('M' + n1(x - s) + ' ' + n1(y) + 'H' + n1(x + s) + 'M' + n1(x) + ' ' + n1(y - s) + 'V' + n1(y + s), '#fff0a0', 3.4);
+			const ward = (x, y) => P('M' + n1(x - 9) + ' ' + n1(y - 10) + 'H' + n1(x + 9) + 'V' + n1(y) + 'C' + n1(x + 9) + ' ' + n1(y + 7) + ' ' + n1(x + 4) + ' ' + n1(y + 11) + ' ' + n1(x) + ' ' + n1(y + 13) +
+				'C' + n1(x - 4) + ' ' + n1(y + 11) + ' ' + n1(x - 9) + ' ' + n1(y + 7) + ' ' + n1(x - 9) + ' ' + n1(y) + 'Z', '#fff0a0', 'stroke-width="2" fill-opacity=".85"');
+			return {
+				swing: [[100, 150], L('M40 60C14 120 40 190 120 210', '#fff0a0', 9, 'stroke-opacity=".5"') + L('M44 66C20 122 46 186 118 204', WHITE, 3)],
+				arc: [[100, 170], P('M100 176L14 132C30 196 170 196 186 132Z', '#fff0a0', 'stroke="none" fill-opacity=".28"') +
+					L('M14 132C30 196 170 196 186 132', '#fff0a0', 10, 'stroke-opacity=".55"') + L('M18 136C34 192 166 192 182 136', WHITE, 3.4)],
+				stun: [[100, 180], stunStars(184)],
+				halo: [[100, GROUND], E(100, GROUND, 92, 15, '#fff0a0', 'fill-opacity=".2" stroke="#e8b85c" stroke-width="3"') + E(100, GROUND, 70, 11, 'none', 'stroke="#fff0a0" stroke-width="1.6" stroke-dasharray="8 6"')],
+				light: [[100, GROUND], L('M28 ' + GROUND + 'V96M172 ' + GROUND + 'V96', '#fff0a0', 12, 'stroke-opacity=".3"') + L('M28 ' + GROUND + 'V96M172 ' + GROUND + 'V96', WHITE, 2.4, 'stroke-opacity=".7"') +
+					ward(28, 84) + ward(172, 84) + cross(46, 150, 6) + cross(156, 132, 6) + cross(60, 110, 4.5) + cross(144, 176, 4.5)],
+				shine: [[hl[0], hl[1] + 40], GLOW(hl[0], hl[1] + 40, 26, '#fff0a0', 0.45) + spark(hl[0], hl[1] + 72, 9, WHITE) + spark(hl[0] - 10, hl[1] + 30, 5, WHITE), 'wpnL'],
+			};
+		},
+		clips: {
+			idle: { dur: 2.0, k: {
+				upper: [[0, {}], [0.5, { y: 1.8 }], [1, {}]],
+				head: [[0, {}], [0.5, R(-1.5)], [1, {}]],
+				armL: [[0, {}], [0.5, R(2)], [1, {}]], armR: [[0, {}], [0.5, R(-2)], [1, {}]],
+			} },
+			atk: { dur: 1.3, k: {
+				armL: [[0, {}], [0.4, R(150)], [0.56, R(-35), 1, EASE_HIT], [0.8, R(-35)], [1, {}]],
+				wpnL: [[0, {}], [0.4, R(-20)], [0.56, R(10)], [1, {}]],
+				upper: [[0, {}], [0.4, R(5)], [0.56, R(-6, { y: 3 })], [0.8, R(-6, { y: 3 })], [1, {}]],
+				swing: [[0, {}, 0], [0.5, {}, 0], [0.56, {}, 1], [0.76, {}, 0]],
+			} },
+			a1: { dur: 2.0, k: {
+				armL: [[0, {}], [0.3, R(120)], [0.5, R(-80), 1, EASE_HIT], [0.78, R(-80)], [1, {}]],
+				wpnL: [[0, {}], [0.3, R(-40)], [0.5, R(40)], [0.78, R(40)], [1, {}]],
+				armR: [[0, {}], [0.3, R(-20)], [0.78, R(-20)], [1, {}]],
+				upper: [[0, {}], [0.3, R(8, { y: 2 })], [0.5, R(-8, { y: 4 })], [0.78, R(-8, { y: 4 })], [1, {}]],
+				arc: [[0, { s: 0.5 }, 0], [0.46, { s: 0.6 }, 0], [0.52, { s: 1 }, 1], [0.8, { s: 1.15 }, 0]],
+				stun: [[0, {}, 0], [0.54, {}, 0], [0.58, {}, 1], [0.92, {}, 1], [1, {}, 0]],
+			} },
+			a2: { dur: 2.4, k: {
+				armL: [[0, {}], [0.22, R(158)], [0.82, R(158)], [1, {}]],
+				wpnL: [[0, {}], [0.22, R(-16)], [0.82, R(-16)], [1, {}]],
+				armR: [[0, {}], [0.22, R(-35)], [0.82, R(-35)], [1, {}]],
+				head: [[0, {}], [0.22, { y: -2 }], [0.82, { y: -2 }], [1, {}]],
+				upper: [[0, {}], [0.22, { y: -3 }], [0.82, { y: -3 }], [1, {}]],
+				shine: [[0, { s: 0.4 }, 0], [0.22, { s: 0.6 }, 0], [0.3, { s: 1.1 }, 1], [0.82, { s: 1 }, 1], [0.92, { s: 1.2 }, 0]],
+				halo: [[0, { s: 0.4 }, 0], [0.3, { s: 0.6 }, 0], [0.42, { s: 1 }, 1], [0.86, { s: 1.06 }, 1], [1, { s: 1.15 }, 0]],
+				light: [[0, { sy: 0.2 }, 0], [0.36, { sy: 0.2 }, 0], [0.48, {}, 1], [0.86, {}, 1], [1, { y: -10 }, 0]],
+			} },
+		},
+	};
+
 	// --- Assembly -------------------------------------------------------------------------------------
 	// Effects drawn behind the figure (on the ground under it); every other effect is drawn over it.
 	const UNDER = ['circle', 'press', 'herald', 'aura', 'halo', 'glowG', 'heat'];

@@ -36,7 +36,7 @@
     {
       "id": "titan.minotaur", "name": "Minotaur", "title": "of the Labyrinth", "lineage": "Olympians",
       "class": "Ravager", "rarity": "Common", "size": "Large",
-      "variance": { "hp": 0.91, "atk": 0.95, "poise": 1.0 },
+      "variance": { "hp": 0.93, "atk": 0.97, "poise": 1.0 },
       "abilities": ["ability.minotaur.labyrinth_rush", "ability.minotaur.blood_frenzy"]
     },
     {
@@ -61,13 +61,13 @@
     {
       "id": "titan.ymir", "name": "Ymir", "title": "the Frost Father", "lineage": "Jotnar",
       "class": "Juggernaut", "rarity": "Rare", "size": "Colossal",
-      "variance": { "hp": 1.08, "atk": 1.04, "poise": 1.05 },
+      "variance": { "hp": 1.08, "atk": 1.03, "poise": 1.05 },
       "abilities": ["ability.ymir.frost_breath", "ability.ymir.glacier_hide"]
     },
     {
       "id": "titan.surtr", "name": "Surtr", "title": "the Black Flame", "lineage": "Jotnar",
       "class": "Ravager", "rarity": "Epic", "size": "Large",
-      "variance": { "hp": 1.03, "atk": 1.09, "poise": 1.0 },
+      "variance": { "hp": 1.03, "atk": 1.05, "poise": 1.0 },
       "abilities": ["ability.surtr.muspell_blade", "ability.surtr.world_fire"]
     },
     {
@@ -81,6 +81,20 @@
       "class": "Hunter", "rarity": "Epic", "size": "Medium",
       "variance": { "hp": 0.77, "atk": 0.8, "poise": 1.0 },
       "abilities": ["ability.artemis.silver_volley", "ability.artemis.moonshot"]
+    },
+    // The original's Infiltrator and Paladin classes ride on the sim's Ravager and Warden bodies.
+    {
+      "id": "titan.loki", "name": "Loki", "title": "the Sly One", "lineage": "Aesir",
+      "class": "Ravager", "rarity": "Rare", "size": "Medium",
+      "variance": { "hp": 0.85, "atk": 0.94, "poise": 0.9 },
+      "moveSpeed": 6.5,
+      "abilities": ["ability.loki.shadow_step", "ability.loki.trickster_blades"]
+    },
+    {
+      "id": "titan.tyr", "name": "Tyr", "title": "the Oath-Keeper", "lineage": "Aesir",
+      "class": "Warden", "rarity": "Epic", "size": "Large",
+      "variance": { "hp": 1.02, "atk": 0.98, "poise": 1.05 },
+      "abilities": ["ability.tyr.sword_of_justice", "ability.tyr.oath_of_law"]
     }
   ]
 }

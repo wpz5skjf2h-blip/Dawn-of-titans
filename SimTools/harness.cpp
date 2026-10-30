@@ -8,7 +8,9 @@
 // so only the titans differ. "--levels equal" puts every titan at level 30 with 2 stars (titan design);
 // "--levels max" at its kingdom cap, stars = rarity, level 10 + 10 per star (R1 20 ... R4 50).
 //
-//   dot_harness --titans N [--levels equal|max] [--same-rarity 1] [--seed S] [--ai PROFILE] [--csv FILE]
+// "--only ID" keeps the pairs with that titan (tuning one titan without the whole round robin).
+//
+//   dot_harness --titans N [--levels equal|max] [--same-rarity 1] [--only ID] [--seed S] [--ai PROFILE] [--csv FILE]
 #include "ToolCommon.h"
 
 #include "DoTSim/BattleSimulation.h"
@@ -53,7 +55,7 @@ int RunToWinner(const dot::SimContent& Content, const dot::BattleSetup& S, int64
 }
 
 int TitanRoundRobin(const dot::SimContent& Content, const dot::BattleSetup& Base, const std::vector<std::string>& Trainable, int PerPair,
-	bool bMaxLevels, bool bSameRarity, uint64_t Seed, const std::string& Ai, const std::string& CsvPath)
+	bool bMaxLevels, bool bSameRarity, const std::string& Only, uint64_t Seed, const std::string& Ai, const std::string& CsvPath)
 {
 	const size_t N = Content.titans.size();
 	std::vector<Stats> All(N);
@@ -66,7 +68,7 @@ int TitanRoundRobin(const dot::SimContent& Content, const dot::BattleSetup& Base
 		for (size_t B = A + 1; B < N; ++B)
 		{
 			const bool bSame = Content.titans[A].rarity == Content.titans[B].rarity;
-			if (bSameRarity && !bSame)
+			if ((bSameRarity && !bSame) || (!Only.empty() && Content.titans[A].id != Only && Content.titans[B].id != Only))
 			{
 				continue;
 			}
@@ -169,6 +171,7 @@ int main(int Argc, char** Argv)
 	int TitanPairs = 0;
 	bool bMaxLevels = false;
 	bool bSameRarity = false;
+	std::string Only;
 	for (int I = 1; I + 1 < Argc; I += 2)
 	{
 		const std::string A = Argv[I];
@@ -179,6 +182,7 @@ int main(int Argc, char** Argv)
 		else if (A == "--titans") TitanPairs = std::atoi(Argv[I + 1]);
 		else if (A == "--levels") bMaxLevels = std::string(Argv[I + 1]) == "max";
 		else if (A == "--same-rarity") bSameRarity = std::atoi(Argv[I + 1]) != 0;
+		else if (A == "--only") Only = Argv[I + 1];
 	}
 
 	dot::SimContent Content;
@@ -212,7 +216,7 @@ int main(int Argc, char** Argv)
 	}
 	if (TitanPairs > 0)
 	{
-		return TitanRoundRobin(Content, Base, Trainable, TitanPairs, bMaxLevels, bSameRarity, Seed, Ai, CsvPath);
+		return TitanRoundRobin(Content, Base, Trainable, TitanPairs, bMaxLevels, bSameRarity, Only, Seed, Ai, CsvPath);
 	}
 	for (int B = 0; B < Battles; ++B)
 	{

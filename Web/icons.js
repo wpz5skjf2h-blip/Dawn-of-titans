@@ -37,6 +37,8 @@ const DotIcons = (() => {
 		r(11.5, 29, 25, 4.5, 2, K.gold) + p('M13 33.5H19.5V42C16 42 13 39 13 36Z', K.steel) + p('M35 33.5H28.5V42C32 42 35 39 35 36Z', K.steel) +
 		r(22.3, 33, 3.4, 9, 1.5, K.steel) + hi('M17 25C18 22.5 20 21.5 22 21');
 	const HAMMER = stick('M24 15V44', K.wood, 3.4) + r(13, 6, 22, 9, 2, '#8e98a6') + hi('M15.5 8.5H32.5');
+	const DAGGER = p('M24 5L27 10V27H21V10Z', K.steel) + line('M24 10V25', K.steelD, 1.2) + r(16.5, 26.5, 15, 3.6, 1.6, K.gold) +
+		r(22, 30, 4, 8, 1.2, K.woodD) + c(24, 40.5, 2.4, K.gold);
 	const SACK = p('M15 17C10 23 8 31 9 37C10 43 38 43 39 37C40 31 38 23 33 17Z', K.burlap) + r(15, 14, 18, 4.5, 2.2, K.woodD) +
 		p('M17 14.5C15 9 21 7 24 11C27 7 33 9 31 14.5Z', K.burlap) +
 		line('M24 38V27M24 30.5L20.5 27.5M24 30.5L27.5 27.5M24 34.5L20.5 31.5M24 34.5L27.5 31.5', '#9a7a3e', 1.6) + hi('M14 24C12 28 12 32 13 35');
@@ -270,6 +272,10 @@ const DotIcons = (() => {
 		'class.Sorcerer': stick('M24 46V19', K.wood, 3) + p('M16.5 17C17 23 31 23 31.5 17L28 19.5L24 15.5L20 19.5Z', K.gold) + c(24, 11, 8, '#c48bff') +
 			c(21.5, 8.5, 2.6, '#f3e6ff', 'stroke="none"') + spark(36, 6, 2.8, K.white) + spark(11, 20, 2.2, K.white),
 		'class.Ranger': BOW('#5fbf4a'),
+		// Paladin: an upright sword in a halo. Infiltrator: two crossed daggers.
+		'class.Paladin': c(24, 15, 11, 'none', 'stroke-width="5.4"') + c(24, 15, 11, 'none', 'stroke="' + K.gold + '" stroke-width="2.6"') + SWORD +
+			spark(38, 7, 3, K.white) + spark(10, 9, 2.4, K.white),
+		'class.Infiltrator': rot(-38, DAGGER) + rot(38, DAGGER) + c(24, 31, 3.2, '#5fbf4a', 'stroke-width="1.4"'),
 
 		// --- Relic Temple altars, lands, menu -------------------------------------------------------
 		'altar.daily': r(9, 21, 30, 22, 2, '#ff6b5e') + r(7, 15, 34, 7, 2, '#ff8a7d') + r(21.5, 15, 5, 28, 0, K.gold) +

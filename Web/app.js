@@ -42,7 +42,8 @@ const RU = {
 		'troop.chainbreakers': 'цепеломы', 'troop.priests': 'жрецы', 'troop.pikemen': 'пикинёры', 'troop.goliaths': 'голиафы', 'troop.panthers': 'пантеры',
 		'troop.ballista': 'баллисты' },
 	titan: { 'titan.thor': 'Тор', 'titan.talos': 'Талос', 'titan.minotaur': 'Минотавр', 'titan.cyclops': 'Циклоп', 'titan.perun': 'Перун',
-		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида' },
+		'titan.atlas': 'Атлант', 'titan.ymir': 'Имир', 'titan.surtr': 'Сурт', 'titan.hecate': 'Геката', 'titan.artemis': 'Артемида',
+		'titan.loki': 'Локи', 'titan.tyr': 'Тюр' },
 	abil: { 'ability.talos.molten_ichor': 'Ихор', 'ability.talos.bronze_bulwark': 'Оплот', 'ability.thor.hammer_throw': 'Молот',
 		'ability.thor.thunderclap': 'Гром', 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Барабаны', 'spell.healing_spring': 'Источник',
 		'spell.fireball': 'Огн. шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
@@ -54,7 +55,9 @@ const RU = {
 		'ability.ymir.frost_breath': 'Стужа', 'ability.ymir.glacier_hide': 'Ледник',
 		'ability.surtr.muspell_blade': 'Клинок', 'ability.surtr.world_fire': 'Пожар',
 		'ability.hecate.crossroads_hex': 'Порча', 'ability.hecate.underworld_torches': 'Факелы',
-		'ability.artemis.silver_volley': 'Залп', 'ability.artemis.moonshot': 'Луна' },
+		'ability.artemis.silver_volley': 'Залп', 'ability.artemis.moonshot': 'Луна',
+		'ability.loki.shadow_step': 'Тень', 'ability.loki.trickster_blades': 'Обман',
+		'ability.tyr.sword_of_justice': 'Правосудие', 'ability.tyr.oath_of_law': 'Клятва' },
 	abilFull: { 'spell.meteor_strike': 'Метеор', 'spell.war_drums': 'Боевые барабаны', 'spell.healing_spring': 'Целебный источник',
 		'spell.fireball': 'Огненный шар', 'spell.shield': 'Щит', 'spell.freeze': 'Заморозка', 'spell.lightning': 'Молния', 'spell.rage': 'Ярость',
 		'spell.terror': 'Ужас', 'spell.acid_cloud': 'Кислотное облако',
@@ -68,7 +71,9 @@ const RU = {
 		'ability.ymir.frost_breath': 'Ледяное дыхание', 'ability.ymir.glacier_hide': 'Шкура ледника',
 		'ability.surtr.muspell_blade': 'Клинок Муспелля', 'ability.surtr.world_fire': 'Мировой пожар',
 		'ability.hecate.crossroads_hex': 'Порча перекрёстка', 'ability.hecate.underworld_torches': 'Факелы преисподней',
-		'ability.artemis.silver_volley': 'Серебряный залп', 'ability.artemis.moonshot': 'Лунная стрела' },
+		'ability.artemis.silver_volley': 'Серебряный залп', 'ability.artemis.moonshot': 'Лунная стрела',
+		'ability.loki.shadow_step': 'Шаг из тени', 'ability.loki.trickster_blades': 'Клинки обманщика',
+		'ability.tyr.sword_of_justice': 'Меч правосудия', 'ability.tyr.oath_of_law': 'Клятва закона' },
 	ai: { recruit: 'Новобранец', veteran: 'Ветеран', warlord: 'Полководец', nightmare: 'Кошмар' },
 	formation: ['Линия', 'Колонна', 'Клин', 'Каре', 'Рассыпной'],
 	stance: ['Натиск', 'Стоять', 'Застрельщики'],
@@ -83,7 +88,7 @@ const SCENARIOS = [
 	{ path: 'scenarios/m1_chains_and_fire.json', name: 'Цепи и огонь', note: 'Цепеломы, гренадеры и боевые жрецы против Атланта' },
 	{ path: 'scenarios/m1_ballista_line.json', name: 'Стена баллист', note: 'Расчёты баллист против Имира и его конницы: прикройте машины копьями' },
 ];
-const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis'];
+const TITANS = ['titan.thor', 'titan.talos', 'titan.perun', 'titan.minotaur', 'titan.cyclops', 'titan.atlas', 'titan.ymir', 'titan.surtr', 'titan.hecate', 'titan.artemis', 'titan.loki', 'titan.tyr'];
 const AIS = ['recruit', 'veteran', 'warlord', 'nightmare'];
 const QUALITY = [['auto', 'Авто'], ['high', 'Высокое'], ['low', 'Экономное']];
 const SIDE_COLOR = [new THREE.Color(0x3d7bf2), new THREE.Color(0xd9442f)];
@@ -845,6 +850,8 @@ const TITAN_LOOK = {
 	'titan.ymir': { skin: 0xbfd6e6, dark: 0x5a7486, glow: 0xa8eaff, metal: 0.25, rough: 0.4, kind: 'fists' },
 	'titan.surtr': { skin: 0x3a2a26, dark: 0x1c1412, glow: 0xff7a1a, metal: 0.4, rough: 0.5, kind: 'sword' },
 	'titan.hecate': { skin: 0x5b4a7a, dark: 0x2a2238, glow: 0xc89bff, metal: 0.3, rough: 0.5, kind: 'staff' },
+	'titan.loki': { skin: 0x4f7a4a, dark: 0x22341f, glow: 0x9dff6a, metal: 0.3, rough: 0.5, kind: 'sword' },
+	'titan.tyr': { skin: 0xb8bcc4, dark: 0x5a3a2a, glow: 0xfff0a0, metal: 0.6, rough: 0.35, kind: 'sword' },
 	'titan.artemis': { skin: 0x7a8c5a, dark: 0x3a4628, glow: 0xe8ffb0, metal: 0.2, rough: 0.6, kind: 'bow' },
 };
 
@@ -991,7 +998,8 @@ function abilityTint(A) {
 	if (/ymir|atlas\.weight/.test(A.id)) return 'frost';
 	if (/surtr|cyclops|talos\.molten/.test(A.id)) return 'flame';
 	if (/hecate/.test(A.id)) return 'necroCol';
-	if (/artemis/.test(A.id)) return 'moon';
+	if (/artemis|tyr\.oath/.test(A.id)) return 'moon';
+	if (/loki/.test(A.id)) return 'necroCol';
 	return 'bolt';
 }
 function spawnFx(kind, x, z, y, dur, s0, s1, h) {

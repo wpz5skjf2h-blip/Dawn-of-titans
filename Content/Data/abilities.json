@@ -338,6 +338,49 @@
         { "type": "Knockback", "horizontal": 4, "vertical": 3, "affects": ["EnemyTroops"] }
       ],
       "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.loki.shadow_step", "name": "Shadow Step",
+      "rage": 45, "cooldown": 11, "castTime": 0.2,
+      "shape": "Line", "range": 24, "width": 5, "delivery": "Leap", "leapTime": 0.5,
+      "effects": [
+        { "type": "Damage", "coef": 1.7, "poiseDamage": 25, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 0.6, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInLine", "minTargets": 6, "preferTitan": true }
+    },
+    {
+      "id": "ability.loki.trickster_blades", "name": "Trickster's Blades",
+      "rage": 45, "cooldown": 14, "castTime": 0.4,
+      "shape": "Circle", "range": 1, "radius": 9, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.1, "poiseDamage": 15, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Morale", "flat": 25, "affects": ["EnemyTroops"] },
+        { "type": "StatMod", "stat": "AttackSpeedPct", "magnitude": -0.25, "duration": 5, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInArea", "minTargets": 8 }
+    },
+    {
+      "id": "ability.tyr.sword_of_justice", "name": "Sword of Justice",
+      "rage": 50, "cooldown": 12, "castTime": 0.5,
+      "shape": "Cone", "range": 11, "coneAngleDeg": 120, "delivery": "Instant",
+      "effects": [
+        { "type": "Damage", "coef": 1.6, "poiseDamage": 30, "affects": ["EnemyTroops", "EnemyTitans"] },
+        { "type": "Stun", "duration": 0.8, "affects": ["EnemyTitans"] }
+      ],
+      "ai": { "heuristic": "MaxUnitsInCone", "minTargets": 8, "preferTitan": true }
+    },
+    {
+      "id": "ability.tyr.oath_of_law", "name": "Oath of Law",
+      "rage": 45, "cooldown": 20, "castTime": 0.4,
+      "shape": "Circle", "range": 1, "radius": 14, "delivery": "Instant",
+      "effects": [
+        { "type": "Heal", "pctMaxHp": 0.08, "affects": ["AllyTroops"] },
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.25, "duration": 6, "affects": ["AllyTroops"] },
+        { "type": "Heal", "pctMaxHp": 0.05, "affects": ["Self"] },
+        { "type": "StatMod", "stat": "DamageTakenPct", "magnitude": -0.25, "duration": 6, "affects": ["Self"] }
+      ],
+      "ai": { "heuristic": "SelfDefense", "hpBelow": 0.9, "minTargets": 1 }
     }
   ]
 }
