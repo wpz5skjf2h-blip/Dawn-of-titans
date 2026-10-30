@@ -1051,6 +1051,7 @@ const DotGfx = (() => {
 		case 'spark': spawn(w.x, w.y, w.z, { frame: F.spark, add: true, life: rr(0.15, 0.35), s0: s * rr(0.8, 1.3), s1: 0.05, c0: 0xffffff, c1: 0x6fb0ff, a: 1, v: [rr(-3, 3), rr(-1, 4), rr(-3, 3)], grav: 6 }); break;
 		case 'frost': spawn(w.x, w.y, w.z, { frame: F.smoke, life: rr(1.0, 1.8), s0: s * 0.8, s1: s * 2.8, c0: 0xf2fbff, c1: 0xbfe6ff, a: 0.35, v: [rr(-0.8, 0.8), rr(-0.8, 0.4), rr(-0.8, 0.8)], drag: 0.8 }); break;
 		case 'star': spawn(w.x + rr(-1.5, 1.5) * s, w.y + rr(-1.5, 1.5) * s, w.z + rr(-1.5, 1.5) * s, { frame: F.star, add: true, life: rr(0.7, 1.2), s0: s * rr(0.4, 0.7), s1: s * 0.1, c0: 0xfff3c0, a: 1, fadeIn: 0.4, spin: 1 }); break;
+		case 'shade': spawn(w.x + rr(-0.6, 0.6) * s, w.y, w.z + rr(-0.6, 0.6) * s, { frame: F.smoke, life: rr(0.8, 1.4), s0: s * 0.7, s1: s * 2.2, c0: 0x2c4428, c1: 0x1c2a1a, a: 0.32, v: [rr(-0.4, 0.4), rr(0.4, 1.2), rr(-0.4, 0.4)], drag: 0.8 }); break;
 		case 'moon': spawn(w.x + rr(-0.4, 0.4) * s, w.y + rr(-1, 1) * s, w.z + rr(-0.4, 0.4) * s, { frame: F.spark, add: true, life: rr(0.5, 0.9), s0: s * 0.6, s1: 0.05, c0: 0xf2ffd8, a: 0.9, v: [0, 0.6, 0], fadeIn: 0.3 }); break;
 		default: break;
 		}

@@ -1,5 +1,5 @@
 'use strict';
-// Web/titans3d.js - the ten kingdom titans as 3D figures for the battle (Three.js), drawn after their portraits in titans.js.
+// Web/titans3d.js - the kingdom titans as 3D figures for the battle (Three.js), drawn after their portraits in titans.js.
 // A figure is a recipe: a body from the titan's class proportions plus its own parts (helmets, beards, capes, weapons, glowing
 // bits), each part a simple solid on a bone. Units are the titan's height (1 = H), ground at y = 0, the titan looks along -Z
 // and its right hand is +X. The battle turns the same bones as before (body, hips, shoulders); pose() adds knees, elbows,
@@ -97,7 +97,7 @@ const DotTitans3D = (() => {
 		ink: ['#1a120c', 0, 0.9], white: ['#f4efe6', 0, 0.7], iron: ['#5a5e66', 0.85, 0.42], steel: ['#b8c2d0', 0.9, 0.28],
 	};
 
-	// --- The ten titans -------------------------------------------------------------------------------------
+	// --- The titans -----------------------------------------------------------------------------------------
 	const R = {};
 
 	R['titan.thor'] = {
@@ -407,6 +407,78 @@ const DotTitans3D = (() => {
 			{ s: 'sph', b: 'hdL', m: 'moon', p: [0, 0.197, 0.138], d: [0.016, 0.016, 0.016] },
 			{ s: 'sph', b: 'hdL', m: 'moon', p: [0, -0.197, 0.138], d: [0.016, 0.016, 0.016] },
 			{ s: 'emit', b: 'hdL', k: 'moon', p: [0, 0, 0], d: [0.3, 2] },
+		],
+	};
+
+	R['titan.loki'] = {
+		cls: 'Ravager',
+		mat: { skin: ['#dcc4a2', 0, 0.62], jerkin: ['#3d5a34', 0, 0.8], jerkinD: ['#24361f', 0, 0.85], cloak: ['#2c4428', 0, 0.85, 0, 'cloth'], pants: ['#4a6a3e', 0, 0.8],
+			boot: ['#2a2018', 0, 0.8], blade: ['#cfdcc6', 0.9, 0.25], venom: ['#9dff6a', 0, 0.35, 2.2] },
+		body: { torso: 'jerkin', hips: 'jerkinD', belt: 'jerkinD', buckle: 'gold', loin: 'team', neck: 'skin', head: 'skin', eyes: 'venom', legs: 'pants', knee: 'gold', shins: 'jerkinD',
+			boots: 'boot', bootTall: 0.09, arms: 'skin', fore: 'skin', bracer: 'gold', hands: 'skin' },
+		parts: [
+			// Leather jerkin, golden straps crossed over chest and back, a green stone where they meet.
+			{ s: 'box', b: 'body', m: 'gold', p: [0, 0.655, 0], d: [0.016, 0.3, 0.232], r: [0, 0, 30], x: 1 },
+			{ s: 'sph', b: 'body', m: 'gold', p: [0, 0.68, -0.106], d: [0.034, 0.034, 0.018] },
+			{ s: 'sph', b: 'body', m: 'venom', p: [0, 0.68, -0.114], d: [0.015, 0.015, 0.008] },
+			// The trickster's cowl: a hood open at the face, its two long tips curling up like horns, gold bells on the ends.
+			{ s: 'cyl', b: 'head', m: 'cloak', p: [0, 0.06, 0.008], d: [0.068, 0.078, 0.11, -125, 250] },
+			{ s: 'sph', b: 'head', m: 'cloak', p: [0, 0.11, 0.012], d: [0.142, 0.1, 0.14] },
+			{ s: 'tube', b: 'head', m: 'cloak', pts: [[0.035, 0.14, 0.01], [0.07, 0.18, 0.02], [0.085, 0.24, 0.035], [0.11, 0.27, 0.03], [0.125, 0.255, 0.015]], d: [0.03, 0.007], x: 1 },
+			{ s: 'sph', b: 'head', m: 'gold', p: [0.127, 0.25, 0.012], d: [0.022, 0.022, 0.022], x: 1 },
+			{ s: 'sph', b: 'head', m: 'venom', p: [0.022, 0.078, -0.064], d: [0.02, 0.01, 0.01], x: 1 },
+			// Ragged cloak: his shadow, trailing dark wisps.
+			{ s: 'cape', b: 'cape', m: 'cloak', p: [0, -0.25, -0.12], d: [0.13, 0.2, 0.52, -72, 144, 7, 0.022] },
+			{ s: 'sph', b: 'body', m: 'gold', p: [0.125, 0.785, -0.06], d: [0.026, 0.026, 0.018], x: 1 },
+			{ s: 'emit', b: 'body', k: 'shade', p: [0, 0.12, 0.12], d: [0.5, 4] },
+			// A dagger in each fist, held in a reverse grip, with a venom-green line along the blade.
+			{ s: 'sph', b: 'hdL', m: 'gold', p: [0, 0.075, 0.03], d: [0.024, 0.024, 0.024], x: 1 },
+			{ s: 'cyl', b: 'hdL', m: 'jerkinD', p: [0, 0.035, 0.012], d: [0.011, 0.011, 0.07], r: [20, 0, 0], x: 1 },
+			{ s: 'box', b: 'hdL', m: 'gold', p: [0, 0, 0], d: [0.075, 0.014, 0.02], x: 1 },
+			{ s: 'ext', b: 'hdL', m: 'blade', p: [0, 0, 0], pts: [[-0.016, 0.008], [0.016, 0.008], [0.02, 0.08], [0.008, 0.16], [0, 0.18], [-0.012, 0.1]], d: [0.006], r: [200, 0, 0], x: 1 },
+			{ s: 'box', b: 'hdL', m: 'venom', p: [0, -0.08, -0.029], d: [0.004, 0.1, 0.01], r: [200, 0, 0], x: 1 },
+			{ s: 'halo', b: 'hdL', c: '#9dff6a', p: [0, -0.08, -0.029], d: [0.16], x: 1 },
+		],
+	};
+
+	R['titan.tyr'] = {
+		cls: 'Warden',
+		mat: { skin: ['#e0b48a', 0, 0.62], steel: ['#c9d1da', 0.9, 0.26], steelD: ['#8e9aa6', 0.85, 0.36], mail: ['#9aa4ae', 0.8, 0.4], beard: ['#b0703a', 0, 0.85],
+			cape: ['#efe6cf', 0, 0.8, 0, 'cloth'], face: ['#f6f1e2', 0.2, 0.5], blade: ['#eef2f6', 0.95, 0.18], holy: ['#fff0a0', 0, 0.35, 2.2] },
+		body: { torso: 'steel', hips: 'mail', belt: 'leather', buckle: 'gold', loin: 'team', neck: 'skin', head: 'skin', eyes: 'holy', legs: 'mail', knee: 'gold', shins: 'steel',
+			boots: 'steelD', bootTall: 0.1, arms: 'mail', fore: 'mail', bracer: 'steel', hands: 'steelD', pauldron: 'steel' },
+		parts: [
+			// Polished breastplate: golden rim at the collar, a plate edge, and Tyr's rune (an upward arrow) on the chest.
+			{ s: 'tor', b: 'body', m: 'gold', p: [0, 0.765, 0], d: [0.196, 0.009, 360], r: [90, 0, 0], sc: [1, 0.65, 1] },
+			{ s: 'tor', b: 'body', m: 'steelD', p: [0, 0.62, 0], d: [0.156, 0.007, 360], r: [90, 0, 0], sc: [1, 0.66, 1] },
+			{ s: 'box', b: 'body', m: 'gold', p: [0, 0.676, -0.121], d: [0.01, 0.072, 0.008] },
+			{ s: 'box', b: 'body', m: 'gold', p: [0.0135, 0.6985, -0.12], d: [0.009, 0.038, 0.008], r: [0, 0, 45], x: 1 },
+			// Steel helm with a nose guard and a golden crest; braided golden-brown beard with a gold bead.
+			{ s: 'sph', b: 'head', m: 'steel', p: [0, 0.1, -0.002], d: [0.132, 0.1, 0.138] },
+			{ s: 'tor', b: 'head', m: 'steelD', p: [0, 0.075, -0.002], d: [0.064, 0.007, 360], r: [90, 0, 0] },
+			{ s: 'box', b: 'head', m: 'steelD', p: [0, 0.06, -0.068], d: [0.012, 0.05, 0.01] },
+			{ s: 'box', b: 'head', m: 'gold', p: [0, 0.152, 0], d: [0.012, 0.032, 0.11] },
+			{ s: 'cone', b: 'head', m: 'beard', p: [0, -0.005, -0.045], d: [0.05, 0.13], r: [188, 0, 0] },
+			{ s: 'sph', b: 'head', m: 'beard', p: [0, 0.032, -0.047], d: [0.1, 0.065, 0.06] },
+			{ s: 'sph', b: 'head', m: 'gold', p: [0, -0.073, -0.055], d: [0.017, 0.017, 0.017] },
+			{ s: 'box', b: 'head', m: 'beard', p: [0, 0.052, -0.063], d: [0.056, 0.012, 0.012] },
+			// White cape over both shoulders, golden clasps.
+			{ s: 'cape', b: 'cape', m: 'cape', p: [0, -0.25, -0.12], d: [0.14, 0.2, 0.52, -75, 150, 4, 0.014] },
+			{ s: 'sph', b: 'body', m: 'gold', p: [0.14, 0.785, -0.065], d: [0.03, 0.03, 0.02], x: 1 },
+			// The sword in his left hand, point down and forward, a warm light along the blade.
+			{ s: 'box', b: 'hdL', m: 'gold', p: [0, 0, 0], d: [0.11, 0.016, 0.026] },
+			{ s: 'cyl', b: 'hdL', m: 'leather', p: [0, 0.035, 0.012], d: [0.012, 0.012, 0.07], r: [20, 0, 0] },
+			{ s: 'sph', b: 'hdL', m: 'gold', p: [0, 0.072, 0.026], d: [0.024, 0.024, 0.024] },
+			{ s: 'ext', b: 'hdL', m: 'blade', p: [0, 0, 0], pts: [[-0.022, 0.01], [0.022, 0.01], [0.02, 0.3], [0, 0.36], [-0.02, 0.3]], d: [0.008], r: [200, 0, 0] },
+			{ s: 'halo', b: 'hdL', c: '#fff0a0', p: [0, -0.188, -0.068], d: [0.3] },
+			{ s: 'emit', b: 'hdL', k: 'star', p: [0, -0.2, -0.073], d: [0.2, 2] },
+			// A round shield strapped to the right forearm (the hand Fenrir took is behind it), Tyr's rune in gold.
+			{ s: 'cyl', b: 'elR', m: 'steelD', p: [0.065, -0.1, -0.01], d: [0.13, 0.13, 0.022], r: [0, 0, 90] },
+			{ s: 'cyl', b: 'elR', m: 'face', p: [0.065, -0.1, -0.01], d: [0.112, 0.112, 0.026], r: [0, 0, 90] },
+			{ s: 'tor', b: 'elR', m: 'gold', p: [0.078, -0.1, -0.01], d: [0.112, 0.006, 360], r: [0, 90, 0] },
+			{ s: 'box', b: 'elR', m: 'gold', p: [0.079, -0.1, -0.01], d: [0.006, 0.12, 0.012] },
+			{ s: 'box', b: 'elR', m: 'gold', p: [0.079, -0.061, 0.011], d: [0.006, 0.06, 0.012], r: [-45, 0, 0] },
+			{ s: 'box', b: 'elR', m: 'gold', p: [0.079, -0.061, -0.031], d: [0.006, 0.06, 0.012], r: [45, 0, 0] },
 		],
 	};
 
