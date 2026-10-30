@@ -234,6 +234,17 @@ function firstDiff(a, b) {
 	while (i < a.length && a[i] === b[i]) i++;
 	return '…' + a.slice(Math.max(0, i - 40), i + 40) + '… / …' + b.slice(Math.max(0, i - 40), i + 40) + '…';
 }
+/** Land stores from one state to the next: only collecting empties them, and a store a guard filled above the plain
+ *  cap keeps what it holds once the guard leaves but grows no more. */
+function landStores(prev, st, add, collected) {
+	const before = new Map(prev.lands.map((l) => [l.id, l]));
+	for (const l of st.lands) {
+		const p = before.get(l.id);
+		if (!p) continue;
+		if (!collected && l.st < p.st) add('bad', 'Земля #' + l.id + ': хранилище уменьшилось без сбора, ' + p.st + ' → ' + l.st + ' из ' + l.cap);
+		if (l.st > l.cap && l.st > p.st && l.st > p.cap) add('bad', 'Земля #' + l.id + ': хранилище растёт сверх вместимости, ' + p.st + ' → ' + l.st + ' из ' + l.cap);
+	}
+}
 /** Rules a kingdom state must keep whatever was played: add(level, text) for each broken one. */
 function invariants(st, add) {
 	const d = kd();
@@ -282,7 +293,6 @@ function invariants(st, add) {
 		if (l.titan && !st.titans.some((t) => t.id === l.titan)) add('bad', 'Землю #' + l.id + ' охраняет титан #' + l.titan + ', которого нет');
 		if (l.titan && guards.has(l.titan)) add('bad', 'Титан #' + l.titan + ' охраняет две земли');
 		if (l.titan) guards.set(l.titan, l.id);
-		if (l.st > l.cap) add('bad', 'Земля #' + l.id + ': в хранилище ' + l.st + ' из ' + l.cap);
 	}
 	if (st.world.length !== rules().lands.worldSize) add('bad', 'Земель мира ' + st.world.length + ', а должно быть ' + rules().lands.worldSize);
 	if (st.spells.total > st.spells.cap) add('warn', 'Заклинаний больше вместимости Кузницы: ' + st.spells.total + ' из ' + st.spells.cap);
@@ -312,8 +322,10 @@ function runChecks() {
 		const t0 = st.now;
 		B.load(s0);
 		B.advance(t0 + 21600);
-		const hA = B.state().hash;
+		const stA = B.state();
+		const hA = stA.hash;
 		const sA = B.save();
+		landStores(st, stA, (l, txt) => add(l, txt + ' (за 6 часов)'), false);
 		B.load(s0);
 		for (let i = 1; i <= 72; i++) B.advance(t0 + 300 * i);
 		const hB = B.state().hash;
@@ -448,10 +460,12 @@ function runMonkey(steps, seed, keep) {
 				else if (B.save() !== s1) fails.push([i, act[0], 'сохранение меняется при загрузке: ' + firstDiff(s1, B.save())]);
 				else if (B.state().hash !== st2.hash) fails.push([i, act[0], 'хэш меняется при загрузке']);
 				// The same kind of break is reported once, at the action that first caused it.
-				invariants(st2, (l, txt) => {
+				const note = (l, txt) => {
 					const kind = kindOf(txt);
 					if (!seen.has(kind)) { seen.add(kind); fails.push([i, act[0], (l === 'warn' ? 'предупреждение: ' : '') + txt]); }
-				});
+				};
+				invariants(st2, note);
+				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
 			} catch (e) {
 				fails.push([i, act[0], 'исключение: ' + (e.message || e)]);
 			}

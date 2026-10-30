@@ -34,9 +34,10 @@ owned lands), battles (speed, pause, auto, end a land battle with 0–3 stars, a
 checks, the save and the log. Kingdom edits change the C++ save (`dk_save` → JSON → `dk_load`, which clamps it) and keep a
 copy of the kingdom from before the first edit, which the save tab brings back.
 "Проверки" runs invariants (save round trip, the same hash after loading, six hours at once equal to 72 steps of five
-minutes, resources, limits, building placement, relics, guards, the season). "Случайная игра" plays hundreds of random
-actions through the regular `dk_*` calls (battles with random results, time jumps), checks the invariants after every
-action, reports the first action that broke each one and restores the kingdom. The log records page errors, rejected
-promises, console errors and warnings and files that failed to load; "Скопировать отчёт" puts the browser, screen,
-kingdom summary, the last 60 entries and the save on the clipboard (or in a .txt file; inside claude.ai files are offered
-through the artifact's `downloads` capability, so the page is published with `downloads` besides `db` and `user`).
+minutes, resources, limits, building placement, relics, guards, land stores, the season). "Случайная игра" plays
+hundreds of random actions through the regular `dk_*` calls (battles with random results, time jumps), checks the
+invariants after every action, reports the first action that broke each one and restores the kingdom. The log records
+page errors, rejected promises, console errors and warnings and files that failed to load; "Скопировать отчёт" puts the
+browser, screen, kingdom summary, the last 60 entries and the save on the clipboard (or in a .txt file; inside claude.ai
+files are offered through the artifact's `downloads` capability, so the page is published with `downloads` besides `db`
+and `user`).
