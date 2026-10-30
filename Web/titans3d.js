@@ -414,7 +414,7 @@ const DotTitans3D = (() => {
 		cls: 'Ravager',
 		mat: { skin: ['#dcc4a2', 0, 0.62], jerkin: ['#3d5a34', 0, 0.8], jerkinD: ['#24361f', 0, 0.85], cloak: ['#2c4428', 0, 0.85, 0, 'cloth'], pants: ['#4a6a3e', 0, 0.8],
 			boot: ['#2a2018', 0, 0.8], blade: ['#cfdcc6', 0.9, 0.25], venom: ['#9dff6a', 0, 0.35, 2.2] },
-		body: { torso: 'jerkin', hips: 'jerkinD', belt: 'jerkinD', buckle: 'gold', loin: 'team', neck: 'skin', head: 'skin', eyes: 'venom', legs: 'pants', knee: 'gold', shins: 'jerkinD',
+		body: { torso: 'jerkin', hips: 'jerkinD', belt: 'jerkinD', buckle: 'gold', loin: 'team', neck: 'skin', head: 'skin', legs: 'pants', knee: 'gold', shins: 'jerkinD',
 			boots: 'boot', bootTall: 0.09, arms: 'skin', fore: 'skin', bracer: 'gold', hands: 'skin' },
 		parts: [
 			// Leather jerkin, golden straps crossed over chest and back, a green stone where they meet.
@@ -426,6 +426,7 @@ const DotTitans3D = (() => {
 			{ s: 'sph', b: 'head', m: 'cloak', p: [0, 0.11, 0.012], d: [0.142, 0.1, 0.14] },
 			{ s: 'tube', b: 'head', m: 'cloak', pts: [[0.035, 0.14, 0.01], [0.07, 0.18, 0.02], [0.085, 0.24, 0.035], [0.11, 0.27, 0.03], [0.125, 0.255, 0.015]], d: [0.03, 0.007], x: 1 },
 			{ s: 'sph', b: 'head', m: 'gold', p: [0.127, 0.25, 0.012], d: [0.022, 0.022, 0.022], x: 1 },
+			// Sly green eyes, set forward of the usual ones so the hood's shadow does not swallow them.
 			{ s: 'sph', b: 'head', m: 'venom', p: [0.022, 0.078, -0.064], d: [0.02, 0.01, 0.01], x: 1 },
 			// Ragged cloak: his shadow, trailing dark wisps.
 			{ s: 'cape', b: 'cape', m: 'cloak', p: [0, -0.25, -0.12], d: [0.13, 0.2, 0.52, -72, 144, 7, 0.022] },
