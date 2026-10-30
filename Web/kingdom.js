@@ -2487,8 +2487,8 @@ function onAct(e) {
 	case 'upgrade-troop-gems': gemAction('ut:' + id, +el.dataset.gems, () => run(K.bridge.upgradeTroop(id, true), 'Арсенал улучшает: ' + K.army.troops[id].name)); break;
 	case 'skip-research': gemAction('rskip', +el.dataset.gems, () => run(K.bridge.skipResearch(), 'Улучшение войска завершено')); break;
 	case 'skip-titan': gemAction('tr:' + id, +el.dataset.gems, () => run(K.bridge.skipTitan(id), 'Титан готов к бою')); break;
-	case 'ascend': run(K.bridge.ascend(id, false), 'Титан возвышен: ещё 10 уровней и слот реликвии', (K.st.titans.find((t) => t.id === id) || {}).ack); break;
-	case 'ascend-gems': gemAction('asc:' + id, +el.dataset.gems, () => run(K.bridge.ascend(id, true), 'Титан возвышен: ещё 10 уровней и слот реликвии')); break;
+	case 'ascend': ascendTitan(id, false); break;
+	case 'ascend-gems': gemAction('asc:' + id, +el.dataset.gems, () => ascendTitan(id, true)); break;
 	case 'season': openSeason(); break;
 	case 'alliance': openAlliance(); break;
 	case 'alliance-camp': openAlliance('reinf'); break;
@@ -2540,7 +2540,15 @@ function onAct(e) {
 		if (!K.fuse || !K.fuse.picks.length) break;
 		if (!isArmed('fuse')) { arm('fuse'); break; }
 		K.armed = null;
-		if (run(K.bridge.fuse(K.fuse.target, K.fuse.picks), 'Слияние завершено')) K.fuse = null;
+		{
+			const before = skillsOf(K.fuse.target);
+			const target = K.fuse.target;
+			if (run(K.bridge.fuse(K.fuse.target, K.fuse.picks), 'Слияние завершено')) {
+				K.fuse = null;
+				const news = skillNews(before, skillsOf(target));
+				if (news) toast(news, 'gold');
+			}
+		}
 		refreshSheet(true);
 		break;
 	case 'prep-titan': if (K.prep) { K.prep.titan = id; refreshSheet(true); } break;
@@ -3709,10 +3717,10 @@ function landScenario(w, prep) {
 	const mine = prep.titan ? K.st.titans.find((t) => t.id === prep.titan) : null;
 	if (mine) {
 		att.titan = { id: K.army.titans[mine.def].id, level: mine.lv, stars: K.army.titans[mine.def].stars, ascended: !!mine.asc, abilityLevels: [1, 1], pos: [120, 26], facingDeg: 0,
-			bonus: { atkPct: Math.floor(mine.bonus[0] / 10), hpPct: Math.floor(mine.bonus[1] / 10), armorPct: Math.floor(mine.bonus[2] / 10),
-				critPct: Math.floor(mine.bonus[3] / 10), piercePct: Math.floor(mine.bonus[4] / 10) } };
-		// Relics on the titan that strengthen the whole army.
-		att.troopBonus = { atkPct: Math.floor(mine.bonus[5] / 10), hpPct: Math.floor(mine.bonus[6] / 10) };
+			bonus: { atkPct: Math.floor(mine.total[0] / 10), hpPct: Math.floor(mine.total[1] / 10), armorPct: Math.floor(mine.total[2] / 10),
+				critPct: Math.floor(mine.total[3] / 10), piercePct: Math.floor(mine.total[4] / 10) } };
+		// Relics and skills of the titan that strengthen the whole army.
+		att.troopBonus = { atkPct: Math.floor(mine.total[5] / 10), hpPct: Math.floor(mine.total[6] / 10) };
 	} else delete att.titan;
 	// Spells from the Spell Forge stock: every charge goes along, at its Arcane Tower level.
 	const sp = K.st.spells;
@@ -4104,7 +4112,7 @@ function openTitans() {
 				if (resting) act += '<button class="btn" data-act="skip-titan" data-id="' + t.id + '" data-gems="' + t.skip + '">' + (isArmed('tr:' + t.id) ? 'Подтвердить ' : 'Разбудить ') + gemSpan(t.skip) + '</button>';
 			}
 			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head" data-act="titan-relics" data-id="' + t.id + '">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
-				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + '</span>' +
+				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + (t.sslots ? ' · навыки ' + (t.skills || []).length + '/' + t.sslots : '') + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
 				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
 				'<span class="meta" data-live="tr' + t.id + '"></span><div class="row">' + act + '</div></div>';
@@ -4127,12 +4135,12 @@ function openTitans() {
 		const html = sheetTitle(buildingIconById('hall_of_titans'), 'Зал титанов') +
 			'<p class="fine">Титанов: ' + st.titans.length + ' из ' + st.tcap + '. Редкость от одной до четырёх звёзд задаёт предел уровня: 20, 30, 40 и 50, как в оригинале версии 1.8. ' +
 			'Опыт титаны получают в боях; после боя титаны выше 10-го уровня отдыхают. ' +
-			'Титана на пределе уровня можно возвысить за осколки из руин и еду: ещё 10 уровней и слот реликвии, как в оригинале. ' + (canFuse ? 'Слияние за еду переносит силу ненужных титанов в выбранного, как в оригинале.' : 'Слияние откроется на Замке ' + st.fuseCastle + '.') + '</p>' +
+			'Титана на пределе уровня можно возвысить за осколки из руин и еду: ещё 10 уровней, слот реликвии и навык, как в оригинале. ' + (canFuse ? 'Слияние за еду переносит силу ненужных титанов в выбранного и может открыть ему слот навыка или поднять навык, как в оригинале.' : 'Слияние откроется на Замке ' + st.fuseCastle + '.') + '</p>' +
 			head + '<div class="shopGrid">' + cards.join('') + '</div>' +
 			(locked.length && !fz ? '<h3>Ещё не призваны</h3><p class="fine">Новых титанов дают алтари Храма реликвий: бесплатный раз в сутки, серебряный и золотой за самоцветы. Попробовать любого титана можно в меню боя, раздел «Ваш титан».</p><div class="shopGrid">' + locked.join('') + '</div>' : '') +
 			'<div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
 		return {
-			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id)).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
+			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id) + ':' + (t.skills || []).join('.')).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
 			live(el) { for (const t of K.st.titans) liveTitan(el, t); },
 		};
 	});
@@ -4286,6 +4294,59 @@ function openArcane() {
 		};
 	});
 }
+// Titan skills: slots by class pool, opened by fusion (fodder stars) and ascension, tiers I-III.
+const ROMAN = ['', 'I', 'II', 'III'];
+const skillKind = (k) => (K.army.skills ? K.army.skills.kinds[k] : null);
+/** A skill's bonus in whole percents as text: "+5% броня". */
+function skillText(k, tier) {
+	const d = skillKind(k);
+	if (!d) return '';
+	const stat = { atkPct: 0, hpPct: 1, armorPct: 2, critPct: 3, piercePct: 4, troopAtkPct: 5, troopHpPct: 6 }[d.stat];
+	return '+' + d.tiers[tier - 1] + '% ' + (BONUS_RU[stat] || '');
+}
+const skillsOf = (id) => ((K.st.titans.find((t) => t.id === id) || {}).skills || []).map((s) => s.slice());
+/** What a fusion changed in a titan's skills, as a toast (or ''). */
+function skillNews(before, after) {
+	const parts = [];
+	after.forEach((s, i) => {
+		const d = skillKind(s[0]);
+		if (!d) return;
+		if (!before[i]) parts.push('новый навык «' + d.name + '» ' + ROMAN[s[1]] + ' (' + skillText(s[0], s[1]) + ')');
+		else if (s[1] > before[i][1]) parts.push('навык «' + d.name + '» вырос до ' + ROMAN[s[1]] + ' (' + skillText(s[0], s[1]) + ')');
+	});
+	return parts.length ? 'Слияние: ' + parts.join(', ') : '';
+}
+function ascendTitan(id, gems) {
+	const before = skillsOf(id);
+	const ck = (K.st.titans.find((t) => t.id === id) || {}).ack;
+	if (!run(K.bridge.ascend(id, gems), null, ck)) return;
+	const after = skillsOf(id);
+	const s = after[before.length];
+	const d = s && skillKind(s[0]);
+	toast('Титан возвышен: ещё 10 уровней, слот реликвии' + (d ? ' и навык «' + d.name + '» (' + skillText(s[0], s[1]) + ')' : ''), 'gold');
+}
+/** The titan's skill slots: open ones with their skill, locked ones with how they open. */
+function skillsHtml(t) {
+	const rules = K.army.skills;
+	if (!rules || !t.sslots) return '';
+	const skills = t.skills || [];
+	const rows = [];
+	const base = rules.slots;
+	for (let i = 0; i < base + 1; i++) {
+		const asc = i === base;
+		// The ascension skill sits after the base ones that were open when the titan ascended.
+		const openBase = skills.length - (t.asc ? 1 : 0);
+		let s = null;
+		if (!asc && i < openBase) s = skills[i];
+		if (asc && t.asc) s = skills[openBase];
+		const d = s && skillKind(s[0]);
+		if (d) rows.push('<li><b>' + esc(d.name) + ' ' + ROMAN[s[1]] + '</b> · ' + skillText(s[0], s[1]) + (s[1] < 3 ? ' <span class="fine">(растёт при слиянии с титаном ★' + (s[1] + 1) + ' и выше)</span>' : '') + '</li>');
+		else if (asc) rows.push('<li class="fine">Слот возвышения: откроется с возвышением титана</li>');
+		else rows.push('<li class="fine">Слот ' + (i + 1) + ': откроется слиянием с титаном ★' + i + ' и выше (шанс ' + rules.openPct + '% за титана)</li>');
+	}
+	return '<h3>Навыки: ' + skills.length + ' из ' + t.sslots + '</h3><ul class="skills">' + rows.join('') + '</ul>' +
+		'<p class="fine">Как в оригинале: навыки берутся из набора класса титана и остаются в слоте навсегда. Каждый слитый титан может открыть следующий слот или поднять навык не выше своих звёзд (до III); возвышение даёт ещё один навык. Навыки складываются с реликвиями под теми же пределами.</p>';
+}
 /** One titan: its relic slots, worn relics and the combat relics it can wear. */
 const BONUS_RU = ['урон', 'здоровье', 'броня', 'шанс крита', 'пробитие брони', 'урон войск', 'здоровье войск', 'опыт'];
 function openTitanRelics(id) {
@@ -4303,6 +4364,7 @@ function openTitanRelics(id) {
 		const nextSlot = K.army.relics.slotLevels.find((l) => l > t.lv);
 		const abil = K.app && K.app.titanAbilities ? K.app.titanAbilities(d.id) : [];
 		const bonus = t.bonus.map((v, i) => (v ? '+' + fmtPm(v) + '% ' + BONUS_RU[i] : '')).filter(Boolean);
+		const total = (t.total || []).map((v, i) => (v ? '+' + fmtPm(v) + '% ' + BONUS_RU[i] : '')).filter(Boolean);
 		const wearBtn = (r) => {
 			const same = kinds.includes(r.kind);
 			const off = full || same || r.dur <= 0;
@@ -4313,6 +4375,7 @@ function openTitanRelics(id) {
 			titanStage(d, abil) +
 			'<p>' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + '. ' + (bonus.length ? 'Бонус реликвий: ' + bonus.join(', ') + '.' : 'Бонусов от реликвий нет.') + '</p>' +
 			(abil.length ? '<p>Способности в бою: <b>' + abil.map(esc).join('</b>, <b>') + '</b>.</p>' : '') +
+			skillsHtml(t) + (total.length ? '<p class="fine">В бой титан берёт с навыками и реликвиями: ' + total.join(', ') + '.</p>' : '') +
 			'<h3>Реликвии: ' + t.relics.length + ' из ' + t.slots + '</h3>' +
 			(worn.length ? worn.map((r) => relicRow(r, '<button class="btn" data-act="unequip" data-id="' + r.id + '">Снять</button>')).join('') : '<p class="fine">Ничего не надето.</p>') +
 			'<p class="fine">Как в оригинале: сначала у титана один слот, новые открываются с уровнем' + (nextSlot ? ' (следующий на ' + nextSlot + '-м)' : '') + '. ' +
@@ -4320,7 +4383,7 @@ function openTitanRelics(id) {
 			'<h3>Можно надеть</h3>' +
 			(free.length ? free.map((r) => relicRow(r, wearBtn(r))).join('') : '<p class="fine">Свободных боевых реликвий нет. Их дают Храм реликвий и победы в боях.</p>') +
 			'<div class="actions"><button class="btn" data-act="relic-inv">Все реликвии</button><button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
-		return { key: ['trel', id, t.lv, t.slots, t.relics.join(), t.bonus.join(), st.relics.map(relicKey).join()].join('|'), html };
+		return { key: ['trel', id, t.lv, t.slots, t.relics.join(), t.bonus.join(), (t.skills || []).join(), st.relics.map(relicKey).join()].join('|'), html };
 	});
 }
 /** All relics in tabs: repair or improve (from Castle 8) by sacrificing others, or throw away. */

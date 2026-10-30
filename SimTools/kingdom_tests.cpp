@@ -1401,6 +1401,150 @@ void TestDailyQuests()
 	KD_CHECK(Defs(Pre) == Defs(K));
 }
 
+/** The save with these titans added: (id, def, stars-of-fodder ignored) as JSON objects. */
+std::string WithTitans(const std::string& Save, const std::vector<std::pair<int32_t, std::string>>& Titans, const std::string& Extra = "")
+{
+	std::string List;
+	for (const std::pair<int32_t, std::string>& T : Titans)
+	{
+		List += "{\"id\":" + std::to_string(T.first) + ",\"def\":\"" + T.second + "\",\"level\":1,\"xp\":0,\"recoverUntil\":0,\"ascended\":false,\"relics\":[]" + Extra + "},";
+	}
+	return Replace(Save, "\"titans\":[", "\"titans\":[" + List);
+}
+
+void TestTitanSkills()
+{
+	const KingdomContent& Ct = Content();
+	const SkillRules& Sk = Ct.skills;
+	// The original: skills by class in slots, opened by fusion (1-star titans for the 2nd slot, 2-star for the 3rd,
+	// 3-star for the 4th), a new slot with ascension (wiki, Strategy and Ascension).
+	KD_CHECK(Sk.slots == 4 && Sk.openPct == 35 && Sk.upgradePct == 25 && Sk.kinds.size() == 7 && Sk.classWeights.size() == 7);
+	const auto KindOf = [&](const char* Id) {
+		for (size_t I = 0; I < Sk.kinds.size(); ++I)
+		{
+			if (Sk.kinds[I].id == Id)
+			{
+				return static_cast<int>(I);
+			}
+		}
+		return -1;
+	};
+	const int Cuirass = KindOf("cuirass");
+	const int Precision = KindOf("precision");
+	KD_CHECK(Cuirass >= 0 && Sk.kinds[static_cast<size_t>(Cuirass)].stat == RelicStat::Armor && Sk.kinds[static_cast<size_t>(Cuirass)].tiers[2] == 80);
+	KD_CHECK(Precision >= 0 && Sk.kinds[static_cast<size_t>(Precision)].stat == RelicStat::Crit && Sk.kinds[static_cast<size_t>(Precision)].tiers[0] == 20);
+	for (const TitanType& T : Ct.titans)
+	{
+		KD_CHECK(std::any_of(Sk.classWeights.begin(), Sk.classWeights.end(), [&T](const std::pair<std::string, std::vector<int64_t>>& W) { return W.first == T.cls; }));
+	}
+
+	// Every titan starts with one skill of tier I that its class can roll; the seed decides it.
+	Kingdom K(Ct);
+	K.NewGame(T0, 31);
+	for (const kingdom::TitanState& T : K.Titans())
+	{
+		KD_CHECK(T.skills.size() == 1 && T.skills[0].tier == 1 && K.SkillSlots(T) == 4);
+		const SkillKind& Kd = Sk.kinds[static_cast<size_t>(T.skills[0].kind)];
+		KD_CHECK(K.TitanSkillBonus(T.id, Kd.stat) == Kd.tiers[0] && K.TitanBonus(T.id, Kd.stat) == K.TitanRelicBonus(T.id, Kd.stat) + Kd.tiers[0]);
+	}
+	Kingdom Same(Ct);
+	Same.NewGame(T0 + 99, 31);
+	KD_CHECK(Same.Titans()[0].skills[0].kind == K.Titans()[0].skills[0].kind && Same.Titans()[1].skills[0].kind == K.Titans()[1].skills[0].kind);
+
+	// Fusion opens the slots in order, each needing fodder of enough stars, and raises tiers up to the fodder's stars.
+	std::string Save = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":7");
+	Save = Replace(Save, "\"food\":" + std::to_string(K.Amount(Res::Food)), "\"food\":9000000");
+	std::vector<std::pair<int32_t, std::string>> Add = {{700, "titan.thor"}};
+	for (int32_t I = 0; I < 16; ++I)
+	{
+		Add.emplace_back(710 + I, "titan.talos");
+		Add.emplace_back(730 + I, "titan.atlas");
+		Add.emplace_back(750 + I, "titan.surtr");
+	}
+	std::string Error;
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(WithTitans(Save, Add), Error) && F.FindTitan(700) && F.FindTitan(700)->skills.size() == 1); // old saves roll the start skill
+	const auto Fuse = [&](int32_t First) {
+		for (int32_t I = 0; I < 16; ++I)
+		{
+			KD_CHECK(F.CheckFusion(700, {First + I}).error == Error::None && F.FuseTitans(700, {First + I}) == Error::None);
+		}
+	};
+	const auto MaxTier = [&] {
+		int Max = 0;
+		for (const TitanSkill& S : F.FindTitan(700)->skills)
+		{
+			Max = std::max(Max, S.tier);
+		}
+		return Max;
+	};
+	Fuse(710); // 1-star titans: the 2nd slot, no tier above I
+	KD_CHECK(F.FindTitan(700)->skills.size() == 2 && MaxTier() == 1);
+	Fuse(730); // 2-star titans: the 3rd slot, tiers up to II
+	KD_CHECK(F.FindTitan(700)->skills.size() == 3 && MaxTier() == 2);
+	Fuse(750); // 3-star titans: the 4th slot, tiers up to III
+	const kingdom::TitanState& Thor = *F.FindTitan(700);
+	KD_CHECK(Thor.skills.size() == 4 && MaxTier() == 3 && F.FindTitan(700)->level < F.TitanMaxLevel(Thor));
+	for (size_t I = 0; I < Thor.skills.size(); ++I)
+	{
+		for (size_t J = 0; J < I; ++J)
+		{
+			KD_CHECK(Thor.skills[I].kind != Thor.skills[J].kind); // a kind once per titan
+		}
+	}
+	// The skills reach the battle bonus; save and load keep them and the hash covers them.
+	int64_t SkillSum = 0;
+	for (int S = 0; S <= static_cast<int>(RelicStat::TroopHp); ++S)
+	{
+		SkillSum += F.TitanSkillBonus(700, static_cast<RelicStat>(S));
+	}
+	int64_t Expect = 0;
+	for (const TitanSkill& S : Thor.skills)
+	{
+		Expect += F.SkillValue(S);
+	}
+	KD_CHECK(SkillSum == Expect && SkillSum > 0);
+	Kingdom G(Ct);
+	KD_CHECK(G.Load(F.Save(), Error) && G.Hash() == F.Hash() && G.Save() == F.Save() && G.FindTitan(700)->skills.size() == 4);
+	const std::string Changed = Replace(F.Save(), "\"skills\":[[\"", "\"skills\":[[\"x");
+	Kingdom U(Ct);
+	KD_CHECK(Changed != F.Save() && U.Load(Changed, Error) && U.FindTitan(700)->skills.size() == 3); // kinds the content lacks are dropped
+
+	// Bonuses share the relics' caps; tiers past III and extra skills in a save are cut.
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(WithTitans(K.Save(), {{800, "titan.talos"}}, ",\"skills\":[[\"precision\",9],[\"cuirass\",2],[\"might\",1],[\"vigor\",1],[\"banner\",1]]"), Error));
+	KD_CHECK(P.FindTitan(800)->skills.size() == 4 && P.FindTitan(800)->skills[0].tier == 3 && P.TitanBonus(800, RelicStat::Crit) == 40);
+	KD_CHECK(P.TitanBonus(800, RelicStat::Armor) == 50 && P.TitanSkillBonus(800, RelicStat::TroopHp) == 0);
+
+	// Ascension opens the fifth slot with a new skill; an ascended titan from an old save gets it too.
+	std::string Asc = Replace(WithTitans(K.Save(), {{801, "titan.talos"}}), "\"id\":801,\"def\":\"titan.talos\",\"level\":1", "\"id\":801,\"def\":\"titan.talos\",\"level\":20");
+	Asc = Replace(Asc, "\"shards\":0", "\"shards\":5");
+	Asc = Replace(Asc, "\"food\":" + std::to_string(K.Amount(Res::Food)), "\"food\":200000");
+	Kingdom A(Ct);
+	KD_CHECK(A.Load(Asc, Error) && A.FindTitan(801)->skills.size() == 1 && A.Ascend(801, false) == Error::None);
+	KD_CHECK(A.FindTitan(801)->skills.size() == 2 && A.SkillSlots(*A.FindTitan(801)) == 5 && A.FindTitan(801)->skills[1].tier == 1);
+	Kingdom O(Ct);
+	const std::string AscOld = Replace(WithTitans(K.Save(), {{802, "titan.talos"}}), "\"id\":802,\"def\":\"titan.talos\",\"level\":1,\"xp\":0,\"recoverUntil\":0,\"ascended\":false",
+		"\"id\":802,\"def\":\"titan.talos\",\"level\":25,\"xp\":0,\"recoverUntil\":0,\"ascended\":true");
+	KD_CHECK(O.Load(AscOld, Error) && O.FindTitan(802)->skills.size() == 2 && O.FindTitan(802)->skills[0].kind != O.FindTitan(802)->skills[1].kind);
+	// A slot fusion opens after ascension goes before the ascension skill, which stays last.
+	std::vector<std::pair<int32_t, std::string>> Fodder = {{802, "titan.talos"}};
+	for (int32_t I = 0; I < 12; ++I)
+	{
+		Fodder.emplace_back(810 + I, "titan.talos");
+	}
+	const std::string AscFuse = Replace(WithTitans(Save, Fodder), "\"id\":802,\"def\":\"titan.talos\",\"level\":1,\"xp\":0,\"recoverUntil\":0,\"ascended\":false",
+		"\"id\":802,\"def\":\"titan.talos\",\"level\":21,\"xp\":0,\"recoverUntil\":0,\"ascended\":true");
+	Kingdom Q(Ct);
+	KD_CHECK(Q.Load(AscFuse, Error) && Q.FindTitan(802)->skills.size() == 2);
+	const int AscKind = Q.FindTitan(802)->skills[1].kind;
+	for (int32_t I = 0; I < 12 && Q.FindTitan(802)->skills.size() < 3; ++I)
+	{
+		KD_CHECK(Q.FuseTitans(802, {810 + I}) == Error::None);
+	}
+	KD_CHECK(Q.FindTitan(802)->skills.size() == 3 && Q.FindTitan(802)->skills[2].kind == AscKind);
+}
+
 const SimContent& Battle()
 {
 	static SimContent S;
@@ -1871,6 +2015,7 @@ int main()
 		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
 		{"Campaigns", TestCampaigns},
 		{"DailyQuests", TestDailyQuests},
+		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
 	};
 	for (const auto& T : Tests)

@@ -100,6 +100,13 @@ struct WorldLand
 };
 
 /** A titan the player owns. */
+/** A titan's skill in its slot: the kind (index into the content's skills) and its tier, 1 to 3. */
+struct TitanSkill
+{
+	int kind = 0;
+	int tier = 1;
+};
+
 struct TitanState
 {
 	int32_t id = 0;
@@ -107,8 +114,9 @@ struct TitanState
 	int level = 1;
 	int64_t xp = 0; // towards the next level
 	int64_t recoverUntil = 0; // resting after a battle until this time
-	bool ascended = false; // ten more levels and one more relic slot
+	bool ascended = false; // ten more levels, one more relic slot and one more skill
 	std::vector<int32_t> relics; // equipped relic ids
+	std::vector<TitanSkill> skills; // by slot: the start one, those fusion opened, then the ascension one (always last)
 };
 
 /** A relic item (the original since 1.8): one to three effects, the later ones locked until a repair opens them.
@@ -419,6 +427,14 @@ public:
 	int32_t RelicTitan(int32_t RelicId) const;
 	/** What a titan's working relics add to a stat, tenths of a percent (capped per effect). */
 	int64_t TitanRelicBonus(int32_t TitanId, RelicStat Stat) const;
+	/** What a titan's skills add to a stat, tenths of a percent (not capped). */
+	int64_t TitanSkillBonus(int32_t TitanId, RelicStat Stat) const;
+	/** Relics and skills together, capped per effect: what the titan takes into battle. */
+	int64_t TitanBonus(int32_t TitanId, RelicStat Stat) const;
+	/** Skill slots of a titan: the content's slots, one more once ascended (0 without skills in the content). */
+	int SkillSlots(const TitanState& T) const;
+	/** A skill's bonus in tenths of a percent. */
+	int64_t SkillValue(const TitanSkill& S) const;
 	/** What the working relic on a building adds to a stat, tenths of a percent. */
 	int64_t BuildingRelicBonus(const Building& B, RelicStat Stat) const;
 	const RelicItem* BuildingRelic(int32_t BuildingId) const;
@@ -502,10 +518,12 @@ public:
 	Error SkipResearch();
 	/** Opens a Relic Temple altar: summons a titan, or for the daily relic sometimes gives a relic item. */
 	Error OpenAltar(int Altar, int32_t* OutTitanId = nullptr, int32_t* OutRelicId = nullptr);
-	/** Fuses titans into the target (their XP moves to it). */
+	/** Fuses titans into the target (their XP moves to it). Each fused titan may open the target's next skill slot (it
+	 *  needs as many stars as the slots open) or else raise one of its skills (up to its own stars, at most tier III). */
 	Error FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices);
 	Error SkipRecovery(int32_t TitanId);
-	/** Ascends a max-level titan: ten more levels and one more relic slot. Missing Food can be bought with gems. */
+	/** Ascends a max-level titan: ten more levels, one more relic slot and a new skill. Missing Food can be bought with
+	 *  gems. */
 	Error Ascend(int32_t TitanId, bool UseGems);
 	/** Joins a computer alliance (enough VP, a free place, not in an alliance). */
 	Error JoinAlliance(int Index);
@@ -676,6 +694,12 @@ private:
 	void EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward& R);
 	/** Counts an event for today's quests (a negative amount takes it back). */
 	void NoteQuest(QuestEvent Event, int64_t Amount);
+	/** Opens the titan's next skill slot with a skill of its class it does not have yet (tier I). */
+	void AddSkill(TitanState& T, uint64_t H) const;
+	/** The titan's first skill (and the ascension one), rolled from the seed and its id. */
+	void StartSkills(TitanState& T) const;
+	/** What a titan's working relics add to a stat before the cap. */
+	int64_t TitanRelicSum(int32_t TitanId, RelicStat Stat) const;
 	/** Brings the quests of the day Time is in (when the day has changed). */
 	void RollQuests();
 	/** Whether the pool quest can come to this kingdom now. */

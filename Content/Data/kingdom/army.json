@@ -2735,6 +2735,148 @@
   "levels": 10,
   "relicSlots": 1
  },
+ "skills": {
+  "slots": 4,
+  "openPct": 35,
+  "upgradePct": 25,
+  "kinds": [
+   {
+    "id": "might",
+    "name": "Мощь",
+    "stat": "atkPct",
+    "tiers": [
+     3,
+     5,
+     8
+    ]
+   },
+   {
+    "id": "vigor",
+    "name": "Живучесть",
+    "stat": "hpPct",
+    "tiers": [
+     3,
+     5,
+     8
+    ]
+   },
+   {
+    "id": "cuirass",
+    "name": "Кираса",
+    "stat": "armorPct",
+    "tiers": [
+     3,
+     5,
+     8
+    ]
+   },
+   {
+    "id": "precision",
+    "name": "Меткость",
+    "stat": "critPct",
+    "tiers": [
+     2,
+     3,
+     4
+    ]
+   },
+   {
+    "id": "sunder",
+    "name": "Сокрушение брони",
+    "stat": "piercePct",
+    "tiers": [
+     3,
+     5,
+     7
+    ]
+   },
+   {
+    "id": "war_cry",
+    "name": "Боевой клич",
+    "stat": "troopAtkPct",
+    "tiers": [
+     2,
+     3,
+     4
+    ]
+   },
+   {
+    "id": "banner",
+    "name": "Знамя стойкости",
+    "stat": "troopHpPct",
+    "tiers": [
+     2,
+     3,
+     4
+    ]
+   }
+  ],
+  "classes": {
+   "Champion": {
+    "might": 2,
+    "vigor": 3,
+    "cuirass": 4,
+    "precision": 1,
+    "sunder": 1,
+    "war_cry": 2,
+    "banner": 3
+   },
+   "Guardian": {
+    "might": 1,
+    "vigor": 4,
+    "cuirass": 4,
+    "precision": 1,
+    "sunder": 1,
+    "war_cry": 1,
+    "banner": 3
+   },
+   "Paladin": {
+    "might": 1,
+    "vigor": 4,
+    "cuirass": 4,
+    "precision": 1,
+    "sunder": 1,
+    "war_cry": 2,
+    "banner": 4
+   },
+   "Berserker": {
+    "might": 4,
+    "vigor": 2,
+    "cuirass": 1,
+    "precision": 3,
+    "sunder": 3,
+    "war_cry": 2,
+    "banner": 1
+   },
+   "Infiltrator": {
+    "might": 4,
+    "vigor": 1,
+    "cuirass": 1,
+    "precision": 4,
+    "sunder": 3,
+    "war_cry": 1,
+    "banner": 1
+   },
+   "Ranger": {
+    "might": 3,
+    "vigor": 2,
+    "cuirass": 1,
+    "precision": 4,
+    "sunder": 3,
+    "war_cry": 2,
+    "banner": 1
+   },
+   "Sorcerer": {
+    "might": 4,
+    "vigor": 3,
+    "cuirass": 1,
+    "precision": 2,
+    "sunder": 2,
+    "war_cry": 3,
+    "banner": 2
+   }
+  }
+ },
  "fusion": {
   "castle": 7,
   "foodPerStar": 2000,

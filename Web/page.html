@@ -289,6 +289,9 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
 #kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+/* Titan skills: one line per slot. */
+ul.skills { margin: 4px 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+ul.skills li.fine { list-style: circle; }
 /* Daily quests: claimed of today's; a gold edge and a dot when a reward waits. */
 #kQuestBtn { position: relative; font-weight: 700; font-variant-numeric: tabular-nums; }
 #kQuestBtn svg { width: 22px; height: 22px; }

@@ -1204,7 +1204,19 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		{
 			O.Raw(B ? "," : "").Int(Km->TitanRelicBonus(T.id, static_cast<dot::kingdom::RelicStat>(B)));
 		}
-		O.Raw("]}");
+		// Relics and skills together (capped) as the titan takes them into battle; the skills by slot (kind, tier).
+		O.Raw("],").Key("total").Raw("[");
+		for (int B = 0; B <= static_cast<int>(dot::kingdom::RelicStat::Xp); ++B)
+		{
+			O.Raw(B ? "," : "").Int(Km->TitanBonus(T.id, static_cast<dot::kingdom::RelicStat>(B)));
+		}
+		O.Raw("],").Key("skills").Raw("[");
+		for (size_t K = 0; K < T.skills.size(); ++K)
+		{
+			O.Raw(K ? ",[" : "[").Int(T.skills[K].kind).Comma().Int(T.skills[K].tier).Raw("]");
+		}
+		O.Raw("],").Key("sslots").Int(Km->SkillSlots(T));
+		O.Raw("}");
 	}
 	O.Raw("],").Key("tcap").Int(Km->TitanCapacity()).Comma().Key("relicAt").Int(Km->RelicFreeAt()).Comma().Key("altars").Raw("[");
 	for (size_t I = 0; I < C.altars.size(); ++I)

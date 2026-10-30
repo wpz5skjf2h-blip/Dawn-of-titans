@@ -411,6 +411,27 @@ struct RelicEffectDef
 	int64_t cap = 0;
 };
 
+/** A titan skill (the original: a titan's skills come from its class's pool, one per slot, and stay there for good;
+ *  fusion can raise them). Its tier, I to III, sets the bonus. */
+struct SkillKind
+{
+	std::string id;
+	std::string name;
+	RelicStat stat = RelicStat::Atk;
+	std::array<int64_t, 3> tiers{}; // tenths of a percent (crit: of a percentage point)
+};
+
+/** Titan skills (army.json "skills"). */
+struct SkillRules
+{
+	int slots = 4; // skill slots before ascension; the first is open from the start, fusion opens the rest
+	int openPct = 35; // chance a fused titan opens the next slot (it needs as many stars as the slots open)
+	int upgradePct = 25; // otherwise the chance it raises a skill's tier, up to its own stars
+	std::vector<SkillKind> kinds;
+	/** Weight of each kind by titan class (army.json titans' "class"); a class not listed weighs all kinds alike. */
+	std::vector<std::pair<std::string, std::vector<int64_t>>> classWeights;
+};
+
 /** A relic item kind (the original 1.8 has combat relics for titans and economy relics for buildings). */
 struct RelicKind
 {
@@ -506,6 +527,7 @@ struct KingdomContent
 	std::array<int64_t, 4> ascendFood{{180000, 820000, 2300000, 4800000}};
 	int ascendLevels = 10;
 	int ascendRelicSlots = 1;
+	SkillRules skills;
 	int fusionCastle = 7;
 	int64_t fusionFoodPerStar = 2000; // wiki: fusion costs food; the amount is our estimate
 	int64_t fusionXpPerStarSq = 150;

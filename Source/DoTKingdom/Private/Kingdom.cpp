@@ -152,6 +152,7 @@ void Kingdom::ResetArmy()
 		T.id = NextId++;
 		T.def = S.def;
 		T.level = std::max(1, std::min(S.level, C.titans[static_cast<size_t>(S.def)].MaxLevel()));
+		StartSkills(T);
 		TitanList.push_back(T);
 	}
 	RelicAt = Time;
@@ -3257,6 +3258,7 @@ Error Kingdom::Ascend(int32_t TitanId, bool UseGems)
 		{
 			T.ascended = true;
 			T.xp = 0;
+			AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8 + T.skills.size()));
 		}
 	}
 	return Error::None;
@@ -3387,6 +3389,7 @@ int32_t Kingdom::SummonTitan(int Stars, uint64_t Pick)
 	TitanState T;
 	T.id = NextId++;
 	T.def = Pool[static_cast<size_t>(Pick % static_cast<uint64_t>(Pool.size()))];
+	StartSkills(T);
 	TitanList.push_back(T);
 	return T.id;
 }
@@ -3453,11 +3456,13 @@ Error Kingdom::FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices
 		ClearGuard(Id);
 	}
 	int64_t Xp = 0;
+	std::vector<int> FodderStars;
 	for (const int32_t Id : Sacrifices)
 	{
 		const TitanState* S = FindTitan(Id);
 		const int64_t Stars = C.titans[static_cast<size_t>(S->def)].stars;
 		Xp += C.fusionXpPerStarSq * Stars * Stars + TitanTotalXp(*S) * C.fusionKeepXpPct / 100;
+		FodderStars.push_back(static_cast<int>(Stars));
 	}
 	TitanList.erase(std::remove_if(TitanList.begin(), TitanList.end(),
 		[&Sacrifices](const TitanState& T) { return std::find(Sacrifices.begin(), Sacrifices.end(), T.id) != Sacrifices.end(); }), TitanList.end());
@@ -3466,9 +3471,117 @@ Error Kingdom::FuseTitans(int32_t Target, const std::vector<int32_t>& Sacrifices
 		if (T.id == Target)
 		{
 			AddTitanXp(T, Xp, nullptr);
+			// Skills: each fused titan may open the next slot (1 star for the 2nd, 2 for the 3rd, 3 for the 4th) or else
+			// raise a skill up to its own stars (the original's guides; the chances are ours).
+			for (const int Stars : FodderStars)
+			{
+				const uint64_t H = Mix(Seed ^ 0x6675736500ULL, RelicCounter++);
+				const int BaseOpen = static_cast<int>(T.skills.size()) - (T.ascended ? 1 : 0);
+				if (BaseOpen < C.skills.slots && Stars >= BaseOpen && static_cast<int>(H % 100) < C.skills.openPct)
+				{
+					AddSkill(T, H >> 16);
+					if (T.ascended && T.skills.size() >= 2)
+					{
+						std::swap(T.skills[T.skills.size() - 1], T.skills[T.skills.size() - 2]); // the ascension skill stays last
+					}
+					continue;
+				}
+				std::vector<size_t> Up;
+				for (size_t I = 0; I < T.skills.size(); ++I)
+				{
+					if (T.skills[I].tier < std::min(3, Stars))
+					{
+						Up.push_back(I);
+					}
+				}
+				if (!Up.empty() && static_cast<int>((H >> 8) % 100) < C.skills.upgradePct)
+				{
+					T.skills[Up[static_cast<size_t>((H >> 32) % Up.size())]].tier += 1;
+				}
+			}
 		}
 	}
 	return Error::None;
+}
+
+// --- Titan skills ---------------------------------------------------------------------------------
+
+int Kingdom::SkillSlots(const TitanState& T) const
+{
+	return C.skills.kinds.empty() ? 0 : C.skills.slots + (T.ascended ? 1 : 0);
+}
+
+int64_t Kingdom::SkillValue(const TitanSkill& S) const
+{
+	if (S.kind < 0 || S.kind >= static_cast<int>(C.skills.kinds.size()))
+	{
+		return 0;
+	}
+	return C.skills.kinds[static_cast<size_t>(S.kind)].tiers[static_cast<size_t>(std::max(1, std::min(3, S.tier)) - 1)];
+}
+
+void Kingdom::AddSkill(TitanState& T, uint64_t H) const
+{
+	if (static_cast<int>(T.skills.size()) >= SkillSlots(T))
+	{
+		return;
+	}
+	const std::string& Cls = C.titans[static_cast<size_t>(T.def)].cls;
+	const std::vector<int64_t>* Weights = nullptr;
+	for (const std::pair<std::string, std::vector<int64_t>>& W : C.skills.classWeights)
+	{
+		Weights = W.first == Cls ? &W.second : Weights;
+	}
+	std::vector<int64_t> W(C.skills.kinds.size(), 0);
+	int64_t Total = 0;
+	for (size_t K = 0; K < W.size(); ++K)
+	{
+		const bool bTaken = std::any_of(T.skills.begin(), T.skills.end(), [K](const TitanSkill& S) { return S.kind == static_cast<int>(K); });
+		W[K] = bTaken ? 0 : Weights ? (*Weights)[K] : 1;
+		Total += W[K];
+	}
+	if (Total <= 0)
+	{
+		return;
+	}
+	int64_t Roll = static_cast<int64_t>(H % static_cast<uint64_t>(Total));
+	for (size_t K = 0; K < W.size(); ++K)
+	{
+		if (Roll < W[K])
+		{
+			TitanSkill S;
+			S.kind = static_cast<int>(K);
+			T.skills.push_back(S);
+			return;
+		}
+		Roll -= W[K];
+	}
+}
+
+void Kingdom::StartSkills(TitanState& T) const
+{
+	AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8));
+	if (T.ascended)
+	{
+		AddSkill(T, Mix(Seed ^ 0x736b696c6cULL, static_cast<uint64_t>(T.id) * 8 + T.skills.size()));
+	}
+}
+
+int64_t Kingdom::TitanSkillBonus(int32_t TitanId, RelicStat Stat) const
+{
+	const TitanState* T = FindTitan(TitanId);
+	int64_t Total = 0;
+	for (size_t I = 0; T && I < T->skills.size(); ++I)
+	{
+		const TitanSkill& S = T->skills[I];
+		Total += S.kind >= 0 && S.kind < static_cast<int>(C.skills.kinds.size()) && C.skills.kinds[static_cast<size_t>(S.kind)].stat == Stat ? SkillValue(S) : 0;
+	}
+	return Total;
+}
+
+int64_t Kingdom::TitanBonus(int32_t TitanId, RelicStat Stat) const
+{
+	return CapBonus(Stat, TitanRelicSum(TitanId, Stat) + TitanSkillBonus(TitanId, Stat));
 }
 
 const Building* Kingdom::Find(int32_t Id) const
@@ -3906,6 +4019,11 @@ int32_t Kingdom::RelicTitan(int32_t RelicId) const
 }
 
 int64_t Kingdom::TitanRelicBonus(int32_t TitanId, RelicStat Stat) const
+{
+	return CapBonus(Stat, TitanRelicSum(TitanId, Stat));
+}
+
+int64_t Kingdom::TitanRelicSum(int32_t TitanId, RelicStat Stat) const
 {
 	const TitanState* T = FindTitan(TitanId);
 	int64_t Total = 0;
@@ -4622,6 +4740,16 @@ std::string Kingdom::Save() const
 			W.Int(R);
 		}
 		W.EndArray();
+		W.Key("skills");
+		W.BeginArray();
+		for (const TitanSkill& S : T.skills)
+		{
+			W.BeginArray();
+			W.String(C.skills.kinds[static_cast<size_t>(S.kind)].id);
+			W.Int(S.tier);
+			W.EndArray();
+		}
+		W.EndArray();
 		W.EndObject();
 	}
 	W.EndArray();
@@ -5052,6 +5180,29 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 					{
 						T.relics.push_back(static_cast<int32_t>((*Rl)[K].AsInt64(0)));
 					}
+				}
+				// Skills (saves before them get the start skill, and the ascension one, from the seed); kinds the content
+				// no longer has are dropped.
+				if (const JsonValue* Sk = TJ.Find("skills"))
+				{
+					for (size_t K = 0; K < Sk->Size() && static_cast<int>(T.skills.size()) < SkillSlots(T); ++K)
+					{
+						const JsonValue& SJ = (*Sk)[K];
+						for (size_t D = 0; SJ.Size() == 2 && D < C.skills.kinds.size(); ++D)
+						{
+							if (C.skills.kinds[D].id == SJ[0].AsString())
+							{
+								TitanSkill S;
+								S.kind = static_cast<int>(D);
+								S.tier = std::max(1, std::min(3, static_cast<int>(SJ[1].AsInt64(1))));
+								T.skills.push_back(S);
+							}
+						}
+					}
+				}
+				else
+				{
+					StartSkills(T);
 				}
 				TitanList.push_back(T);
 			}
@@ -5526,6 +5677,12 @@ uint64_t Kingdom::Hash() const
 		for (const int32_t R : T.relics)
 		{
 			W.I32(R);
+		}
+		W.U32(static_cast<uint32_t>(T.skills.size()));
+		for (const TitanSkill& S : T.skills)
+		{
+			W.I32(S.kind);
+			W.I32(S.tier);
 		}
 	}
 	for (size_t I = 0; I < SpellStockList.size(); ++I)

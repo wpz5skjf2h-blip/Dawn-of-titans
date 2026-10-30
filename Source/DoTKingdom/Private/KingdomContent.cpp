@@ -366,6 +366,46 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 		Error = "kingdom/army.json: relics need kinds";
 		return false;
 	}
+	if (const JsonValue* S = J.Find("skills"))
+	{
+		SkillRules& Sk = Out.skills;
+		Sk.slots = std::max(1, S->GetInt("slots", Sk.slots));
+		Sk.openPct = std::max(0, std::min(100, S->GetInt("openPct", Sk.openPct)));
+		Sk.upgradePct = std::max(0, std::min(100, S->GetInt("upgradePct", Sk.upgradePct)));
+		const JsonValue* Kinds = S->Find("kinds");
+		for (size_t I = 0; Kinds && I < Kinds->Size(); ++I)
+		{
+			const JsonValue& KJ = (*Kinds)[I];
+			SkillKind K;
+			K.id = KJ.GetString("id");
+			K.name = KJ.GetString("name", K.id);
+			const JsonValue* Tiers = KJ.Find("tiers");
+			if (K.id.empty() || !ParseRelicStat(KJ.GetString("stat"), K.stat) || !Tiers || Tiers->Size() != 3)
+			{
+				Error = "kingdom/army.json: skill '" + K.id + "' needs an id, a titan stat and three tiers";
+				return false;
+			}
+			for (size_t T = 0; T < 3; ++T)
+			{
+				const double V = (*Tiers)[T].AsDouble(0);
+				K.tiers[T] = static_cast<int64_t>(V * 10 + 0.5);
+			}
+			Sk.kinds.push_back(K);
+		}
+		if (const JsonValue* Classes = S->Find("classes"))
+		{
+			for (size_t I = 0; I < Classes->keys.size(); ++I)
+			{
+				std::vector<int64_t> W(Sk.kinds.size(), 0);
+				const JsonValue& CJ = Classes->items[I];
+				for (size_t K = 0; K < Sk.kinds.size(); ++K)
+				{
+					W[K] = std::max<int64_t>(0, CJ.GetInt64(Sk.kinds[K].id.c_str(), 0));
+				}
+				Sk.classWeights.emplace_back(Classes->keys[I], W);
+			}
+		}
+	}
 	Out.landTitanPctPerLevel = J.GetInt64("landTitanPctPerLevel", 1);
 	Out.skipSecPerGem = std::max<int64_t>(1, J.GetInt64("skipSecPerGem", 60));
 	Out.startArmy.assign(Out.troops.size(), 0);
