@@ -1331,14 +1331,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		bFirst = false;
 		O.Raw("{").Key("id").Int(R.id).Comma().Key("kind").Int(R.kind).Comma().Key("r").Int(R.rarity).Comma().Key("dur").Int(Km->RelicLeft(R)).Comma();
 		O.Key("max").Int(Km->RelicMax(R)).Comma().Key("on").Int(Km->RelicTitan(R.id)).Comma().Key("b").Int(R.building).Comma().Key("lv").Raw("[");
-		for (size_t S = 0; S < R.levels.size(); ++S)
+		for (size_t Slot = 0; Slot < R.levels.size(); ++Slot)
 		{
-			O.Raw(S ? "," : "").Int(R.levels[S]);
+			O.Raw(Slot ? "," : "").Int(R.levels[Slot]);
 		}
 		O.Raw("],").Key("v").Raw("[");
-		for (size_t S = 0; S < R.levels.size(); ++S)
+		for (size_t Slot = 0; Slot < R.levels.size(); ++Slot)
 		{
-			O.Raw(S ? "," : "").Int(Km->RelicEffectValue(R, static_cast<int>(S)));
+			O.Raw(Slot ? "," : "").Int(Km->RelicEffectValue(R, static_cast<int>(Slot)));
 		}
 		O.Raw("]}");
 	}

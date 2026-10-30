@@ -139,6 +139,7 @@ void Kingdom::ResetArmy()
 	Army = C.startArmy;
 	Army.resize(C.troops.size(), 0);
 	Queue.clear();
+	QueuePaid.clear();
 	QueueStart = Time;
 	bQueueBlocked = false;
 	Research = -1;
@@ -166,6 +167,7 @@ void Kingdom::ResetSpellsAndRelics()
 	SpellStockList.assign(C.spells.size(), 0);
 	SpellLevelList.assign(C.spells.size(), 1);
 	Craft.clear();
+	CraftPaid.clear();
 	CraftStart = Time;
 	bCraftBlocked = false;
 	SpellLabs.clear();
@@ -695,7 +697,9 @@ void Kingdom::SettleLand(Land& L, int64_t At) const
 	{
 		const int64_t Cap = LandStoreCap(L);
 		const int64_t Gained = Num * (At - L.lastAt) + L.carry;
-		L.stored = std::min(Cap, L.stored + Gained / Den);
+		// A store above the cap (filled while a guard raised it, then the guard left) keeps what it holds and stops
+		// growing until it is collected.
+		L.stored = std::max(L.stored, std::min(Cap, L.stored + Gained / Den));
 		L.carry = L.stored >= Cap ? 0 : Gained % Den;
 	}
 	L.lastAt = std::max(L.lastAt, At);
@@ -3011,6 +3015,7 @@ void Kingdom::ProcessQueue(int64_t Until)
 		}
 		Army[static_cast<size_t>(Queue.front())] += 1;
 		Queue.erase(Queue.begin());
+		QueuePaid.erase(QueuePaid.begin());
 		QueueStart = Done;
 	}
 }
@@ -3087,6 +3092,7 @@ Error Kingdom::Train(int Troop)
 		bQueueBlocked = false;
 	}
 	Queue.push_back(Troop);
+	QueuePaid.push_back(Ck.cost[static_cast<size_t>(ResIndex(Res::Food))]);
 	ProcessQueue(Time);
 	NoteQuest(QuestEvent::Train, 1);
 	return Error::None;
@@ -3098,10 +3104,10 @@ Error Kingdom::CancelTrain(int Index)
 	{
 		return Error::BadId;
 	}
-	const int Troop = Queue[static_cast<size_t>(Index)];
-	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
-	Res_[static_cast<size_t>(ResIndex(Res::Food))] += T.levels[static_cast<size_t>(std::max(1, TroopLevel(Troop)) - 1)].cost;
+	// Back comes what was paid (research since may have raised the price), as far as the granaries hold it.
+	AddResource(Res::Food, QueuePaid[static_cast<size_t>(Index)]);
 	Queue.erase(Queue.begin() + Index);
+	QueuePaid.erase(QueuePaid.begin() + Index);
 	NoteQuest(QuestEvent::Train, -1); // a cancelled squad does not count
 	if (Index == 0)
 	{
@@ -3146,6 +3152,7 @@ Error Kingdom::SkipTraining()
 	{
 		Army[static_cast<size_t>(Queue.front())] += 1;
 		Queue.erase(Queue.begin());
+		QueuePaid.erase(QueuePaid.begin());
 	}
 	QueueStart = Time;
 	bQueueBlocked = false;
@@ -3871,6 +3878,7 @@ void Kingdom::ProcessCraft(int64_t Until)
 		}
 		SpellStockList[static_cast<size_t>(Craft.front())] += 1;
 		Craft.erase(Craft.begin());
+		CraftPaid.erase(CraftPaid.begin());
 		CraftStart = Done;
 	}
 }
@@ -3935,6 +3943,7 @@ Error Kingdom::CraftSpell(int Spell)
 		bCraftBlocked = false;
 	}
 	Craft.push_back(Spell);
+	CraftPaid.push_back(Ck.cost[static_cast<size_t>(ResIndex(Res::Gold))]);
 	ProcessCraft(Time);
 	NoteQuest(QuestEvent::Craft, 1);
 	return Error::None;
@@ -3946,8 +3955,10 @@ Error Kingdom::CancelCraft(int Index)
 	{
 		return Error::BadId;
 	}
-	Res_[static_cast<size_t>(ResIndex(Res::Gold))] += CraftGold(Craft[static_cast<size_t>(Index)]);
+	// Back comes what was paid (an upgrade since may have raised the price), as far as the vaults hold it.
+	AddResource(Res::Gold, CraftPaid[static_cast<size_t>(Index)]);
 	Craft.erase(Craft.begin() + Index);
+	CraftPaid.erase(CraftPaid.begin() + Index);
 	NoteQuest(QuestEvent::Craft, -1); // a cancelled spell does not count
 	if (Index == 0)
 	{
@@ -3992,6 +4003,7 @@ Error Kingdom::SkipCraft()
 	{
 		SpellStockList[static_cast<size_t>(Craft.front())] += 1;
 		Craft.erase(Craft.begin());
+		CraftPaid.erase(CraftPaid.begin());
 	}
 	CraftStart = Time;
 	bCraftBlocked = false;
@@ -4920,6 +4932,13 @@ std::string Kingdom::Save() const
 		W.String(C.troops[static_cast<size_t>(T)].id);
 	}
 	W.EndArray();
+	W.Key("queuePaid");
+	W.BeginArray();
+	for (const int64_t Paid : QueuePaid)
+	{
+		W.Int(Paid);
+	}
+	W.EndArray();
 	W.Key("queueStart");
 	W.Int(QueueStart);
 	W.Key("queueBlocked");
@@ -5001,6 +5020,13 @@ std::string Kingdom::Save() const
 	for (const int Sp : Craft)
 	{
 		W.String(C.spells[static_cast<size_t>(Sp)].id);
+	}
+	W.EndArray();
+	W.Key("queuePaid");
+	W.BeginArray();
+	for (const int64_t Paid : CraftPaid)
+	{
+		W.Int(Paid);
 	}
 	W.EndArray();
 	W.Key("queueStart");
@@ -5419,6 +5445,22 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		};
 		ReadTroopList(ArmyJ->Find("queue"), Queue);
+		// What was paid for each queued unit; older saves (or a queue that lost unknown troops) take today's price.
+		QueuePaid.clear();
+		if (const JsonValue* Paid = ArmyJ->Find("queuePaid"); Paid && Paid->Size() == Queue.size())
+		{
+			for (size_t I = 0; I < Paid->Size(); ++I)
+			{
+				QueuePaid.push_back(std::max<int64_t>(0, (*Paid)[I].AsInt64()));
+			}
+		}
+		else
+		{
+			for (const int T : Queue)
+			{
+				QueuePaid.push_back(C.troops[static_cast<size_t>(T)].levels[static_cast<size_t>(std::max(1, TroopLevel(T)) - 1)].cost);
+			}
+		}
 		ReadTroopList(ArmyJ->Find("pendingSquads"), PendingArmy);
 		QueueStart = ArmyJ->GetInt64("queueStart", Time);
 		bQueueBlocked = ArmyJ->GetBool("queueBlocked", false);
@@ -5524,6 +5566,21 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		};
 		ReadSpellList(SpellsJ->Find("queue"), Craft);
+		CraftPaid.clear();
+		if (const JsonValue* Paid = SpellsJ->Find("queuePaid"); Paid && Paid->Size() == Craft.size())
+		{
+			for (size_t I = 0; I < Paid->Size(); ++I)
+			{
+				CraftPaid.push_back(std::max<int64_t>(0, (*Paid)[I].AsInt64()));
+			}
+		}
+		else
+		{
+			for (const int Sp : Craft)
+			{
+				CraftPaid.push_back(CraftGold(Sp));
+			}
+		}
 		ReadSpellList(SpellsJ->Find("pending"), PendingSpellList);
 		CraftStart = SpellsJ->GetInt64("queueStart", Time);
 		bCraftBlocked = SpellsJ->GetBool("queueBlocked", false);
@@ -5941,6 +5998,10 @@ uint64_t Kingdom::Hash() const
 	{
 		W.I32(T);
 	}
+	for (const int64_t Paid : QueuePaid)
+	{
+		W.I64(Paid);
+	}
 	W.I64(QueueStart);
 	W.Bool(bQueueBlocked);
 	W.I32(Research);
@@ -5987,6 +6048,10 @@ uint64_t Kingdom::Hash() const
 	for (const int Sp : Craft)
 	{
 		W.I32(Sp);
+	}
+	for (const int64_t Paid : CraftPaid)
+	{
+		W.I64(Paid);
 	}
 	W.I64(CraftStart);
 	W.Bool(bCraftBlocked);

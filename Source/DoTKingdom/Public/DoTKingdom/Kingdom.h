@@ -787,6 +787,7 @@ private:
 	std::vector<int> TroopLevels;
 	std::vector<int64_t> Army; // units by troop, squads away in battle included
 	std::vector<int> Queue; // troop per queued unit
+	std::vector<int64_t> QueuePaid; // food paid for each queued unit (refunded on cancel)
 	int64_t QueueStart = 0;
 	bool bQueueBlocked = false;
 	int Research = -1;
@@ -798,6 +799,7 @@ private:
 	std::vector<int64_t> SpellStockList;
 	std::vector<int> SpellLevelList;
 	std::vector<int> Craft; // spell per queued craft
+	std::vector<int64_t> CraftPaid; // gold paid for each queued craft (refunded on cancel)
 	int64_t CraftStart = 0;
 	bool bCraftBlocked = false;
 	std::vector<SpellResearchSlot> SpellLabs;

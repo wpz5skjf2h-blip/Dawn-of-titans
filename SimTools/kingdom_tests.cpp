@@ -450,6 +450,35 @@ void TestTrainingQueue()
 	KD_CHECK(K.Amount(Res::Gems) == Gems - Skip && K.TrainQueue().empty() && K.ArmyTotal() == 9);
 }
 
+void TestQueueRefunds()
+{
+	const KingdomContent& Ct = Content();
+	Kingdom K(Ct);
+	K.NewGame(T0, 5);
+	const int Mil = Troop("troop.militia");
+	// Each queued unit keeps the price paid for it, so research in between does not change what a cancel returns.
+	KD_CHECK(K.Train(Mil) == Error::None && K.Train(Mil) == Error::None);
+	const std::string Base = K.Save();
+	KD_CHECK(Base.find("\"queuePaid\":[135,135]") != std::string::npos);
+	std::string Error;
+	Kingdom A(Ct);
+	KD_CHECK(A.Load(Replace(Base, "\"queuePaid\":[135,135]", "\"queuePaid\":[135,100]"), Error));
+	int64_t Food = A.Amount(Res::Food);
+	KD_CHECK(A.CancelTrain(1) == Error::None && A.Amount(Res::Food) == Food + 100 && A.TrainQueue().size() == 1);
+	// A save without the prices (older format) takes today's.
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(Replace(Base, ",\"queuePaid\":[135,135]", ""), Error) && B.Save() == Base && B.Hash() == K.Hash());
+	// The refund goes into the granaries only as far as they hold it.
+	const int64_t Cap = K.Capacity(Res::Food);
+	Food = K.Amount(Res::Food);
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(Replace(Base, "\"food\":" + std::to_string(Food), "\"food\":" + std::to_string(Cap - 50)), Error));
+	KD_CHECK(F.Amount(Res::Food) == Cap - 50 && F.CancelTrain(0) == Error::None && F.Amount(Res::Food) == Cap);
+	// The unit that came out of the queue takes its price along.
+	K.Advance(T0 + 60);
+	KD_CHECK(K.TrainQueue().size() == 1 && K.Save().find("\"queuePaid\":[135]") != std::string::npos);
+}
+
 void TestTroopResearch()
 {
 	Kingdom K(Content());
@@ -663,6 +692,13 @@ void TestSpellsRelicsLandTitans()
 	const std::string Saved = L.Save();
 	Kingdom M(Content());
 	KD_CHECK(M.Load(Saved, Error) && M.Hash() == L.Hash() && M.Save() == Saved);
+	// A store the titan filled above the plain cap keeps what it holds after the titan leaves, and grows no more.
+	L.Advance(L.Now() + 48 * Hour);
+	const int64_t Full = L.UncollectedLand(*L.FindLand(R.landId));
+	KD_CHECK(Full == L.LandStoreCap(*L.FindLand(R.landId)));
+	KD_CHECK(L.RecallTitan(R.landId) == Error::None);
+	L.Advance(L.Now() + Hour);
+	KD_CHECK(Full > L.LandStoreCap(*L.FindLand(R.landId)) && L.UncollectedLand(*L.FindLand(R.landId)) == Full);
 }
 /** A relic item in a save (format 5). */
 std::string RelicJson(int Id, const char* Kind, int Rarity, int64_t Durability, const char* Levels)
@@ -2113,7 +2149,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds},
 	};
 	for (const auto& T : Tests)
 	{
