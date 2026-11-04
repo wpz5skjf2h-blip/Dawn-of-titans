@@ -3138,6 +3138,7 @@ function makeThumbs() {
 	r.setViewport(0, 0, size.x, size.y);
 }
 function openShop() {
+	K.shopHint = -1;
 	try { makeThumbs(); } catch (e) { console.warn('Shop pictures unavailable:', e); }
 	if (!K.shopTab) K.shopTab = 'resources';
 	cancelPlace();
@@ -3146,8 +3147,8 @@ function openShop() {
 		const st = K.st;
 		const tabs = CATS.map(([id, name]) => '<button class="' + (id === K.shopTab ? 'on' : '') + '" data-act="tab" data-tab="' + id + '">' + name + '</button>').join('');
 		const cards = [];
-		// The building the current goal asks for gets a gold edge.
-		const hint = goalBuilds(st);
+		// The building the current goal asks for (or needs first) gets a gold edge.
+		const hint = K.shopHint >= 0 ? K.shopHint : goalBuilds(st);
 		K.defs.forEach((d, i) => {
 			if (d.category !== K.shopTab || i === K.rules.castleIndex) return;
 			const s = st.shop[i];
@@ -3590,6 +3591,8 @@ function shopFor(def) {
 	const d = K.defs[def];
 	if (d) K.shopTab = d.category;
 	openShop();
+	K.shopHint = def; // after openShop, which forgets it
+	refreshSheet(true);
 }
 /** «Показать»: the building or the screen where the current goal is done. */
 function showGoal() {
