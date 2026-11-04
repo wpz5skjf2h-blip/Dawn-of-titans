@@ -151,12 +151,21 @@ void TestJson()
 void TestContent()
 {
 	const SimContent& C = Content();
-	DOT_CHECK(C.troops.size() == 10);
+	DOT_CHECK(C.troops.size() == 14);
 	DOT_CHECK(C.FindTroop("troop.skeleton") == 6);
+	const TroopDef& Ballista = C.troops[static_cast<size_t>(C.FindTroop("troop.ballista"))];
+	DOT_CHECK(Ballista.siege && Ballista.ranged && Ballista.cls == DefenderClass::Siege && Ballista.move == MoveClass::Siege);
+	DOT_CHECK(Ballista.squadSize == 3 && Ballista.crew == 3 && Ballista.pierceTargets == 3 && Ballista.pinMaxStacks == 3);
+	DOT_CHECK(Ballista.setupTicks == 2 * kTicksPerSecond && Ballista.poiseFactor > C.rules.poiseFactorTroops);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.pikemen"))].frost);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].cleave);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.goliaths"))].maxAttackers == 8);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.panthers"))].poison);
+	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.panthers"))].IsCavalry());
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.grenadiers"))].firebomb);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.chainbreakers"))].chains);
 	DOT_CHECK(C.troops[static_cast<size_t>(C.FindTroop("troop.priests"))].support);
-	DOT_CHECK(C.titans.size() == 10);
+	DOT_CHECK(C.titans.size() == 13);
 	DOT_CHECK(C.FindAbility("spell.meteor_strike") >= 0);
 	const TroopDef& Spear = C.troops[static_cast<size_t>(C.FindTroop("troop.spearmen"))];
 	DOT_CHECK(Near(C.counters.Get(Spear.counterRow, DefenderClass::Cavalry).ToDouble(), 2.0, 1e-9));
@@ -530,6 +539,35 @@ void TestSpellChargesRelicsMorale()
 	const double Hp = A.Titans()[0].maxHp.ToDouble();
 	DOT_CHECK(Near(B.Titans()[0].maxHp.ToDouble(), Hp * 1.2, Hp * 0.001));
 	DOT_CHECK(Near(B.Titans()[0].atk.ToDouble(), A.Titans()[0].atk.ToDouble() * 1.1, A.Titans()[0].atk.ToDouble() * 0.001));
+	// Complex relics: +6 points of critical chance, 15% armor piercing, and +8% health / +5% damage for the whole army.
+	BattleSetup Rich = Plain;
+	Rich.sides[0].titan.critPct = 6;
+	Rich.sides[0].titan.piercePct = 15;
+	Rich.sides[0].troopHpPct = 8;
+	Rich.sides[0].troopAtkPct = 5;
+	BattleSimulation Rc(Content());
+	DOT_CHECK(Rc.Init(Rich, Error));
+	DOT_CHECK(Rc.Titans()[0].critChance == A.Titans()[0].critChance + fx::Pct(6) && Rc.Titans()[0].pierce == fx::Pct(15) && A.Titans()[0].pierce == Fix64::Zero());
+	DOT_CHECK(Near(Rc.Squads()[0].hp.ToDouble(), A.Squads()[0].hp.ToDouble() * 1.08, 0.01) && Near(Rc.Squads()[0].atk.ToDouble(), A.Squads()[0].atk.ToDouble() * 1.05, 0.01));
+	DOT_CHECK(Rc.Squads().back().hp == A.Squads().back().hp); // the enemy army is untouched
+	JsonWriter WR;
+	WriteBattleSetup(WR, Rich);
+	JsonValue JR;
+	BattleSetup RichBack;
+	DOT_CHECK(ParseJson(WR.Result(), JR, Error) && ParseBattleSetup(JR, RichBack, Error));
+	DOT_CHECK(RichBack.sides[0].titan.critPct == 6 && RichBack.sides[0].titan.piercePct == 15 && RichBack.sides[0].troopHpPct == 8 && RichBack.sides[0].troopAtkPct == 5);
+	// The same battle twice ends the same way (relic bonuses keep the simulation deterministic).
+	Rich.sides[0].aiProfile = "veteran";
+	Rich.sides[1].aiProfile = "veteran";
+	BattleSimulation R1(Content());
+	BattleSimulation R2(Content());
+	DOT_CHECK(R1.Init(Rich, Error) && R2.Init(Rich, Error));
+	for (int I = 0; I < 60 * kTicksPerSecond && R1.Phase() != BattlePhase::Finished; ++I)
+	{
+		R1.Step();
+		R2.Step();
+	}
+	DOT_CHECK(R1.ComputeHash() == R2.ComputeHash());
 
 	// Ascension (kingdom): an ascended titan may stand ten levels above the cap of 10 + 10 per star.
 	BattleSetup High = Plain;
@@ -836,11 +874,246 @@ void TestNewTroops()
 	}
 }
 
+/** Wins of side A in an AI-vs-AI fight over several seeds; each side lists its squads, the second one 12 m behind the first. */
+int DuelWins(std::vector<const char*> A, std::vector<const char*> B, int Seeds)
+{
+	int Wins = 0;
+	for (uint64_t Seed = 1; Seed <= static_cast<uint64_t>(Seeds); ++Seed)
+	{
+		BattleSetup S = Scenario("scenarios/m0_cavalry_test.json");
+		S.seed = Seed;
+		for (int Side = 0; Side < 2; ++Side)
+		{
+			const SquadSetup Base = S.sides[Side].squads[0];
+			S.sides[Side].squads.clear();
+			const std::vector<const char*>& List = Side == 0 ? A : B;
+			for (size_t K = 0; K < List.size(); ++K)
+			{
+				SquadSetup Q = Base;
+				Q.troopId = List[K];
+				Q.stanceSet = false;
+				Q.formation = Formation::Line;
+				Q.position = Base.position + FixVec2(Fix64::Zero(), fx::Int(static_cast<int>(K) * (Side == 0 ? -12 : 12)));
+				S.sides[Side].squads.push_back(Q);
+			}
+		}
+		BattleSimulation Sim(Content());
+		std::string Error;
+		DOT_CHECK(Sim.Init(S, Error));
+		RunToEnd(Sim);
+		Wins += Sim.Result().outcome == BattleOutcome::Victory ? 1 : 0;
+	}
+	return Wins;
+}
+
+void TestCouncilTroops()
+{
+	std::string Error;
+	const SimContent& C = Content();
+	// Pikemen (ice): every hit chills the enemy squad, slowing its steps and blows; chills refresh, they do not stack.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.pikemen", 120, 70, true, Stance::Aggressive)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 86, false, Stance::Aggressive)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		Fix64 Slowest;
+		for (int I = 0; I < 20 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Slowest = fx::Min(Slowest, Sim.SquadStat(Sim.Squads()[1], StatType::MoveSpeedPct));
+		}
+		DOT_CHECK(Slowest == -fx::Pct(20));
+		DOT_CHECK(Sim.SquadStat(Sim.Squads()[0], StatType::MoveSpeedPct) == Fix64::Zero());
+	}
+	// Goliaths (earth): three giants; a club sweep hurts and topples the soldiers around its target, and up to
+	// eight enemies can surround one giant.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.goliaths", 120, 70, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 120, 84, false, Stance::Aggressive)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		DOT_CHECK(Sim.Squads()[0].startCount == 3);
+		int MostDown = 0;
+		int MostOnOneGiant = 0;
+		for (int I = 0; I < 25 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			int Down = 0;
+			std::vector<int> OnGiant(Sim.Soldiers().size(), 0);
+			for (const int32_t M : Sim.Squads()[1].members)
+			{
+				const Soldier& Sol = Sim.Soldiers()[static_cast<size_t>(M)];
+				Down += Sol.Alive() && Sol.state == SoldierState::KnockedDown ? 1 : 0;
+				if (Sol.Alive() && Sol.targetSoldier >= 0)
+				{
+					MostOnOneGiant = std::max(MostOnOneGiant, ++OnGiant[static_cast<size_t>(Sol.targetSoldier)]);
+				}
+			}
+			MostDown = std::max(MostDown, Down);
+		}
+		DOT_CHECK(MostDown >= 3);
+		DOT_CHECK(MostOnOneGiant > C.rules.maxAttackersPerSoldier);
+		DOT_CHECK(MostOnOneGiant <= 8);
+		DOT_CHECK(Sim.Squads()[1].aliveCount < Sim.Squads()[1].startCount - 8);
+	}
+	// Panthers (poison): bites leave venom that keeps hurting; War Priests' sanctuary washes it out.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[0].squads = {MakeSquad("troop.panthers", 120, 60, true, Stance::Aggressive)};
+		S.sides[1].squads = {MakeSquad("troop.archers", 120, 90, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		bool bPoisoned = false;
+		for (int I = 0; I < 20 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			for (const int32_t M : Sim.Squads()[1].members)
+			{
+				const Soldier& Sol = Sim.Soldiers()[static_cast<size_t>(M)];
+				bPoisoned = bPoisoned || (Sol.Alive() && Sol.poisonTicks > 0 && Sol.poisonDps > Fix64::Zero());
+			}
+		}
+		DOT_CHECK(bPoisoned);
+	}
+	// The original's counter chart: pikes beat panthers, panthers beat archers and grenadiers, goliaths beat militia
+	// and fall to shooters (militia backed by archers win where two militia squads lose).
+	const int PikesVsPanthers = DuelWins({"troop.pikemen"}, {"troop.panthers"}, 6);
+	const int PanthersVsArchers = DuelWins({"troop.panthers"}, {"troop.archers"}, 6);
+	const int PanthersVsGrenadiers = DuelWins({"troop.panthers"}, {"troop.grenadiers"}, 6);
+	const int GoliathsVsMilitia = DuelWins({"troop.goliaths"}, {"troop.militia"}, 6);
+	const int MilitiaPairVsGoliaths = DuelWins({"troop.militia", "troop.militia"}, {"troop.goliaths"}, 6);
+	const int MilitiaArchersVsGoliaths = DuelWins({"troop.militia", "troop.archers"}, {"troop.goliaths"}, 6);
+	std::printf("  pikemen vs panthers %d/6, panthers vs archers %d/6, panthers vs grenadiers %d/6, goliaths vs militia %d/6,\n"
+		"  goliaths vs militia x2: militia %d/6, vs militia + archers: those %d/6\n",
+		PikesVsPanthers, PanthersVsArchers, PanthersVsGrenadiers, GoliathsVsMilitia, MilitiaPairVsGoliaths, MilitiaArchersVsGoliaths);
+	DOT_CHECK(PikesVsPanthers >= 5);
+	DOT_CHECK(PanthersVsArchers >= 5);
+	DOT_CHECK(PanthersVsGrenadiers >= 5);
+	DOT_CHECK(GoliathsVsMilitia >= 5);
+	DOT_CHECK(MilitiaPairVsGoliaths <= 1);
+	DOT_CHECK(MilitiaArchersVsGoliaths >= 5);
+}
+
+void TestBallista()
+{
+	std::string Error;
+	const SimContent& C = Content();
+	const TroopDef& TD = C.troops[static_cast<size_t>(C.FindTroop("troop.ballista"))];
+	// A bolt goes through up to three soldiers standing in its line; an engine fires only after standing still for its setup time;
+	// a damaged engine has fewer crewmen and reloads slower.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.present = false;
+		S.sides[1].aiProfile.clear();
+		S.sides[0].aiProfile.clear();
+		S.sides[0].squads = {MakeSquad("troop.ballista", 120, 40, true, Stance::Aggressive)};
+		SquadSetup Column = MakeSquad("troop.militia", 120, 94, false, Stance::Hold);
+		Column.formation = Formation::Column;
+		S.sides[1].squads = {Column};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		std::vector<SimEvent> Ev;
+		std::vector<int32_t> LastMoved(Sim.Soldiers().size(), -1000);
+		int MostPierced = 0;
+		int Bolts = 0;
+		bool bSetupKept = true;
+		bool bReloadKept = true;
+		for (int I = 0; I < 40 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			Sim.DrainEvents(Ev);
+			for (const int32_t M : Sim.Squads()[0].members)
+			{
+				const Soldier& E = Sim.Soldiers()[static_cast<size_t>(M)];
+				if (E.state == SoldierState::Moving)
+				{
+					LastMoved[static_cast<size_t>(M)] = Sim.CurrentTick();
+				}
+				if (E.Alive() && E.lastAttackTick == Sim.CurrentTick())
+				{
+					bSetupKept = bSetupKept && Sim.CurrentTick() - LastMoved[static_cast<size_t>(M)] >= TD.setupTicks;
+					bReloadKept = bReloadKept && E.attackCooldown >= Sim.Squads()[0].interval * TD.crew / Sim.CrewAlive(E);
+				}
+			}
+		}
+		for (const SimEvent& E : Ev)
+		{
+			if (E.type == SimEventType::BoltImpact)
+			{
+				++Bolts;
+				MostPierced = std::max(MostPierced, E.b);
+			}
+		}
+		std::printf("  ballista: %d bolts, at most %d soldiers in one line\n", Bolts, MostPierced);
+		DOT_CHECK(Bolts >= 6);
+		DOT_CHECK(MostPierced >= 2 && MostPierced <= TD.pierceTargets);
+		DOT_CHECK(bSetupKept);
+		DOT_CHECK(bReloadKept);
+		// The engines walked into range first, so the column is hurt.
+		DOT_CHECK(Sim.Squads()[1].aliveCount < Sim.Squads()[1].startCount);
+	}
+	// Bolts pin a titan (up to three pins, 10% slower each) and shake its poise far more than troops do; a titan's
+	// sweeps and stomps never send an engine flying.
+	{
+		BattleSetup S = Scenario("scenarios/m0_sandbox.json");
+		S.skipDeploy = true;
+		S.sides[0].titan.present = false;
+		S.sides[1].titan.position = FixVec2(fx::Int(120), fx::Int(110));
+		S.sides[0].squads = {MakeSquad("troop.ballista", 104, 50, true, Stance::Hold), MakeSquad("troop.ballista", 136, 50, true, Stance::Hold)};
+		S.sides[1].squads = {MakeSquad("troop.militia", 40, 150, false, Stance::Hold)};
+		BattleSimulation Sim(Content());
+		DOT_CHECK(Sim.Init(S, Error));
+		int MostPins = 0;
+		Fix64 Slowest;
+		bool bAirborne = false;
+		Fix64 Poise;
+		for (int I = 0; I < 40 * kTicksPerSecond && !Sim.IsFinished(); ++I)
+		{
+			Sim.Step();
+			const Titan& T = Sim.Titans()[0];
+			MostPins = std::max(MostPins, Sim.TitanPins(T));
+			Slowest = fx::Min(Slowest, Sim.TitanStat(T, StatType::MoveSpeedPct));
+			Poise = fx::Max(Poise, T.poiseDamage);
+			for (const Squad& Sq : Sim.Squads())
+			{
+				for (const int32_t M : Sq.members)
+				{
+					bAirborne = bAirborne || (Sq.side == Side::Attacker && Sim.Soldiers()[static_cast<size_t>(M)].state == SoldierState::Airborne);
+				}
+			}
+		}
+		std::printf("  ballista vs titan: %d pins at most, speed %.0f%%, poise damage up to %.0f\n", MostPins, Slowest.ToDouble() * 100, Poise.ToDouble());
+		DOT_CHECK(MostPins == TD.pinMaxStacks);
+		DOT_CHECK(Slowest <= -TD.pinMoveSlow * TD.pinMaxStacks);
+		DOT_CHECK(!bAirborne);
+	}
+	// Cavalry is the answer to engines; a lone ballista crew loses to infantry that closes in, too.
+	const int OutridersVsBallista = DuelWins({"troop.outriders"}, {"troop.ballista"}, 6);
+	const int MilitiaVsBallista = DuelWins({"troop.militia"}, {"troop.ballista"}, 6);
+	std::printf("  outriders vs ballista %d/6, militia vs ballista %d/6\n", OutridersVsBallista, MilitiaVsBallista);
+	DOT_CHECK(OutridersVsBallista >= 5);
+	DOT_CHECK(MilitiaVsBallista >= 4);
+}
+
 void TestTitanAbilities()
 {
 	// Every kingdom titan has two abilities of its own, and an AI-driven titan uses them in battle.
 	const SimContent& C = Content();
-	const char* const Roster[] = {"titan.minotaur", "titan.cyclops", "titan.perun", "titan.atlas", "titan.ymir", "titan.surtr", "titan.hecate", "titan.artemis"};
+	const char* const Roster[] = {"titan.minotaur", "titan.cyclops", "titan.perun", "titan.atlas", "titan.ymir", "titan.surtr", "titan.hecate", "titan.artemis",
+		"titan.loki", "titan.tyr", "titan.veles"};
 	std::vector<int> Seen;
 	for (const char* Id : Roster)
 	{
@@ -905,7 +1178,7 @@ int main()
 		{"NavGrid", TestNavGrid}, {"Determinism", TestDeterminism}, {"Invariants", TestInvariants}, {"Counters", TestCounters},
 		{"CommandsAndReplay", TestCommandsAndReplay}, {"ClashGrades", TestClashGrades}, {"Surrender", TestSurrender}, {"NoTitanStars", TestNoTitanStars}, {"SpellChargesRelicsMorale", TestSpellChargesRelicsMorale},
 		{"RaiseDead", TestRaiseDead}, {"TitanAbilities", TestTitanAbilities},
-		{"NewTroops", TestNewTroops}, {"LandMaps", TestLandMaps}};
+		{"NewTroops", TestNewTroops}, {"CouncilTroops", TestCouncilTroops}, {"Ballista", TestBallista}, {"LandMaps", TestLandMaps}};
 	for (const NamedTest& T : Tests)
 	{
 		const int Before = GFailures;

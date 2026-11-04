@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assembles the browser demo.
 
-Inputs: Web/page.html (markup and styles), Web/icons.js (icons), Web/app.js (battle), Web/kingdom.js (kingdom), Content/Data/**/*.json, Web/dist/dotsim*.js (from build.sh).
+Inputs: Web/page.html (markup and styles), Web/icons.js (icons), Web/titans.js (titan figures), Web/app.js (battle), Web/kingdom.js (kingdom), Content/Data/**/*.json, Web/dist/dotsim*.js (from build.sh).
 Outputs in Web/dist:
   artifact.html - page body for hosts that wrap it in their own document (claude.ai artifact)
   index.html    - complete standalone document; serve Web/dist over HTTP and open it
@@ -18,7 +18,8 @@ page = (web / "page.html").read_text(encoding="utf-8")
 app = (web / "app.js").read_text(encoding="utf-8")
 kingdom = (web / "kingdom.js").read_text(encoding="utf-8")
 icons = (web / "icons.js").read_text(encoding="utf-8")
-body = page.replace("/*CONTENT_JSON*/", content).replace("/*ICONS_JS*/", icons).replace("/*APP_JS*/", app).replace("/*KINGDOM_JS*/", kingdom)
+titans = (web / "titans.js").read_text(encoding="utf-8")
+body = page.replace("/*CONTENT_JSON*/", content).replace("/*ICONS_JS*/", icons).replace("/*TITANS_JS*/", titans).replace("/*APP_JS*/", app).replace("/*KINGDOM_JS*/", kingdom)
 dist = web / "dist"
 dist.mkdir(exist_ok=True)
 (dist / "artifact.html").write_text(body, encoding="utf-8")

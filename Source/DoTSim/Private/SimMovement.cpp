@@ -863,7 +863,19 @@ void BattleSimulation::Knockback(int SoldierIndex, FixVec2 Direction, Fix64 Hori
 	{
 		return;
 	}
-	const Fix64 Mult = TroopOf(SquadsList[static_cast<size_t>(S.squad)]).knockbackMult;
+	const TroopDef& TD = TroopOf(SquadsList[static_cast<size_t>(S.squad)]);
+	if (TD.siege)
+	{
+		// Engines are only moved by a smash, which topples them; sweeps and stomps leave them standing.
+		if (Vertical >= ContentRef.rules.smashKnockV)
+		{
+			S.state = SoldierState::KnockedDown;
+			S.stateTicks = std::max(S.stateTicks, TD.toppleTicks);
+			S.vel = FixVec2();
+		}
+		return;
+	}
+	const Fix64 Mult = TD.knockbackMult;
 	FixVec2 Dir = Direction.Normalized();
 	if (Dir.IsZero())
 	{
@@ -889,7 +901,7 @@ void BattleSimulation::Knockback(int SoldierIndex, FixVec2 Direction, Fix64 Hori
 void BattleSimulation::KnockDown(int SoldierIndex, int Ticks)
 {
 	Soldier& S = SoldiersList[static_cast<size_t>(SoldierIndex)];
-	if (!S.Alive() || S.state == SoldierState::Airborne)
+	if (!S.Alive() || S.state == SoldierState::Airborne || TroopOf(SquadsList[static_cast<size_t>(S.squad)]).siege)
 	{
 		return;
 	}
