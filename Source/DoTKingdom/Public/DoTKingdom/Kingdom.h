@@ -621,6 +621,18 @@ public:
 	/** Today's target of a pool quest for this Castle level. */
 	int64_t QuestTarget(int Def) const;
 
+	// --- Weekly quests (master prompt 13.5) ---
+	// The same as daily quests, from their own pool with bigger targets, for a week (from Monday 00:00 UTC) and with a
+	// weekly chest. Rewards of quests, chests, goals and calendars go on top of full vaults.
+	const std::vector<DailyQuest>& WeeklyQuests() const { return WeekList; }
+	int WeeklyRerollsLeft() const { return std::max(0, C.weekly.rerolls - WeekRerolls); }
+	bool WeeklyChestClaimed() const { return bWeekChest; }
+	/** When this week's quests are replaced. */
+	int64_t WeekEnd() const { return (WeekNo * 7 + 4) * 86400; }
+	Error ClaimWeekly(int Slot, Reward* Out);
+	Error RerollWeekly(int Slot);
+	Error ClaimWeeklyChest(Reward* Out);
+
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
 	// state counts what is there now; an event goal counts actions done while it is the current goal.
@@ -776,10 +788,20 @@ private:
 	void StartSkills(TitanState& T) const;
 	/** What a titan's working relics add to a stat before the cap. */
 	int64_t TitanRelicSum(int32_t TitanId, RelicStat Stat) const;
-	/** Brings the quests of the day Time is in (when the day has changed). */
+	/** Brings the quests of the day Time is in (when the day has changed), and of the week. */
 	void RollQuests();
 	/** Whether the pool quest can come to this kingdom now. */
 	bool QuestOpen(int Def) const;
+	bool QuestOpen(const QuestDef& D) const;
+	int64_t QuestTarget(const QuestDef& D) const;
+	/** Picks Count quests of the pool open to this kingdom, by the seed, a salt and the period. */
+	std::vector<DailyQuest> PickQuests(const QuestRules& Rules, uint64_t Salt, int64_t Period) const;
+	/** Shared by daily and weekly quests. */
+	Error ClaimQuestIn(const QuestRules& Rules, std::vector<DailyQuest>& List, int Slot, Reward* Out);
+	Error RerollQuestIn(const QuestRules& Rules, std::vector<DailyQuest>& List, int& Used, uint64_t Salt, int Slot);
+	Error ClaimChestIn(const QuestRules& Rules, const std::vector<DailyQuest>& List, bool& bOpened, uint64_t Salt, int64_t Period, Reward* Out);
+	/** Pays a reward on top of full vaults (a gift is never lost; the vaults then collect nothing until it is spent). */
+	void PayGift(const ResArray& Pay, Reward& R);
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -868,6 +890,11 @@ private:
 	int QuestRerolls = 0;
 	bool bQuestChest = false;
 	uint64_t QuestCounter = 0;
+	// Weekly quests: the week (weeks since the Monday before the epoch), the quests, rerolls used, the chest
+	int64_t WeekNo = -1;
+	std::vector<DailyQuest> WeekList;
+	int WeekRerolls = 0;
+	bool bWeekChest = false;
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

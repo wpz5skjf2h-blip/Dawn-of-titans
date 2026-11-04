@@ -304,7 +304,7 @@ struct QuestDef
 	ResArray reward{};
 };
 
-/** Daily quests (kingdom.json "dailyQuests"). */
+/** Daily quests (kingdom.json "dailyQuests"); weekly quests use the same shape ("weeklyQuests", counts per week). */
 struct QuestRules
 {
 	int count = 5; // quests a day
@@ -589,6 +589,7 @@ struct KingdomContent
 	RivalRules rivals;
 	CampaignRules campaigns;
 	QuestRules quests;
+	QuestRules weekly; // weekly quests (kingdom.json "weeklyQuests"), the same shape; a week starts on Monday 00:00 UTC
 	std::vector<GoalDef> goals; // the main line, in order
 	std::vector<AchievementDef> achievements;
 	CalendarRules calendar;

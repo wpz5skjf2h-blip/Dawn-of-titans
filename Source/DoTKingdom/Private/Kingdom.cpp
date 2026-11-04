@@ -128,6 +128,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	MissionStarList.assign(C.campaigns.acts.size(), {});
 	ChestMask.assign(C.campaigns.acts.size(), 0);
 	QuestDay = -1;
+	WeekNo = -1;
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2701,21 +2702,20 @@ Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 
 // --- Daily quests ----------------------------------------------------------------------------------
 
-bool Kingdom::QuestOpen(int Def) const
+bool Kingdom::QuestOpen(const QuestDef& D) const
 {
-	const QuestDef& D = C.quests.pool[static_cast<size_t>(Def)];
 	return CastleLevel() >= D.castle && (D.building < 0 || BuildingLevel(D.building));
 }
 
-int64_t Kingdom::QuestTarget(int Def) const
+bool Kingdom::QuestOpen(int Def) const
 {
-	if (Def < 0 || Def >= static_cast<int>(C.quests.pool.size()))
-	{
-		return 0;
-	}
-	const std::vector<std::pair<int, int64_t>>& Steps = C.quests.pool[static_cast<size_t>(Def)].target;
-	int64_t Target = Steps.empty() ? 1 : Steps.front().second;
-	for (const std::pair<int, int64_t>& Step : Steps)
+	return QuestOpen(C.quests.pool[static_cast<size_t>(Def)]);
+}
+
+int64_t Kingdom::QuestTarget(const QuestDef& D) const
+{
+	int64_t Target = D.target.empty() ? 1 : D.target.front().second;
+	for (const std::pair<int, int64_t>& Step : D.target)
 	{
 		if (CastleLevel() >= Step.first)
 		{
@@ -2725,34 +2725,57 @@ int64_t Kingdom::QuestTarget(int Def) const
 	return std::max<int64_t>(1, Target);
 }
 
-void Kingdom::RollQuests()
+int64_t Kingdom::QuestTarget(int Def) const
 {
-	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
-	if (Day == QuestDay)
+	if (Def < 0 || Def >= static_cast<int>(C.quests.pool.size()))
 	{
-		return;
+		return 0;
 	}
-	QuestDay = Day;
-	QuestList.clear();
-	QuestRerolls = 0;
-	bQuestChest = false;
+	return QuestTarget(C.quests.pool[static_cast<size_t>(Def)]);
+}
+
+std::vector<DailyQuest> Kingdom::PickQuests(const QuestRules& Rules, uint64_t Salt, int64_t Period) const
+{
+	std::vector<DailyQuest> List;
 	std::vector<int> Open;
-	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	for (int I = 0; I < static_cast<int>(Rules.pool.size()); ++I)
 	{
-		if (QuestOpen(I))
+		if (QuestOpen(Rules.pool[static_cast<size_t>(I)]))
 		{
 			Open.push_back(I);
 		}
 	}
-	for (int N = 0; N < C.quests.count && !Open.empty(); ++N)
+	for (int N = 0; N < Rules.count && !Open.empty(); ++N)
 	{
-		const uint64_t H = Mix(Seed ^ 0x7175657374ULL, static_cast<uint64_t>(Day) * 16 + static_cast<uint64_t>(N));
+		const uint64_t H = Mix(Seed ^ Salt, static_cast<uint64_t>(Period) * 16 + static_cast<uint64_t>(N));
 		const size_t Pick = static_cast<size_t>(H % Open.size());
 		DailyQuest Q;
 		Q.def = Open[Pick];
-		Q.target = QuestTarget(Q.def);
-		QuestList.push_back(Q);
+		Q.target = QuestTarget(Rules.pool[static_cast<size_t>(Q.def)]);
+		List.push_back(Q);
 		Open.erase(Open.begin() + static_cast<std::ptrdiff_t>(Pick));
+	}
+	return List;
+}
+
+void Kingdom::RollQuests()
+{
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	if (Day != QuestDay)
+	{
+		QuestDay = Day;
+		QuestList = PickQuests(C.quests, 0x7175657374ULL, Day);
+		QuestRerolls = 0;
+		bQuestChest = false;
+	}
+	// Weeks start on Monday: the epoch's day 0 was a Thursday.
+	const int64_t Week = (Day + 3) / 7;
+	if (Week != WeekNo && !C.weekly.pool.empty())
+	{
+		WeekNo = Week;
+		WeekList = PickQuests(C.weekly, 0x7765656b6c79ULL, Week);
+		WeekRerolls = 0;
+		bWeekChest = false;
 	}
 }
 
@@ -2769,6 +2792,13 @@ void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
 			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
 		}
 	}
+	for (DailyQuest& Q : WeekList)
+	{
+		if (!Q.claimed && C.weekly.pool[static_cast<size_t>(Q.def)].event == Event)
+		{
+			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
+		}
+	}
 	int64_t& Life = LifetimeCounts[static_cast<size_t>(Event)];
 	Life = std::max<int64_t>(0, Life + Amount);
 	if (GoalAt < static_cast<int>(C.goals.size()))
@@ -2781,13 +2811,26 @@ void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
 	}
 }
 
-Error Kingdom::ClaimQuest(int Slot, Reward* Out)
+void Kingdom::PayGift(const ResArray& Pay, Reward& R)
 {
-	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	for (int I = 0; I < kResCount; ++I)
+	{
+		const int64_t X = Pay[static_cast<size_t>(I)];
+		if (X > 0)
+		{
+			Res_[static_cast<size_t>(I)] += X;
+			R.res[static_cast<size_t>(I)] += X;
+		}
+	}
+}
+
+Error Kingdom::ClaimQuestIn(const QuestRules& Rules, std::vector<DailyQuest>& List, int Slot, Reward* Out)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(List.size()))
 	{
 		return Error::BadId;
 	}
-	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	DailyQuest& Q = List[static_cast<size_t>(Slot)];
 	if (Q.claimed)
 	{
 		return Error::Nothing;
@@ -2797,16 +2840,7 @@ Error Kingdom::ClaimQuest(int Slot, Reward* Out)
 		return Error::NotReady;
 	}
 	Reward R;
-	const ResArray& Pay = C.quests.pool[static_cast<size_t>(Q.def)].reward;
-	for (int I = 0; I < kResCount; ++I)
-	{
-		if (Pay[static_cast<size_t>(I)] > 0)
-		{
-			const int64_t Before = Amount(static_cast<Res>(I));
-			AddResource(static_cast<Res>(I), Pay[static_cast<size_t>(I)]);
-			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
-		}
-	}
+	PayGift(Rules.pool[static_cast<size_t>(Q.def)].reward, R);
 	Q.claimed = true;
 	if (Out)
 	{
@@ -2815,26 +2849,26 @@ Error Kingdom::ClaimQuest(int Slot, Reward* Out)
 	return Error::None;
 }
 
-Error Kingdom::RerollQuest(int Slot)
+Error Kingdom::RerollQuestIn(const QuestRules& Rules, std::vector<DailyQuest>& List, int& Used, uint64_t Salt, int Slot)
 {
-	if (Slot < 0 || Slot >= static_cast<int>(QuestList.size()))
+	if (Slot < 0 || Slot >= static_cast<int>(List.size()))
 	{
 		return Error::BadId;
 	}
-	DailyQuest& Q = QuestList[static_cast<size_t>(Slot)];
+	DailyQuest& Q = List[static_cast<size_t>(Slot)];
 	if (Q.claimed || Q.progress >= Q.target)
 	{
 		return Error::Nothing;
 	}
-	if (QuestRerolls >= C.quests.rerolls)
+	if (Used >= Rules.rerolls)
 	{
 		return Error::LimitReached;
 	}
 	std::vector<int> Open;
-	for (int I = 0; I < static_cast<int>(C.quests.pool.size()); ++I)
+	for (int I = 0; I < static_cast<int>(Rules.pool.size()); ++I)
 	{
-		const bool bTaken = std::any_of(QuestList.begin(), QuestList.end(), [I](const DailyQuest& X) { return X.def == I; });
-		if (!bTaken && QuestOpen(I))
+		const bool bTaken = std::any_of(List.begin(), List.end(), [I](const DailyQuest& X) { return X.def == I; });
+		if (!bTaken && QuestOpen(Rules.pool[static_cast<size_t>(I)]))
 		{
 			Open.push_back(I);
 		}
@@ -2843,26 +2877,26 @@ Error Kingdom::RerollQuest(int Slot)
 	{
 		return Error::NotEnough;
 	}
-	const uint64_t H = Mix(Seed ^ 0x72656c6c6fULL, QuestCounter++);
+	const uint64_t H = Mix(Seed ^ Salt, QuestCounter++);
 	Q = DailyQuest();
 	Q.def = Open[static_cast<size_t>(H % Open.size())];
-	Q.target = QuestTarget(Q.def);
-	++QuestRerolls;
+	Q.target = QuestTarget(Rules.pool[static_cast<size_t>(Q.def)]);
+	++Used;
 	return Error::None;
 }
 
-Error Kingdom::ClaimQuestChest(Reward* Out)
+Error Kingdom::ClaimChestIn(const QuestRules& Rules, const std::vector<DailyQuest>& List, bool& bOpened, uint64_t Salt, int64_t Period, Reward* Out)
 {
-	if (bQuestChest)
+	if (bOpened)
 	{
 		return Error::Nothing;
 	}
-	if (QuestList.empty() || std::any_of(QuestList.begin(), QuestList.end(), [](const DailyQuest& Q) { return !Q.claimed; }))
+	if (List.empty() || std::any_of(List.begin(), List.end(), [](const DailyQuest& Q) { return !Q.claimed; }))
 	{
 		return Error::NotReady;
 	}
 	int Rarity = 0;
-	for (const std::pair<int, int>& Step : C.quests.chestRelic)
+	for (const std::pair<int, int>& Step : Rules.chestRelic)
 	{
 		if (CastleLevel() >= Step.first)
 		{
@@ -2874,31 +2908,35 @@ Error Kingdom::ClaimQuestChest(Reward* Out)
 		return Error::InventoryFull;
 	}
 	Reward R;
-	for (int I = 0; I < kResCount; ++I)
-	{
-		if (C.quests.chest[static_cast<size_t>(I)] > 0)
-		{
-			const int64_t Before = Amount(static_cast<Res>(I));
-			AddResource(static_cast<Res>(I), C.quests.chest[static_cast<size_t>(I)]);
-			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
-		}
-	}
+	PayGift(Rules.chest, R);
 	if (Rarity > 0)
 	{
-		const uint64_t H = Mix(Seed ^ 0x7163686573ULL, static_cast<uint64_t>(QuestDay));
+		const uint64_t H = Mix(Seed ^ Salt, static_cast<uint64_t>(Period));
 		const int32_t Id = AddRelic(RollRelicKind(H >> 32), Rarity);
 		if (Id != 0)
 		{
 			R.relics.push_back(Id);
 		}
 	}
-	bQuestChest = true;
+	bOpened = true;
 	if (Out)
 	{
 		*Out = R;
 	}
 	return Error::None;
 }
+
+Error Kingdom::ClaimQuest(int Slot, Reward* Out) { return ClaimQuestIn(C.quests, QuestList, Slot, Out); }
+
+Error Kingdom::RerollQuest(int Slot) { return RerollQuestIn(C.quests, QuestList, QuestRerolls, 0x72656c6c6fULL, Slot); }
+
+Error Kingdom::ClaimQuestChest(Reward* Out) { return ClaimChestIn(C.quests, QuestList, bQuestChest, 0x7163686573ULL, QuestDay, Out); }
+
+Error Kingdom::ClaimWeekly(int Slot, Reward* Out) { return ClaimQuestIn(C.weekly, WeekList, Slot, Out); }
+
+Error Kingdom::RerollWeekly(int Slot) { return RerollQuestIn(C.weekly, WeekList, WeekRerolls, 0x77726f6c6cULL, Slot); }
+
+Error Kingdom::ClaimWeeklyChest(Reward* Out) { return ClaimChestIn(C.weekly, WeekList, bWeekChest, 0x7763686573ULL, WeekNo, Out); }
 
 // --- Main line of goals ------------------------------------------------------------------------------
 
@@ -3006,16 +3044,7 @@ Error Kingdom::ClaimGoal(Reward* Out)
 		return Error::NotReady;
 	}
 	Reward R;
-	const ResArray& Pay = C.goals[static_cast<size_t>(GoalAt)].reward;
-	for (int I = 0; I < kResCount; ++I)
-	{
-		if (Pay[static_cast<size_t>(I)] > 0)
-		{
-			const int64_t Before = Amount(static_cast<Res>(I));
-			AddResource(static_cast<Res>(I), Pay[static_cast<size_t>(I)]);
-			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
-		}
-	}
+	PayGift(C.goals[static_cast<size_t>(GoalAt)].reward, R);
 	++GoalAt;
 	GoalEvents = 0;
 	if (Out)
@@ -3141,18 +3170,11 @@ Error Kingdom::PayCalendarDay(const CalendarDay& D, int Choice, uint64_t H, Rewa
 		return Error::InventoryFull;
 	}
 	Reward R;
-	for (int I = 0; I < kResCount; ++I)
-	{
-		const Res X = static_cast<Res>(I);
-		// Gold and food grow with the Castle, so the reward stays worth taking. A gift goes on top of full vaults (a new
-		// lord's are small); the vaults then collect nothing until it is spent.
-		const int64_t Pay = D.res[static_cast<size_t>(I)] * ((X == Res::Gold || X == Res::Food) ? std::max(1, CastleLevel()) : 1);
-		if (Pay > 0)
-		{
-			Res_[static_cast<size_t>(ResIndex(X))] += Pay;
-			R.res[static_cast<size_t>(I)] += Pay;
-		}
-	}
+	// Gold and food grow with the Castle, so the reward stays worth taking.
+	ResArray Pay = D.res;
+	Pay[static_cast<size_t>(ResIndex(Res::Gold))] *= std::max(1, CastleLevel());
+	Pay[static_cast<size_t>(ResIndex(Res::Food))] *= std::max(1, CastleLevel());
+	PayGift(Pay, R);
 	const int Titan = D.choice.empty() ? D.titan : D.choice[static_cast<size_t>(Choice)];
 	if (Titan >= 0)
 	{
@@ -5599,6 +5621,32 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Weekly quests (optional): this week's quests by pool id.
+	W.Key("weekly");
+	W.BeginObject();
+	W.Key("week");
+	W.Int(WeekNo);
+	W.Key("rerolls");
+	W.Int(WeekRerolls);
+	W.Key("chest");
+	W.Bool(bWeekChest);
+	W.Key("list");
+	W.BeginArray();
+	for (const DailyQuest& Q : WeekList)
+	{
+		W.BeginObject();
+		W.Key("id");
+		W.String(C.weekly.pool[static_cast<size_t>(Q.def)].id);
+		W.Key("target");
+		W.Int(Q.target);
+		W.Key("progress");
+		W.Int(Q.progress);
+		W.Key("claimed");
+		W.Bool(Q.claimed);
+		W.EndObject();
+	}
+	W.EndArray();
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -6295,6 +6343,37 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Weekly quests (saves before them roll this week's on the next Advance).
+	WeekNo = -1;
+	WeekList.clear();
+	WeekRerolls = 0;
+	bWeekChest = false;
+	if (const JsonValue* WeekJ = J.Find("weekly"))
+	{
+		WeekNo = WeekJ->GetInt64("week", -1);
+		WeekRerolls = std::max(0, WeekJ->GetInt("rerolls", 0));
+		bWeekChest = WeekJ->GetBool("chest", false);
+		if (const JsonValue* ListJ = WeekJ->Find("list"))
+		{
+			for (size_t I = 0; I < ListJ->Size(); ++I)
+			{
+				const JsonValue& QJ = (*ListJ)[I];
+				const std::string Id = QJ.GetString("id");
+				for (size_t D = 0; D < C.weekly.pool.size(); ++D)
+				{
+					if (C.weekly.pool[D].id == Id)
+					{
+						DailyQuest Q;
+						Q.def = static_cast<int>(D);
+						Q.target = std::max<int64_t>(1, QJ.GetInt64("target", 1));
+						Q.progress = std::max<int64_t>(0, QJ.GetInt64("progress", 0));
+						Q.claimed = QJ.GetBool("claimed", false);
+						WeekList.push_back(Q);
+					}
+				}
+			}
+		}
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -6633,6 +6712,20 @@ uint64_t Kingdom::Hash() const
 		W.I64(Q.target);
 		W.I64(Q.progress);
 		W.U32(Q.claimed ? 1u : 0u);
+	}
+	// Only once this week's quests came, so that hashes of kingdoms from before them stay the same.
+	if (WeekNo >= 0)
+	{
+		W.I64(WeekNo);
+		W.I32(WeekRerolls);
+		W.U32(bWeekChest ? 1u : 0u);
+		for (const DailyQuest& Q : WeekList)
+		{
+			W.I32(Q.def);
+			W.I64(Q.target);
+			W.I64(Q.progress);
+			W.U32(Q.claimed ? 1u : 0u);
+		}
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)

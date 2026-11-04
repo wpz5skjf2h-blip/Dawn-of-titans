@@ -2186,6 +2186,128 @@ void TestAchievements()
 	KD_CHECK(O.Lifetime(QuestEvent::Win) == 0 && O.AchievementTier(Gold) == 0);
 }
 
+/** The save with its weekly quests replaced. */
+std::string WithWeekly(const std::string& Save, const std::string& Weekly)
+{
+	const size_t P = Save.find("\"weekly\":{");
+	const size_t Q = Save.find(",\"calendar\":{");
+	return P == std::string::npos || Q == std::string::npos ? Save : Save.substr(0, P) + "\"weekly\":" + Weekly + Save.substr(Q);
+}
+
+void TestWeeklyQuests()
+{
+	const KingdomContent& Ct = Content();
+	const QuestRules& W = Ct.weekly;
+	const QuestRules& D = Ct.quests;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	// Master prompt 13.5: five a week and a weekly chest. Ours: one swap, 55 gems a week (about 8 a day; with the daily
+	// quests' 20 and the calendar's 3 under the free player's 40, 8.6).
+	KD_CHECK(W.count == 5 && W.rerolls == 1 && W.pool.size() == 11 && W.chest[GemsI] == 30 && W.chestRelic.size() == 2);
+	int64_t Most = 0;
+	for (const QuestDef& Q : W.pool)
+	{
+		Most = std::max(Most, Q.reward[GemsI]);
+		KD_CHECK(!Q.target.empty() && Q.target.front().first <= Q.castle);
+	}
+	KD_CHECK(W.count * Most + W.chest[GemsI] >= 40 && W.count * Most + W.chest[GemsI] <= 70);
+	// Every weekly quest has a daily twin, and at every Castle its target is three to five days of the twin's.
+	Kingdom Probe(Ct);
+	for (const QuestDef& Q : W.pool)
+	{
+		const auto Twin = std::find_if(D.pool.begin(), D.pool.end(), [&](const QuestDef& X) { return X.event == Q.event; });
+		KD_CHECK(Twin != D.pool.end() && Twin->castle == Q.castle && Twin->building == Q.building);
+		for (int Castle = 1; Twin != D.pool.end() && Castle <= 25; ++Castle)
+		{
+			const auto At = [Castle](const QuestDef& X) {
+				int64_t T = X.target.front().second;
+				for (const std::pair<int, int64_t>& S : X.target)
+				{
+					T = Castle >= S.first ? S.second : T;
+				}
+				return T;
+			};
+			if (Castle >= Q.castle)
+			{
+				KD_CHECK(At(Q) >= 3 * At(*Twin) && At(Q) <= 5 * At(*Twin));
+			}
+		}
+	}
+
+	// A new kingdom gets five different weekly quests open at Castle 1, until the next Monday.
+	Kingdom K(Ct);
+	K.NewGame(T0, 7);
+	const int64_t Day = 86400;
+	KD_CHECK(K.WeeklyQuests().size() == 5 && K.WeeklyRerollsLeft() == 1 && !K.WeeklyChestClaimed());
+	KD_CHECK(K.WeekEnd() > T0 && K.WeekEnd() <= T0 + 7 * Day && (K.WeekEnd() / Day + 3) % 7 == 0 && K.WeekEnd() % Day == 0);
+	for (size_t I = 0; I < K.WeeklyQuests().size(); ++I)
+	{
+		const DailyQuest& Q = K.WeeklyQuests()[I];
+		KD_CHECK(W.pool[static_cast<size_t>(Q.def)].castle == 1 && Q.progress == 0 && !Q.claimed);
+		for (size_t J = 0; J < I; ++J)
+		{
+			KD_CHECK(K.WeeklyQuests()[J].def != Q.def);
+		}
+	}
+	// The same week on every client; the daily ones change, the weekly ones stay until Monday.
+	Kingdom K2(Ct);
+	K2.NewGame(T0, 7);
+	KD_CHECK(K2.Hash() == K.Hash());
+	const std::vector<DailyQuest> Week0 = K.WeeklyQuests();
+	K.Advance(K.WeekEnd() - 60);
+	KD_CHECK(K.WeeklyQuests().size() == 5 && K.WeeklyQuests()[0].def == Week0[0].def && K.WeeklyQuests()[4].def == Week0[4].def);
+
+	// Progress from the same events as the daily quests; rewards go on top of a full portal.
+	std::string Error;
+	const std::string List = "{\"week\":" + std::to_string((T0 / Day + 3) / 7) + ",\"rerolls\":0,\"chest\":false,\"list\":["
+		"{\"id\":\"w_train\",\"target\":12,\"progress\":11,\"claimed\":false},"
+		"{\"id\":\"w_gold\",\"target\":2000,\"progress\":2000,\"claimed\":false},"
+		"{\"id\":\"w_win\",\"target\":8,\"progress\":8,\"claimed\":false},"
+		"{\"id\":\"w_stones\",\"target\":36,\"progress\":40,\"claimed\":false},"
+		"{\"id\":\"w_upgrade\",\"target\":6,\"progress\":0,\"claimed\":false}]}";
+	Kingdom P(Ct);
+	P.NewGame(T0, 7);
+	KD_CHECK(P.Load(WithWeekly(P.Save(), List), Error) && P.WeeklyQuests().size() == 5 && P.WeeklyQuests()[4].def >= 0);
+	KD_CHECK(P.ClaimWeekly(0, nullptr) == Error::NotReady && P.ClaimWeekly(5, nullptr) == Error::BadId);
+	KD_CHECK(P.Train(Troop("troop.militia")) == Error::None && P.WeeklyQuests()[0].progress == 12);
+	KD_CHECK(P.Amount(Res::Stones) >= P.Capacity(Res::Stones));
+	const int64_t Gems = P.Amount(Res::Gems);
+	const int64_t Stones = P.Amount(Res::Stones);
+	Reward R;
+	KD_CHECK(P.ClaimWeekly(0, &R) == Error::None && R.res[GemsI] == 5 && R.res[StonesI] == 6 && P.Amount(Res::Gems) == Gems + 5);
+	KD_CHECK(P.Amount(Res::Stones) == Stones + 6 && P.Amount(Res::Stones) > P.Capacity(Res::Stones) && P.ClaimWeekly(0, nullptr) == Error::Nothing);
+	KD_CHECK(P.Train(Troop("troop.militia")) == Error::None && P.WeeklyQuests()[0].progress == 12); // a claimed quest counts no more
+	// One swap a week, only for an unfinished quest.
+	KD_CHECK(P.RerollWeekly(1) == Error::Nothing && P.RerollWeekly(0) == Error::Nothing);
+	const int Before = P.WeeklyQuests()[4].def;
+	KD_CHECK(P.RerollWeekly(4) == Error::None && P.WeeklyQuests()[4].def != Before && P.WeeklyRerollsLeft() == 0 && P.RerollWeekly(4) == Error::LimitReached);
+	// The chest after every reward; its relic is two stars at Castle 1.
+	KD_CHECK(P.ClaimWeekly(1, nullptr) == Error::None && P.ClaimWeekly(2, nullptr) == Error::None && P.ClaimWeekly(3, nullptr) == Error::None);
+	KD_CHECK(P.ClaimWeeklyChest(nullptr) == Error::NotReady);
+	const std::string Done = "{\"week\":" + std::to_string((T0 / Day + 3) / 7) + ",\"rerolls\":1,\"chest\":false,\"list\":["
+		"{\"id\":\"w_train\",\"target\":12,\"progress\":12,\"claimed\":true},{\"id\":\"w_win\",\"target\":8,\"progress\":8,\"claimed\":true}]}";
+	Kingdom Ch(Ct);
+	Ch.NewGame(T0, 7);
+	KD_CHECK(Ch.Load(WithWeekly(Ch.Save(), Done), Error) && Ch.WeeklyQuests().size() == 2);
+	const size_t Relics = Ch.Relics().size();
+	const int64_t Gems2 = Ch.Amount(Res::Gems);
+	KD_CHECK(Ch.ClaimWeeklyChest(&R) == Error::None && R.res[GemsI] == 30 && Ch.Amount(Res::Gems) == Gems2 + 30 && R.relics.size() == 1);
+	KD_CHECK(Ch.Relics().size() == Relics + 1 && Ch.FindRelic(R.relics[0])->rarity == 2 && Ch.ClaimWeeklyChest(nullptr) == Error::Nothing);
+
+	// Saving keeps the week; a new week brings new quests and a closed chest.
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Ch.Save(), Error) && L.Hash() == Ch.Hash() && L.Save() == Ch.Save() && L.WeeklyChestClaimed());
+	L.Advance(L.WeekEnd() + 60);
+	KD_CHECK(L.WeeklyQuests().size() == 5 && !L.WeeklyChestClaimed() && L.WeeklyRerollsLeft() == 1 && L.WeekEnd() == Ch.WeekEnd() + 7 * Day);
+	// A save from before weekly quests rolls this week's on the next Advance, the same as a new kingdom's.
+	const std::string Full = K2.Save();
+	const size_t P0 = Full.find(",\"weekly\":{");
+	Kingdom Pre(Ct);
+	KD_CHECK(P0 != std::string::npos && Pre.Load(Full.substr(0, P0) + Full.substr(Full.find(",\"calendar\":{")), Error) && Pre.WeeklyQuests().empty());
+	Pre.Advance(T0 + 60);
+	KD_CHECK(Pre.WeeklyQuests().size() == 5 && Pre.WeeklyQuests()[0].def == Week0[0].def && Pre.Hash() != 0);
+}
+
 void TestCalendars()
 {
 	const KingdomContent& Ct = Content();
@@ -2569,7 +2691,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests},
 	};
 	for (const auto& T : Tests)
 	{
