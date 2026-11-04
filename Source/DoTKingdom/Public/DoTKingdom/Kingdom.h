@@ -645,6 +645,28 @@ public:
 	/** Pays the next tier: BadId, Nothing (all tiers paid), NotReady. */
 	Error ClaimAchievement(int I, Reward* Out);
 
+	// --- Login calendars (master prompt 13.6) ---
+	// A login is the first Visit of a UTC day. The newcomer calendar opens its day N on the N-th login and keeps it until
+	// it is claimed. The monthly one runs in 28-day cycles from the first login: its N-th reward opens on the N-th login
+	// of the cycle; days missed before today can be caught up for gems a few times a cycle; what is not claimed when the
+	// cycle ends is lost.
+	int LoginDays() const { return LoginCount; }
+	bool NewcomerClaimed(int Day) const;
+	bool NewcomerReady(int Day) const;
+	/** Choice: the titan picked on a day with a choice. BadId, Nothing (claimed), NotReady, RosterFull, InventoryFull. */
+	Error ClaimNewcomer(int Day, int Choice, Reward* Out);
+	/** First UTC day (Unix time / 86 400) of the current cycle; -1 before the first login. */
+	int64_t MonthStartDay() const { return MonthStart; }
+	int MonthLogins() const { return MonthLoginCount; }
+	int MonthClaimed() const { return MonthClaimCount; }
+	int MonthCatchUps() const { return MonthCatchUpCount; }
+	/** Days of the cycle before today without a login. */
+	int MonthMissed() const;
+	/** The next reward of the cycle: Nothing (all claimed or no calendar), NotReady, RosterFull, InventoryFull. */
+	Error ClaimMonthly(Reward* Out);
+	/** Counts a missed day as a login for gems: Nothing (none missed), LimitReached, NotEnough. */
+	Error CatchUpMonthly();
+
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
 	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
@@ -852,6 +874,17 @@ private:
 	// Achievements: counts by QuestEvent over the whole game, tiers paid by achievement
 	std::array<int64_t, static_cast<size_t>(QuestEvent::Count)> LifetimeCounts{};
 	std::vector<int> AchTiers;
+	// Login calendars
+	int LoginCount = 0;
+	int64_t LoginDay = -1;
+	uint32_t NewcomerMask = 0;
+	int64_t MonthStart = -1;
+	int MonthLoginCount = 0;
+	int MonthClaimCount = 0;
+	int MonthCatchUpCount = 0;
+	void NoteLogin();
+	bool MonthRunning() const;
+	Error PayCalendarDay(const CalendarDay& D, int Choice, uint64_t H, Reward* Out);
 	/** What a goal or an achievement counts now (Events: its event count). */
 	int64_t CheckValue(GoalCheck Check, int BuildingDef, int Troop, int64_t Events) const;
 	// Raids

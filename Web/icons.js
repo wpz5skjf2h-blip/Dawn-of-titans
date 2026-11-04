@@ -325,6 +325,9 @@ const DotIcons = (() => {
 		// Achievements: a medal on a ribbon with a star.
 		'ui.medal': p('M15 3H23L28 19H20Z', K.blue) + p('M33 3H25L20 19H28Z', K.red) + c(24, 30, 13, K.gold) + c(24, 30, 9, 'none', 'stroke="' + K.goldD + '" stroke-width="1.6"') +
 			p('M24 23.5L26 28H30.5L27 31L28.3 35.5L24 33L19.7 35.5L21 31L17.5 28H22Z', K.cream, 'stroke-width="1.4"') + hi('M15.5 26C16.5 22.5 19 20 22 19.3'),
+		// Login calendars: a calendar page with rings and a star on the day.
+		'ui.calendar': r(6, 9, 36, 33, 4, K.cream) + p('M6 13C6 10.8 7.8 9 10 9H38C40.2 9 42 10.8 42 13V18H6Z', K.red) + r(14, 4, 4, 9, 2, K.steelD) + r(30, 4, 4, 9, 2, K.steelD) +
+			line('M12 25H16M20 25H24M28 25H32M12 31H16M20 31H24M12 37H16M20 37H24', '#c9b48a', 2.2) + spark(33, 33, 6, K.gold),
 		// A star chest of a campaign act.
 		'ui.chest': p('M8 22H40V40C40 41.5 39 42 37.5 42H10.5C9 42 8 41.5 8 40Z', K.wood) + p('M8 22C8 12 40 12 40 22Z', K.woodL) +
 			r(8, 20.5, 32, 4, 1, K.gold) + r(13, 14.5, 4, 27.5, 1, K.gold) + r(31, 14.5, 4, 27.5, 1, K.gold) + r(20.5, 23, 7, 8, 1.5, K.gold) +

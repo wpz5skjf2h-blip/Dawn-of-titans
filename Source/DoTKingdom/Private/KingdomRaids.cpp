@@ -62,6 +62,7 @@ void Kingdom::Visit()
 		NextRaid = Time + R.everyMinSec + static_cast<int64_t>(H % static_cast<uint64_t>(R.everyMaxSec - R.everyMinSec + 1));
 	}
 	VisitAt = Time;
+	NoteLogin();
 }
 
 int64_t Kingdom::NextRaidAt() const

@@ -184,6 +184,9 @@ class KingdomBridge {
 	questChest() { return JSON.parse(this.str(this.M._dk_quest_chest())); }
 	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
 	achClaim(i) { return JSON.parse(this.str(this.M._dk_ach_claim(i))); }
+	calNewcomer(day, choice) { return JSON.parse(this.str(this.M._dk_cal_newcomer(day, choice))); }
+	calMonth() { return JSON.parse(this.str(this.M._dk_cal_month())); }
+	calCatchUp() { return this.M._dk_cal_catchup(); }
 	craft(sp) { return this.M._dk_craft(sp); }
 	cancelCraft(i) { return this.M._dk_cancel_craft(i); }
 	skipCraft() { return this.M._dk_skip_craft(); }
@@ -270,6 +273,8 @@ function persist() {
 function visit() {
 	K.visitAt = performance.now();
 	K.bridge.visit();
+	// A new day's login may open a calendar reward.
+	if (K.ready) setTimeout(() => { refresh(); maybeShowCalendar(); }, 0);
 }
 function persistSoon() { clearTimeout(saver.timer); saver.timer = setTimeout(persist, 400); }
 
@@ -2450,6 +2455,15 @@ function onAct(e) {
 	case 'goals': openGoals(); break;
 	case 'goal-tab': K.goalTab = el.dataset.tab; refreshSheet(true); break;
 	case 'ach-claim': claimAch(id); break;
+	case 'cal-new': claimCalendar('new', id, +el.dataset.choice || 0); break;
+	case 'cal-month': claimCalendar('month'); break;
+	case 'cal-catchup': {
+		const code = K.bridge.calCatchUp();
+		toast(code === E.None ? 'Пропущенный день засчитан' : code === E.LimitReached ? 'Догонов в этом цикле больше нет' : errText(code), code === E.None ? 'gold' : 'bad');
+		persistSoon();
+		refresh(true);
+		break;
+	}
 	case 'goal-claim': claimGoal(); break;
 	case 'goal-go': showGoal(); break;
 	case 'site-reset': gemAction('site-reset:' + id, +el.dataset.gems, () => run(K.bridge.siteReset(id), siteDef(id).name + ': можно снова в бой')); break;
@@ -2688,7 +2702,7 @@ function onAct(e) {
 		if (!isArmed('swap')) arm('swap');
 		else swapKingdom();
 		break;
-	case 'welcome-ok': closeSheet(); try { localStorage.setItem(HINT_KEY, '1'); } catch (err) { /* ignore */ } break;
+	case 'welcome-ok': closeSheet(); try { localStorage.setItem(HINT_KEY, '1'); } catch (err) { /* ignore */ } setTimeout(maybeShowCalendar, 600); break;
 	case 'help': openWelcome(); break;
 	case 'builders': openBuilders(); break;
 	default: break;
@@ -3530,7 +3544,7 @@ function updateGoal() {
 	const el = $('kGoal');
 	const st = K.st;
 	const g = st && st.goal && goalDef(st.goal.i);
-	const ready = st ? achReadyCount(st) : 0;
+	const ready = st ? achReadyCount(st) + calReadyCount(st) : 0;
 	el.hidden = !st || !st.goal || (!g && !achDefs().length) || !!K.place || !$('kPanel').hidden;
 	if (el.hidden) return;
 	const n = g ? g.n || 1 : 1;
@@ -3539,7 +3553,8 @@ function updateGoal() {
 	if (el.dataset.k === key) return;
 	el.dataset.k = key;
 	el.classList.toggle('done', !!st.goal.done || ready > 0);
-	const badge = ready ? '<span class="achBadge" title="Награды за достижения">' + DotIcons.svg('ui.medal') + ready + '</span>' : '';
+	const calN = st.cal ? calReadyCount(st) : 0;
+	const badge = ready ? '<span class="achBadge" title="Награды за достижения и календарь">' + DotIcons.svg(calN ? 'ui.calendar' : 'ui.medal') + ready + '</span>' : '';
 	if (g) {
 		el.innerHTML = icoHtml(goalIcon(g), goalTile(g)) + '<span class="gt"><small>' + (st.goal.done ? 'Цель выполнена · заберите награду' : 'Цель ' + (st.goal.i + 1) + ' из ' + goalDefs().length +
 			(n > 1 ? ' · ' + fmtShort(v) + ' / ' + fmtShort(n) : '')) + '</small><b>' + esc(goalName(g)) + '</b><span class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></span></span>' + badge;
@@ -3580,6 +3595,7 @@ function achCard(st, d, i) {
 function openGoals(tab) {
 	if (!goalDefs().length && !achDefs().length) return;
 	if (tab) K.goalTab = tab;
+	else if (K.st && !K.st.goal.done && calReadyCount(K.st) > 0) K.goalTab = 'cal';
 	else if (K.st && (!goalDef(K.st.goal.i) || (!K.st.goal.done && achReadyCount(K.st) > 0))) K.goalTab = 'ach';
 	else K.goalTab = 'goals';
 	cancelPlace();
@@ -3587,8 +3603,14 @@ function openGoals(tab) {
 	openSheet(() => {
 		const st = K.st;
 		const ready = achReadyCount(st);
-		const tabs = '<div class="shopTabs"><button class="' + (K.goalTab !== 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="goals">Путь лорда</button>' +
-			'<button class="' + (K.goalTab === 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="ach">Достижения' + (ready ? ' · ' + ready : '') + '</button></div>';
+		const calN = calReadyCount(st);
+		const tabs = '<div class="shopTabs"><button class="' + (K.goalTab === 'goals' ? 'on' : '') + '" data-act="goal-tab" data-tab="goals">Путь лорда</button>' +
+			'<button class="' + (K.goalTab === 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="ach">Достижения' + (ready ? ' · ' + ready : '') + '</button>' +
+			'<button class="' + (K.goalTab === 'cal' ? 'on' : '') + '" data-act="goal-tab" data-tab="cal">Календарь' + (calN ? ' · ' + calN : '') + '</button></div>';
+		if (K.goalTab === 'cal') {
+			return { key: ['cal', JSON.stringify(st.cal), st.castle, st.res[2] >= calRules().monthly.catchUpGems, ready].join('|'),
+				html: sheetTitle(icoHtml('ui.calendar', 'bld other'), 'Календарь') + tabs + calendarHtml(st) + '<div class="actions">' + closeBtn + '</div>' };
+		}
 		if (K.goalTab === 'ach') {
 			const defs = achDefs();
 			const got = st.ach.t.reduce((a, x) => a + x, 0);
@@ -3630,6 +3652,123 @@ function openGoals(tab) {
 			'<div class="progress"><i style="width:' + Math.round((100 * Math.min(i, all.length)) / all.length) + '%"></i></div>' + body + '<div class="actions">' + closeBtn + '</div>';
 		return { key: ['goals', i, st.goal.v, st.goal.done, ready].join('|'), html };
 	});
+}
+// Login calendars (master prompt 13.6): a week for a new lord, then 28-day cycles.
+const calRules = () => K.rules.calendar || { newcomer: [], monthly: { days: [] } };
+const CAL_KEY = 'dot.kingdom.calSeen';
+const titanIx = (id) => K.army.titans.findIndex((t) => t.id === id);
+function calNewcomerReady(st, d) { return d < calRules().newcomer.length && st.cal.logins > d && !(st.cal.ncMask & (1 << d)); }
+function calMonthRunning(st) { return st.cal.ms >= 0 && st.cal.today < st.cal.ms + calRules().monthly.days.length; }
+function calMonthReady(st) { return calMonthRunning(st) ? Math.max(0, st.cal.ml - st.cal.mc) : 0; }
+function calReadyCount(st) {
+	if (!st.cal) return 0;
+	let n = calMonthReady(st);
+	for (let d = 0; d < calRules().newcomer.length; d++) n += calNewcomerReady(st, d) ? 1 : 0;
+	return n;
+}
+/** A day's reward in words; gold and food grow with the Castle. */
+function calDayText(d, castle) {
+	const parts = [];
+	const r = d.res || {};
+	for (const k of ['gold', 'food']) if (r[k]) parts.push(resAmount(k, r[k] * Math.max(1, castle)));
+	if (r.gems) parts.push(fmt(r.gems) + ' ' + plural(r.gems, 'самоцвет', 'самоцвета', 'самоцветов'));
+	if (r.stones) parts.push(fmt(r.stones) + ' ' + plural(r.stones, 'камень', 'камня', 'камней') + ' портала');
+	if (d.relic) parts.push('реликвия ' + '★'.repeat(d.relic));
+	if (d.titan) { const t = K.army.titans[titanIx(d.titan)]; if (t) parts.push('титан ' + t.name + ' ' + '★'.repeat(t.stars)); }
+	if (d.choice) parts.push('титан на выбор из ' + d.choice.length);
+	return parts.join(', ');
+}
+/** The tile of a day: its main reward as an icon and a short number. */
+function calTile(d, castle, n, state, act) {
+	const r = d.res || {};
+	let ico = '';
+	let txt = '';
+	if (d.choice) { ico = DotIcons.svg('altar.gold'); txt = '★'.repeat(K.army.titans[titanIx(d.choice[0])].stars); }
+	else if (d.titan) { const t = K.army.titans[titanIx(d.titan)]; ico = DotIcons.svg('class.' + t.class) || DotIcons.svg('class.Champion'); txt = t.name; }
+	else if (d.relic) { ico = DotIcons.svg('relic.amulet'); txt = '★'.repeat(d.relic); }
+	else {
+		const k = r.gems ? 'gems' : r.stones ? 'stones' : r.gold ? 'gold' : 'food';
+		ico = iconSvg(k);
+		txt = fmtShort((r[k] || 0) * (k === 'gold' || k === 'food' ? Math.max(1, castle) : 1));
+	}
+	return '<button class="calDay ' + state + '"' + (act ? ' ' + act : ' tabindex="-1"') + ' title="День ' + n + ': ' + esc(calDayText(d, castle)) + '"><small>' + n + '</small>' + ico + '<b>' + esc(txt) + '</b></button>';
+}
+function calendarHtml(st) {
+	const R = calRules();
+	const c = st.cal;
+	let html = '';
+	const ncLeft = R.newcomer.some((d, i) => !(c.ncMask & (1 << i)));
+	if (R.newcomer.length && ncLeft) {
+		const tiles = R.newcomer.map((d, i) => {
+			const got = !!(c.ncMask & (1 << i));
+			const ready = calNewcomerReady(st, i);
+			const act = ready && !d.choice ? 'data-act="cal-new" data-id="' + i + '" data-choice="0"' : '';
+			return calTile(d, st.castle, i + 1, got ? 'got' : ready ? 'ready' : 'locked', act);
+		}).join('');
+		html += '<h3>Неделя новичка</h3><p class="fine">Награда дня открывается на N-й день входа в игру и ждёт, пока её не заберут. Вход засчитан: ' + c.logins + ' ' + plural(c.logins, 'день', 'дня', 'дней') + '.</p>' +
+			'<div class="calGrid">' + tiles + '</div>';
+		const pick = R.newcomer.findIndex((d, i) => d.choice && calNewcomerReady(st, i));
+		if (pick >= 0) {
+			const cards = R.newcomer[pick].choice.map((id, k) => {
+				const t = K.army.titans[titanIx(id)];
+				const ab = titanAbil(id).map((a) => a.name).filter(Boolean).join(', ');
+				return '<div class="landCard">' + icoHtml(DotIcons.has('class.' + t.class) ? 'class.' + t.class : 'class.Champion', 'titan') + '<div class="info"><b>' + esc(t.name) + ' ' + '★'.repeat(t.stars) + '</b><span>' +
+					esc(t.classRu || t.class) + (ab ? ' · ' + esc(ab) : '') + '</span></div><div class="row"><button class="btn primary" data-act="cal-new" data-id="' + pick + '" data-choice="' + k + '">Выбрать ' + esc(t.name) + '</button></div></div>';
+			}).join('');
+			html += '<h3>День ' + (pick + 1) + ': выберите титана</h3>' + cards;
+		}
+	}
+	if (R.monthly.days.length && c.ms >= 0) {
+		const run = calMonthRunning(st);
+		const n = R.monthly.days.length;
+		const tiles = R.monthly.days.map((d, i) => {
+			const got = run && i < c.mc;
+			const ready = run && i >= c.mc && i < c.ml;
+			const act = ready && i === c.mc ? 'data-act="cal-month"' : '';
+			return calTile(d, st.castle, i + 1, got ? 'got' : ready ? 'ready' : 'locked', act);
+		}).join('');
+		const left = run ? c.ms + n - c.today : 0;
+		const next = run && c.mc < c.ml ? R.monthly.days[c.mc] : null;
+		const cost = R.monthly.catchUpGems;
+		const catchBtn = run && c.miss > 0 ? '<button class="btn" data-act="cal-catchup"' + (c.cu >= R.monthly.catchUps || st.res[2] < cost ? ' disabled' : '') + '>Догнать пропущенный день · ' + cost + ' ' + iconSvg('gems') +
+			'<span class="sub">' + (c.cu >= R.monthly.catchUps ? 'догонов в этом цикле больше нет' : 'пропущено ' + c.miss + ', догонов ещё ' + (R.monthly.catchUps - c.cu)) + '</span></button>' : '';
+		html += '<h3>Награды месяца</h3><p class="fine">' + n + ' наград за ' + n + ' дней: N-я открывается на N-й день входа в цикле. Пропущенный день можно догнать за самоцветы ' + R.monthly.catchUps +
+			' раза за цикл; незабранное сгорает с концом цикла.</p>' +
+			'<div class="costline"><span>Входов в цикле</span><b>' + (run ? c.ml : 0) + ' из ' + n + '</b><span>' + (run ? 'конец через ' + left + ' ' + plural(left, 'день', 'дня', 'дней') : 'новый цикл начнётся при входе') + '</span></div>' +
+			'<div class="calGrid">' + tiles + '</div>' +
+			(next || catchBtn ? '<div class="actions">' + (next ? '<button class="btn primary" data-act="cal-month">Забрать день ' + (c.mc + 1) + ': ' + esc(calDayText(next, st.castle)) + '</button>' : '') + catchBtn + '</div>' : '');
+	}
+	return html || '<p>Календарь откроется при входе в игру.</p>';
+}
+function calRewardToast(what, r) {
+	const parts = rewardParts(r);
+	const st = K.bridge.state();
+	const t = r.newTitan && st.titans.find((x) => x.id === r.newTitan);
+	if (t) parts.push('титан ' + K.army.titans[t.def].name);
+	const rel = (r.relics || []).map((rid) => st.relics.find((x) => x.id === rid)).filter(Boolean);
+	if (rel.length) parts.push('реликвия ' + rel.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
+	toast(what + ': ' + (parts.length ? parts.join(', ') : 'хранилища полны'), 'gold');
+}
+function claimCalendar(kind, day, choice) {
+	const r = kind === 'new' ? K.bridge.calNewcomer(day, choice) : K.bridge.calMonth();
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Эта награда ещё не открылась' : r.err === E.Nothing ? 'Награда уже получена' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	calRewardToast(kind === 'new' ? 'Неделя новичка, день ' + (day + 1) : 'Награда месяца', r);
+	persist();
+	refresh(true);
+}
+/** Opens the calendar once a UTC day when a reward waits in it. */
+function maybeShowCalendar() {
+	if (!K.ready || !K.st || !K.st.cal || K.sheet || K.place || K.app.mode !== 'kingdom' || calReadyCount(K.st) <= 0) return;
+	let seen = -1;
+	try { seen = +(localStorage.getItem(CAL_KEY) || -1); } catch (e) { seen = K.calSeen === undefined ? -1 : K.calSeen; }
+	if (seen >= K.st.cal.today || K.calSeen === K.st.cal.today) return;
+	K.calSeen = K.st.cal.today;
+	try { localStorage.setItem(CAL_KEY, String(K.st.cal.today)); } catch (e) { /* per viewer only */ }
+	openGoals('cal');
 }
 function claimAch(i) {
 	const d = achDefs()[i];
@@ -5339,6 +5478,7 @@ function init(app) {
 		let welcomed = false;
 		try { welcomed = !!localStorage.getItem(HINT_KEY); } catch (e) { /* ignore */ }
 		if (!welcomed && !loaded) openWelcome();
+		else setTimeout(maybeShowCalendar, 1200);
 		// Debug and test hooks (used by the automated browser tests).
 		window.dotKingdomDebug = {
 			K, world, view, clock, refresh, persist, cloud,

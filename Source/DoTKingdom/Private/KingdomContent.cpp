@@ -1310,6 +1310,49 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			Out.achievements.push_back(D);
 		}
 	}
+	if (const JsonValue* Cal = Rules.Find("calendar"))
+	{
+		const auto ReadDays = [&Out](const JsonValue* DayList, std::vector<CalendarDay>& Days) {
+			for (size_t I = 0; DayList && I < DayList->Size(); ++I)
+			{
+				const JsonValue& J = (*DayList)[I];
+				CalendarDay D;
+				ReadCost(J.Find("res"), D.res);
+				const std::string Titan = J.GetString("titan");
+				D.titan = Titan.empty() ? -1 : Out.FindTitan(Titan);
+				bool bOk = Titan.empty() || D.titan >= 0;
+				if (const JsonValue* Choice = J.Find("choice"))
+				{
+					for (size_t K = 0; K < Choice->Size(); ++K)
+					{
+						const int T = Out.FindTitan((*Choice)[K].AsString());
+						bOk = bOk && T >= 0;
+						D.choice.push_back(T);
+					}
+				}
+				D.relic = J.GetInt("relic", 0);
+				bOk = bOk && D.relic >= 0 && D.relic <= 5 && !(D.titan >= 0 && !D.choice.empty());
+				if (!bOk)
+				{
+					return false;
+				}
+				Days.push_back(D);
+			}
+			return true;
+		};
+		CalendarRules& Cr = Out.calendar;
+		const JsonValue* Monthly = Cal->Find("monthly");
+		if (!ReadDays(Cal->Find("newcomer"), Cr.newcomer) || !ReadDays(Monthly ? Monthly->Find("days") : nullptr, Cr.monthly) || Cr.newcomer.size() > 32)
+		{
+			Error = "kingdom/kingdom.json: a calendar day names an unknown titan, a titan and a choice, or a bad relic";
+			return false;
+		}
+		if (Monthly)
+		{
+			Cr.catchUpGems = std::max<int64_t>(0, Monthly->GetInt64("catchUpGems", Cr.catchUpGems));
+			Cr.catchUps = std::max(0, Monthly->GetInt("catchUps", Cr.catchUps));
+		}
+	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;
 }

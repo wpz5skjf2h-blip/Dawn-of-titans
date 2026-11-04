@@ -518,6 +518,56 @@
     {"id": "ach_missions", "check": "missions", "tiers": [[5, 5], [13, 10], [26, 25]], "name": "Искатель приключений", "desc": "Пройденные миссии кампании"}
   ],
 
+  // Login calendars (master prompt 13.6). A login is the first visit of a UTC day. "newcomer": day N opens on the N-th
+  // login (day 3: one of three Epic titans, day 7: a Rare titan, as in the prompt with our roster). "monthly": 28-day
+  // cycles; the N-th reward opens on the N-th login of the cycle, missed days are caught up for gems (3 a cycle).
+  // Gold and food are per level of the Castle. Numbers are ours.
+  "calendar": {
+    "newcomer": [
+      {"res": {"gems": 20, "gold": 1000}},
+      {"res": {"stones": 6, "food": 1500}},
+      {"choice": ["titan.surtr", "titan.hecate", "titan.artemis"]},
+      {"res": {"gems": 30}},
+      {"relic": 2},
+      {"res": {"gold": 3000, "food": 3000}},
+      {"titan": "titan.perun", "res": {"gems": 50}}
+    ],
+    "monthly": {
+      "catchUpGems": 10,
+      "catchUps": 3,
+      "days": [
+        {"res": {"gold": 500}},
+        {"res": {"food": 500}},
+        {"res": {"stones": 3}},
+        {"res": {"gems": 5}},
+        {"res": {"gold": 800}},
+        {"res": {"food": 800}},
+        {"res": {"gems": 15}},
+        {"res": {"gold": 600}},
+        {"res": {"food": 600}},
+        {"res": {"stones": 4}},
+        {"res": {"gems": 5}},
+        {"res": {"gold": 1000}},
+        {"res": {"food": 1000}},
+        {"res": {"gems": 10}, "relic": 1},
+        {"res": {"gold": 700}},
+        {"res": {"food": 700}},
+        {"res": {"stones": 5}},
+        {"res": {"gems": 5}},
+        {"res": {"gold": 1200}},
+        {"res": {"food": 1200}},
+        {"res": {"gems": 20}},
+        {"res": {"gold": 800}},
+        {"res": {"food": 800}},
+        {"res": {"stones": 6}},
+        {"res": {"gems": 10}},
+        {"res": {"gold": 1500}},
+        {"res": {"food": 1500}},
+        {"res": {"gems": 25}, "relic": 2}
+      ]
+    }
+  },
+
   // Gems for missing resources (estimate, piecewise linear on amount).
   "gemsForResources": [[0, 0], [100, 1], [1000, 5], [10000, 25], [100000, 125], [1000000, 600], [10000000, 3000]],
 

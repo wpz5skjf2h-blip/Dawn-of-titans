@@ -363,6 +363,25 @@ struct AchievementDef
 	std::vector<std::pair<int64_t, int64_t>> tiers; // (count, gems), ascending
 };
 
+/** A day of a login calendar: resources (gold and food times the Castle's level), a titan, a choice of titans, a relic. */
+struct CalendarDay
+{
+	ResArray res{};
+	int titan = -1; // a titan of the roster
+	std::vector<int> choice; // titans to choose one from
+	int relic = 0; // a relic of this rarity
+};
+
+/** Login calendars (kingdom.json "calendar", master prompt 13.6): seven days for a new lord, and a 28-day cycle whose
+ *  missed days can be caught up for gems a few times a cycle. */
+struct CalendarRules
+{
+	std::vector<CalendarDay> newcomer;
+	std::vector<CalendarDay> monthly;
+	int64_t catchUpGems = 10;
+	int catchUps = 3;
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -572,6 +591,7 @@ struct KingdomContent
 	QuestRules quests;
 	std::vector<GoalDef> goals; // the main line, in order
 	std::vector<AchievementDef> achievements;
+	CalendarRules calendar;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

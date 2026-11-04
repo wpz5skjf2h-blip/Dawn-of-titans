@@ -16,6 +16,7 @@ namespace
 {
 constexpr int64_t kUnlimited = std::numeric_limits<int64_t>::max() / 4;
 constexpr int64_t kSecondsPerHour = 3600;
+constexpr int64_t kSecondsPerDay = 86400;
 
 int64_t CeilDiv(int64_t A, int64_t B)
 {
@@ -133,6 +134,11 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	GoalEvents = 0;
 	LifetimeCounts.fill(0);
 	AchTiers.assign(C.achievements.size(), 0);
+	LoginCount = 0;
+	LoginDay = -1;
+	NewcomerMask = 0;
+	MonthStart = -1;
+	MonthLoginCount = MonthClaimCount = MonthCatchUpCount = 0;
 	FillWorld();
 	ResetRivals();
 }
@@ -3080,6 +3086,176 @@ Error Kingdom::ClaimAchievement(int I, Reward* Out)
 	return Error::None;
 }
 
+// --- Login calendars -----------------------------------------------------------------------------------
+
+void Kingdom::NoteLogin()
+{
+	const int64_t Day = Time / kSecondsPerDay;
+	if (Day <= LoginDay)
+	{
+		return;
+	}
+	LoginDay = Day;
+	++LoginCount;
+	const int64_t N = static_cast<int64_t>(C.calendar.monthly.size());
+	if (N == 0)
+	{
+		return;
+	}
+	if (MonthStart < 0)
+	{
+		MonthStart = Day;
+	}
+	if (Day >= MonthStart + N)
+	{
+		MonthStart += (Day - MonthStart) / N * N;
+		MonthLoginCount = 0;
+		MonthClaimCount = 0;
+		MonthCatchUpCount = 0;
+	}
+	MonthLoginCount = std::min(MonthLoginCount + 1, static_cast<int>(N));
+}
+
+bool Kingdom::NewcomerClaimed(int Day) const
+{
+	return Day >= 0 && Day < 32 && (NewcomerMask & (1u << Day)) != 0;
+}
+
+bool Kingdom::NewcomerReady(int Day) const
+{
+	return Day >= 0 && Day < static_cast<int>(C.calendar.newcomer.size()) && LoginCount > Day && !NewcomerClaimed(Day);
+}
+
+Error Kingdom::PayCalendarDay(const CalendarDay& D, int Choice, uint64_t H, Reward* Out)
+{
+	if (!D.choice.empty() && (Choice < 0 || Choice >= static_cast<int>(D.choice.size())))
+	{
+		return Error::BadId;
+	}
+	if ((D.titan >= 0 || !D.choice.empty()) && static_cast<int>(TitanList.size()) >= TitanCapacity())
+	{
+		return Error::RosterFull;
+	}
+	if (D.relic > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	Reward R;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		const Res X = static_cast<Res>(I);
+		// Gold and food grow with the Castle, so the reward stays worth taking.
+		const int64_t Pay = D.res[static_cast<size_t>(I)] * ((X == Res::Gold || X == Res::Food) ? std::max(1, CastleLevel()) : 1);
+		if (Pay > 0)
+		{
+			const int64_t Before = Amount(X);
+			AddResource(X, Pay);
+			R.res[static_cast<size_t>(I)] += Amount(X) - Before;
+		}
+	}
+	const int Titan = D.choice.empty() ? D.titan : D.choice[static_cast<size_t>(Choice)];
+	if (Titan >= 0)
+	{
+		TitanState T;
+		T.id = NextId++;
+		T.def = Titan;
+		StartSkills(T);
+		TitanList.push_back(T);
+		R.newTitan = T.id;
+	}
+	if (D.relic > 0)
+	{
+		const int32_t Id = AddRelic(RollRelicKind(H), D.relic);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimNewcomer(int Day, int Choice, Reward* Out)
+{
+	if (Day < 0 || Day >= static_cast<int>(C.calendar.newcomer.size()))
+	{
+		return Error::BadId;
+	}
+	if (NewcomerClaimed(Day))
+	{
+		return Error::Nothing;
+	}
+	if (LoginCount <= Day)
+	{
+		return Error::NotReady;
+	}
+	const Error E = PayCalendarDay(C.calendar.newcomer[static_cast<size_t>(Day)], Choice, Mix(Seed ^ 0x6e6577636f6d6572ULL, static_cast<uint64_t>(Day)), Out);
+	if (E == Error::None)
+	{
+		NewcomerMask |= 1u << Day;
+	}
+	return E;
+}
+
+bool Kingdom::MonthRunning() const
+{
+	return MonthStart >= 0 && Time / kSecondsPerDay < MonthStart + static_cast<int64_t>(C.calendar.monthly.size());
+}
+
+int Kingdom::MonthMissed() const
+{
+	if (!MonthRunning())
+	{
+		return 0;
+	}
+	const int64_t Today = Time / kSecondsPerDay;
+	const int64_t Before = MonthLoginCount - (LoginDay == Today ? 1 : 0);
+	return static_cast<int>(std::max<int64_t>(0, (Today - MonthStart) - Before));
+}
+
+Error Kingdom::ClaimMonthly(Reward* Out)
+{
+	const int N = static_cast<int>(C.calendar.monthly.size());
+	if (N == 0 || MonthClaimCount >= N)
+	{
+		return Error::Nothing;
+	}
+	if (!MonthRunning() || MonthClaimCount >= MonthLoginCount)
+	{
+		return Error::NotReady;
+	}
+	const Error E = PayCalendarDay(C.calendar.monthly[static_cast<size_t>(MonthClaimCount)], 0,
+		Mix(Seed ^ 0x6d6f6e7468ULL, static_cast<uint64_t>(MonthStart) * 64 + static_cast<uint64_t>(MonthClaimCount)), Out);
+	if (E == Error::None)
+	{
+		++MonthClaimCount;
+	}
+	return E;
+}
+
+Error Kingdom::CatchUpMonthly()
+{
+	if (MonthMissed() <= 0)
+	{
+		return Error::Nothing;
+	}
+	if (MonthCatchUpCount >= C.calendar.catchUps)
+	{
+		return Error::LimitReached;
+	}
+	if (Amount(Res::Gems) < C.calendar.catchUpGems)
+	{
+		return Error::NotEnough;
+	}
+	Res_[static_cast<size_t>(ResIndex(Res::Gems))] -= C.calendar.catchUpGems;
+	++MonthLoginCount;
+	++MonthCatchUpCount;
+	return Error::None;
+}
+
 // --- Army -----------------------------------------------------------------------------------------
 
 const LevelDef* Kingdom::BuildingLevel(int Def) const
@@ -5423,6 +5599,24 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Login calendars (optional).
+	W.Key("calendar");
+	W.BeginObject();
+	W.Key("logins");
+	W.Int(LoginCount);
+	W.Key("day");
+	W.Int(LoginDay);
+	W.Key("newcomer");
+	W.Int(NewcomerMask);
+	W.Key("monthStart");
+	W.Int(MonthStart);
+	W.Key("monthLogins");
+	W.Int(MonthLoginCount);
+	W.Key("monthClaimed");
+	W.Int(MonthClaimCount);
+	W.Key("catchUps");
+	W.Int(MonthCatchUpCount);
+	W.EndObject();
 	// Achievements (optional): counts over the whole game by event, tiers paid by id.
 	W.Key("achievements");
 	W.BeginObject();
@@ -6101,6 +6295,23 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Login calendars (saves before them start at the next visit).
+	LoginCount = 0;
+	LoginDay = -1;
+	NewcomerMask = 0;
+	MonthStart = -1;
+	MonthLoginCount = MonthClaimCount = MonthCatchUpCount = 0;
+	if (const JsonValue* CalJ = J.Find("calendar"))
+	{
+		const int MonthDays = static_cast<int>(C.calendar.monthly.size());
+		LoginCount = std::max(0, CalJ->GetInt("logins", 0));
+		LoginDay = std::max<int64_t>(-1, CalJ->GetInt64("day", -1));
+		NewcomerMask = static_cast<uint32_t>(CalJ->GetInt64("newcomer", 0)) & ((C.calendar.newcomer.size() >= 32 ? 0u : (1u << C.calendar.newcomer.size())) - 1u);
+		MonthStart = std::max<int64_t>(-1, CalJ->GetInt64("monthStart", -1));
+		MonthLoginCount = std::max(0, std::min(MonthDays, CalJ->GetInt("monthLogins", 0)));
+		MonthClaimCount = std::max(0, std::min(MonthLoginCount, CalJ->GetInt("monthClaimed", 0)));
+		MonthCatchUpCount = std::max(0, std::min(C.calendar.catchUps, CalJ->GetInt("catchUps", 0)));
+	}
 	// Achievements (saves before them count from now).
 	LifetimeCounts.fill(0);
 	AchTiers.assign(C.achievements.size(), 0);
@@ -6428,6 +6639,17 @@ uint64_t Kingdom::Hash() const
 	{
 		W.I32(GoalAt);
 		W.I64(GoalEvents);
+	}
+	// The same for the calendars: only after the first login.
+	if (LoginCount != 0 || LoginDay >= 0)
+	{
+		W.I32(LoginCount);
+		W.I64(LoginDay);
+		W.U32(NewcomerMask);
+		W.I64(MonthStart);
+		W.I32(MonthLoginCount);
+		W.I32(MonthClaimCount);
+		W.I32(MonthCatchUpCount);
 	}
 	// The same for achievements: only once something was counted or paid.
 	const bool bAch = std::any_of(LifetimeCounts.begin(), LifetimeCounts.end(), [](int64_t V) { return V != 0; }) ||

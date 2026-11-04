@@ -1165,6 +1165,19 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
+	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
+	// catch-ups used, days missed) and today's UTC day.
+	O.Key("cal").Raw("{").Key("logins").Int(Km->LoginDays());
+	{
+		int64_t Mask = 0;
+		for (int D = 0; D < static_cast<int>(C.calendar.newcomer.size()); ++D)
+		{
+			Mask |= Km->NewcomerClaimed(D) ? (int64_t{1} << D) : 0;
+		}
+		O.Comma().Key("ncMask").Int(Mask);
+	}
+	O.Comma().Key("ms").Int(Km->MonthStartDay()).Comma().Key("ml").Int(Km->MonthLogins()).Comma().Key("mc").Int(Km->MonthClaimed());
+	O.Comma().Key("cu").Int(Km->MonthCatchUps()).Comma().Key("miss").Int(Km->MonthMissed()).Comma().Key("today").Int(Km->Now() / 86400).Raw("},");
 	// Achievements (kingdom.json "achievements"): what each counts now and the tiers already paid.
 	O.Key("ach").Raw("{").Key("v").Raw("[");
 	for (int I = 0; I < static_cast<int>(C.achievements.size()); ++I)
@@ -1525,6 +1538,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_quest_claim(int Slot)
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimQuest(Slot, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** Claims a day of the newcomer calendar (choice: the titan picked on a day with a choice). */
+EMSCRIPTEN_KEEPALIVE const char* dk_cal_newcomer(int Day, int Choice)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimNewcomer(Day, Choice, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims the next reward of the monthly calendar. */
+EMSCRIPTEN_KEEPALIVE const char* dk_cal_month()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimMonthly(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_cal_catchup()
+{
+	return K() ? static_cast<int>(K()->CatchUpMonthly()) : -1;
 }
 
 /** Pays the next tier of an achievement (gems). */

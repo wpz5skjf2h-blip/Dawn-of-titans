@@ -2186,6 +2186,101 @@ void TestAchievements()
 	KD_CHECK(O.Lifetime(QuestEvent::Win) == 0 && O.AchievementTier(Gold) == 0);
 }
 
+void TestCalendars()
+{
+	const KingdomContent& Ct = Content();
+	const CalendarRules& Cal = Ct.calendar;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	// Master prompt 13.6: seven days for a newcomer (day 3: one of three Epic titans, day 7: a Rare one), 28-day cycles
+	// with up to three catch-ups.
+	KD_CHECK(Cal.newcomer.size() == 7 && Cal.monthly.size() == 28 && Cal.catchUps == 3 && Cal.catchUpGems > 0);
+	KD_CHECK(Cal.newcomer.size() == 7 && Cal.newcomer[2].choice.size() == 3 && Cal.newcomer[6].titan >= 0);
+	for (const int T : Cal.newcomer.size() == 7 ? Cal.newcomer[2].choice : std::vector<int>())
+	{
+		KD_CHECK(Ct.titans[static_cast<size_t>(T)].stars == 3);
+	}
+	KD_CHECK(Cal.newcomer.size() == 7 && Ct.titans[static_cast<size_t>(Cal.newcomer[6].titan)].stars == 2);
+	int64_t MonthGems = 0;
+	for (const CalendarDay& D : Cal.monthly)
+	{
+		MonthGems += D.res[GemsI];
+	}
+	KD_CHECK(MonthGems >= 60 && MonthGems <= 140); // a few gems a day of the free player's 40 (8.6)
+
+	Kingdom K(Ct);
+	K.NewGame(T0, 17);
+	const uint64_t Fresh = K.Hash();
+	KD_CHECK(K.LoginDays() == 0 && !K.NewcomerReady(0) && K.ClaimNewcomer(0, 0, nullptr) == Error::NotReady);
+	KD_CHECK(K.MonthStartDay() == -1 && K.ClaimMonthly(nullptr) == Error::NotReady && K.MonthMissed() == 0 && K.CatchUpMonthly() == Error::Nothing);
+	// The first visit of a day is a login; a second one the same day is not.
+	K.Visit();
+	K.Visit();
+	KD_CHECK(K.LoginDays() == 1 && K.MonthStartDay() == T0 / Day && K.MonthLogins() == 1 && K.Hash() != Fresh);
+	KD_CHECK(K.NewcomerReady(0) && !K.NewcomerReady(1) && K.ClaimNewcomer(1, 0, nullptr) == Error::NotReady && K.ClaimNewcomer(7, 0, nullptr) == Error::BadId);
+	const int64_t Gems = K.Amount(Res::Gems);
+	const int64_t Room = K.Capacity(Res::Gold) - K.Amount(Res::Gold);
+	Reward R;
+	KD_CHECK(K.ClaimNewcomer(0, 0, &R) == Error::None && R.res[GemsI] == Cal.newcomer[0].res[GemsI] && K.Amount(Res::Gems) == Gems + R.res[GemsI]);
+	KD_CHECK(R.res[GoldI] == std::min(Room, Cal.newcomer[0].res[GoldI])); // gold and food only as far as the vaults hold
+	KD_CHECK(K.NewcomerClaimed(0) && !K.NewcomerReady(0) && K.ClaimNewcomer(0, 0, nullptr) == Error::Nothing);
+	KD_CHECK(K.ClaimMonthly(&R) == Error::None && K.MonthClaimed() == 1 && K.ClaimMonthly(nullptr) == Error::NotReady);
+
+	// The next day counts; a skipped day is missed and can be caught up for gems.
+	K.Advance(T0 + Day);
+	KD_CHECK(K.LoginDays() == 1); // time alone is not a login
+	K.Visit();
+	K.Advance(T0 + 3 * Day);
+	K.Visit();
+	KD_CHECK(K.LoginDays() == 3 && K.MonthLogins() == 3 && K.MonthMissed() == 1);
+	const int64_t GemsBefore = K.Amount(Res::Gems);
+	KD_CHECK(K.CatchUpMonthly() == Error::None && K.Amount(Res::Gems) == GemsBefore - Cal.catchUpGems && K.MonthLogins() == 4 && K.MonthMissed() == 0);
+	KD_CHECK(K.CatchUpMonthly() == Error::Nothing && K.MonthCatchUps() == 1);
+	// Day 3: one of three titans.
+	const size_t Titans = K.Titans().size();
+	KD_CHECK(K.ClaimNewcomer(2, 3, nullptr) == Error::BadId && K.ClaimNewcomer(2, -1, nullptr) == Error::BadId);
+	KD_CHECK(K.ClaimNewcomer(2, 1, &R) == Error::None && K.Titans().size() == Titans + 1 && R.newTitan == K.Titans().back().id);
+	KD_CHECK(K.Titans().back().def == Cal.newcomer[2].choice[1] && K.Titans().back().level == 1 && !K.Titans().back().skills.empty());
+	for (int I = 0; I < 3; ++I)
+	{
+		KD_CHECK(K.ClaimMonthly(nullptr) == Error::None);
+	}
+	KD_CHECK(K.MonthClaimed() == 4 && K.ClaimMonthly(nullptr) == Error::NotReady);
+
+	// Saving keeps it all; a save from before the calendars starts at the next visit with the same hash.
+	std::string Error;
+	const std::string Save = K.Save();
+	KD_CHECK(Save.find("\"calendar\":{\"logins\":3,\"day\":" + std::to_string((T0 + 3 * Day) / Day) + ",\"newcomer\":5,") != std::string::npos);
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Save, Error) && L.Hash() == K.Hash() && L.Save() == Save && L.MonthCatchUps() == 1);
+	KD_CHECK(L.Load(Replace(Save, "\"catchUps\":1}", "\"catchUps\":3}"), Error) && L.MonthCatchUps() == 3);
+	L.Advance(T0 + 5 * Day);
+	L.Visit();
+	KD_CHECK(L.MonthMissed() == 1 && L.CatchUpMonthly() == Error::LimitReached);
+	Kingdom N(Ct);
+	N.NewGame(T0, 17);
+	const std::string NewSave = N.Save();
+	const size_t P = NewSave.find(",\"calendar\":{");
+	Kingdom O(Ct);
+	KD_CHECK(P != std::string::npos && O.Load(NewSave.substr(0, P) + NewSave.substr(NewSave.find(",\"achievements\":{")), Error) && O.Hash() == Fresh && O.LoginDays() == 0);
+
+	// A new cycle drops what was not claimed.
+	K.Advance(T0 + 28 * Day);
+	KD_CHECK(K.ClaimMonthly(nullptr) == Error::NotReady && K.MonthMissed() == 0);
+	K.Visit();
+	KD_CHECK(K.MonthStartDay() == T0 / Day + 28 && K.MonthLogins() == 1 && K.MonthClaimed() == 0 && K.MonthCatchUps() == 0);
+	KD_CHECK(K.ClaimMonthly(nullptr) == Error::None && K.LoginDays() == 4);
+	// Day 7 comes on the seventh login, however many days that takes.
+	for (int D = 29; D < 32; ++D)
+	{
+		K.Advance(T0 + D * Day);
+		K.Visit();
+	}
+	KD_CHECK(K.LoginDays() == 7 && K.NewcomerReady(6) && K.NewcomerReady(1) && K.ClaimNewcomer(6, 0, &R) == Error::None);
+	KD_CHECK(K.Titans().back().def == Cal.newcomer[6].titan && R.res[GemsI] == Cal.newcomer[6].res[GemsI]);
+}
+
 Kingdom WithVp(uint64_t Seed, int64_t Vp, const std::string& Extra = std::string())
 {
 	Kingdom K(Content());
@@ -2473,7 +2568,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars},
 	};
 	for (const auto& T : Tests)
 	{
