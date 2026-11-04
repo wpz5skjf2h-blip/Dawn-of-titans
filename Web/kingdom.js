@@ -926,7 +926,7 @@ function mulberry(seed) {
 }
 
 // Sage grass and grey cliffs, muted as on the original's island; grass keeps green well over red, which islandMaterial reads as grass.
-const ISLE = { grass: 0x78985a, grass2: 0x6e8c50, grassD: 0x546e3a, dirt: 0x7a6248, rock1: 0x7d796d, rock2: 0x625f56, rock3: 0x4d4b45 };
+const ISLE = { grass: 0x7a8c6a, grass2: 0x6f805f, grassD: 0x556445, dirt: 0x7a6248, rock1: 0x7d796d, rock2: 0x625f56, rock3: 0x4d4b45 };
 /**
  * A floating island: flat grassy top (out to flatTop of the rim), a bumpy grass edge, then a rocky
  * underside narrowing to a point. calm = [angle, width] keeps the edge flat where a stream leaves.
@@ -1012,7 +1012,7 @@ function islandMaterial() {
 			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tR;\nvarying vec2 vIuv;')
 				.replace('#include <color_fragment>', [
 					'#include <color_fragment>',
-					'float grassy = clamp((vColor.g - vColor.r) * 8.0, 0.0, 1.0);',
+					'float grassy = clamp((vColor.g - vColor.r) * 14.0, 0.0, 1.0);',
 					'const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);',
 					'float lum = mix(dot(texture2D(tR, vIuv * 0.7).rgb, LUMA) / 0.139, dot(texture2D(tG, vIuv * 1.6).rgb, LUMA) / 0.191, grassy);',
 					'diffuseColor.rgb *= max(0.25, mix(1.0, lum, 1.5)) * 0.85;',
@@ -1066,7 +1066,7 @@ function buildIsland() {
 	scene.add(world.island);
 
 	// Pond, stream and the waterfall pouring off the edge.
-	const water = new T.MeshStandardMaterial({ color: 0x3f93c8, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.9 });
+	const water = new T.MeshStandardMaterial({ color: 0x4f7c8a, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.9 });
 	const pc = { x: Math.cos(calmAngle) * 52, z: Math.sin(calmAngle) * 52 };
 	const pond = new T.Mesh(new T.CircleGeometry(4.6, 22), water);
 	pond.rotation.x = -Math.PI / 2;
