@@ -3515,6 +3515,7 @@ function goalBuilds(st) {
 // Achievements (master prompt 13.5): bronze, silver, gold for gems.
 const achDefs = () => K.rules.achievements || [];
 const TIER_NAMES = ['бронза', 'серебро', 'золото'];
+const TIER_TAKE = ['бронзу', 'серебро', 'золото'];
 function achReady(st, i) {
 	const d = achDefs()[i];
 	const t = st.ach ? st.ach.t[i] : 0;
@@ -3570,7 +3571,7 @@ function achCard(st, d, i) {
 	const v = st.ach.v[i];
 	const frac = done ? 1 : Math.min(1, v / next[0]);
 	const pips = d.tiers.map((x, k) => '<i class="pip b' + k + (k < t ? ' on' : '') + '" title="' + TIER_NAMES[k] + ': ' + fmt(x[0]) + '"></i>').join('');
-	const btn = ready ? '<div class="row"><button class="btn primary" data-act="ach-claim" data-id="' + i + '">Забрать ' + TIER_NAMES[t] + ' · +' + fmt(next[1]) + ' ' + iconSvg('gems') + '</button></div>' : '';
+	const btn = ready ? '<div class="row"><button class="btn primary" data-act="ach-claim" data-id="' + i + '">Забрать ' + TIER_TAKE[t] + ' · +' + fmt(next[1]) + ' ' + iconSvg('gems') + '</button></div>' : '';
 	return '<div class="landCard achCard' + (done ? ' won' : '') + (ready ? ' ready' : '') + '">' + icoHtml('ui.medal', 'bld medal b' + Math.min(t, d.tiers.length - 1) + (done ? ' all' : '')) +
 		'<div class="info"><b>' + esc(d.name) + (done ? '' : ' ' + ROMAN[t + 1]) + '</b><span>' + esc(d.desc) + '</span>' +
 		'<span class="achLine"><span class="pips">' + pips + '</span>' + (done ? 'Все ступени пройдены' : fmt(Math.min(v, next[0])) + ' из ' + fmt(next[0]) + ' · ' + TIER_NAMES[t] + ' +' + fmt(next[1]) + ' ' + iconSvg('gems')) + '</span>' +
