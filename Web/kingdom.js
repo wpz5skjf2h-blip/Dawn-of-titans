@@ -182,6 +182,9 @@ class KingdomBridge {
 	questClaim(i) { return JSON.parse(this.str(this.M._dk_quest_claim(i))); }
 	questReroll(i) { return this.M._dk_quest_reroll(i); }
 	questChest() { return JSON.parse(this.str(this.M._dk_quest_chest())); }
+	weekClaim(i) { return JSON.parse(this.str(this.M._dk_week_claim(i))); }
+	weekReroll(i) { return this.M._dk_week_reroll(i); }
+	weekChest() { return JSON.parse(this.str(this.M._dk_week_chest())); }
 	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
 	achClaim(i) { return JSON.parse(this.str(this.M._dk_ach_claim(i))); }
 	calNewcomer(day, choice) { return JSON.parse(this.str(this.M._dk_cal_newcomer(day, choice))); }
@@ -2134,7 +2137,7 @@ function initHud() {
 	$('rVp').addEventListener('click', openSeason);
 	$('rBuilders').addEventListener('click', openBuilders);
 	$('kQuestBtn').innerHTML = DotIcons.svg('ui.quest') + '<span></span>';
-	$('kQuestBtn').addEventListener('click', openQuests);
+	$('kQuestBtn').addEventListener('click', () => openQuests());
 	// The card opens the lord's path; its badge opens the rewards that wait (the calendar first).
 	$('kGoal').addEventListener('click', (e) => openGoals(e.target.closest('.achBadge') ? (calReadyCount(K.st) > 0 ? 'cal' : 'ach') : undefined));
 	$('kMenuBtn').addEventListener('click', openMenu);
@@ -2204,7 +2207,8 @@ function updateHud() {
 		const claimed = qs.list.filter((q) => q.claimed).length;
 		qb.querySelector('span').textContent = claimed + '/' + qs.list.length;
 		qb.classList.toggle('ready', questsReady(st) > 0);
-		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + (questsReady(st) ? ', есть награда' : '');
+		const wk = st.week && st.week.list.length ? ', заданий недели ' + st.week.list.filter((q) => q.claimed).length + ' из ' + st.week.list.length : '';
+		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + wk + (questsReady(st) ? ', есть награда' : '');
 	}
 	$('kAttackSub').textContent = st.res[3] + ' ' + plural(st.res[3], 'камень', 'камня', 'камней');
 	$('kArmySub').textContent = st.army.total + ' / ' + st.army.cap + ' · ' + st.titans.length + ' ' + plural(st.titans.length, 'титан', 'титана', 'титанов');
@@ -2450,9 +2454,10 @@ function onAct(e) {
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
 	case 'chest': openChest(Math.floor(id / 100), id % 100); break;
-	case 'quest-claim': claimQuest(id); break;
-	case 'quest-reroll': run(K.bridge.questReroll(id), 'Задание заменено'); break;
-	case 'quest-chest': openQuestChest(); break;
+	case 'quest-claim': claimQuest(id, el.dataset.kind); break;
+	case 'quest-reroll': run(el.dataset.kind === 'week' ? K.bridge.weekReroll(id) : K.bridge.questReroll(id), 'Задание заменено'); break;
+	case 'quest-chest': openQuestChest(el.dataset.kind); break;
+	case 'quest-tab': K.questTab = el.dataset.tab; refreshSheet(true); break;
 	case 'goals': openGoals(); break;
 	case 'goal-tab': K.goalTab = el.dataset.tab; refreshSheet(true); break;
 	case 'ach-claim': claimAch(id); break;
@@ -3398,20 +3403,24 @@ function missionEnd(ctx, stars, retreat) {
 // ---------------------------------------------------------------------------------------------
 const QUEST_ICON = { win: 'ui.attack', threeStars: 'mission.elite', raid: 'land.forest', collectGold: 'building.gold_mine', collectFood: 'building.farm',
 	train: 'building.barracks', upgrade: 'ui.build', craft: 'spell.fireball', stones: 'building.portal', site: 'land.monument', mission: 'ui.campaign' };
-const questDef = (q) => K.rules.dailyQuests.pool[q.def];
-const questName = (q) => questDef(q).name.replace('{n}', fmt(q.target));
+// kind: 'day' (daily quests, st.quests) or 'week' (weekly quests, st.week); the same shape.
+const questRules = (kind) => (kind === 'week' ? K.rules.weeklyQuests : K.rules.dailyQuests);
+const questBoard = (st, kind) => (kind === 'week' ? st.week : st.quests);
+const questDef = (q, kind) => questRules(kind).pool[q.def];
+const questName = (q, kind) => questDef(q, kind).name.replace('{n}', fmt(q.target));
 const questDone = (q) => q.progress >= q.target;
-/** Quests done but not claimed, plus the chest when it can be opened. */
-function questsReady(st) {
-	const qs = st.quests;
-	if (!qs || !qs.list.length) return 0;
+/** Quests done but not claimed, plus the chest when it can be opened (daily and weekly together, or one kind). */
+function questsReady(st, kind) {
+	if (!kind) return questsReady(st, 'day') + questsReady(st, 'week');
+	const qs = questBoard(st, kind);
+	if (!qs || !qs.list.length || !questRules(kind)) return 0;
 	const ready = qs.list.filter((q) => questDone(q) && !q.claimed).length;
 	return ready + (!qs.chest && qs.list.every((q) => q.claimed) ? 1 : 0);
 }
-/** The daily chest's relic rarity for this Castle (0: none). */
-function questChestRelic(castle) {
+/** The chest's relic rarity for this Castle (0: none). */
+function questChestRelic(castle, kind) {
 	let r = 0;
-	for (const [lv, rar] of K.rules.dailyQuests.chest.relic || []) if (castle >= lv) r = rar;
+	for (const [lv, rar] of questRules(kind).chest.relic || []) if (castle >= lv) r = rar;
 	return r;
 }
 function rewardParts(r) {
@@ -3422,73 +3431,91 @@ function rewardParts(r) {
 	if (r.stones) parts.push('+' + fmt(r.stones) + ' камней портала');
 	return parts;
 }
-/** A toast for every quest that got done since the last state (same day). */
+/** A toast for every quest that got done since the last state (same day, same week). */
 function announceQuests(prev, st) {
-	const a = prev.quests;
-	const b = st.quests;
-	if (!a || !b || a.dayEnd !== b.dayEnd || a.list.length !== b.list.length) return;
-	b.list.forEach((q, i) => {
-		const p = a.list[i];
-		if (p.def === q.def && !questDone(p) && questDone(q) && !q.claimed) toast('Задание выполнено: ' + questName(q) + '. Заберите награду в заданиях', 'gold');
-	});
+	for (const kind of ['day', 'week']) {
+		const a = questBoard(prev, kind);
+		const b = questBoard(st, kind);
+		if (!a || !b || !questRules(kind) || (kind === 'day' ? a.dayEnd !== b.dayEnd : a.end !== b.end) || a.list.length !== b.list.length) continue;
+		b.list.forEach((q, i) => {
+			const p = a.list[i];
+			if (p.def === q.def && !questDone(p) && questDone(q) && !q.claimed) {
+				toast((kind === 'week' ? 'Задание недели выполнено: ' : 'Задание выполнено: ') + questName(q, kind) + '. Заберите награду в заданиях', 'gold');
+			}
+		});
+	}
 }
-function openQuests() {
+function openQuests(tab) {
 	if (!K.rules.dailyQuests) return;
+	const hasWeek = !!(K.rules.weeklyQuests && K.st.week && K.st.week.list.length);
+	if (typeof tab === 'string') K.questTab = tab;
+	else K.questTab = hasWeek && questsReady(K.st, 'week') > 0 && !questsReady(K.st, 'day') ? 'week' : 'day';
+	if (!hasWeek) K.questTab = 'day';
 	cancelPlace();
 	select(null);
 	openSheet(() => {
 		const st = K.st;
-		const qs = st.quests;
-		const rules = K.rules.dailyQuests;
+		const kind = K.questTab;
+		const week = kind === 'week';
+		const qs = questBoard(st, kind);
+		const rules = questRules(kind);
 		const cards = qs.list.map((q, i) => {
-			const d = questDef(q);
+			const d = questDef(q, kind);
 			const done = questDone(q);
 			const got = Math.min(q.progress, q.target);
 			const reward = RES.map((k) => (d.reward && d.reward[k]) || 0);
 			const btn = q.claimed ? '<button class="btn" disabled>Награда получена</button>'
-				: done ? '<button class="btn primary" data-act="quest-claim" data-id="' + i + '">Забрать ' + resPlus(reward) + '</button>'
-					: '<button class="btn" data-act="quest-reroll" data-id="' + i + '"' + (qs.rerolls > 0 ? '' : ' disabled') + '>Заменить' +
-						(qs.rerolls > 0 ? ' · ещё ' + qs.rerolls : ' · замен на сегодня нет') + '</button>';
+				: done ? '<button class="btn primary" data-act="quest-claim" data-kind="' + kind + '" data-id="' + i + '">Забрать ' + resPlus(reward) + '</button>'
+					: '<button class="btn" data-act="quest-reroll" data-kind="' + kind + '" data-id="' + i + '"' + (qs.rerolls > 0 ? '' : ' disabled') + '>Заменить' +
+						(qs.rerolls > 0 ? ' · ещё ' + qs.rerolls : week ? ' · замен на неделю нет' : ' · замен на сегодня нет') + '</button>';
 			return '<div class="landCard' + (q.claimed ? ' won' : '') + '">' + icoHtml(QUEST_ICON[d.event] || 'ui.quest', (done ? 'gold' : 'shards') + ' land') +
-				'<div class="info"><b>' + esc(questName(q)) + '</b><span>' + (q.claimed ? 'Выполнено' : 'Сделано ' + fmt(got) + ' из ' + fmt(q.target)) +
+				'<div class="info"><b>' + esc(questName(q, kind)) + '</b><span>' + (q.claimed ? 'Выполнено' : 'Сделано ' + fmt(got) + ' из ' + fmt(q.target)) +
 				' · награда ' + resPlus(reward) + '</span><div class="progress thin"><i style="width:' + Math.round((100 * got) / q.target) + '%"></i></div></div>' +
 				'<div class="row">' + btn + '</div></div>';
 		});
 		const claimed = qs.list.filter((q) => q.claimed).length;
-		const rel = questChestRelic(st.castle);
+		const rel = questChestRelic(st.castle, kind);
 		const chestRes = RES.map((k) => rules.chest[k] || 0);
 		const chestBtn = qs.chest ? '<button class="btn" disabled>Открыт</button>'
-			: claimed === qs.list.length ? '<button class="btn primary" data-act="quest-chest">Открыть</button>'
+			: claimed === qs.list.length ? '<button class="btn primary" data-act="quest-chest" data-kind="' + kind + '">Открыть</button>'
 				: '<button class="btn" disabled>Заберите все награды · ' + claimed + ' из ' + qs.list.length + '</button>';
-		const html = sheetTitle(icoHtml('ui.quest', 'bld'), 'Ежедневные задания') +
-			'<p class="fine">Каждый день в 00:00 UTC приходят ' + rules.count + ' ' + plural(rules.count, 'задание', 'задания', 'заданий') +
-			' для уровня вашего Замка: бои, сбор добычи, обучение, улучшения. За каждое — награда, а за все — ежедневный сундук. ' +
-			'Незаконченное задание можно заменить другим ' + rules.rerolls + ' ' + plural(rules.rerolls, 'раз', 'раза', 'раз') + ' в день; невыполненные сгорают с концом дня.</p>' +
-			'<div class="costline"><span>Новые задания через</span><b data-live="qday">' + fmtDur(Math.max(0, qs.dayEnd - nowF())) + '</b><span>замен ' + qs.rerolls + '</span></div>' +
-			(st.res[3] >= st.cap[3] ? '<p class="fine">Запас камней портала полон: камни из наград сверх него не поместятся.</p>' : '') +
+		const end = week ? qs.end : qs.dayEnd;
+		const nDay = questsReady(st, 'day');
+		const nWeek = questsReady(st, 'week');
+		const tabs = hasWeek ? '<div class="shopTabs"><button class="' + (week ? '' : 'on') + '" data-act="quest-tab" data-tab="day">Сегодня' + (nDay ? ' · ' + nDay : '') + '</button>' +
+			'<button class="' + (week ? 'on' : '') + '" data-act="quest-tab" data-tab="week">Неделя' + (nWeek ? ' · ' + nWeek : '') + '</button></div>' : '';
+		const about = week
+			? 'Каждый понедельник в 00:00 UTC приходят ' + rules.count + ' ' + plural(rules.count, 'задание', 'задания', 'заданий') + ' на неделю для уровня вашего Замка: те же дела, что в ежедневных, но больше. ' +
+				'За каждое — награда, а за все — сундук недели. Незаконченное можно заменить ' + rules.rerolls + ' ' + plural(rules.rerolls, 'раз', 'раза', 'раз') + ' за неделю; невыполненные сгорают с концом недели.'
+			: 'Каждый день в 00:00 UTC приходят ' + rules.count + ' ' + plural(rules.count, 'задание', 'задания', 'заданий') +
+				' для уровня вашего Замка: бои, сбор добычи, обучение, улучшения. За каждое — награда, а за все — ежедневный сундук. ' +
+				'Незаконченное задание можно заменить другим ' + rules.rerolls + ' ' + plural(rules.rerolls, 'раз', 'раза', 'раз') + ' в день; невыполненные сгорают с концом дня.';
+		const html = sheetTitle(icoHtml('ui.quest', 'bld'), week ? 'Задания недели' : 'Ежедневные задания') + tabs +
+			'<p class="fine">' + about + ' Награды ложатся и сверх склада.</p>' +
+			'<div class="costline"><span>Новые задания через</span><b data-live="qday">' + fmtDur(Math.max(0, end - nowF())) + '</b><span>замен ' + qs.rerolls + '</span></div>' +
 			cards.join('') +
-			'<h3>Ежедневный сундук</h3><div class="landCard' + (qs.chest ? ' won' : '') + '">' + icoHtml('ui.chest', 'gold land') +
-			'<div class="info"><b>Сундук за все задания</b><span>' + resPlus(chestRes) + (rel ? ', реликвия ' + '★'.repeat(rel) : '') + '</span></div>' +
+			'<h3>' + (week ? 'Сундук недели' : 'Ежедневный сундук') + '</h3><div class="landCard' + (qs.chest ? ' won' : '') + '">' + icoHtml('ui.chest', 'gold land') +
+			'<div class="info"><b>Сундук за все задания' + (week ? ' недели' : '') + '</b><span>' + resPlus(chestRes) + (rel ? ', реликвия ' + '★'.repeat(rel) : '') + '</span></div>' +
 			'<div class="row">' + chestBtn + '</div></div>' +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['quests', qs.dayEnd, qs.rerolls, qs.chest, st.castle, st.res[3] >= st.cap[3], qs.list.map((q) => q.def + ':' + Math.min(q.progress, q.target) + ':' + q.claimed).join()].join('|'), html,
-			live: (el) => live(el, 'qday', fmtDur(Math.max(0, qs.dayEnd - nowF()))) };
+		return { key: ['quests', kind, end, qs.rerolls, qs.chest, st.castle, nDay, nWeek, qs.list.map((q) => q.def + ':' + Math.min(q.progress, q.target) + ':' + q.claimed).join()].join('|'), html,
+			live: (el) => live(el, 'qday', fmtDur(Math.max(0, end - nowF()))) };
 	});
 }
-function claimQuest(i) {
-	const q = K.st.quests.list[i];
-	const r = K.bridge.questClaim(i);
+function claimQuest(i, kind) {
+	const q = questBoard(K.st, kind).list[i];
+	const r = kind === 'week' ? K.bridge.weekClaim(i) : K.bridge.questClaim(i);
 	if (r.err !== E.None) {
 		toast(r.err === E.NotReady ? 'Задание ещё не выполнено' : r.err === E.Nothing ? 'Награда уже получена' : errText(r.err), 'bad');
 		refresh(true);
 		return;
 	}
-	toast('Задание «' + questName(q) + '»: ' + rewardParts(r).join(', '), 'gold');
+	toast((kind === 'week' ? 'Задание недели «' : 'Задание «') + questName(q, kind) + '»: ' + rewardParts(r).join(', '), 'gold');
 	persist();
 	refresh(true);
 }
-function openQuestChest() {
-	const r = K.bridge.questChest();
+function openQuestChest(kind) {
+	const r = kind === 'week' ? K.bridge.weekChest() : K.bridge.questChest();
 	if (r.err !== E.None) {
 		toast(r.err === E.NotReady ? 'Сначала заберите награды всех заданий' : r.err === E.Nothing ? 'Сундук уже открыт' : r.err === E.InventoryFull ? 'Нет места для реликвии' : errText(r.err), 'bad');
 		refresh(true);
@@ -3498,7 +3525,7 @@ function openQuestChest() {
 	const st = K.bridge.state();
 	const got = (r.relics || []).map((rid) => st.relics.find((x) => x.id === rid)).filter(Boolean);
 	if (got.length) parts.push('реликвия ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
-	toast('Ежедневный сундук: ' + parts.join(', '), 'gold');
+	toast((kind === 'week' ? 'Сундук недели: ' : 'Ежедневный сундук: ') + parts.join(', '), 'gold');
 	persist();
 	refresh(true);
 }

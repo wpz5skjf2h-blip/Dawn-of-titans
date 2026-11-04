@@ -1070,9 +1070,12 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 	}
-	if (const JsonValue* Qj = Rules.Find("dailyQuests"))
-	{
-		QuestRules& Q = Out.quests;
+	// Daily and weekly quests share a shape.
+	const auto ReadQuests = [&](const JsonValue* Qj, QuestRules& Q, const char* What) {
+		if (!Qj)
+		{
+			return true;
+		}
 		Q.count = std::max(0, Qj->GetInt("count", Q.count));
 		Q.rerolls = std::max(0, Qj->GetInt("rerolls", Q.rerolls));
 		// (from Castle level, value) pairs, ascending by level.
@@ -1110,12 +1113,17 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				ReadCost(J.Find("reward"), D.reward);
 				if (D.id.empty() || !ParseQuestEvent(J.GetString("event"), D.event) || D.target.empty() || (!Needs.empty() && D.building < 0))
 				{
-					Error = "kingdom/kingdom.json: daily quest " + D.id + " needs an id, a known event and building, and targets";
+					Error = std::string("kingdom/kingdom.json: ") + What + " quest " + D.id + " needs an id, a known event and building, and targets";
 					return false;
 				}
 				Q.pool.push_back(D);
 			}
 		}
+		return true;
+	};
+	if (!ReadQuests(Rules.Find("dailyQuests"), Out.quests, "daily") || !ReadQuests(Rules.Find("weeklyQuests"), Out.weekly, "weekly"))
+	{
+		return false;
 	}
 	if (const JsonValue* Al = Rules.Find("alliances"))
 	{

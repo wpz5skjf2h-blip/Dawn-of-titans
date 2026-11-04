@@ -1163,6 +1163,16 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	O.Raw("],").Key("rerolls").Int(Km->QuestRerollsLeft()).Comma().Key("chest").Int(Km->QuestChestClaimed() ? 1 : 0).Comma();
 	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
+	// Weekly quests: the same shape, indices into kingdom.json "weeklyQuests"; when the week ends.
+	O.Key("week").Raw("{").Key("list").Raw("[");
+	for (size_t I = 0; I < Km->WeeklyQuests().size(); ++I)
+	{
+		const dot::kingdom::DailyQuest& Q = Km->WeeklyQuests()[I];
+		O.Raw(I ? "," : "").Raw("{").Key("def").Int(Q.def).Comma().Key("target").Int(Q.target).Comma().Key("progress").Int(Q.progress).Comma();
+		O.Key("claimed").Int(Q.claimed ? 1 : 0).Raw("}");
+	}
+	O.Raw("],").Key("rerolls").Int(Km->WeeklyRerollsLeft()).Comma().Key("chest").Int(Km->WeeklyChestClaimed() ? 1 : 0).Comma();
+	O.Key("end").Int(Km->WeekEnd()).Raw("},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1580,6 +1590,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_goal_claim()
 EMSCRIPTEN_KEEPALIVE int dk_quest_reroll(int Slot)
 {
 	return K() ? static_cast<int>(K()->RerollQuest(Slot)) : -1;
+}
+
+/** Claims a done weekly quest. */
+EMSCRIPTEN_KEEPALIVE const char* dk_week_claim(int Slot)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimWeekly(Slot, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_week_reroll(int Slot)
+{
+	return K() ? static_cast<int>(K()->RerollWeekly(Slot)) : -1;
+}
+
+/** Opens the weekly chest (gems, stones, a relic). */
+EMSCRIPTEN_KEEPALIVE const char* dk_week_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimWeeklyChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
 }
 
 /** Opens the daily chest: the reward as for a battle (gems, stones, relics). */
