@@ -398,7 +398,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -478,6 +478,9 @@ function runMonkey(steps, seed, keep) {
 			return B.calNewcomer && days.length ? B.calNewcomer(Math.floor(r() * days.length), Math.floor(r() * 3)).err : -1;
 		}],
 		['календарь месяца', 1, () => (B.calMonth ? B.calMonth().err : -1)],
+		['недельное задание', 2, (st) => (B.weekClaim && st.week && st.week.list.length ? B.weekClaim(Math.floor(r() * st.week.list.length)).err : -1)],
+		['замена недельного задания', 1, (st) => (B.weekReroll && st.week && st.week.list.length ? B.weekReroll(Math.floor(r() * st.week.list.length)) : -1)],
+		['недельный сундук', 1, () => (B.weekChest ? B.weekChest().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
