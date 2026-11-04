@@ -1163,6 +1163,8 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	O.Raw("],").Key("rerolls").Int(Km->QuestRerollsLeft()).Comma().Key("chest").Int(Km->QuestChestClaimed() ? 1 : 0).Comma();
 	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
+	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
+	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
@@ -1510,6 +1512,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_quest_claim(int Slot)
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimQuest(Slot, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims the current goal of the main line: the reward as for a battle (gold, food, gems, stones). */
+EMSCRIPTEN_KEEPALIVE const char* dk_goal_claim()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimGoal(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

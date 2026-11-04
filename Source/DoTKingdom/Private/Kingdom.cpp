@@ -129,6 +129,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	QuestDay = -1;
 	QuestCounter = 0;
 	RollQuests();
+	GoalAt = 0;
+	GoalEvents = 0;
 	FillWorld();
 	ResetRivals();
 }
@@ -2759,6 +2761,14 @@ void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
 			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
 		}
 	}
+	if (GoalAt < static_cast<int>(C.goals.size()))
+	{
+		const GoalDef& G = C.goals[static_cast<size_t>(GoalAt)];
+		if (G.check == GoalCheck::Event && G.event == Event)
+		{
+			GoalEvents = std::max<int64_t>(0, GoalEvents + Amount);
+		}
+	}
 }
 
 Error Kingdom::ClaimQuest(int Slot, Reward* Out)
@@ -2873,6 +2883,126 @@ Error Kingdom::ClaimQuestChest(Reward* Out)
 		}
 	}
 	bQuestChest = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Main line of goals ------------------------------------------------------------------------------
+
+int64_t Kingdom::GoalValue() const
+{
+	if (GoalAt >= static_cast<int>(C.goals.size()))
+	{
+		return 0;
+	}
+	const GoalDef& G = C.goals[static_cast<size_t>(GoalAt)];
+	int64_t V = 0;
+	switch (G.check)
+	{
+	case GoalCheck::Castle:
+		return CastleLevel();
+	case GoalCheck::Build:
+		return std::count_if(BuildingList.begin(), BuildingList.end(), [&G](const Building& B) { return B.def == G.building && B.level >= 1; });
+	case GoalCheck::Level:
+		for (const Building& B : BuildingList)
+		{
+			V = B.def == G.building ? std::max<int64_t>(V, B.level) : V;
+		}
+		return V;
+	case GoalCheck::Army:
+		return ArmyTotal();
+	case GoalCheck::TroopLevel:
+		return TroopLevel(G.troop);
+	case GoalCheck::Lands:
+		return static_cast<int64_t>(LandList.size());
+	case GoalCheck::LandLevel:
+		for (const Land& L : LandList)
+		{
+			V = std::max<int64_t>(V, L.level);
+		}
+		return V;
+	case GoalCheck::Guard:
+		return std::count_if(LandList.begin(), LandList.end(), [](const Land& L) { return L.titanId != 0; });
+	case GoalCheck::Garrison:
+		return static_cast<int64_t>(GarrisonList.size()) + (GarrisonTitanId != 0 ? 1 : 0);
+	case GoalCheck::Titans:
+		return static_cast<int64_t>(TitanList.size());
+	case GoalCheck::TitanLevel:
+		for (const TitanState& T : TitanList)
+		{
+			V = std::max<int64_t>(V, T.level);
+		}
+		return V;
+	case GoalCheck::Relics:
+		for (const TitanState& T : TitanList)
+		{
+			V += static_cast<int64_t>(T.relics.size());
+		}
+		return V;
+	case GoalCheck::Skills:
+		for (const TitanState& T : TitanList)
+		{
+			V = std::max<int64_t>(V, static_cast<int64_t>(T.skills.size()));
+		}
+		return V;
+	case GoalCheck::Spells:
+		return SpellTotal();
+	case GoalCheck::SpellLevel:
+		for (int S = 0; S < static_cast<int>(C.spells.size()); ++S)
+		{
+			V = std::max<int64_t>(V, SpellLevel(S));
+		}
+		return V;
+	case GoalCheck::Alliance:
+		return AllianceIdx >= 0 ? 1 : 0;
+	case GoalCheck::Missions:
+		for (int A = 0; A < ActCount(); ++A)
+		{
+			for (int M = 0; M < MissionCount(A); ++M)
+			{
+				V += MissionStars(A, M) > 0 ? 1 : 0;
+			}
+		}
+		return V;
+	case GoalCheck::Event:
+		return GoalEvents;
+	case GoalCheck::Count:
+		break;
+	}
+	return 0;
+}
+
+bool Kingdom::GoalDone() const
+{
+	return GoalAt < static_cast<int>(C.goals.size()) && GoalValue() >= C.goals[static_cast<size_t>(GoalAt)].n;
+}
+
+Error Kingdom::ClaimGoal(Reward* Out)
+{
+	if (GoalAt >= static_cast<int>(C.goals.size()))
+	{
+		return Error::Nothing;
+	}
+	if (!GoalDone())
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const ResArray& Pay = C.goals[static_cast<size_t>(GoalAt)].reward;
+	for (int I = 0; I < kResCount; ++I)
+	{
+		if (Pay[static_cast<size_t>(I)] > 0)
+		{
+			const int64_t Before = Amount(static_cast<Res>(I));
+			AddResource(static_cast<Res>(I), Pay[static_cast<size_t>(I)]);
+			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
+		}
+	}
+	++GoalAt;
+	GoalEvents = 0;
 	if (Out)
 	{
 		*Out = R;
@@ -5223,6 +5353,16 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Main line of goals (optional): the current goal by id (its index for content that changed) and its event count.
+	W.Key("goal");
+	W.BeginObject();
+	W.Key("at");
+	W.Int(GoalAt);
+	W.Key("id");
+	W.String(GoalAt < static_cast<int>(C.goals.size()) ? C.goals[static_cast<size_t>(GoalAt)].id : std::string());
+	W.Key("events");
+	W.Int(GoalEvents);
+	W.EndObject();
 	W.EndObject();
 	return W.Result();
 }
@@ -5865,6 +6005,22 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Main line of goals (saves before it start at the first goal).
+	GoalAt = 0;
+	GoalEvents = 0;
+	if (const JsonValue* GoalJ = J.Find("goal"))
+	{
+		GoalAt = std::max(0, std::min(static_cast<int>(C.goals.size()), GoalJ->GetInt("at", 0)));
+		const std::string Id = GoalJ->GetString("id");
+		for (size_t I = 0; I < C.goals.size(); ++I)
+		{
+			if (!Id.empty() && C.goals[I].id == Id)
+			{
+				GoalAt = static_cast<int>(I);
+			}
+		}
+		GoalEvents = std::max<int64_t>(0, GoalJ->GetInt64("events", 0));
+	}
 	if (Pending < 0)
 	{
 		// A site or mission the content no longer has.
@@ -6150,6 +6306,12 @@ uint64_t Kingdom::Hash() const
 		W.I64(Q.target);
 		W.I64(Q.progress);
 		W.U32(Q.claimed ? 1u : 0u);
+	}
+	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
+	if (GoalAt != 0 || GoalEvents != 0)
+	{
+		W.I32(GoalAt);
+		W.I64(GoalEvents);
 	}
 	return W.Hash();
 }

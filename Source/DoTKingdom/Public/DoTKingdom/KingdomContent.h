@@ -312,6 +312,43 @@ struct QuestRules
 	std::vector<QuestDef> pool;
 };
 
+/** What a goal of the main line checks: a fact of the kingdom, or (Event) actions done while it is the current goal. */
+enum class GoalCheck : uint8_t
+{
+	Castle, // the Castle's level
+	Build, // buildings of one kind (built, any level)
+	Level, // the highest level of one kind of building
+	Army, // squads in the army
+	TroopLevel, // the Armoury level of one troop
+	Lands, // lands held
+	LandLevel, // the highest level of a land held
+	Guard, // lands with a titan on guard
+	Garrison, // defenders in the Garrison (the titan and squads)
+	Titans, // titans in the Hall
+	TitanLevel, // the highest titan level
+	Relics, // relics worn by titans
+	Skills, // the most skill slots open on one titan
+	Spells, // spells in stock
+	SpellLevel, // the highest spell level
+	Alliance, // 1 in an alliance
+	Missions, // campaign missions won
+	Event, // actions of one kind (QuestEvent) since the goal came up
+	Count
+};
+DOTKINGDOM_API bool ParseGoalCheck(const std::string& S, GoalCheck& Out);
+
+/** A goal of the main line (kingdom.json "goals", master prompt 13.5): the check, the count it needs and its reward. */
+struct GoalDef
+{
+	std::string id;
+	GoalCheck check = GoalCheck::Castle;
+	QuestEvent event = QuestEvent::Win; // for GoalCheck::Event
+	int building = -1; // for Build and Level
+	int troop = -1; // for TroopLevel
+	int64_t n = 1;
+	ResArray reward{};
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -519,6 +556,7 @@ struct KingdomContent
 	RivalRules rivals;
 	CampaignRules campaigns;
 	QuestRules quests;
+	std::vector<GoalDef> goals; // the main line, in order
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

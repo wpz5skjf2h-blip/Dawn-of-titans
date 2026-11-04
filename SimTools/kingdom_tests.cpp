@@ -1864,6 +1864,233 @@ void TestRaids()
 } // namespace
 
 /** A kingdom of this seed with this much VP this season. */
+std::string WithGoal(const std::string& Save, const std::string& Goal)
+{
+	// The goal is the save's last key.
+	const size_t P = Save.find("\"goal\":{");
+	return P == std::string::npos ? Save : Save.substr(0, P) + "\"goal\":" + Goal + "}";
+}
+
+int GoalIx(const char* Id)
+{
+	for (size_t I = 0; I < Content().goals.size(); ++I)
+	{
+		if (Content().goals[I].id == Id)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+void TestGoals()
+{
+	const KingdomContent& Ct = Content();
+	const std::vector<GoalDef>& Line = Ct.goals;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	KD_CHECK(Line.size() >= 60 && Line.front().id == "first_food");
+	KD_CHECK(!Line.empty() && Line.back().check == GoalCheck::Castle && Line.back().n == 9);
+
+	// Nothing deadlocks: whatever a level needs can be built at the Castle that level itself asks for.
+	for (const BuildingDef& B : Ct.buildings)
+	{
+		for (const LevelDef& L : B.levels)
+		{
+			for (const Requirement& Q : L.needs)
+			{
+				const BuildingDef& N = Ct.buildings[static_cast<size_t>(Q.building)];
+				const bool bOk = Q.level >= 1 && Q.level <= N.MaxLevel() && N.levels[static_cast<size_t>(Q.level - 1)].castle <= L.castle &&
+					N.unlockCastle <= L.castle && N.MaxCount(L.castle) >= Q.count;
+				if (!bOk)
+				{
+					std::printf("  (%s level %d needs %s level %d, not open at Castle %d)\n", B.id.c_str(), L.level, N.id.c_str(), Q.level, L.castle);
+				}
+				KD_CHECK(bOk);
+			}
+		}
+	}
+
+	// Walk the line as a player would and check that each goal can be done when it comes up: what it builds is open
+	// at the Castle reached so far, and what the building needs was asked for by an earlier goal (or stands at the start).
+	std::vector<std::vector<int>> Levels(Ct.buildings.size());
+	for (const StartBuilding& S : Ct.startBuildings)
+	{
+		Levels[static_cast<size_t>(S.building)].push_back(S.level);
+	}
+	const int CastleDef = Def("castle");
+	int Castle = 1;
+	const auto Top = [&](int D) {
+		int V = 0;
+		for (int L : Levels[static_cast<size_t>(D)])
+		{
+			V = std::max(V, L);
+		}
+		return V;
+	};
+	const auto LevelOpen = [&](int D, int L, const std::string& Id) {
+		const BuildingDef& B = Ct.buildings[static_cast<size_t>(D)];
+		bool bOk = L >= 1 && L <= B.MaxLevel() && B.unlockCastle <= Castle && B.levels[static_cast<size_t>(L - 1)].castle <= Castle &&
+			B.levels[static_cast<size_t>(L - 1)].expansion == 0;
+		for (const Requirement& Q : bOk ? B.levels[static_cast<size_t>(L - 1)].needs : std::vector<Requirement>())
+		{
+			int Have = 0;
+			for (int X : Levels[static_cast<size_t>(Q.building)])
+			{
+				Have += X >= Q.level ? 1 : 0;
+			}
+			bOk = bOk && Have >= Q.count;
+		}
+		if (!bOk)
+		{
+			std::printf("  (goal %s: %s level %d is not open yet at Castle %d)\n", Id.c_str(), B.id.c_str(), L, Castle);
+		}
+		return bOk;
+	};
+	const auto Stat = [&](const char* Id, int64_t LevelDef::*Field) {
+		const int D = Def(Id);
+		const int L = Top(D);
+		return L >= 1 ? Ct.buildings[static_cast<size_t>(D)].levels[static_cast<size_t>(L - 1)].*Field : 0;
+	};
+	int64_t Gems = 0;
+	std::vector<bool> Used(static_cast<size_t>(GoalCheck::Count), false);
+	for (const GoalDef& G : Line)
+	{
+		Used[static_cast<size_t>(G.check)] = true;
+		Gems += G.reward[GemsI];
+		int64_t Sum = 0;
+		for (int64_t R : G.reward)
+		{
+			Sum += R;
+		}
+		KD_CHECK(Sum > 0);
+		bool bOk = true;
+		switch (G.check)
+		{
+		case GoalCheck::Castle:
+			bOk = G.n == Castle + 1 && LevelOpen(CastleDef, static_cast<int>(G.n), G.id);
+			Castle = static_cast<int>(G.n);
+			Levels[static_cast<size_t>(CastleDef)] = {Castle};
+			break;
+		case GoalCheck::Build:
+		{
+			std::vector<int>& Have = Levels[static_cast<size_t>(G.building)];
+			bOk = LevelOpen(G.building, 1, G.id) && Ct.buildings[static_cast<size_t>(G.building)].MaxCount(Castle) >= G.n &&
+				static_cast<int64_t>(Have.size()) < G.n;
+			while (static_cast<int64_t>(Have.size()) < G.n)
+			{
+				Have.push_back(1);
+			}
+			break;
+		}
+		case GoalCheck::Level:
+		{
+			const int From = Top(G.building);
+			bOk = From >= 1 && From < G.n;
+			for (int L = From + 1; L <= G.n; ++L)
+			{
+				bOk = LevelOpen(G.building, L, G.id) && bOk;
+			}
+			std::vector<int>& Have = Levels[static_cast<size_t>(G.building)];
+			*std::max_element(Have.begin(), Have.end()) = static_cast<int>(G.n);
+			break;
+		}
+		case GoalCheck::TroopLevel:
+			bOk = Ct.troops[static_cast<size_t>(G.troop)].unlockCastle <= Castle && Stat("armoury", &LevelDef::maxTroopLevel) >= G.n;
+			break;
+		case GoalCheck::Lands:
+		case GoalCheck::Guard:
+			bOk = Stat("castle", &LevelDef::landCapacity) >= G.n;
+			break;
+		case GoalCheck::Garrison:
+			bOk = Stat("garrison", &LevelDef::defenseSlots) + 1 >= G.n;
+			break;
+		case GoalCheck::Titans:
+			bOk = Stat("hall_of_titans", &LevelDef::titans) >= G.n;
+			break;
+		case GoalCheck::Relics:
+			bOk = Top(Def("relic_temple")) >= 1;
+			break;
+		case GoalCheck::Spells:
+			bOk = Top(Def("spell_forge")) >= 1;
+			break;
+		case GoalCheck::SpellLevel:
+			bOk = Stat("arcane_tower", &LevelDef::maxSpellLevel) >= G.n;
+			break;
+		case GoalCheck::Missions:
+			bOk = Top(Def("adventurers_guild")) >= 1;
+			break;
+		default:
+			break;
+		}
+		if (!bOk)
+		{
+			std::printf("  (goal %s cannot be done when it comes up)\n", G.id.c_str());
+		}
+		KD_CHECK(bOk);
+	}
+	// About 250 gems over the line (master prompt 8.6: a free player's 40 a day comes mostly from elsewhere).
+	KD_CHECK(Gems >= 200 && Gems <= 300);
+	for (size_t I = 0; I < Used.size(); ++I)
+	{
+		KD_CHECK(Used[I]);
+	}
+
+	// A new kingdom starts at the first goal: collect food.
+	Kingdom K(Ct);
+	K.NewGame(T0, 11);
+	KD_CHECK(K.GoalIndex() == 0 && K.GoalValue() == 0 && !K.GoalDone());
+	KD_CHECK(K.ClaimGoal(nullptr) == Error::NotReady);
+	const uint64_t Fresh = K.Hash();
+	K.Advance(T0 + Hour);
+	KD_CHECK(K.Collect(FindId(K, "gold_mine")) == Error::None && K.GoalValue() == 0); // gold is not food
+	KD_CHECK(K.Collect(FindId(K, "farm")) == Error::None && K.GoalValue() == 100 && K.GoalDone());
+	const int64_t Gold = K.Amount(Res::Gold);
+	Reward R;
+	KD_CHECK(K.ClaimGoal(&R) == Error::None && R.res[GoldI] == 300 && K.Amount(Res::Gold) == Gold + 300);
+	KD_CHECK(K.GoalIndex() == 1 && K.GoalValue() == 0 && !K.GoalDone() && K.ClaimGoal(nullptr) == Error::NotReady);
+	K.Advance(T0 + 2 * Hour);
+	KD_CHECK(K.Collect(FindId(K, "gold_mine")) == Error::None && K.GoalDone());
+	const std::string Save = K.Save();
+	KD_CHECK(Save.find("\"goal\":{\"at\":1,\"id\":\"first_gold\",\"events\":100}}") != std::string::npos);
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Save, Error) && L.Hash() == K.Hash() && L.Save() == Save && L.GoalDone());
+	// A save from before the line starts at its first goal, and a kingdom that has not started it hashes as before.
+	Kingdom N(Ct);
+	N.NewGame(T0, 11);
+	const std::string NewSave = N.Save();
+	KD_CHECK(N.Hash() == Fresh);
+	Kingdom O(Ct);
+	KD_CHECK(O.Load(NewSave.substr(0, NewSave.find(",\"goal\":{")) + "}", Error) && O.GoalIndex() == 0 && O.Hash() == Fresh);
+	KD_CHECK(O.Load(WithGoal(Save, "{}"), Error) && O.GoalIndex() == 0 && O.GoalValue() == 0);
+	// The goal's id wins over its index (the line may change); an unknown id keeps the index, clamped.
+	KD_CHECK(O.Load(WithGoal(Save, "{\"at\":1,\"id\":\"castle_3\",\"events\":0}"), Error) && O.GoalIndex() == GoalIx("castle_3"));
+	KD_CHECK(O.Load(WithGoal(Save, "{\"at\":999,\"id\":\"gone\",\"events\":-5}"), Error) && O.GoalIndex() == static_cast<int>(Line.size()));
+	KD_CHECK(!O.GoalDone() && O.GoalValue() == 0 && O.ClaimGoal(nullptr) == Error::Nothing);
+	KD_CHECK(O.Save().find("\"goal\":{\"at\":" + std::to_string(Line.size()) + ",\"id\":\"\",\"events\":0}") != std::string::npos);
+
+	// A state goal counts what is there now: Castle 2, then a second gold mine.
+	const int Castle2 = GoalIx("castle_2");
+	const int Mine2 = GoalIx("mine_2");
+	KD_CHECK(Castle2 >= 0 && Mine2 == Castle2 + 1);
+	Kingdom C(Ct);
+	KD_CHECK(C.Load(WithGoal(Save, "{\"id\":\"castle_2\"}"), Error) && C.GoalIndex() == Castle2 && !C.GoalDone());
+	KD_CHECK(C.Load(Replace(WithGoal(Save, "{\"id\":\"castle_2\"}"), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":2"), Error));
+	const int64_t GemsBefore = C.Amount(Res::Gems);
+	KD_CHECK(C.GoalDone() && C.ClaimGoal(&R) == Error::None && R.res[GemsI] == 10 && C.Amount(Res::Gems) == GemsBefore + 10);
+	KD_CHECK(C.GoalIndex() == Mine2 && C.GoalValue() == 1 && !C.GoalDone());
+	KD_CHECK(C.Load(WithBuilding(C.Save(), "gold_mine", 0, 30), Error) && C.GoalValue() == 1); // still being built
+	KD_CHECK(C.Load(WithBuilding(C.Save(), "gold_mine", 1, 34), Error) && C.GoalValue() == 2 && C.GoalDone());
+	// An event goal counts only while it is the current goal, and a cancelled squad does not count.
+	const int Squad = GoalIx("first_squad");
+	KD_CHECK(Squad == 2);
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(WithGoal(Save, "{\"id\":\"first_squad\"}"), Error) && S.GoalValue() == 0);
+	KD_CHECK(S.Train(Troop("troop.militia")) == Error::None && S.GoalDone());
+	KD_CHECK(S.CancelTrain(static_cast<int>(S.TrainQueue().size()) - 1) == Error::None && S.GoalValue() == 0);
+}
+
 Kingdom WithVp(uint64_t Seed, int64_t Vp, const std::string& Extra = std::string())
 {
 	Kingdom K(Content());
@@ -2151,7 +2378,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals},
 	};
 	for (const auto& T : Tests)
 	{

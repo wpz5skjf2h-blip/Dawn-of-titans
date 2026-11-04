@@ -493,6 +493,21 @@ bool ParseQuestEvent(const std::string& S, QuestEvent& Out)
 	return false;
 }
 
+bool ParseGoalCheck(const std::string& S, GoalCheck& Out)
+{
+	static const char* const Names[] = {"castle", "build", "level", "army", "troopLevel", "lands", "landLevel", "guard", "garrison", "titans", "titanLevel",
+		"relics", "skills", "spells", "spellLevel", "alliance", "missions", "event"};
+	for (int I = 0; I < static_cast<int>(GoalCheck::Count); ++I)
+	{
+		if (S == Names[I])
+		{
+			Out = static_cast<GoalCheck>(I);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool ParseRes(const std::string& S, Res& Out)
 {
 	for (int I = 0; I < kResCount; ++I)
@@ -1218,6 +1233,33 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	if (!LoadArmy(Army, Out, Error))
 	{
 		return false;
+	}
+	// The main line of goals names troops, so it comes after the army.
+	if (const JsonValue* Gj = Rules.Find("goals"))
+	{
+		for (size_t I = 0; I < Gj->Size(); ++I)
+		{
+			const JsonValue& J = (*Gj)[I];
+			GoalDef D;
+			D.id = J.GetString("id");
+			const std::string Building = J.GetString("building");
+			const std::string Troop = J.GetString("troop");
+			D.building = Building.empty() ? -1 : Out.FindBuilding(Building);
+			D.troop = Troop.empty() ? -1 : Out.FindTroop(Troop);
+			D.n = std::max<int64_t>(1, J.GetInt64("n", 1));
+			ReadCost(J.Find("reward"), D.reward);
+			const bool bCheck = ParseGoalCheck(J.GetString("check"), D.check);
+			const bool bEvent = !bCheck || D.check != GoalCheck::Event || ParseQuestEvent(J.GetString("event"), D.event);
+			const bool bNeedsBuilding = D.check == GoalCheck::Build || D.check == GoalCheck::Level;
+			const bool bNeedsTroop = D.check == GoalCheck::TroopLevel;
+			if (D.id.empty() || !bCheck || !bEvent || bNeedsBuilding != (D.building >= 0) || bNeedsTroop != (D.troop >= 0) ||
+				(!Building.empty() && D.building < 0) || (!Troop.empty() && D.troop < 0))
+			{
+				Error = "kingdom/kingdom.json: goal " + D.id + " needs an id, a known check (and event) and the building or troop it names";
+				return false;
+			}
+			Out.goals.push_back(D);
+		}
 	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;

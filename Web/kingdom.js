@@ -182,6 +182,7 @@ class KingdomBridge {
 	questClaim(i) { return JSON.parse(this.str(this.M._dk_quest_claim(i))); }
 	questReroll(i) { return this.M._dk_quest_reroll(i); }
 	questChest() { return JSON.parse(this.str(this.M._dk_quest_chest())); }
+	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
 	craft(sp) { return this.M._dk_craft(sp); }
 	cancelCraft(i) { return this.M._dk_cancel_craft(i); }
 	skipCraft() { return this.M._dk_skip_craft(); }

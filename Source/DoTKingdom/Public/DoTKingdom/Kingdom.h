@@ -621,6 +621,17 @@ public:
 	/** Today's target of a pool quest for this Castle level. */
 	int64_t QuestTarget(int Def) const;
 
+	// --- Main line of goals (master prompt 9.4 and 13.5) ---
+	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
+	// state counts what is there now; an event goal counts actions done while it is the current goal.
+	/** The current goal (index into the content's goals); the goals' count when the line is done. */
+	int GoalIndex() const { return GoalAt; }
+	/** The current goal's count so far (may pass its target). */
+	int64_t GoalValue() const;
+	bool GoalDone() const;
+	/** Pays the current goal and brings the next: NotReady (not done yet), Nothing (the line is done). */
+	Error ClaimGoal(Reward* Out);
+
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
 	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
@@ -822,6 +833,9 @@ private:
 	int QuestRerolls = 0;
 	bool bQuestChest = false;
 	uint64_t QuestCounter = 0;
+	// Main line of goals
+	int GoalAt = 0;
+	int64_t GoalEvents = 0;
 	// Raids
 	const SimContent* BattleContent = nullptr;
 	int64_t NextRaid = 0;

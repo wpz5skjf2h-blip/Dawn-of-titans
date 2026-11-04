@@ -324,7 +324,8 @@ for cid, cname, cunlock, ccost, cdesc in COUNCILS:
 # --- Spells -------------------------------------------------------------------------------
 building("arcane_tower", "Магическая башня", "spells", "other", [2, 2], 6, [[6, 1]], 18,
          {1: 57200, 17: 6009300, 18: 6708500}, {},
-         lambda lv: 6 if lv == 1 else min(25, 6 + lv),
+         # Level L from Castle 5 + L: Castle 9 needs the tower at 3 (wiki), so level 3 must open at Castle 8 or below.
+         lambda lv: min(25, 5 + lv),
          stats={"spellSlots": {1: 1, 18: 6}, "maxSpellLevel": {1: 6, 17: 22, 18: 23}}, time_from_cost=True,
          desc="Улучшает заклинания. Уровень башни задаёт число одновременных улучшений и их предел.")
 building("spell_forge", "Кузня заклинаний", "spells", "other", [3, 3], 5, [[5, 1]], 9,
