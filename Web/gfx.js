@@ -5,7 +5,9 @@
 // as <script id="art-data">); each is rasterised once into a canvas texture. Nothing here changes the battle itself.
 //   DotGfx.init(THREE, renderer)                      once, before anything else
 //   DotGfx.attach(scene, camera, { height, quality })  the battle scene; height(x, z) is the sim's ground height
-//   DotGfx.dressTerrain(mesh, st, CF)                  splat-textured ground for the battle's heightfield
+//   DotGfx.dressTerrain(mesh, st, CF)                  splat-textured ground for the battle's heightfield; also picks the map's
+//                                                      look (meadow, dark forest, dry steppe, snowy pass at night) and sets the
+//                                                      scene's sun and sky light to it
 //   DotGfx.surroundings(group, W, D)                   sky, clouds, land, forest and hills beyond the field
 //   DotGfx.foliage(group, st, CF)                      grass tufts and flowers
 //   DotGfx.forest(group, items), rockGeometry()        trees (items [x, y, z, scale, r]) and rough rocks
@@ -28,6 +30,40 @@ const DotGfx = (() => {
 	const canvases = {};
 	const textures = {};
 	const time = { t: 0, u: { value: 0 } };
+
+	// --- Looks of the maps --------------------------------------------------------------------------------------
+	// After the original's battles (screenshots in the project): olive meadows worn brown in patches with cobbled roads, dark
+	// conifer woods, dry tan steppe with dark round trees and dead ones, and a frosty pass under a night sky. Per look:
+	// grass tint and saturation, dirt tint, snow over the ground, worn patches, cobbles on roads, tree mix and tint, grass
+	// tufts and flowers, sun and sky light, sky tint, fog range, snow line on the mountains, the buildings around the field.
+	const LOOKS = {
+		meadow: { grass: [0.45, 0.32, 0.38], sat: 0.62, dirt: [0.64, 0.56, 0.47], snow: 0, worn: 0.5, cobble: 1,
+			trees: [['pine', 0.38], ['fir', 0.66], ['oak', 0.92], ['birch', 1]], treeTint: [0.8, 0.6, 0.56], tuft: [0.6, 0.52, 0.4], tufts: 1, flowers: 0.06,
+			sun: [0xffe8c6, 1.5], hemi: [0xd6e2ea, 0x5b4a2e, 0.58], sky: 0xffffff, fog: [190, 560], snowLine: 0.6, props: 'village', water: [0x21434c, 0x48686c] },
+		forest: { grass: [0.42, 0.34, 0.38], sat: 0.6, dirt: [0.58, 0.5, 0.44], snow: 0, worn: 0.35, cobble: 0.6,
+			trees: [['pine', 0.45], ['fir', 0.88], ['oak', 0.97], ['birch', 1]], treeTint: [0.7, 0.62, 0.58], tuft: [0.54, 0.5, 0.38], tufts: 1, flowers: 0.03,
+			sun: [0xffe4c0, 1.35], hemi: [0xc8d6de, 0x4a3e28, 0.55], sky: 0xe6ecf0, fog: [170, 520], snowLine: 0.62, props: 'cabins', water: [0x1d3a40, 0x405c5a] },
+		steppe: { grass: [0.98, 0.7, 0.62], sat: 0.26, dirt: [0.86, 0.76, 0.66], snow: 0, worn: 0.6, cobble: 0,
+			trees: [['oak', 0.72], ['dead', 1]], treeTint: [0.6, 0.6, 0.44], tuft: [0.92, 0.76, 0.5], tufts: 0.7, flowers: 0.01,
+			sun: [0xffdcaa, 1.7], hemi: [0xeadcc0, 0x6a5232, 0.6], sky: 0xfff0dc, fog: [210, 620], snowLine: 0.85, props: 'ruins', water: [0x365660, 0x66807c] },
+		winter: { grass: [0.74, 0.74, 0.74], sat: 0.3, dirt: [0.62, 0.62, 0.64], snow: 0.82, worn: 0.4, cobble: 0,
+			trees: [['snowfir', 0.8], ['dead', 1]], treeTint: [0.62, 0.68, 0.74], tuft: [0.62, 0.66, 0.72], tufts: 0.35, flowers: 0,
+			sun: [0xd4dae6, 1.15], hemi: [0x8592ac, 0x2c303a, 0.62], sky: 0x46536e, fog: [150, 470], snowLine: 0.25, props: 'fort', water: [0x1c3042, 0x4e6276] },
+	};
+	const MAP_LOOK = { 'Highvale Ford': 'meadow', 'Mirror Lake': 'meadow', Darkwood: 'forest', 'Fallen City': 'steppe', 'The Pass': 'winter' };
+	let lookName = 'meadow';
+	let look = LOOKS.meadow;
+	/** Picks the look for a map and sets the scene's sun, sky light and fog to it. */
+	function setLook(mapName) {
+		lookName = MAP_LOOK[mapName] || 'meadow';
+		look = LOOKS[lookName];
+		if (!scene) return;
+		scene.traverse((o) => {
+			if (o.isDirectionalLight) { o.color.setHex(look.sun[0]); o.intensity = look.sun[1]; }
+			else if (o.isHemisphereLight) { o.color.setHex(look.hemi[0]); o.groundColor.setHex(look.hemi[1]); o.intensity = look.hemi[2]; }
+		});
+		if (scene.fog) { scene.fog.near = look.fog[0]; scene.fog.far = look.fog[1]; }
+	}
 
 	// --- Art: SVG text -> canvas -> texture (textures exist at once and fill in when the image has loaded) ----------
 	function readArt() {
@@ -225,33 +261,50 @@ const DotGfx = (() => {
 
 	// --- Ground -----------------------------------------------------------------------------------------------
 	const groundTex = () => ({ g: tex('tex_grass', { repeat: true, scale: 2 }), d: tex('tex_dirt', { repeat: true, scale: 2 }),
-		r: tex('tex_rock', { repeat: true, scale: 2 }), m: tex('tex_mud', { repeat: true, scale: 2 }) });
-	/** Lambert material that blends grass, dirt, rock and mud textures by a per-vertex `splat` (dirt, rock, mud).
-	 *  haze (0..1, optional) caps how much of the fog colour it takes. */
+		r: tex('tex_rock', { repeat: true, scale: 2 }), m: tex('tex_mud', { repeat: true, scale: 2 }), s: tex('tex_snow', { repeat: true, scale: 2 }),
+		c: tex('tex_cobble', { repeat: true, scale: 2 }) });
+	/** Lambert material that blends grass, dirt, rock, mud and road textures by a per-vertex `splat` (dirt, rock, mud, road),
+	 *  graded to the map's look (grass tint, snow, cobbled roads). haze (0..1, optional) caps how much of the fog colour it takes. */
 	function splatMaterial(tile, haze) {
 		const t = groundTex();
+		const L = look;
+		const v3 = (a) => new T.Vector3(a[0], a[1], a[2]);
 		const mat = new T.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
 		mat.onBeforeCompile = (sh) => {
-			Object.assign(sh.uniforms, { tG: { value: t.g }, tD: { value: t.d }, tR: { value: t.r }, tM: { value: t.m }, tTile: { value: 1 / tile } });
-			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 splat;\nvarying vec3 vSplat;\nvarying vec2 vGuv;\nuniform float tTile;')
+			Object.assign(sh.uniforms, { tG: { value: t.g }, tD: { value: t.d }, tR: { value: t.r }, tM: { value: t.m }, tS: { value: t.s }, tC: { value: t.c },
+				tTile: { value: 1 / tile }, uGrass: { value: v3(L.grass) }, uSat: { value: L.sat }, uDirt: { value: v3(L.dirt) }, uSnow: { value: L.snow }, uCobble: { value: L.cobble } });
+			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 splat;\nvarying vec4 vSplat;\nvarying vec2 vGuv;\nuniform float tTile;')
 				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvSplat = splat;\nvGuv = (modelMatrix * vec4(position, 1.0)).xz * tTile;');
-			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tD, tR, tM;\nvarying vec3 vSplat;\nvarying vec2 vGuv;')
+			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tD, tR, tM, tS, tC;\nuniform vec3 uGrass, uDirt;\nuniform float uSat, uSnow, uCobble;\nvarying vec4 vSplat;\nvarying vec2 vGuv;')
 				.replace('#include <map_fragment>', [
 					'vec3 gA = texture2D(tG, vGuv).rgb;',
 					'vec3 gB = texture2D(tG, vGuv * 0.29 + vec2(0.37, 0.11)).rgb;',
 					'vec3 grassC = mix(gA, gB, 0.45);',
+					'grassC = mix(vec3(dot(grassC, vec3(0.2126, 0.7152, 0.0722))), grassC, uSat) * uGrass;',
 					'vec3 dirtC = mix(texture2D(tD, vGuv).rgb, texture2D(tD, vGuv * 0.41 + vec2(0.2, 0.6)).rgb, 0.35);',
+					'dirtC = mix(vec3(dot(dirtC, vec3(0.2126, 0.7152, 0.0722))), dirtC, 0.45 + 0.55 * uSat) * uDirt;',
 					'vec3 rockC = texture2D(tR, vGuv * 0.8).rgb;',
 					'vec3 mudC = texture2D(tM, vGuv).rgb;',
-					'float wG = max(0.0, 1.0 - vSplat.x - vSplat.y - vSplat.z);',
-					'diffuseColor.rgb *= (grassC * wG + dirtC * vSplat.x + rockC * vSplat.y + mudC * vSplat.z) * 1.2;',
+					'vec3 roadC = dirtC;',
+					'if (uCobble > 0.0 && vSplat.w > 0.01) roadC = mix(dirtC, texture2D(tC, vGuv * 1.7).rgb * 0.62, uCobble);',
+					'if (uSnow > 0.0) {',
+					'	vec3 sn = texture2D(tS, vGuv * 0.6).rgb;',
+					'	grassC = mix(grassC, sn, uSnow);',
+					'	dirtC = mix(dirtC, sn * 0.92, uSnow * 0.55);',
+					'	roadC = mix(roadC, sn * 0.85, uSnow * 0.7);',
+					'	rockC = mix(rockC, sn, uSnow * 0.35);',
+					'}',
+					'float wG = max(0.0, 1.0 - vSplat.x - vSplat.y - vSplat.z - vSplat.w);',
+					'diffuseColor.rgb *= (grassC * wG + dirtC * vSplat.x + rockC * vSplat.y + mudC * vSplat.z + roadC * vSplat.w) * 1.2;',
 				].join('\n'));
 			if (haze !== undefined) sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', partialFog(haze));
 		};
-		// Same onBeforeCompile text for every haze: tell three's program cache they differ.
-		mat.customProgramCacheKey = () => 'splat' + haze;
+		// Same onBeforeCompile text for every haze and look: tell three's program cache they differ.
+		mat.customProgramCacheKey = () => 'splat' + haze + lookName;
 		return mat;
 	}
+	/** Soft blotches (0..1) where the ground is worn to bare earth, from world x, z. */
+	const wornAt = (x, z) => Math.max(0, Math.min(1, (0.5 + 0.28 * Math.sin(x * 0.043 + 1.7) * Math.cos(z * 0.051 + 0.4) + 0.22 * Math.sin(x * 0.11 + z * 0.083 + 2.1) * Math.cos(z * 0.13 - x * 0.02) - 0.56) / 0.26));
 	/** Fog that takes at most `k` of the fog colour, for far scenery that should stay readable against the sky. */
 	const partialFog = (k) => '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(fogNear, fogFar, vFogDepth) * ' + k.toFixed(2) + ');\n#endif';
 	/** Replaces the battle heightfield's flat vertex colours with textures: splat weights and tints from the sim's flags. */
@@ -261,7 +314,8 @@ const DotGfx = (() => {
 		const vz = g.nz + 1;
 		const flagAt = (cx, cz) => g.f[Math.min(g.nz - 1, Math.max(0, cz)) * g.nx + Math.min(g.nx - 1, Math.max(0, cx))];
 		const hAt = (cx, cz) => g.h[Math.min(g.nz - 1, Math.max(0, cz)) * g.nx + Math.min(g.nx - 1, Math.max(0, cx))];
-		const splat = new Float32Array(vx * vz * 3);
+		setLook(st.map.name);
+		const splat = new Float32Array(vx * vz * 4);
 		const col = mesh.geometry.attributes.color.array;
 		const rnd = mulberry(23);
 		for (let j = 0; j < vz; j++) {
@@ -284,15 +338,18 @@ const DotGfx = (() => {
 					if (f & CF.Forest) forest++;
 				}
 				const k = (j * vx + i) * 3;
-				let sd = road / 4;
+				let sw = road / 4;
 				let sr = Math.min(1, rock / 4 + ruin / 8);
 				let sm = deep ? 1 : Math.min(1, ford / 3);
-				if (ruin) sd = Math.max(sd, ruin / 8);
-				const sum = sd + sr + sm;
-				if (sum > 1) { sd /= sum; sr /= sum; sm /= sum; }
-				splat[k] = sd;
-				splat[k + 1] = sr;
-				splat[k + 2] = sm;
+				// Bare earth: ruins, and worn patches over open ground (and less of it under the trees).
+				let sd = Math.max(ruin / 8, wornAt(i * g.cell, j * g.cell) * look.worn * (forest ? 0.5 : 1) * (1 - sw));
+				const sum = sd + sr + sm + sw;
+				if (sum > 1) { sd /= sum; sr /= sum; sm /= sum; sw /= sum; }
+				const q = (j * vx + i) * 4;
+				splat[q] = sd;
+				splat[q + 1] = sr;
+				splat[q + 2] = sm;
+				splat[q + 3] = sw;
 				// Tint: high ground a little sun-dried, forest floor dark, a little noise everywhere.
 				const dry = Math.min(1, Math.max(0, h / 7)) * 0.55;
 				const n = 0.94 + rnd() * 0.12;
@@ -307,7 +364,7 @@ const DotGfx = (() => {
 				col[k + 2] = b * 0.82;
 			}
 		}
-		mesh.geometry.setAttribute('splat', new T.BufferAttribute(splat, 3));
+		mesh.geometry.setAttribute('splat', new T.BufferAttribute(splat, 4));
 		mesh.geometry.attributes.color.needsUpdate = true;
 		mesh.material = splatMaterial(9);
 	}
@@ -351,8 +408,8 @@ const DotGfx = (() => {
 	const waters = [];
 	function water(deep) {
 		const n = tex('tex_water', { repeat: true, linear: true, post: normalsFrom });
-		// Clear blue-green river water as in the original; vertex alpha from shore() softens the banks.
-		const m = new T.MeshStandardMaterial({ color: deep ? 0x17606a : 0x4f9c8e, roughness: deep ? 0.1 : 0.2, metalness: 0.0, transparent: true, opacity: deep ? 0.9 : 0.5,
+		// Dark grey-blue water that takes the map's look; vertex alpha from shore() softens the banks.
+		const m = new T.MeshStandardMaterial({ color: look.water[deep ? 0 : 1], roughness: deep ? 0.1 : 0.2, metalness: 0.0, transparent: true, opacity: deep ? 0.9 : 0.5,
 			vertexColors: true, normalMap: n, normalScale: new T.Vector2(0.55, 0.55), envMap: envMap(), envMapIntensity: deep ? 0.9 : 0.35 });
 		// A second ripple layer drifting the other way, mixed into the normal in the shader.
 		m.onBeforeCompile = (sh) => {
@@ -374,8 +431,8 @@ const DotGfx = (() => {
 		const col = [];
 		const c = new T.Color();
 		const m4 = new T.Matrix4();
-		for (const [geo, hex, x, y, z, sx, sy, sz, ry] of parts) {
-			m4.compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(0, ry || 0, 0)), new T.Vector3(sx, sy, sz));
+		for (const [geo, hex, x, y, z, sx, sy, sz, ry, rx, rz] of parts) {
+			m4.compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(rx || 0, ry || 0, rz || 0)), new T.Vector3(sx, sy, sz));
 			const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m4);
 			c.set(hex);
 			const a = g.attributes.position.array;
@@ -400,27 +457,36 @@ const DotGfx = (() => {
 		const trunk = new T.CylinderGeometry(0.16, 0.3, 1, 6);
 		const cone = new T.ConeGeometry(1, 1, 8);
 		const blob = new T.IcosahedronGeometry(1, 1);
-		// Pine: four tiers; fir: tall and narrow; oak: round clumps on a thicker trunk; birch: light trunk, small crown.
+		// Pine: four tiers; fir: tall and narrow; oak: round clumps on a thicker trunk; birch: light trunk, small crown;
+		// snowfir: a fir with snow on every tier; dead: bare grey trunk and branches. Dark, muted greens as in the original.
+		const bark = 0x4a3c30;
 		treeGeo = {
-			pine: colored([[trunk, 0x5b3d22, 0, 1.1, 0, 1, 2.2, 1], [cone, 0x2b5224, 0, 2.6, 0, 2.0, 2.4, 2.0], [cone, 0x31602a, 0, 3.8, 0, 1.65, 2.2, 1.65, 0.4],
-				[cone, 0x3a6c2e, 0, 4.9, 0, 1.25, 2.0, 1.25, 0.8], [cone, 0x447a34, 0, 5.9, 0, 0.8, 1.6, 0.8, 1.2]], true),
-			fir: colored([[trunk, 0x4f3520, 0, 1.0, 0, 0.9, 2.0, 0.9], [cone, 0x24482a, 0, 3.0, 0, 1.4, 3.4, 1.4], [cone, 0x2b5530, 0, 4.8, 0, 1.05, 3.0, 1.05, 0.5],
-				[cone, 0x336236, 0, 6.4, 0, 0.7, 2.4, 0.7, 1.0]], true),
-			oak: colored([[trunk, 0x5e4228, 0, 1.3, 0, 1.4, 2.6, 1.4], [blob, 0x4a7c32, 0, 3.6, 0, 2.2, 1.8, 2.2], [blob, 0x568a3a, 1.1, 4.2, 0.5, 1.5, 1.3, 1.5],
-				[blob, 0x3f7030, -1.0, 4.0, -0.6, 1.6, 1.3, 1.6], [blob, 0x62963f, 0.1, 4.9, -0.2, 1.3, 1.1, 1.3]], true),
-			birch: colored([[trunk, 0xd8d2c4, 0, 1.6, 0, 0.7, 3.2, 0.7], [blob, 0x7aa848, 0, 4.0, 0, 1.3, 1.7, 1.3], [blob, 0x8bb854, 0.5, 4.7, 0.2, 0.9, 1.1, 0.9]], true),
+			pine: colored([[trunk, 0x4e3620, 0, 1.1, 0, 1, 2.2, 1], [cone, 0x223d1d, 0, 2.6, 0, 2.0, 2.4, 2.0], [cone, 0x284822, 0, 3.8, 0, 1.65, 2.2, 1.65, 0.4],
+				[cone, 0x2f5227, 0, 4.9, 0, 1.25, 2.0, 1.25, 0.8], [cone, 0x375c2c, 0, 5.9, 0, 0.8, 1.6, 0.8, 1.2]], true),
+			fir: colored([[trunk, 0x443020, 0, 1.0, 0, 0.9, 2.0, 0.9], [cone, 0x1c3620, 0, 3.0, 0, 1.4, 3.4, 1.4], [cone, 0x223f25, 0, 4.8, 0, 1.05, 3.0, 1.05, 0.5],
+				[cone, 0x29492a, 0, 6.4, 0, 0.7, 2.4, 0.7, 1.0]], true),
+			oak: colored([[trunk, 0x523a24, 0, 1.3, 0, 1.4, 2.6, 1.4], [blob, 0x34552a, 0, 3.6, 0, 2.2, 1.8, 2.2], [blob, 0x3d602e, 1.1, 4.2, 0.5, 1.5, 1.3, 1.5],
+				[blob, 0x2e4c26, -1.0, 4.0, -0.6, 1.6, 1.3, 1.6], [blob, 0x466a33, 0.1, 4.9, -0.2, 1.3, 1.1, 1.3]], true),
+			birch: colored([[trunk, 0xcfc9ba, 0, 1.6, 0, 0.7, 3.2, 0.7], [blob, 0x587a36, 0, 4.0, 0, 1.3, 1.7, 1.3], [blob, 0x648640, 0.5, 4.7, 0.2, 0.9, 1.1, 0.9]], true),
+			snowfir: colored([[trunk, 0x3c2c20, 0, 1.0, 0, 0.9, 2.0, 0.9], [cone, 0x1a2e22, 0, 3.0, 0, 1.4, 3.4, 1.4], [cone, 0xdfe6ee, 0, 3.75, 0, 1.0, 1.9, 1.0, 0.3],
+				[cone, 0x1f3626, 0, 4.8, 0, 1.05, 3.0, 1.05, 0.5], [cone, 0xe6ecf2, 0, 5.45, 0, 0.75, 1.7, 0.75, 0.8], [cone, 0x24402a, 0, 6.4, 0, 0.7, 2.4, 0.7, 1.0],
+				[cone, 0xeef2f6, 0, 7.0, 0, 0.45, 1.3, 0.45, 1.3]], true),
+			dead: colored([[trunk, bark, 0, 1.7, 0, 1.0, 3.4, 1.0], [trunk, bark, 0.55, 3.5, 0, 0.42, 1.9, 0.42, 0, 0, -0.75], [trunk, bark, -0.5, 3.9, 0.15, 0.38, 1.7, 0.38, 0.5, 0, 0.8],
+				[trunk, bark, 0.1, 4.1, -0.5, 0.34, 1.5, 0.34, 0, -0.75, 0], [trunk, bark, 0.05, 4.6, 0.1, 0.3, 1.4, 0.3], [trunk, bark, 1.05, 4.3, 0.1, 0.22, 1.0, 0.22, 0.3, 0, -0.35]], true),
 		};
 		return treeGeo;
 	}
-	/** Instanced forest from [x, y, z(sim), scale, r] items: mostly pines and firs, some oaks and birches, varied tints. */
+	/** Instanced forest from [x, y, z(sim), scale, r] items: the map look's mix of trees (r picks the kind), varied tints. */
 	function forest(group, items, castShadow) {
 		const g = trees();
-		const kinds = ['pine', 'fir', 'oak', 'birch'];
-		const lists = { pine: [], fir: [], oak: [], birch: [] };
+		const kinds = Object.keys(g);
+		const lists = {};
+		for (const k of kinds) lists[k] = [];
 		for (const it of items) {
-			const r = it[4];
-			lists[r < 0.42 ? 'pine' : r < 0.7 ? 'fir' : r < 0.9 ? 'oak' : 'birch'].push(it);
+			const pick = look.trees.find(([, upTo]) => it[4] < upTo) || look.trees[look.trees.length - 1];
+			lists[pick[0]].push(it);
 		}
+		const tt = look.treeTint;
 		const mat = new T.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 		const o = new T.Object3D();
 		const c = new T.Color();
@@ -436,7 +502,7 @@ const DotGfx = (() => {
 				o.updateMatrix();
 				m.setMatrixAt(i, o.matrix);
 				const v = 0.88 + ((it[4] * 13.7) % 0.24);
-				c.setRGB(v * (0.96 + ((it[4] * 3.1) % 0.08)), v, v * 0.96);
+				c.setRGB(v * (0.96 + ((it[4] * 3.1) % 0.08)) * tt[0], v * tt[1], v * 0.96 * tt[2]);
 				m.setColorAt(i, c);
 			});
 			m.castShadow = castShadow !== false;
@@ -511,8 +577,8 @@ const DotGfx = (() => {
 		const g = st.grid;
 		const W = st.map.w;
 		const D = st.map.d;
-		const n = quality === 'high' ? 5200 : 1600;
-		const nf = Math.round(n * 0.12);
+		const n = Math.round((quality === 'high' ? 5200 : 1600) * look.tufts);
+		const nf = Math.round(n * look.flowers);
 		const rnd = mulberry(91);
 		const bad = CF.Road | CF.Deep | CF.Ford | CF.Rock | CF.Ruins;
 		const pick = (count, forestOk) => {
@@ -545,8 +611,84 @@ const DotGfx = (() => {
 			group.add(m);
 			return m;
 		};
-		place(tuftGeometry(1.5, 1.15), swayMaterial(tex('foliage_grass')), pick(n, true), (c, r) => c.setRGB(0.85 + r * 0.25, 0.9 + r * 0.15, 0.8 + r * 0.15));
-		place(tuftGeometry(1.4, 1.2), swayMaterial(tex('foliage_flowers')), pick(nf, false), (c) => c.setRGB(1, 1, 1));
+		const ft = look.tuft;
+		place(tuftGeometry(1.5, 1.15), swayMaterial(tex('foliage_grass')), pick(n, true), (c, r) => c.setRGB((0.85 + r * 0.25) * ft[0], (0.9 + r * 0.15) * ft[1], (0.8 + r * 0.15) * ft[2]));
+		if (nf) place(tuftGeometry(1.4, 1.2), swayMaterial(tex('foliage_flowers')), pick(nf, false), (c) => c.setRGB(0.9, 0.88, 0.82));
+	}
+
+	// --- Buildings around the field ---------------------------------------------------------------------------
+	let propGeo = null;
+	/** Vertex-coloured buildings: timber-framed houses, stone towers (whole and broken), walls, a palisade, a haystack. */
+	function propGeometries() {
+		if (propGeo) return propGeo;
+		const box = new T.BoxGeometry(1, 1, 1);
+		// Roof prism: base 1 wide at y = 0, ridge at y = 1, running along z.
+		const roof = new T.ExtrudeGeometry(new T.Shape([new T.Vector2(-0.5, 0), new T.Vector2(0.5, 0), new T.Vector2(0, 1)]), { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
+		const log = new T.CylinderGeometry(0.5, 0.5, 1, 6);
+		const tip = new T.ConeGeometry(0.5, 1, 6);
+		const plaster = 0xb3a589;
+		const beam = 0x3e2e22;
+		const stone = 0x7c766b;
+		const stoneD = 0x645f57;
+		const hole = 0x26221e;
+		const house = (roofHex) => colored([
+			[box, plaster, 0, 1.6, 0, 6, 3.2, 4.4],
+			// Dark timber frame: corner posts, sill and eaves beams, a middle post, a window and a door.
+			[box, beam, 2.95, 1.6, 2.15, 0.3, 3.2, 0.3], [box, beam, -2.95, 1.6, 2.15, 0.3, 3.2, 0.3], [box, beam, 2.95, 1.6, -2.15, 0.3, 3.2, 0.3], [box, beam, -2.95, 1.6, -2.15, 0.3, 3.2, 0.3],
+			[box, beam, 0, 3.1, 0, 6.1, 0.3, 4.5], [box, beam, 0, 0.25, 0, 6.1, 0.5, 4.5], [box, beam, 0.2, 1.6, 2.23, 0.25, 3.0, 0.08], [box, beam, 0.2, 1.6, -2.23, 0.25, 3.0, 0.08],
+			[box, hole, 1.6, 1.8, 2.24, 0.9, 0.9, 0.06], [box, hole, -1.5, 1.05, 2.24, 0.95, 1.9, 0.06], [box, hole, -1.6, 1.8, -2.24, 0.9, 0.9, 0.06],
+			[roof, roofHex, 0, 3.2, 0, 5.4, 2.4, 6.9, Math.PI / 2], [box, stoneD, 1.9, 4.7, 0.9, 0.6, 1.8, 0.6],
+		], true);
+		const merlons = (y, r) => [[r, r], [-r, r], [r, -r], [-r, -r], [0, r], [0, -r], [r, 0], [-r, 0]].map(([x, z]) => [box, stone, x, y, z, 0.9, 1.0, 0.9]);
+		propGeo = {
+			house: house(0x4f3d2a),
+			snowhouse: house(0xdfe6ee),
+			tower: colored([[box, stone, 0, 5.5, 0, 4, 11, 4], [box, stoneD, 0, 6, 0, 4.15, 0.4, 4.15], [box, stoneD, 0, 11.3, 0, 4.8, 0.8, 4.8],
+				[box, hole, 0, 8.4, 2.02, 0.4, 1.3, 0.05], [box, hole, 0, 3.6, -2.02, 0.4, 1.3, 0.05], [box, hole, 0, 1.2, 2.02, 1.3, 2.4, 0.05]].concat(merlons(12.2, 2.0)), true),
+			broken: colored([[box, stone, 0, 3.5, 0, 4, 7, 4], [box, stone, 1.5, 7.6, 1.5, 1, 1.2, 1], [box, stone, -1.5, 8.0, 1.5, 1, 2.0, 1], [box, stone, 1.5, 7.3, -1.5, 1, 0.6, 1],
+				[box, hole, 0, 4.4, 2.02, 0.4, 1.3, 0.05], [box, stoneD, 2.9, 0.4, 1.3, 1.5, 0.8, 1.1, 0.5], [box, stoneD, 3.4, 0.3, -0.8, 1.1, 0.6, 0.9, 1.1], [box, stoneD, -2.7, 0.35, -1.6, 1.2, 0.7, 1.0, 0.3]], true),
+			wall: colored([[box, stone, 0, 0.8, 0, 10, 1.6, 0.9], [box, stoneD, 0, 1.68, 0, 10.1, 0.16, 1.0]], true),
+			ruin: colored([[box, stone, -3.5, 0.9, 0, 3, 1.8, 0.9], [box, stone, 0.2, 0.55, 0, 2.6, 1.1, 0.9], [box, stone, 3.6, 1.2, 0, 2.8, 2.4, 0.9],
+				[box, stoneD, 1.6, 0.25, 0.9, 1.0, 0.5, 0.8, 0.6], [box, stoneD, -1.4, 0.2, -1.0, 0.9, 0.4, 0.7, 1.2]], true),
+			palisade: colored([].concat(...Array.from({ length: 12 }, (_, i) => {
+				const x = -5.5 + i;
+				const h = 3.2 + ((i * 7) % 3) * 0.25;
+				return [[log, 0x5a4630, x, h / 2, 0, 0.55, h, 0.55], [tip, 0x4e3c28, x, h + 0.35, 0, 0.55, 0.7, 0.55]];
+			})), true),
+			hay: colored([[tip, 0xa48a4c, 0, 1.3, 0, 2.8, 2.6, 2.8], [log, 0x8f7840, 0, 0.3, 0, 2.8, 0.6, 2.8]], true),
+		};
+		return propGeo;
+	}
+	// Where each look puts its buildings, in sim coordinates relative to the field (w, d its size; d + n is beyond the far edge).
+	const PROPS = {
+		village: (w, d) => [['house', -14, d + 12, 0.3], ['house', -23, d + 3, 1.9], ['house', -7, d + 23, 0.1], ['house', w + 12, d + 16, -0.4], ['house', w + 21, d + 5, 1.2],
+			['house', -13, d * 0.62, 1.5], ['tower', w * 0.62, d + 15, 0.2], ['wall', w * 0.62 - 8, d + 15, 0], ['wall', w * 0.62 + 8, d + 15, 0],
+			['hay', -9, d + 4, 0], ['hay', -3, d + 8, 0], ['hay', w + 8, d + 7, 0]],
+		cabins: (w, d) => [['house', -12, d + 10, 0.4], ['house', w + 14, d + 12, -0.5], ['house', -16, d * 0.55, 1.6], ['tower', w * 0.3, d + 18, 0.1]],
+		ruins: (w, d) => [['ruin', w * 0.25, d + 10, 0.1], ['ruin', w * 0.25 + 10, d + 12, -0.2], ['wall', w * 0.7, d + 14, 0.05], ['ruin', w + 10, d * 0.7, 1.57],
+			['ruin', -10, d * 0.65, 1.5], ['broken', w * 0.7 + 12, d + 15, 0.4], ['broken', -14, d + 9, 1.1]],
+		fort: (w, d) => [['tower', w * 0.2, d + 12, 0], ['tower', w * 0.8, d + 12, 0], ['palisade', w * 0.2 + 8.5, d + 12, 0], ['palisade', w * 0.2 + 20.5, d + 12, 0],
+			['palisade', w * 0.8 - 8.5, d + 12, 0], ['palisade', w * 0.8 - 20.5, d + 12, 0], ['palisade', w * 0.2 - 8.5, d + 12, 0], ['palisade', w * 0.8 + 8.5, d + 12, 0],
+			['snowhouse', -12, d + 8, 0.3], ['snowhouse', w + 12, d + 10, -0.3]],
+	};
+	const PROP_R = { house: 6, snowhouse: 6, tower: 5, broken: 5, wall: 6, ruin: 5, palisade: 7, hay: 2.5 };
+	/** Places the look's buildings; returns their footprints [x, z, r] (sim coordinates) for the forest to keep clear of. */
+	function props(group, W, D, hillAt) {
+		const list = PROPS[look.props] ? PROPS[look.props](W, D) : [];
+		if (!list.length) return [];
+		const g = propGeometries();
+		const mat = new T.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+		const out = [];
+		for (const [kind, x, z, ry] of list) {
+			const m = new T.Mesh(g[kind], mat);
+			m.position.set(x, hillAt(x, -z) - 0.1, -z);
+			m.rotation.y = ry;
+			m.castShadow = true;
+			m.receiveShadow = true;
+			group.add(m);
+			out.push([x, z, PROP_R[kind]]);
+		}
+		return out;
 	}
 
 	// --- Sky and the land around the field --------------------------------------------------------------------
@@ -556,8 +698,9 @@ const DotGfx = (() => {
 		const rnd = mulberry(5);
 		const cx = W / 2;
 		const cz = -D / 2;
-		// Sky dome drawn behind everything; its horizon colour is also the fog colour.
-		const hor = new T.Color(0xc8d9e4);
+		// Sky dome drawn behind everything; its horizon colour is also the fog colour. The look tints both (dark blue at night).
+		const skyTint = new T.Color(look.sky);
+		const hor = new T.Color(0xc8d9e4).multiply(skyTint);
 		const setHorizon = (col) => { if (scene) { scene.background = col.clone(); if (scene.fog) scene.fog.color.copy(col); } };
 		let dome;
 		if (art.sky_dome) {
@@ -570,13 +713,13 @@ const DotGfx = (() => {
 				const t = new T.CanvasTexture(img);
 				t.encoding = T.sRGBEncoding;
 				mat.map = t;
-				mat.color.set(0xffffff);
+				mat.color.copy(skyTint);
 				mat.needsUpdate = true;
 				const row = img.getContext('2d').getImageData(0, Math.round(img.height * (8 / 9)) - 3, img.width, 1).data;
 				let r = 0, gg = 0, b = 0;
 				for (let i = 0; i < row.length; i += 4) { r += row[i]; gg += row[i + 1]; b += row[i + 2]; }
 				const n = (row.length / 4) * 255;
-				setHorizon(new T.Color().setRGB(r / n, gg / n, b / n).convertSRGBToLinear());
+				setHorizon(new T.Color().setRGB(r / n, gg / n, b / n).convertSRGBToLinear().multiply(skyTint));
 			});
 		} else {
 			// Without the photo: deep blue overhead, hazy at the horizon.
@@ -599,33 +742,46 @@ const DotGfx = (() => {
 		dome.renderOrder = -10;
 		group.add(dome);
 		setHorizon(hor);
-		// Land around the field: textured, gently rolling, a little darker than the field.
+		if (lookName === 'winter') {
+			// A pale moon low over the far side of the pass.
+			const moon = new T.Sprite(new T.SpriteMaterial({ map: glow(), color: 0xdfe8ff, transparent: true, depthWrite: false, fog: false, blending: T.AdditiveBlending }));
+			moon.scale.set(150, 150, 1);
+			moon.position.set(cx - 260, 300, cz - 900);
+			moon.renderOrder = -9;
+			group.add(moon);
+		}
+		// Ground height beyond the field (world x, z): flat at the edge, rolling hills further out.
+		const hillAt = (x, z) => {
+			const d = Math.hypot(Math.max(0, Math.max(-x, x - W)), Math.max(0, Math.max(-(z + D), z)));
+			return -0.3 + (d < 4 ? 0 : Math.max(0, Math.min(1, (d - 4) / 60) * (6 * Math.sin(x * 0.018 + 1.3) * Math.cos(z * 0.021) + 4 * Math.sin(x * 0.041 + z * 0.033) + 5)));
+		};
+		// Land around the field: the field's own ground and worn patches, darkening with distance so the field's edge does not show.
 		const land = new T.PlaneGeometry(1600, 1600, 160, 160).rotateX(-Math.PI / 2);
 		const lp = land.attributes.position;
-		const splat = new Float32Array(lp.count * 3);
+		const splat = new Float32Array(lp.count * 4);
 		const lc = new Float32Array(lp.count * 3);
 		for (let i = 0; i < lp.count; i++) {
 			const x = lp.getX(i) + cx;
 			const z = lp.getZ(i) + cz;
-			const dx = Math.max(0, Math.max(-x, x - W));
-			const dz = Math.max(0, Math.max(-(z + D), z));
-			const d = Math.hypot(dx, dz);
-			const hill = d < 4 ? 0 : Math.min(1, (d - 4) / 60) * (6 * Math.sin(x * 0.018 + 1.3) * Math.cos(z * 0.021) + 4 * Math.sin(x * 0.041 + z * 0.033) + 5);
+			const d = Math.hypot(Math.max(0, Math.max(-x, x - W)), Math.max(0, Math.max(-(z + D), z)));
 			// Well inside the field the battle's own ground covers it: keep it below the river beds.
 			const inside = Math.min(x, W - x, -z, D + z);
-			lp.setY(i, inside > 8 ? -4 : -0.3 + Math.max(0, hill));
-			const v = 0.62 + rnd() * 0.08;
-			lc[i * 3] = v * 0.9;
+			lp.setY(i, inside > 8 ? -4 : hillAt(x, z));
+			splat[i * 4] = wornAt(x, -z) * look.worn * 0.8;
+			const v = (0.8 - 0.16 * Math.min(1, d / 90)) * (0.95 + rnd() * 0.08);
+			lc[i * 3] = v * 0.97;
 			lc[i * 3 + 1] = v;
-			lc[i * 3 + 2] = v * 0.85;
+			lc[i * 3 + 2] = v * 0.93;
 		}
-		land.setAttribute('splat', new T.BufferAttribute(splat, 3));
+		land.setAttribute('splat', new T.BufferAttribute(splat, 4));
 		land.setAttribute('color', new T.BufferAttribute(lc, 3));
 		land.computeVertexNormals();
 		const lm = new T.Mesh(land, splatMaterial(9, 0.6));
 		lm.position.set(cx, 0, cz);
 		lm.receiveShadow = true;
 		group.add(lm);
+		// Houses, towers and walls of the look just beyond the field; the forest keeps clear of them.
+		const clear = props(group, W, D, hillAt);
 		// Forest belt just beyond the field's edge, thinning out with distance.
 		const belt = [];
 		for (let i = 0; i < (quality === 'high' ? 900 : 420); i++) {
@@ -635,11 +791,8 @@ const DotGfx = (() => {
 			let z;
 			if (side < 0.3) { x = rnd() * (W + 2 * depth) - depth; z = -depth; } else if (side < 0.6) { x = rnd() * (W + 2 * depth) - depth; z = D + depth; } else if (side < 0.8) { x = -depth; z = rnd() * D; } else { x = W + depth; z = rnd() * D; }
 			if (rnd() < 0.35) continue;
-			const wx = x;
-			const wz = -z;
-			const dd = Math.hypot(Math.max(0, Math.max(-wx, wx - W)), Math.max(0, Math.max(-(wz + D), wz)));
-			const hill = dd < 4 ? 0 : Math.min(1, (dd - 4) / 60) * (6 * Math.sin(wx * 0.018 + 1.3) * Math.cos(wz * 0.021) + 4 * Math.sin(wx * 0.041 + wz * 0.033) + 5);
-			belt.push([x, -0.3 + Math.max(0, hill), z, 1.0 + rnd() * 0.9, rnd()]);
+			if (clear.some(([px, pz, pr]) => Math.hypot(x - px, z - pz) < pr)) continue;
+			belt.push([x, hillAt(x, -z), z, 1.0 + rnd() * 0.9, rnd()]);
 		}
 		forest(group, belt, false);
 		// Mountains on the horizon: forested foot, rock (art tex_rock) and snow caps, only half lost in the haze.
@@ -654,7 +807,7 @@ const DotGfx = (() => {
 			// Ridges from the vertex position itself, so the seam's twin vertices move together.
 			if (y < 0.49) { const k = 0.8 + 0.22 * Math.sin(x * 7.1 + z * 3.7 + y * 5) + 0.12 * Math.sin(z * 13.3 - x * 2.9); mp.setX(i, x * k); mp.setZ(i, z * k); mp.setY(i, y + 0.035 * Math.sin(x * 11 + z * 9)); }
 			const t = y + 0.5;
-			snow[i] = Math.min(1, Math.max(0, (t - 0.6) / 0.16 + 0.35 * Math.sin(x * 9 + z * 5)));
+			snow[i] = Math.min(1, Math.max(0, (t - look.snowLine) / 0.16 + 0.35 * Math.sin(x * 9 + z * 5)));
 			const f = Math.min(1, Math.max(0, (0.3 - t) / 0.2));
 			mcol[i * 3] = 1 - f * 0.55;
 			mcol[i * 3 + 1] = 1 - f * 0.25;
@@ -691,8 +844,9 @@ const DotGfx = (() => {
 		group.add(mm);
 		// Clouds drifting high over the field.
 		const ct = tex('sky_cloud', { scale: 2 });
+		const cc = new T.Color(0xffffff).lerp(skyTint, 0.8);
 		for (let i = 0; i < 16; i++) {
-			const s = new T.Sprite(new T.SpriteMaterial({ map: ct, transparent: true, depthWrite: false, opacity: 0.75 + rnd() * 0.2, fog: false }));
+			const s = new T.Sprite(new T.SpriteMaterial({ map: ct, color: cc, transparent: true, depthWrite: false, opacity: 0.75 + rnd() * 0.2, fog: false }));
 			const w = 160 + rnd() * 200;
 			s.scale.set(w, w * 0.5, 1);
 			s.position.set(cx + (rnd() - 0.5) * 1100, 230 + rnd() * 140, cz + (rnd() - 0.5) * 1100);

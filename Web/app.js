@@ -239,7 +239,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// Camera rig: perspective, pitch eases 42..60 degrees with zoom, pan with inertia, shake.
+// Camera rig: perspective, pitch eases 28..52 degrees with zoom (low, as in the original), pan with inertia, shake.
 const cam = { x: 120, z: -60, dist: 110, minD: 28, maxD: 185, vx: 0, vz: 0, shake: 0, shakeT: 0, follow: null, mapW: 240, mapD: 160 };
 
 function clampCam() {
@@ -262,7 +262,7 @@ function placeCamera(dt) {
 	cam.vz *= decay;
 	clampCam();
 	const t = (cam.dist - cam.minD) / (cam.maxD - cam.minD);
-	const pitch = rad(42 + 18 * t);
+	const pitch = rad(28 + 24 * t);
 	const ground = game.sim ? game.sim.height(cam.x, -cam.z) : 0;
 	cam.shakeT += dt * 40;
 	cam.shake *= Math.exp(-dt * 6);
@@ -675,16 +675,27 @@ function buildTerrain(st) {
 
 	if (GFX) GFX.foliage(view.terrainGroup, st, CF);
 
-	// Deploy zones (shown during deployment).
+	// Deploy zones (shown during deployment): as in the original, a thin light line with glowing corners over a faint tint.
 	view.deployZones = st.map.dep.map((z, side) => {
 		const m = new THREE.Mesh(new THREE.PlaneGeometry(z[2] - z[0], z[3] - z[1]).rotateX(-Math.PI / 2),
-			new THREE.MeshBasicMaterial({ color: SIDE_COLOR[side], transparent: true, opacity: side === 0 ? 0.16 : 0.08, depthWrite: false }));
+			new THREE.MeshBasicMaterial({ color: SIDE_COLOR[side], transparent: true, opacity: side === 0 ? 0.08 : 0.05, depthWrite: false }));
 		m.position.set((z[0] + z[2]) / 2, 0.4, -(z[1] + z[3]) / 2);
 		m.renderOrder = 2;
-		const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(z[0], 0.45, -z[1]), new THREE.Vector3(z[2], 0.45, -z[1]),
-			new THREE.Vector3(z[2], 0.45, -z[3]), new THREE.Vector3(z[0], 0.45, -z[3])]), new THREE.LineBasicMaterial({ color: SIDE_COLOR[side] }));
+		const line = SIDE_COLOR[side].clone().lerp(new THREE.Color(0xfff4dc), side === 0 ? 0.75 : 0.45);
+		const corners = [[z[0], z[1]], [z[2], z[1]], [z[2], z[3]], [z[0], z[3]]];
+		const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(corners.map(([x, y]) => new THREE.Vector3(x, 0.45, -y))),
+			new THREE.LineBasicMaterial({ color: line, transparent: true, opacity: 0.9 }));
 		const grp = new THREE.Group();
 		grp.add(m, border);
+		if (GFX) {
+			const mat = new THREE.SpriteMaterial({ map: GFX.glow(), color: line, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+			for (const [x, y] of corners) {
+				const s = new THREE.Sprite(mat);
+				s.position.set(x, 0.9, -y);
+				s.scale.set(7, 7, 1);
+				grp.add(s);
+			}
+		}
 		view.terrainGroup.add(grp);
 		return grp;
 	});

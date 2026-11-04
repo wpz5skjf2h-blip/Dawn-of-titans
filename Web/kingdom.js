@@ -910,7 +910,7 @@ function swirlTexture() {
 const scene = new T.Scene();
 const cam = new T.PerspectiveCamera(45, 1, 1, 2000);
 const world = {
-	island: null, rim: null, sun: null, shadows: null, fall: null, clouds: [], decor: null, border: null, exp: -1,
+	island: null, rim: null, sun: null, shadows: null, fall: null, clouds: [], sea: [], decor: null, border: null, exp: -1,
 	views: new Map(), lands: new Map(), selRing: null, grid: null, ghost: null, pond: null,
 };
 const hitMat = new T.MeshBasicMaterial({ visible: false });
@@ -925,7 +925,8 @@ function mulberry(seed) {
 	};
 }
 
-const ISLE = { grass: 0x6fa645, grass2: 0x63993d, grassD: 0x4f7d30, dirt: 0x8a6a45, rock1: 0x8b7f6c, rock2: 0x6f6555, rock3: 0x5b5246 };
+// Sage grass and grey cliffs, muted as on the original's island; grass keeps green well over red, which islandMaterial reads as grass.
+const ISLE = { grass: 0x78985a, grass2: 0x6e8c50, grassD: 0x546e3a, dirt: 0x7a6248, rock1: 0x7d796d, rock2: 0x625f56, rock3: 0x4d4b45 };
 /**
  * A floating island: flat grassy top (out to flatTop of the rim), a bumpy grass edge, then a rocky
  * underside narrowing to a point. calm = [angle, width] keeps the edge flat where a stream leaves.
@@ -1117,14 +1118,14 @@ function buildIsland() {
 function buildSky() {
 	scene.background = canvasTex(4, 256, (g, w, h) => {
 		const grd = g.createLinearGradient(0, 0, 0, h);
-		grd.addColorStop(0, '#5d9bd6');
-		grd.addColorStop(0.5, '#a6cdea');
-		grd.addColorStop(0.72, '#d8ebf6');
-		grd.addColorStop(1, '#eef5f8');
+		grd.addColorStop(0, '#6c9cc0');
+		grd.addColorStop(0.5, '#b2cddd');
+		grd.addColorStop(0.72, '#e2ecf0');
+		grd.addColorStop(1, '#f6f8f6');
 		g.fillStyle = grd;
 		g.fillRect(0, 0, w, h);
 	});
-	scene.fog = new T.Fog(0xd7e9f4, 280, 680);
+	scene.fog = new T.Fog(0xe6eef0, 250, 660);
 	scene.add(new T.HemisphereLight(0xeaf3ff, 0x5d4e33, 0.82));
 	const sun = new T.DirectionalLight(0xfff0d8, 1.55);
 	sun.position.set(-70, 140, -25);
@@ -1160,14 +1161,45 @@ function buildSky() {
 		world.clouds.push(c);
 		scene.add(s);
 	}
+
+	// A sea of cloud under the island, as in the original: two drifting layers the cliffs sink into, fading into the haze.
+	// The puffs are drawn as an opaque grey map used as alphaMap, so the cloud colour stays white without dark fringes.
+	const sea = canvasTex(256, 256, (g, w, h) => {
+		g.fillStyle = '#000';
+		g.fillRect(0, 0, w, h);
+		const r2 = mulberry(21);
+		for (let i = 0; i < 120; i++) {
+			const x = r2() * w, y = r2() * h, r = 12 + r2() * 38, a = 0.25 + r2() * 0.35;
+			for (const [ox, oy] of [[0, 0], [w, 0], [-w, 0], [0, h], [0, -h], [w, h], [-w, -h], [w, -h], [-w, h]]) {
+				const grd = g.createRadialGradient(x + ox, y + oy, 1, x + ox, y + oy, r);
+				grd.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+				grd.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = grd;
+				g.fillRect(x + ox - r, y + oy - r, 2 * r, 2 * r);
+			}
+		}
+	});
+	sea.encoding = T.LinearEncoding;
+	for (const [y, op, rep, speed] of [[-72, 1, 5, 0.0016], [-46, 0.6, 3, -0.0024]]) {
+		const t = sea.clone();
+		t.needsUpdate = true;
+		t.wrapS = t.wrapT = T.RepeatWrapping;
+		t.repeat.set(rep, rep);
+		const m = new T.Mesh(new T.PlaneGeometry(2600, 2600).rotateX(-Math.PI / 2),
+			new T.MeshBasicMaterial({ color: 0xf6f8f6, alphaMap: t, transparent: true, opacity: op, depthWrite: false, fog: true }));
+		m.position.y = y;
+		m.renderOrder = -1;
+		world.sea.push([t, speed]);
+		scene.add(m);
+	}
 }
 
 function buildDecor() {
 	const pine = coloredParts([
 		[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.6, 0, 0.28, 1.2, 0.28],
-		[cylGeo(0, 8), 0x3f7a35, 0, 1.9, 0, 1.25, 1.8, 1.25], [cylGeo(0, 8), 0x468a3a, 0, 2.8, 0, 0.95, 1.5, 0.95], [cylGeo(0, 8), 0x4f9640, 0, 3.6, 0, 0.62, 1.2, 0.62],
+		[cylGeo(0, 8), 0x2f4c2a, 0, 1.9, 0, 1.25, 1.8, 1.25], [cylGeo(0, 8), 0x365731, 0, 2.8, 0, 0.95, 1.5, 0.95], [cylGeo(0, 8), 0x3e6236, 0, 3.6, 0, 0.62, 1.2, 0.62],
 	]);
-	const round = coloredParts([[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.7, 0, 0.26, 1.4, 0.26], [G.ico, 0x5c9a3e, 0, 2.2, 0, 1.25, 1.1, 1.25], [G.ico, 0x6aa848, 0.4, 2.7, 0.2, 0.75, 0.7, 0.75]]);
+	const round = coloredParts([[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.7, 0, 0.26, 1.4, 0.26], [G.ico, 0x4a6c34, 0, 2.2, 0, 1.25, 1.1, 1.25], [G.ico, 0x567a3c, 0.4, 2.7, 0.2, 0.75, 0.7, 0.75]]);
 	const rock = coloredParts([[G.rock, 0x8f8879, 0, 0.3, 0, 0.9, 0.6, 0.8], [G.rock, 0x7c7567, 0.7, 0.2, 0.3, 0.45, 0.35, 0.45]]);
 	const dm = new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
 	const pts = [];
@@ -3627,6 +3659,7 @@ function frameUpdate(dt, t) {
 		c.a += c.w * dt;
 		c.s.position.set(Math.cos(c.a) * c.r, c.y, Math.sin(c.a) * c.r);
 	}
+	for (const [t, speed] of world.sea) { t.offset.x = (t.offset.x + dt * speed) % 1; t.offset.y = (t.offset.y + dt * speed * 0.6) % 1; }
 	world.fall.material.map.offset.y = (world.fall.material.map.offset.y + dt * 1.1) % 1;
 	if (world.selRing.visible) world.selRing.children[0].material.emissiveIntensity = 0.75 + Math.sin(ts * 5) * 0.45;
 	if (world.ghost) {
