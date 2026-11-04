@@ -1104,6 +1104,361 @@ const DotTitans = (() => {
 		},
 	};
 
+	T['titan.loki'] = {
+		name: 'Локи', cls: 'Ravager', classRu: 'Лазутчик', stars: 2,
+		abil: ['Шаг из тени', 'Клинки обманщика'],
+		crop: [48, -4, 104, 104],
+		draw(g) {
+			const skin = '#dcc4a2';
+			const leather = '#3d5a34';
+			const leatherD = '#24361f';
+			const cloak = '#2c4428';
+			const gold = '#e0b040';
+			const o = { leg: '#4a6a3e', shin: leatherD, boot: '#2a2018', bootTall: 20, arm: skin, bracer: gold, hand: skin, knee: gold,
+				legExtra: (s, hip, kn, an) => L('M' + n1(an[0] - 8) + ' ' + n1(an[1] - 16) + 'l16 5M' + n1(an[0] - 8) + ' ' + n1(an[1] - 8) + 'l16 5', gold, 1.6) };
+			// A ragged cloak behind him: the infiltrator's shadow.
+			const back = P('M' + (100 - g.S + 2) + ' ' + (g.shY - 8) + 'C' + (100 - g.S - 18) + ' 140 ' + (100 - g.S - 22) + ' 186 ' + (100 - g.S - 14) + ' 216L' + (100 - 34) + ' 204L' + (100 - 22) + ' 218L' + (100 - 8) + ' 204L' + (100 + 8) + ' 218L' + (100 + 22) + ' 204L' + (100 + 34) + ' 218L' + (100 + g.S + 14) + ' 206C' + (100 + g.S + 22) + ' 180 ' + (100 + g.S + 18) + ' 140 ' + (100 + g.S - 2) + ' ' + (g.shY - 8) + 'Z', cloak) +
+				SHADE('M100 ' + (g.shY - 8) + 'H' + (100 + g.S - 2) + 'C' + (100 + g.S + 18) + ' 140 ' + (100 + g.S + 22) + ' 180 ' + (100 + g.S + 14) + ' 206L' + (100 + 34) + ' 218L' + (100 + 22) + ' 204L' + (100 + 8) + ' 218Z');
+			// Leather jerkin with crossed golden straps.
+			const chest = P(torsoPath(g), leather) + torsoShade(g) +
+				ROD('M' + (100 - g.S + 8) + ' ' + (g.shY - 8) + 'L' + (100 + g.W - 2) + ' ' + (g.waistY - 8), gold, 3) + ROD('M' + (100 + g.S - 8) + ' ' + (g.shY - 8) + 'L' + (100 - g.W + 2) + ' ' + (g.waistY - 8), gold, 3) +
+				C(100, g.shY + 22, 5, gold) + C(100, g.shY + 22, 2.2, '#9dff6a', 'stroke="none"') +
+				HI('M' + (100 - g.S + 6) + ' ' + (g.shY + 8) + 'C' + (100 - g.S + 6) + ' ' + (g.shY + 22) + ' ' + (100 - g.W) + ' ' + (g.waistY - 24) + ' ' + (100 - g.W + 2) + ' ' + (g.waistY - 14));
+			const r = g.headR;
+			// The trickster's cowl: two long tips curling up like horns, his silhouette from any distance.
+			const tip = (s) => {
+				const x = (v) => n1(100 + s * v);
+				return P('M' + x(10) + ' 40C' + x(22) + ' 30 ' + x(30) + ' 16 ' + x(30) + ' 0C' + x(30) + ' -10 ' + x(42) + ' -14 ' + x(46) + ' -6C' + x(40) + ' -8 ' + x(38) + ' -2 ' + x(40) + ' 4C' + x(42) + ' 20 ' + x(32) + ' 38 ' + x(r + 4) + ' 52Z', cloak) +
+					C(n1(100 + s * 44), -8, 3.4, gold) + HI('M' + x(28) + ' 22C' + x(31) + ' 14 ' + x(32) + ' 6 ' + x(32) + ' 0', 1.6);
+			};
+			const head = tip(-1) + tip(1) +
+				P('M' + (100 - r - 7) + ' 50C' + (100 - r - 8) + ' 22 ' + (100 + r + 8) + ' 22 ' + (100 + r + 7) + ' 50L' + (100 + r + 4) + ' 84C' + (100 + 8) + ' 92 ' + (100 - 8) + ' 92 ' + (100 - r - 4) + ' 84Z', cloak) +
+				P(skull(100, 56, r - 1, 1.1), skin) + SHADE('M106 44C116 48 116 66 108 76L104 62Z') +
+				P('M' + (100 - r + 1) + ' 52C' + (100 - r) + ' 34 ' + (100 + r) + ' 34 ' + (100 + r - 1) + ' 52C' + (100 + r - 8) + ' 42 ' + (100 - r + 8) + ' 42 ' + (100 - r + 1) + ' 52Z', leatherD) +
+				// Sly green eyes and a crooked smile.
+				L('M90 57l7 0.5M110 57l-7 0.5', '#9dff6a', 3) + L('M88 52l9 3M112 51l-9 2', INK, 2.2) + L('M92 70Q100 73 109 66', INK, 2) + L('M107 66l3 -1', INK, 1.6) +
+				P('M96 76Q100 84 104 76Q100 79 96 76Z', '#3a2a1a', 'stroke-width="1.6"');
+			const blade = (hd) => P('M' + n1(hd[0] - 3.5) + ' ' + n1(hd[1] + 9) + 'H' + n1(hd[0] + 3.5) + 'C' + n1(hd[0] + 6) + ' ' + n1(hd[1] + 22) + ' ' + n1(hd[0] + 4) + ' ' + n1(hd[1] + 36) + ' ' + n1(hd[0] - 1) + ' ' + n1(hd[1] + 46) +
+				'C' + n1(hd[0] - 1) + ' ' + n1(hd[1] + 34) + ' ' + n1(hd[0] - 5) + ' ' + n1(hd[1] + 22) + ' ' + n1(hd[0] - 3.5) + ' ' + n1(hd[1] + 9) + 'Z', '#cfdcc6') +
+				L('M' + n1(hd[0]) + ' ' + n1(hd[1] + 12) + 'C' + n1(hd[0] + 1.5) + ' ' + n1(hd[1] + 24) + ' ' + n1(hd[0] + 1) + ' ' + n1(hd[1] + 32) + ' ' + n1(hd[0] - 0.5) + ' ' + n1(hd[1] + 38), '#9dff6a', 1.4) +
+				P('M' + n1(hd[0] - 10) + ' ' + n1(hd[1] + 5) + 'H' + n1(hd[0] + 10) + 'L' + n1(hd[0] + 7) + ' ' + n1(hd[1] + 10) + 'H' + n1(hd[0] - 7) + 'Z', gold) +
+				ROD('M' + xy([hd[0], hd[1] - 10]) + 'V' + n1(hd[1] - 4), leatherD, 4) + C(hd[0], hd[1] - 12, 3, gold);
+			return {
+				back,
+				legs: G('p-legL', g.hipL, leg(g, -1, o)) + G('p-legR', g.hipR, leg(g, 1, o)),
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, leatherD, gold) + tabard(g, 30),
+				head,
+				armL: arm(g, -1, o, blade(g.hdL)),
+				armR: arm(g, 1, o, blade(g.hdR)),
+			};
+		},
+		fx() {
+			const puff = (x, y, s) => C(x, y, 14 * s, '#1c2a1a', 'stroke="none" fill-opacity=".55"') + C(x - 12 * s, y + 8 * s, 10 * s, '#2c4428', 'stroke="none" fill-opacity=".5"') +
+				C(x + 13 * s, y + 6 * s, 11 * s, '#1c2a1a', 'stroke="none" fill-opacity=".5"') + C(x + 2 * s, y - 12 * s, 9 * s, '#3d5a34', 'stroke="none" fill-opacity=".45"');
+			const smoke = puff(100, 190, 1.4) + puff(70, 150, 1) + puff(130, 120, 1.1) + puff(96, 90, 0.9) + spark(60, 120, 5, '#9dff6a') + spark(140, 170, 4, '#9dff6a');
+			const knives = [];
+			for (let i = 0; i < 6; i++) {
+				const a = (i * 60 * Math.PI) / 180;
+				const x = 100 + Math.cos(a) * 78;
+				const y = 140 + Math.sin(a) * 78;
+				knives.push('<g transform="translate(' + n1(x) + ' ' + n1(y) + ') rotate(' + (i * 60 + 90) + ')">' + P('M-3 -14H3L1 12L0 16L-1 12Z', '#cfdcc6', 'stroke-width="2"') + L('M-7 -14H7', '#e0b040', 3) + '</g>');
+			}
+			return {
+				smokeA: [[100, 150], smoke],
+				smokeB: [[100, 150], smoke],
+				slash: [[100, 140], L('M30 80C90 100 150 150 168 210', '#9dff6a', 9, 'stroke-opacity=".45"') + L('M34 84C92 104 146 152 162 204', WHITE, 3) +
+					L('M170 76C110 96 52 150 34 206', '#9dff6a', 9, 'stroke-opacity=".45"') + L('M166 80C108 100 56 152 40 200', WHITE, 3)],
+				whirl: [[100, 140], C(100, 140, 78, 'none', 'stroke="#9dff6a" stroke-width="3" stroke-dasharray="10 14" stroke-opacity=".6"') + knives.join('')],
+				daze: [[100, 40], [[22, 0], [40, -10], [160, -10], [178, 0]].map(([x, dy]) => spark(x, 120 + dy, 6, '#9dff6a')).join('') +
+					L('M14 150q8 -8 16 0t16 0M154 150q8 -8 16 0t16 0', '#9dff6a', 2.4)],
+			};
+		},
+		clips: {
+			idle: { dur: 1.3, k: {
+				upper: [[0, {}], [0.5, { y: 2 }], [1, {}]],
+				head: [[0, {}], [0.5, R(3)], [1, {}]],
+				armL: [[0, {}], [0.5, R(4)], [1, {}]], armR: [[0, {}], [0.5, R(-4)], [1, {}]],
+				wpnL: [[0, {}], [0.5, R(-6)], [1, {}]], wpnR: [[0, {}], [0.5, R(6)], [1, {}]],
+			} },
+			atk: { dur: 1.0, k: {
+				armR: [[0, {}], [0.25, R(-70)], [0.4, R(35), 1, EASE_HIT], [0.6, R(35)], [1, {}]],
+				armL: [[0, {}], [0.35, R(70)], [0.52, R(-35), 1, EASE_HIT], [0.7, R(-35)], [1, {}]],
+				upper: [[0, {}], [0.25, R(-4)], [0.4, R(5, { y: 2 })], [0.52, R(-5, { y: 2 })], [0.8, {}], [1, {}]],
+				slash: [[0, {}, 0], [0.38, {}, 0], [0.42, {}, 1], [0.7, {}, 0]],
+			} },
+			a1: { dur: 1.8, k: {
+				root: [[0, {}], [0.18, { y: 6, sy: 0.94 }], [0.26, { x: -8 }, 0], [0.5, { x: 34 }, 0], [0.56, { x: 34 }, 1], [0.84, { x: 34 }, 1], [0.9, { x: 34 }, 0], [0.94, {}, 0], [1, {}, 1]],
+				shadow: [[0, {}], [0.18, {}], [0.26, { x: -8 }, 0], [0.5, { x: 34 }, 0], [0.56, { x: 34 }, 1], [0.84, { x: 34 }, 1], [0.9, { x: 34 }, 0], [0.94, {}, 0], [1, {}, 1]],
+				armR: [[0, {}], [0.5, R(-80)], [0.62, R(40), 1, EASE_HIT], [0.84, R(40)], [1, {}]],
+				armL: [[0, {}], [0.5, R(80)], [0.66, R(-40), 1, EASE_HIT], [0.84, R(-40)], [1, {}]],
+				smokeA: [[0, { s: 0.4 }, 0], [0.22, { s: 0.7 }, 1], [0.5, { s: 1.2, y: -12 }, 0]],
+				smokeB: [[0, { x: 34, s: 0.4 }, 0], [0.48, { x: 34, s: 0.5 }, 0], [0.54, { x: 34, s: 0.8 }, 1], [0.78, { x: 34, s: 1.2, y: -12 }, 0]],
+				slash: [[0, { x: 34 }, 0], [0.6, { x: 34 }, 0], [0.64, { x: 34 }, 1], [0.82, { x: 34 }, 0]],
+			} },
+			a2: { dur: 2.0, k: {
+				armL: [[0, {}], [0.18, R(86)], [0.82, R(86)], [1, {}]], armR: [[0, {}], [0.18, R(-86)], [0.82, R(-86)], [1, {}]],
+				wpnL: [[0, {}], [0.18, R(-90)], [0.82, R(-90)], [1, {}]], wpnR: [[0, {}], [0.18, R(90)], [0.82, R(90)], [1, {}]],
+				upper: [[0, {}], [0.18, { y: 3 }], [0.82, { y: 3 }], [1, {}]],
+				whirl: [[0, { s: 0.3 }, 0], [0.2, R(60, { s: 1 }), 1], [0.82, R(600, { s: 1 }), 1], [1, R(660, { s: 1.2 }), 0]],
+				daze: [[0, {}, 0], [0.45, {}, 0], [0.5, {}, 1], [0.9, {}, 1], [1, {}, 0]],
+			} },
+		},
+	};
+
+	T['titan.tyr'] = {
+		name: 'Тюр', cls: 'Warden', classRu: 'Паладин', stars: 3,
+		abil: ['Меч правосудия', 'Клятва закона'],
+		crop: [50, 6, 100, 100],
+		draw(g) {
+			const steel = '#c9d1da';
+			const steelD = '#8e9aa6';
+			const gold = '#e8b85c';
+			const skin = '#e0b48a';
+			const beard = '#b0703a';
+			const cape = '#efe6cf';
+			const o = { leg: '#9aa4ae', shin: steel, boot: steelD, bootTall: 24, arm: '#9aa4ae', bracer: steel, pauldron: steel, hand: steelD, knee: gold,
+				legExtra: (s, hip, kn, an) => L('M' + n1(an[0] - 9) + ' ' + n1(an[1] - 20) + 'h18', gold, 2) };
+			// White cape over both shoulders.
+			const back = P('M' + (100 - g.S + 4) + ' ' + (g.shY - 10) + 'C' + (100 - g.S - 14) + ' 140 ' + (100 - g.S - 16) + ' 190 ' + (100 - g.S - 10) + ' 214Q100 222 ' + (100 + g.S + 10) + ' 214C' + (100 + g.S + 16) + ' 190 ' + (100 + g.S + 14) + ' 140 ' + (100 + g.S - 4) + ' ' + (g.shY - 10) + 'Z', cape) +
+				SHADE('M100 ' + (g.shY - 10) + 'H' + (100 + g.S - 4) + 'C' + (100 + g.S + 14) + ' 140 ' + (100 + g.S + 16) + ' 190 ' + (100 + g.S + 10) + ' 214Q100 222 100 220Z') +
+				L('M' + (100 - g.S - 8) + ' 206Q100 214 ' + (100 + g.S + 8) + ' 206', gold, 2.4);
+			// Polished breastplate with a golden rim and Tyr's rune.
+			const rune = (x, y, h, col, w) => L('M' + n1(x) + ' ' + n1(y + h) + 'V' + n1(y - h) + 'M' + n1(x - h * 0.7) + ' ' + n1(y - h * 0.3) + 'L' + n1(x) + ' ' + n1(y - h) + 'L' + n1(x + h * 0.7) + ' ' + n1(y - h * 0.3), INK, w + 3) +
+				L('M' + n1(x) + ' ' + n1(y + h) + 'V' + n1(y - h) + 'M' + n1(x - h * 0.7) + ' ' + n1(y - h * 0.3) + 'L' + n1(x) + ' ' + n1(y - h) + 'L' + n1(x + h * 0.7) + ' ' + n1(y - h * 0.3), col, w);
+			const chest = P(torsoPath(g), steel) + torsoShade(g) + pecs(g, '#6a7480') +
+				L('M' + (100 - g.S + 6) + ' ' + (g.shY - 8) + 'Q100 ' + (g.shY + 6) + ' ' + (100 + g.S - 6) + ' ' + (g.shY - 8), gold, 3) +
+				rune(100, g.shY + 30, 9, gold, 3) + HI('M' + (100 - g.S + 6) + ' ' + (g.shY + 6) + 'C' + (100 - g.S + 6) + ' ' + (g.shY + 22) + ' ' + (100 - g.W) + ' ' + (g.waistY - 24) + ' ' + (100 - g.W + 2) + ' ' + (g.waistY - 14), 3);
+			const r = g.headR;
+			const head = P(skull(100, 56, r), skin) + SHADE('M108 42C118 46 118 66 110 74L106 62Z') +
+				// Braided golden-brown beard.
+				P('M' + (100 - r + 1) + ' 60C' + (100 - r + 2) + ' 84 ' + (100 - 8) + ' 96 100 100C' + (100 + 8) + ' 96 ' + (100 + r - 2) + ' 84 ' + (100 + r - 1) + ' 60C' + (100 + r - 6) + ' 68 ' + (100 + 6) + ' 70 100 70C' + (100 - 6) + ' 70 ' + (100 - r + 6) + ' 68 ' + (100 - r + 1) + ' 60Z', beard) +
+				L('M100 84V98M94 84l-2 10M106 84l2 10', '#7a4a22', 1.6) + C(100, 99, 2.6, gold) + P('M93 72Q100 68 107 72Q100 74 93 72Z', '#7a4a22') +
+				// Steel helm with a nose guard and a golden crest.
+				P('M' + (100 - r - 3) + ' 54C' + (100 - r - 4) + ' 22 ' + (100 + r + 4) + ' 22 ' + (100 + r + 3) + ' 54L' + (100 + r - 2) + ' 66L' + (100 + r - 6) + ' 54C' + (100 + 8) + ' 46 ' + (100 - 8) + ' 46 ' + (100 - r + 6) + ' 54L' + (100 - r + 2) + ' 66Z', steel) +
+				P('M97 46H103V66L100 70L97 66Z', steelD) + P('M94 22C96 10 104 10 106 22L103 34H97Z', gold) + SHADE('M110 30C118 36 120 46 120 54L114 56Z') +
+				HI('M' + (100 - r) + ' 44C' + (100 - r + 2) + ' 34 ' + (100 - 8) + ' 30 ' + (100 - 3) + ' 30', 2.4) +
+				L('M88 57l6 0.5M112 57l-6 0.5', '#fff0a0', 3) + L('M87 53l8 2M113 53l-8 2', INK, 2.2);
+			const hl = g.hdL;
+			// The sword in his left hand, point down at rest.
+			const sword = GLOW(hl[0], hl[1] + 40, 16, '#fff0a0', 0.25) +
+				P('M' + n1(hl[0] - 5) + ' ' + n1(hl[1] + 10) + 'H' + n1(hl[0] + 5) + 'L' + n1(hl[0] + 4) + ' ' + n1(hl[1] + 60) + 'L' + n1(hl[0]) + ' ' + n1(hl[1] + 70) + 'L' + n1(hl[0] - 4) + ' ' + n1(hl[1] + 60) + 'Z', '#eef2f6') +
+				L('M' + n1(hl[0]) + ' ' + n1(hl[1] + 14) + 'V' + n1(hl[1] + 58), steelD, 1.6) +
+				P('M' + n1(hl[0] - 15) + ' ' + n1(hl[1] + 5) + 'H' + n1(hl[0] + 15) + 'L' + n1(hl[0] + 11) + ' ' + n1(hl[1] + 11) + 'H' + n1(hl[0] - 11) + 'Z', gold) +
+				ROD('M' + xy([hl[0], hl[1] - 12]) + 'V' + n1(hl[1] + 4), '#6b4222', 4.5) + C(hl[0], hl[1] - 14, 3.6, gold);
+			const hr = g.hdR;
+			// A round shield strapped to the right arm: the hand Fenrir took is hidden behind it.
+			const sx = hr[0] + 2;
+			const sy = hr[1] - 14;
+			const shield = C(sx, sy, 30, steelD) + C(sx, sy, 25, '#f6f1e2') + SHADE('M' + n1(sx + 6) + ' ' + n1(sy - 24) + 'A25 25 0 0 1 ' + n1(sx + 6) + ' ' + n1(sy + 24) + 'A30 30 0 0 0 ' + n1(sx + 6) + ' ' + n1(sy - 24) + 'Z') +
+				C(sx, sy, 25, 'none', 'stroke="' + gold + '" stroke-width="2.4"') + rune(sx, sy, 13, gold, 4) +
+				[0, 60, 120, 180, 240, 300].map((a) => C(n1(sx + Math.cos((a * Math.PI) / 180) * 27.5), n1(sy + Math.sin((a * Math.PI) / 180) * 27.5), 1.8, gold, 'stroke-width="1"')).join('') +
+				HI('M' + n1(sx - 20) + ' ' + n1(sy - 8) + 'A21 21 0 0 1 ' + n1(sx - 8) + ' ' + n1(sy - 20), 2.4);
+			return {
+				back,
+				legs: G('p-legL', g.hipL, leg(g, -1, o)) + G('p-legR', g.hipR, leg(g, 1, o)),
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, '#6b4222', gold) + tabard(g, 44),
+				head,
+				armL: arm(g, -1, o, sword),
+				armR: arm(g, 1, o, shield, true),
+			};
+		},
+		fx(g) {
+			const hl = g.hdL;
+			const cross = (x, y, s) => L('M' + n1(x - s) + ' ' + n1(y) + 'H' + n1(x + s) + 'M' + n1(x) + ' ' + n1(y - s) + 'V' + n1(y + s), '#fff0a0', 3.4);
+			const ward = (x, y) => P('M' + n1(x - 9) + ' ' + n1(y - 10) + 'H' + n1(x + 9) + 'V' + n1(y) + 'C' + n1(x + 9) + ' ' + n1(y + 7) + ' ' + n1(x + 4) + ' ' + n1(y + 11) + ' ' + n1(x) + ' ' + n1(y + 13) +
+				'C' + n1(x - 4) + ' ' + n1(y + 11) + ' ' + n1(x - 9) + ' ' + n1(y + 7) + ' ' + n1(x - 9) + ' ' + n1(y) + 'Z', '#fff0a0', 'stroke-width="2" fill-opacity=".85"');
+			return {
+				swing: [[100, 150], L('M40 60C14 120 40 190 120 210', '#fff0a0', 9, 'stroke-opacity=".5"') + L('M44 66C20 122 46 186 118 204', WHITE, 3)],
+				arc: [[100, 170], P('M100 176L14 132C30 196 170 196 186 132Z', '#fff0a0', 'stroke="none" fill-opacity=".28"') +
+					L('M14 132C30 196 170 196 186 132', '#fff0a0', 10, 'stroke-opacity=".55"') + L('M18 136C34 192 166 192 182 136', WHITE, 3.4)],
+				stun: [[100, 180], stunStars(184)],
+				halo: [[100, GROUND], E(100, GROUND, 92, 15, '#fff0a0', 'fill-opacity=".2" stroke="#e8b85c" stroke-width="3"') + E(100, GROUND, 70, 11, 'none', 'stroke="#fff0a0" stroke-width="1.6" stroke-dasharray="8 6"')],
+				light: [[100, GROUND], L('M28 ' + GROUND + 'V96M172 ' + GROUND + 'V96', '#fff0a0', 12, 'stroke-opacity=".3"') + L('M28 ' + GROUND + 'V96M172 ' + GROUND + 'V96', WHITE, 2.4, 'stroke-opacity=".7"') +
+					ward(28, 84) + ward(172, 84) + cross(46, 150, 6) + cross(156, 132, 6) + cross(60, 110, 4.5) + cross(144, 176, 4.5)],
+				shine: [[hl[0], hl[1] + 40], GLOW(hl[0], hl[1] + 40, 26, '#fff0a0', 0.45) + spark(hl[0], hl[1] + 72, 9, WHITE) + spark(hl[0] - 10, hl[1] + 30, 5, WHITE), 'wpnL'],
+			};
+		},
+		clips: {
+			idle: { dur: 2.0, k: {
+				upper: [[0, {}], [0.5, { y: 1.8 }], [1, {}]],
+				head: [[0, {}], [0.5, R(-1.5)], [1, {}]],
+				armL: [[0, {}], [0.5, R(2)], [1, {}]], armR: [[0, {}], [0.5, R(-2)], [1, {}]],
+			} },
+			atk: { dur: 1.3, k: {
+				armL: [[0, {}], [0.4, R(150)], [0.56, R(-35), 1, EASE_HIT], [0.8, R(-35)], [1, {}]],
+				wpnL: [[0, {}], [0.4, R(-20)], [0.56, R(10)], [1, {}]],
+				upper: [[0, {}], [0.4, R(5)], [0.56, R(-6, { y: 3 })], [0.8, R(-6, { y: 3 })], [1, {}]],
+				swing: [[0, {}, 0], [0.5, {}, 0], [0.56, {}, 1], [0.76, {}, 0]],
+			} },
+			a1: { dur: 2.0, k: {
+				armL: [[0, {}], [0.3, R(120)], [0.5, R(-80), 1, EASE_HIT], [0.78, R(-80)], [1, {}]],
+				wpnL: [[0, {}], [0.3, R(-40)], [0.5, R(40)], [0.78, R(40)], [1, {}]],
+				armR: [[0, {}], [0.3, R(-20)], [0.78, R(-20)], [1, {}]],
+				upper: [[0, {}], [0.3, R(8, { y: 2 })], [0.5, R(-8, { y: 4 })], [0.78, R(-8, { y: 4 })], [1, {}]],
+				arc: [[0, { s: 0.5 }, 0], [0.46, { s: 0.6 }, 0], [0.52, { s: 1 }, 1], [0.8, { s: 1.15 }, 0]],
+				stun: [[0, {}, 0], [0.54, {}, 0], [0.58, {}, 1], [0.92, {}, 1], [1, {}, 0]],
+			} },
+			a2: { dur: 2.4, k: {
+				armL: [[0, {}], [0.22, R(158)], [0.82, R(158)], [1, {}]],
+				wpnL: [[0, {}], [0.22, R(-16)], [0.82, R(-16)], [1, {}]],
+				armR: [[0, {}], [0.22, R(-35)], [0.82, R(-35)], [1, {}]],
+				head: [[0, {}], [0.22, { y: -2 }], [0.82, { y: -2 }], [1, {}]],
+				upper: [[0, {}], [0.22, { y: -3 }], [0.82, { y: -3 }], [1, {}]],
+				shine: [[0, { s: 0.4 }, 0], [0.22, { s: 0.6 }, 0], [0.3, { s: 1.1 }, 1], [0.82, { s: 1 }, 1], [0.92, { s: 1.2 }, 0]],
+				halo: [[0, { s: 0.4 }, 0], [0.3, { s: 0.6 }, 0], [0.42, { s: 1 }, 1], [0.86, { s: 1.06 }, 1], [1, { s: 1.15 }, 0]],
+				light: [[0, { sy: 0.2 }, 0], [0.36, { sy: 0.2 }, 0], [0.48, {}, 1], [0.86, {}, 1], [1, { y: -10 }, 0]],
+			} },
+		},
+	};
+
+	T['titan.veles'] = {
+		// A Mystic in the sim; drawn on the broad Warden build because the shaman is a large titan, not a hovering one.
+		name: 'Велес', cls: 'Mystic', build: 'Warden', classRu: 'Шаман', stars: 4,
+		abil: ['Топь Нави', 'Песнь предков'],
+		crop: [44, 0, 112, 112],
+		draw(g) {
+			const fur = '#7a5434';
+			const furD = '#4f3420';
+			const robe = '#33503f';
+			const robeL = '#46684f';
+			const skin = '#cfa47c';
+			const beard = '#c4beac';
+			const horn = '#eadfc4';
+			const nav = '#5fe0b0';
+			const ochre = '#a2452e';
+			const o = { arm: robeL, hand: skin, bracer: fur };
+			// Zigzag hem of a fur edge from x0 to x1 at height y.
+			const zig = (x0, x1, y, h) => {
+				let d = '';
+				const n = Math.max(2, Math.round(Math.abs(x1 - x0) / 9));
+				for (let i = 1; i <= n; i++) d += 'L' + n1(x0 + ((x1 - x0) * i) / n) + ' ' + n1(i % 2 ? y + h : y);
+				return d;
+			};
+			// Bear-fur cloak behind the body, ragged at the hem.
+			const cl = 100 - g.S - 18;
+			const cr = 100 + g.S + 18;
+			const back = P('M' + (100 - g.S + 4) + ' ' + (g.shY - 10) + 'C' + (100 - g.S - 12) + ' 130 ' + cl + ' 180 ' + cl + ' 216' + zig(cl, cr, 216, 8) +
+				'C' + cr + ' 180 ' + (100 + g.S + 12) + ' 130 ' + (100 + g.S - 4) + ' ' + (g.shY - 10) + 'Z', fur) +
+				SHADE('M100 ' + (g.shY - 10) + 'H' + (100 + g.S - 4) + 'C' + (100 + g.S + 12) + ' 130 ' + cr + ' 180 ' + cr + ' 216L100 220Z');
+			// A long robe to the ground with a fur hem; fur boots peek out under it.
+			const W = g.W;
+			const gown = E(84, GROUND - 3, 12, 5, furD) + E(116, GROUND - 3, 12, 5, furD) +
+				P('M' + (100 - W - 2) + ' ' + (g.waistY - 4) + 'C' + (100 - W - 10) + ' 170 ' + (100 - W - 20) + ' 196 ' + (100 - W - 24) + ' ' + (GROUND - 6) + 'H' + (100 + W + 24) +
+					'C' + (100 + W + 20) + ' 196 ' + (100 + W + 10) + ' 170 ' + (100 + W + 2) + ' ' + (g.waistY - 4) + 'Z', robe) +
+				SHADE('M106 ' + g.waistY + 'C' + (100 + W + 8) + ' 170 ' + (100 + W + 18) + ' 196 ' + (100 + W + 22) + ' ' + (GROUND - 6) + 'H108Z') +
+				TEAMFILL('M92 ' + (g.waistY + 2) + 'H108L112 ' + (GROUND - 14) + 'H88Z') + L('M95 ' + (g.waistY + 10) + 'L93 ' + (GROUND - 22), WHITE, 1.6, 'stroke-opacity=".35"') +
+				P('M' + (100 - W - 26) + ' ' + (GROUND - 4) + 'L' + (100 - W - 24) + ' ' + (GROUND - 16) + zig(100 - W - 24, 100 + W + 24, GROUND - 16, 5) + 'L' + (100 + W + 26) + ' ' + (GROUND - 4) + 'Z', fur);
+			// Fur mantle over the shoulders and a bone amulet with the horned sign of Veles.
+			const S = g.S;
+			const mantle = P('M' + (100 - S - 5) + ' ' + (g.shY + 8) + 'Q' + (100 - S) + ' ' + (g.shY - 15) + ' ' + (100 - S + 16) + ' ' + (g.shY - 15) + 'H' + (100 + S - 16) + 'Q' + (100 + S) + ' ' + (g.shY - 15) + ' ' + (100 + S + 5) + ' ' + (g.shY + 8) +
+				zig(100 + S + 5, 100, g.shY + 14, 8) + zig(100, 100 - S - 5, g.shY + 14, 8) + 'Z', fur) +
+				L('M' + (100 - S + 4) + ' ' + (g.shY - 4) + 'l3 7M' + (100 - 14) + ' ' + (g.shY - 8) + 'l2 8M' + (100 + 12) + ' ' + (g.shY - 8) + 'l-2 8M' + (100 + S - 6) + ' ' + (g.shY - 4) + 'l-3 7', furD, 1.6);
+			const amulet = C(100, g.shY + 36, 8, horn) + L('M94 ' + (g.shY + 39) + 'Q100 ' + (g.shY + 30) + ' 106 ' + (g.shY + 39) + 'M95.5 ' + (g.shY + 34) + 'l-2 -4M104.5 ' + (g.shY + 34) + 'l2 -4', ochre, 2) +
+				C(100, g.shY + 38, 1.8, nav, 'stroke="none"');
+			const chest = P(torsoPath(g), robeL) + torsoShade(g) + L('M100 ' + (g.shY + 16) + 'V' + (g.waistY - 8), '#2a4033', 1.6, 'stroke-opacity=".6"') + amulet + mantle;
+			const r = g.headR;
+			// Ox horns curving out of the bear hood.
+			const hornS = (s) => {
+				const x = (v) => n1(100 + s * v);
+				return P('M' + x(r - 3) + ' 42C' + x(r + 16) + ' 44 ' + x(r + 30) + ' 30 ' + x(r + 27) + ' 6C' + x(r + 23) + ' 22 ' + x(r + 13) + ' 32 ' + x(r - 3) + ' 32Z', horn) +
+					L('M' + x(r + 8) + ' 41l-1 -9M' + x(r + 15) + ' 38l-2 -8M' + x(r + 21) + ' 32l-3 -6', '#b8a888', 1.4) + HI('M' + x(r + 2) + ' 34C' + x(r + 12) + ' 33 ' + x(r + 20) + ' 26 ' + x(r + 24) + ' 14', 1.6);
+			};
+			const head = P('M' + (100 - r - 8) + ' 72C' + (100 - r - 10) + ' 40 ' + (100 - r - 4) + ' 22 100 22C' + (100 + r + 4) + ' 22 ' + (100 + r + 10) + ' 40 ' + (100 + r + 8) + ' 72Z', furD) +
+				hornS(-1) + hornS(1) + P(skull(100, 56, r), skin) + SHADE('M108 42C118 46 118 66 110 74L106 62Z') +
+				// Long grey beard over the mantle.
+				P('M' + (100 - r + 1) + ' 58C' + (100 - r) + ' 90 ' + (100 - 12) + ' 112 100 120C' + (100 + 12) + ' 112 ' + (100 + r) + ' 90 ' + (100 + r - 1) + ' 58C' + (100 + r - 6) + ' 70 ' + (100 + 6) + ' 72 100 72C' + (100 - 6) + ' 72 ' + (100 - r + 6) + ' 70 ' + (100 - r + 1) + ' 58Z', beard) +
+				L('M100 80V114M93 80l-3 26M107 80l3 26', '#8f8a78', 1.6) + P('M91 72Q100 65 109 72Q100 76 91 72Z', '#8f8a78') +
+				// Brim of the bear hood with two small ears.
+				C(100 - 15, 27, 5, furD) + C(100 + 15, 27, 5, furD) +
+				P('M' + (100 - r - 3) + ' 50C' + (100 - r - 2) + ' 26 ' + (100 + r + 2) + ' 26 ' + (100 + r + 3) + ' 50C' + (100 + r - 6) + ' 40 ' + (100 - r + 6) + ' 40 ' + (100 - r - 3) + ' 50Z', fur) +
+				HI('M' + (100 - r) + ' 42C' + (100 - r + 2) + ' 34 ' + (100 - 8) + ' 30 ' + (100 - 3) + ' 30', 2.2) +
+				L('M88 57l6 0.5M112 57l-6 0.5', nav, 3) + L('M87 53l8 2M113 53l-8 2', INK, 2.2);
+			const hr = g.hdR;
+			// The staff in his right hand: a crook with a glowing wisp and bone charms.
+			const top = [hr[0], hr[1] - 92];
+			const staff = ROD('M' + xy([hr[0], hr[1] + 60]) + 'V' + n1(top[1]), '#6b4a2a', 4.5) +
+				ROD('M' + xy(top) + 'C' + n1(top[0] + 14) + ' ' + n1(top[1] - 6) + ' ' + n1(top[0] + 16) + ' ' + n1(top[1] - 22) + ' ' + n1(top[0] + 4) + ' ' + n1(top[1] - 24), '#6b4a2a', 4) +
+				L('M' + n1(hr[0] - 1) + ' ' + n1(top[1] + 14) + 'l-6 12M' + n1(hr[0] + 1) + ' ' + n1(top[1] + 14) + 'l5 14', '#8f8a78', 1.4) + C(hr[0] - 7, top[1] + 27, 2.6, horn, 'stroke-width="1.4"') + C(hr[0] + 6, top[1] + 29, 2.6, horn, 'stroke-width="1.4"') +
+				G('p-wisp', [top[0] + 5, top[1] - 12], GLOW(top[0] + 5, top[1] - 12, 13, nav, 0.35) + C(top[0] + 5, top[1] - 12, 5.5, nav, 'stroke-width="1.6"') + C(top[0] + 3.5, top[1] - 13.5, 1.8, WHITE, 'stroke="none"'));
+			const hl = g.hdL;
+			// A frame drum in his left hand, painted with the horned sign in ochre.
+			const dx = hl[0] - 6;
+			const dy = hl[1] - 4;
+			const drum = E(dx, dy, 19, 23, '#6b4a2a') + E(dx, dy, 15.5, 19.5, '#ecdcb4', 'stroke-width="1.6"') + SHADE('M' + n1(dx + 4) + ' ' + n1(dy - 19) + 'A15.5 19.5 0 0 1 ' + n1(dx + 4) + ' ' + n1(dy + 19) + 'A19 23 0 0 0 ' + n1(dx + 4) + ' ' + n1(dy - 19) + 'Z') +
+				L('M' + n1(dx - 9) + ' ' + n1(dy + 8) + 'Q' + n1(dx) + ' ' + n1(dy - 10) + ' ' + n1(dx + 9) + ' ' + n1(dy + 8) + 'M' + n1(dx - 6) + ' ' + n1(dy - 1) + 'l-3 -7M' + n1(dx + 6) + ' ' + n1(dy - 1) + 'l3 -7', ochre, 2.4) +
+				C(dx, dy + 4, 2.4, nav, 'stroke-width="1.2"') + [-1, 1].map((s) => L('M' + n1(dx + s * 17) + ' ' + n1(dy + 10) + 'l' + s * 3 + ' 9', '#8f8a78', 1.4) + C(dx + s * 20, dy + 21, 2.2, horn, 'stroke-width="1.2"')).join('') +
+				HI('M' + n1(dx - 12) + ' ' + n1(dy - 10) + 'A15 19 0 0 1 ' + n1(dx - 3) + ' ' + n1(dy - 18), 2);
+			return {
+				back,
+				legs: gown,
+				torso: P('M' + (100 - g.neck) + ' 84V66H' + (100 + g.neck) + 'V84Z', skin) + chest + belt(g, furD, horn),
+				head,
+				armL: arm(g, -1, o, drum, true),
+				armR: arm(g, 1, o, staff, true),
+			};
+		},
+		fx(g) {
+			const nav = '#5fe0b0';
+			const top = [g.hdR[0] + 5, g.hdR[1] - 104];
+			const bubbles = [[40, 2], [70, -4], [100, 4], [132, -3], [160, 1]].map(([x, dy]) => C(x, GROUND + dy, 3.2, 'none', 'stroke="' + nav + '" stroke-width="1.6"')).join('');
+			// Grasping roots of Nav rising out of the mire.
+			const root = (x, s) => L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40) +
+				'M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + s * 9 + ' -6M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + -s * 2 + ' -10M' + (x + s * 2) + ' ' + (GROUND - 40) + 'l' + -s * 9 + ' -4', '#2c3a26', 7) +
+				L('M' + x + ' ' + (GROUND + 8) + 'C' + (x + s * 6) + ' ' + (GROUND - 14) + ' ' + (x - s * 8) + ' ' + (GROUND - 26) + ' ' + (x + s * 2) + ' ' + (GROUND - 40), '#5a7a4a', 3);
+			// Ancestor spirits: pale wisps with two dark eyes.
+			const ghost = (x, y, s) => P('M' + n1(x - 8 * s) + ' ' + n1(y + 10 * s) + 'C' + n1(x - 10 * s) + ' ' + n1(y - 6 * s) + ' ' + n1(x - 6 * s) + ' ' + n1(y - 14 * s) + ' ' + n1(x) + ' ' + n1(y - 14 * s) +
+				'C' + n1(x + 6 * s) + ' ' + n1(y - 14 * s) + ' ' + n1(x + 10 * s) + ' ' + n1(y - 6 * s) + ' ' + n1(x + 8 * s) + ' ' + n1(y + 10 * s) + 'L' + n1(x + 4 * s) + ' ' + n1(y + 6 * s) + 'L' + n1(x) + ' ' + n1(y + 12 * s) +
+				'L' + n1(x - 4 * s) + ' ' + n1(y + 6 * s) + 'Z', '#d8fff0', 'stroke="' + nav + '" stroke-width="1.6" fill-opacity=".85"') +
+				C(x - 3 * s, y - 5 * s, 1.6 * s, '#24463a', 'stroke="none"') + C(x + 3 * s, y - 5 * s, 1.6 * s, '#24463a', 'stroke="none"');
+			const dc = [g.hdL[0] - 6, g.hdL[1] - 4];
+			return {
+				// The bolt rides on the staff: at the cast pose the staff stands upright, so it flies straight to the right.
+				orb: [top, C(top[0], top[1], 9, nav) + GLOW(top[0], top[1], 17, nav, 0.45) + spark(top[0], top[1], 7, WHITE) +
+					L('M' + n1(top[0] - 30) + ' ' + n1(top[1] - 4) + 'H' + n1(top[0] - 12) + 'M' + n1(top[0] - 26) + ' ' + n1(top[1] + 5) + 'H' + n1(top[0] - 12), nav, 2.4), 'wpnR'],
+				circle: [[100, GROUND], E(100, GROUND, 88, 14, '#2f5a44', 'fill-opacity=".5" stroke="' + nav + '" stroke-width="2.6"') + E(100, GROUND, 66, 9, 'none', 'stroke="#1f3a2c" stroke-width="2" stroke-dasharray="10 7"') + bubbles],
+				roots: [[100, GROUND], '<g clip-path="url(#dtGround)">' + root(34, 1) + root(68, -1) + root(134, 1) + root(166, -1) + '</g>'],
+				beat: [dc, E(dc[0], dc[1], 26, 30, 'none', 'stroke="' + nav + '" stroke-width="3" stroke-opacity=".8"') + E(dc[0], dc[1], 34, 39, 'none', 'stroke="' + nav + '" stroke-width="1.6" stroke-opacity=".5"'), 'wpnL'],
+				aura: [[100, GROUND], E(100, GROUND, 92, 15, nav, 'fill-opacity=".16" stroke="#e8b85c" stroke-width="3"') + E(100, GROUND, 70, 11, 'none', 'stroke="' + nav + '" stroke-width="1.6" stroke-dasharray="8 6"')],
+				spirits: [[100, 150], ghost(28, 150, 1.1) + ghost(172, 140, 1.1) + ghost(54, 112, 0.85) + ghost(148, 104, 0.85)],
+			};
+		},
+		clips: {
+			idle: { dur: 2.4, k: {
+				upper: [[0, {}], [0.5, { y: 1.8 }], [1, {}]],
+				head: [[0, {}], [0.5, R(-1.5)], [1, {}]],
+				armL: [[0, {}], [0.5, R(2)], [1, {}]], armR: [[0, {}], [0.5, R(-2)], [1, {}]],
+				wisp: [[0, {}], [0.25, { s: 1.15 }], [0.5, { s: 0.92 }], [0.75, { s: 1.1 }], [1, {}]],
+			} },
+			atk: { dur: 1.3, k: {
+				armR: [[0, {}], [0.4, R(-80)], [0.5, R(-95), 1, EASE_HIT], [0.8, R(-90)], [1, {}]],
+				wpnR: [[0, {}], [0.4, R(80)], [0.8, R(90)], [1, {}]],
+				upper: [[0, {}], [0.4, R(-3)], [1, {}]],
+				orb: [[0, { s: 0.3 }, 0], [0.45, { s: 0.5 }, 0], [0.5, { s: 1 }, 1], [0.8, { x: 80, s: 1.2 }, 1], [0.86, { x: 86, s: 1.8 }, 0]],
+			} },
+			// Mire of Nav: the staff comes down on the ground, a bog spreads and roots reach out of it.
+			a1: { dur: 2.4, k: {
+				armR: [[0, {}], [0.3, R(-45)], [0.46, R(8), 1, EASE_HIT], [0.82, R(8)], [1, {}]],
+				armL: [[0, {}], [0.3, R(30)], [0.82, R(30)], [1, {}]],
+				upper: [[0, {}], [0.3, R(-4, { y: -2 })], [0.46, R(4, { y: 4 })], [0.82, R(4, { y: 4 })], [1, {}]],
+				head: [[0, {}], [0.3, R(-4)], [0.46, R(3)], [0.82, R(3)], [1, {}]],
+				circle: [[0, { s: 0.2 }, 0], [0.44, { s: 0.2 }, 0], [0.58, { s: 1 }, 1], [0.88, { s: 1.05 }, 1], [1, { s: 1.15 }, 0]],
+				roots: [[0, { y: 46 }, 1], [0.5, { y: 46 }, 1], [0.68, { y: 0 }, 1, EASE_OUT], [0.88, { y: 0 }, 1], [1, { y: 46 }, 1]],
+			} },
+			// Chant of the Ancestors: the drum goes up and beats, spirits rise over the troops.
+			a2: { dur: 2.6, k: {
+				armL: [[0, {}], [0.18, R(145)], [0.3, R(135)], [0.4, R(145)], [0.5, R(135)], [0.6, R(145)], [0.7, R(135)], [0.85, R(145)], [1, {}]],
+				wpnL: [[0, {}], [0.18, R(-145)], [0.85, R(-145)], [1, {}]],
+				armR: [[0, {}], [0.18, R(-12)], [0.85, R(-12)], [1, {}]],
+				head: [[0, {}], [0.18, R(-5, { y: -2 })], [0.85, R(-5, { y: -2 })], [1, {}]],
+				upper: [[0, {}], [0.18, { y: -3 }], [0.85, { y: -3 }], [1, {}]],
+				beat: [[0, { s: 0.6 }, 0], [0.26, { s: 0.6 }, 0], [0.3, { s: 1 }, 1], [0.4, { s: 1.35 }, 0], [0.46, { s: 0.6 }, 0], [0.5, { s: 1 }, 1], [0.6, { s: 1.35 }, 0],
+					[0.66, { s: 0.6 }, 0], [0.7, { s: 1 }, 1], [0.82, { s: 1.35 }, 0]],
+				aura: [[0, { s: 0.4 }, 0], [0.3, { s: 0.6 }, 0], [0.42, { s: 1 }, 1], [0.86, { s: 1.06 }, 1], [1, { s: 1.15 }, 0]],
+				spirits: [[0, { y: 12 }, 0], [0.34, { y: 12 }, 0], [0.5, { y: 0 }, 1], [0.86, { y: -24 }, 1], [1, { y: -34 }, 0]],
+			} },
+		},
+	};
+
 	// --- Assembly -------------------------------------------------------------------------------------
 	// Effects drawn behind the figure (on the ground under it); every other effect is drawn over it.
 	const UNDER = ['circle', 'press', 'herald', 'aura', 'halo', 'glowG', 'heat'];
@@ -1112,7 +1467,7 @@ const DotTitans = (() => {
 		let c = cache.get(id);
 		if (!c) {
 			const d = T[id];
-			const g = rig(d.cls);
+			const g = rig(d.build || d.cls);
 			// fx entries: [pivot, markup, part it rides on (optional), shared class (optional)].
 			const fx = d.fx(g);
 			const fxG = (k) => G('p-' + (fx[k][3] || k) + ' fx', fx[k][0], fx[k][1]);
@@ -1129,7 +1484,7 @@ const DotTitans = (() => {
 			const over = loose.filter((k) => !UNDER.includes(k)).map(fxG).join('');
 			const upper = G('p-upper', [100, g.waistY + 6], (body.torso || '') + G('p-head', [100, 80], body.head + g.fxAt('head')) + body.armL + body.armR + g.fxAt('upper'));
 			const root = G('p-root', [100, GROUND], (hov ? '<g transform="translate(0 ' + -hov + ')">' : '') + (body.back || '') + body.legs + upper + (hov ? '</g>' : ''));
-			const markup = G('p-shadow', [100, GROUND], E(100, GROUND, d.cls === 'Mystic' ? 40 : 60, 8, '#000', 'stroke="none" fill-opacity=".28"')) + under + root + over;
+			const markup = G('p-shadow', [100, GROUND], E(100, GROUND, (d.build || d.cls) === 'Mystic' ? 40 : 60, 8, '#000', 'stroke="none" fill-opacity=".28"')) + under + root + over;
 			const clips = typeof d.clips === 'function' ? d.clips(g) : d.clips;
 			c = { markup, def: d, g, clips, fx: new Set(Object.keys(fx).map((k) => fx[k][3] || k)) };
 			cache.set(id, c);

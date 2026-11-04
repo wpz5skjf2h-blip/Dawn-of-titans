@@ -5,7 +5,7 @@ both compiled with Emscripten; no game rules live in JavaScript.
 
 | File | Role |
 |---|---|
-| `dot_web.cpp` | C API over `dot::BattleSimulation` (`dot_*`: content from memory, stepping, commands, snapshots, replay verification) and `dot::kingdom::Kingdom` (`dk_*`: state as JSON, build, upgrade, collect, lands, attacks with the chosen army and spells, training, troop research, titans, ascension, relic items and repair, fusion, Spell Forge, Arcane Tower, land guards, the season, save/load) |
+| `dot_web.cpp` | C API over `dot::BattleSimulation` (`dot_*`: content from memory, stepping, commands, snapshots, replay verification) and `dot::kingdom::Kingdom` (`dk_*`: state as JSON, build, upgrade, collect, lands, attacks with the chosen army and spells, training, troop research, titans, ascension, combat and building relics with repair and improvement, fusion, Spell Forge, Arcane Tower, land guards, the season, save/load) |
 | `build.sh` | Builds `dist/dotsim.js` (WebAssembly embedded as base64) and `dist/dotsim-js.js` (pure JS fallback) |
 | `page.html` | Markup and styles of the page and HUD |
 | `icons.js` | Hand-drawn SVG icons (troops, buildings, spells, relics, titan classes, altars, lands, menu) shared by both screens; also cached as images for the island overlay |
@@ -15,7 +15,7 @@ both compiled with Emscripten; no game rules live in JavaScript.
 | `gfx.js` | Battle scenery and effects over Three.js: each map has its own look taken from the original's battles (green meadow, dark forest, dry steppe, night winter pass: ground grading, trees, light, sky and fog), photo-textured terrain (grass, dirt, rock, mud, cobbles and snow blended per vertex, with trampled patches), grey-blue water with moving ripples, sky reflections and soft banks, photographed sky dome with a moon at night, hills, rocky snow-capped mountains, houses, towers, walls and palisades around the field, clouds, forest with dead and snowy trees, swaying grass and flowers, particles (dust, fire, smoke, embers, sparks, frost, debris), lightning, scorch and crack decals. Without it `app.js` keeps its flat-colour look |
 | `art/*.jpg`, `art/*.svg` | Photo textures for the ground and the sky (JPG, from CC0 scans, sources in `art/CREDITS.md`), and the water ripples, foliage, cloud, particle sprites and decals used by `gfx.js`, drawn as SVG filters and shapes (copies on Google Drive) |
 | `app.js` | Battle: Three.js view, procedural titan animation, touch/mouse/keyboard gestures, HUD logic, modes |
-| `kingdom.js` | Kingdom: floating island, procedural building and land models, overlay, shop, panels, lands (gold, farm, victory-point, ruins), season sheet, Barracks, Armoury, army, Hall of Titans, Relic Temple, relic inventory and repair, Spell Forge, Arcane Tower, land guards, battle preparation, saves (browser and claude.ai `db`) |
+| `kingdom.js` | Kingdom: floating island, procedural building and land models, overlay, shop, panels, lands (gold, farm, victory-point, ruins), season sheet, Barracks, Armoury, envoy councils, army, Hall of Titans, Relic Temple with the Altar of Power, relic inventory (tabs, repair and improvement), building relic slots, Spell Forge, Arcane Tower, land guards, battle preparation, saves (browser and claude.ai `db`) |
 | `bundle.py` | Inlines `icons.js`, `titans.js`, `titans3d.js`, `gfx.js`, `art/*.svg` and `art/*.jpg`, `app.js`, `kingdom.js` and `Content/Data` into `dist/index.html` (standalone) and `dist/artifact.html` (body only) |
 | `make_content.py` | Writes `Content/Data` as one JSON file (handy for tools) |
 

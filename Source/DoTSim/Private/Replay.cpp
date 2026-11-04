@@ -62,6 +62,11 @@ bool ParseSide(const JsonValue& J, SideSetup& Out, bool bAttacker, std::string& 
 	Out.aiProfile = J.GetString("ai");
 	Out.autoClash = J.GetBool("autoClash", false);
 	Out.spellLevel = J.GetInt("spellLevel", 1);
+	if (const JsonValue* Troops = J.Find("troopBonus"))
+	{
+		Out.troopHpPct = Troops->GetInt("hpPct", 0);
+		Out.troopAtkPct = Troops->GetInt("atkPct", 0);
+	}
 	const FixVec2 DefaultFacing(Fix64::Zero(), bAttacker ? Fix64::One() : -Fix64::One());
 	if (const JsonValue* T = J.Find("titan"))
 	{
@@ -84,6 +89,8 @@ bool ParseSide(const JsonValue& J, SideSetup& Out, bool bAttacker, std::string& 
 				Out.titan.hpPct = Bonus->GetInt("hpPct", 0);
 				Out.titan.atkPct = Bonus->GetInt("atkPct", 0);
 				Out.titan.armorPct = Bonus->GetInt("armorPct", 0);
+				Out.titan.critPct = Bonus->GetInt("critPct", 0);
+				Out.titan.piercePct = Bonus->GetInt("piercePct", 0);
 			}
 			if (!ReadVec(*T, "pos", "posRaw", Out.titan.position))
 			{
@@ -151,6 +158,16 @@ void WriteSide(JsonWriter& W, const SideSetup& S)
 	W.Bool(S.autoClash);
 	W.Key("spellLevel");
 	W.Int(S.spellLevel);
+	if (S.troopHpPct || S.troopAtkPct)
+	{
+		W.Key("troopBonus");
+		W.BeginObject();
+		W.Key("hpPct");
+		W.Int(S.troopHpPct);
+		W.Key("atkPct");
+		W.Int(S.troopAtkPct);
+		W.EndObject();
+	}
 	W.Key("titan");
 	if (S.titan.present)
 	{
@@ -171,7 +188,7 @@ void WriteSide(JsonWriter& W, const SideSetup& S)
 		W.Int(S.titan.abilityLevels[0]);
 		W.Int(S.titan.abilityLevels[1]);
 		W.EndArray();
-		if (S.titan.hpPct || S.titan.atkPct || S.titan.armorPct)
+		if (S.titan.hpPct || S.titan.atkPct || S.titan.armorPct || S.titan.critPct || S.titan.piercePct)
 		{
 			W.Key("bonus");
 			W.BeginObject();
@@ -181,6 +198,13 @@ void WriteSide(JsonWriter& W, const SideSetup& S)
 			W.Int(S.titan.atkPct);
 			W.Key("armorPct");
 			W.Int(S.titan.armorPct);
+			if (S.titan.critPct || S.titan.piercePct)
+			{
+				W.Key("critPct");
+				W.Int(S.titan.critPct);
+				W.Key("piercePct");
+				W.Int(S.titan.piercePct);
+			}
 			W.EndObject();
 		}
 		WriteVecRaw(W, "posRaw", S.titan.position);
