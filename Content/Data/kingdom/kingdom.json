@@ -491,6 +491,33 @@
     {"id": "castle_9", "check": "castle", "n": 9, "name": "Улучшите Замок до 9-го уровня", "hint": "Дальше — ежедневные задания, лиги альянсов и кампании.", "reward": {"gems": 30}}
   ],
 
+  // Achievements (master prompt 13.5: bronze, silver and gold tiers for gems). "check" as in "goals"; "event" counts
+  // the daily-quest event over the whole game. Tiers are [count, gems]; numbers are ours.
+  "achievements": [
+    {"id": "ach_wins", "check": "event", "event": "win", "tiers": [[10, 5], [100, 10], [1000, 25]], "name": "Полководец", "desc": "Победы в боях: за земли, у монументов, на аренах и в кампании"},
+    {"id": "ach_stars", "check": "event", "event": "threeStars", "tiers": [[10, 5], [100, 10], [500, 25]], "name": "Безупречный", "desc": "Победы на три звезды"},
+    {"id": "ach_raids", "check": "event", "event": "raid", "tiers": [[25, 5], [250, 10], [1000, 25]], "name": "Налётчик", "desc": "Нападения на земли: набеги и захваты"},
+    {"id": "ach_gold", "check": "event", "event": "collectGold", "tiers": [[100000, 5], [2000000, 10], [50000000, 25]], "name": "Казначей", "desc": "Золото, собранное с шахт и земель"},
+    {"id": "ach_food", "check": "event", "event": "collectFood", "tiers": [[100000, 5], [2000000, 10], [50000000, 25]], "name": "Хозяин житниц", "desc": "Еда, собранная с ферм и земель"},
+    {"id": "ach_train", "check": "event", "event": "train", "tiers": [[50, 5], [500, 10], [5000, 25]], "name": "Вербовщик", "desc": "Отряды, обученные в Казармах"},
+    {"id": "ach_build", "check": "event", "event": "upgrade", "tiers": [[25, 5], [250, 10], [1000, 25]], "name": "Зодчий", "desc": "Начатые стройки и улучшения: постройки, земли, войска, заклинания"},
+    {"id": "ach_craft", "check": "event", "event": "craft", "tiers": [[25, 5], [250, 10], [1000, 25]], "name": "Чародей", "desc": "Заклинания, созданные в Кузне"},
+    {"id": "ach_stones", "check": "event", "event": "stones", "tiers": [[100, 5], [1000, 10], [10000, 25]], "name": "Привратник", "desc": "Камни портала, потраченные на бои"},
+    {"id": "ach_sites", "check": "event", "event": "site", "tiers": [[10, 5], [100, 10], [500, 25]], "name": "Паломник", "desc": "Бои у монументов титанов и на аренах опыта"},
+    {"id": "ach_castle", "check": "castle", "tiers": [[5, 5], [10, 10], [15, 25]], "name": "Владыка", "desc": "Уровень Замка"},
+    {"id": "ach_army", "check": "army", "tiers": [[25, 5], [100, 10], [250, 25]], "name": "Великая армия", "desc": "Отряды в Лагере армии"},
+    {"id": "ach_titans", "check": "titans", "tiers": [[5, 5], [15, 10], [30, 25]], "name": "Собиратель титанов", "desc": "Титаны в Зале титанов"},
+    {"id": "ach_titan_lv", "check": "titanLevel", "tiers": [[10, 5], [30, 10], [50, 25]], "name": "Наставник", "desc": "Уровень лучшего титана"},
+    {"id": "ach_skills", "check": "skills", "tiers": [[2, 5], [4, 10], [5, 25]], "name": "Мастер навыков", "desc": "Навыки одного титана"},
+    {"id": "ach_relics", "check": "relics", "tiers": [[3, 5], [9, 10], [18, 25]], "name": "Реликварий", "desc": "Реликвии на титанах"},
+    {"id": "ach_lands", "check": "lands", "tiers": [[3, 5], [6, 10], [10, 25]], "name": "Землевладелец", "desc": "Земли во владении"},
+    {"id": "ach_land_lv", "check": "landLevel", "tiers": [[3, 5], [6, 10], [9, 25]], "name": "Межевик", "desc": "Уровень лучшей земли"},
+    {"id": "ach_guard", "check": "guard", "tiers": [[1, 5], [3, 10], [6, 25]], "name": "Пограничник", "desc": "Земли под охраной титанов"},
+    {"id": "ach_garrison", "check": "garrison", "tiers": [[3, 5], [6, 10], [9, 25]], "name": "Твердыня", "desc": "Защитники в Гарнизоне: титан и отряды"},
+    {"id": "ach_spell_lv", "check": "spellLevel", "tiers": [[3, 5], [8, 10], [15, 25]], "name": "Магистр", "desc": "Уровень лучшего заклинания"},
+    {"id": "ach_missions", "check": "missions", "tiers": [[5, 5], [13, 10], [26, 25]], "name": "Искатель приключений", "desc": "Пройденные миссии кампании"}
+  ],
+
   // Gems for missing resources (estimate, piecewise linear on amount).
   "gemsForResources": [[0, 0], [100, 1], [1000, 5], [10000, 25], [100000, 125], [1000000, 600], [10000000, 3000]],
 

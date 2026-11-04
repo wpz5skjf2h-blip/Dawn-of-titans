@@ -632,6 +632,19 @@ public:
 	/** Pays the current goal and brings the next: NotReady (not done yet), Nothing (the line is done). */
 	Error ClaimGoal(Reward* Out);
 
+	// --- Achievements (master prompt 13.5) ---
+	// Each counts actions over the whole game (from the version that started counting) or a fact of the kingdom, and
+	// pays gems once per tier reached (bronze, silver, gold).
+	/** Actions of one kind over the whole game. */
+	int64_t Lifetime(QuestEvent E) const;
+	int64_t AchievementValue(int I) const;
+	/** Tiers already paid (0 up to the achievement's tiers). */
+	int AchievementTier(int I) const;
+	/** The next tier is reached and not paid yet. */
+	bool AchievementReady(int I) const;
+	/** Pays the next tier: BadId, Nothing (all tiers paid), NotReady. */
+	Error ClaimAchievement(int I, Reward* Out);
+
 	// --- Raids on the kingdom ---
 	// AI raiders attack the city and captured lands, also while the game is closed (Advance plays every raid that
 	// came in between, in time order). A raid is won or lost on the power of the two sides, by odds fitted to
@@ -836,6 +849,11 @@ private:
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;
+	// Achievements: counts by QuestEvent over the whole game, tiers paid by achievement
+	std::array<int64_t, static_cast<size_t>(QuestEvent::Count)> LifetimeCounts{};
+	std::vector<int> AchTiers;
+	/** What a goal or an achievement counts now (Events: its event count). */
+	int64_t CheckValue(GoalCheck Check, int BuildingDef, int Troop, int64_t Events) const;
 	// Raids
 	const SimContent* BattleContent = nullptr;
 	int64_t NextRaid = 0;

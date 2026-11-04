@@ -479,12 +479,22 @@ bool ParseRelicStat(const std::string& S, RelicStat& Out)
 	return false;
 }
 
+namespace
+{
+const char* const QuestEventNames[] = {"win", "threeStars", "raid", "collectGold", "collectFood", "train", "upgrade", "craft", "stones", "site", "mission"};
+static_assert(sizeof(QuestEventNames) / sizeof(QuestEventNames[0]) == static_cast<size_t>(QuestEvent::Count), "a name for every quest event");
+} // namespace
+
+const char* QuestEventName(QuestEvent E)
+{
+	return E < QuestEvent::Count ? QuestEventNames[static_cast<int>(E)] : "";
+}
+
 bool ParseQuestEvent(const std::string& S, QuestEvent& Out)
 {
-	static const char* const Names[] = {"win", "threeStars", "raid", "collectGold", "collectFood", "train", "upgrade", "craft", "stones", "site", "mission"};
 	for (int I = 0; I < static_cast<int>(QuestEvent::Count); ++I)
 	{
-		if (S == Names[I])
+		if (S == QuestEventNames[I])
 		{
 			Out = static_cast<QuestEvent>(I);
 			return true;
@@ -1259,6 +1269,45 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				return false;
 			}
 			Out.goals.push_back(D);
+		}
+	}
+	if (const JsonValue* Aj = Rules.Find("achievements"))
+	{
+		for (size_t I = 0; I < Aj->Size(); ++I)
+		{
+			const JsonValue& J = (*Aj)[I];
+			AchievementDef D;
+			D.id = J.GetString("id");
+			const std::string Building = J.GetString("building");
+			const std::string Troop = J.GetString("troop");
+			D.building = Building.empty() ? -1 : Out.FindBuilding(Building);
+			D.troop = Troop.empty() ? -1 : Out.FindTroop(Troop);
+			bool bOk = !D.id.empty() && ParseGoalCheck(J.GetString("check", "event"), D.check);
+			bOk = bOk && (D.check != GoalCheck::Event || ParseQuestEvent(J.GetString("event"), D.event));
+			bOk = bOk && ((D.check == GoalCheck::Build || D.check == GoalCheck::Level) == (D.building >= 0));
+			bOk = bOk && ((D.check == GoalCheck::TroopLevel) == (D.troop >= 0));
+			if (const JsonValue* T = J.Find("tiers"))
+			{
+				for (size_t K = 0; K < T->Size(); ++K)
+				{
+					const JsonValue& Tier = (*T)[K];
+					const int64_t N = Tier.Size() >= 1 ? Tier[0].AsInt64() : 0;
+					const int64_t Gems = Tier.Size() >= 2 ? Tier[1].AsInt64() : 0;
+					bOk = bOk && N >= 1 && Gems >= 0 && (D.tiers.empty() || N > D.tiers.back().first);
+					D.tiers.emplace_back(N, Gems);
+				}
+			}
+			bOk = bOk && !D.tiers.empty() && D.tiers.size() <= 3;
+			for (const AchievementDef& Other : Out.achievements)
+			{
+				bOk = bOk && Other.id != D.id;
+			}
+			if (!bOk)
+			{
+				Error = "kingdom/kingdom.json: achievement " + D.id + " needs a unique id, a known check (and event or building) and 1-3 rising tiers";
+				return false;
+			}
+			Out.achievements.push_back(D);
 		}
 	}
 	Out.hash = HashToHex(HashInput.Hash());

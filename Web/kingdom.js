@@ -183,6 +183,7 @@ class KingdomBridge {
 	questReroll(i) { return this.M._dk_quest_reroll(i); }
 	questChest() { return JSON.parse(this.str(this.M._dk_quest_chest())); }
 	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
+	achClaim(i) { return JSON.parse(this.str(this.M._dk_ach_claim(i))); }
 	craft(sp) { return this.M._dk_craft(sp); }
 	cancelCraft(i) { return this.M._dk_cancel_craft(i); }
 	skipCraft() { return this.M._dk_skip_craft(); }
@@ -2129,7 +2130,7 @@ function initHud() {
 	$('rBuilders').addEventListener('click', openBuilders);
 	$('kQuestBtn').innerHTML = DotIcons.svg('ui.quest') + '<span></span>';
 	$('kQuestBtn').addEventListener('click', openQuests);
-	$('kGoal').addEventListener('click', openGoals);
+	$('kGoal').addEventListener('click', () => openGoals());
 	$('kMenuBtn').addEventListener('click', openMenu);
 	$('kAttack').addEventListener('click', openWorldMap);
 	$('kShopBtn').addEventListener('click', openShop);
@@ -2447,6 +2448,8 @@ function onAct(e) {
 	case 'quest-reroll': run(K.bridge.questReroll(id), 'Задание заменено'); break;
 	case 'quest-chest': openQuestChest(); break;
 	case 'goals': openGoals(); break;
+	case 'goal-tab': K.goalTab = el.dataset.tab; refreshSheet(true); break;
+	case 'ach-claim': claimAch(id); break;
 	case 'goal-claim': claimGoal(); break;
 	case 'goal-go': showGoal(); break;
 	case 'site-reset': gemAction('site-reset:' + id, +el.dataset.gems, () => run(K.bridge.siteReset(id), siteDef(id).name + ': можно снова в бой')); break;
@@ -3509,40 +3512,104 @@ function goalBuilds(st) {
 	const g = st.goal && goalDef(st.goal.i);
 	return g && g.check === 'build' && !st.goal.done ? defIndex(g.building) : -1;
 }
-/** The goal tracker above the bottom buttons: hidden while a building's panel is open, when placing, and once the line is done. */
+// Achievements (master prompt 13.5): bronze, silver, gold for gems.
+const achDefs = () => K.rules.achievements || [];
+const TIER_NAMES = ['бронза', 'серебро', 'золото'];
+function achReady(st, i) {
+	const d = achDefs()[i];
+	const t = st.ach ? st.ach.t[i] : 0;
+	return !!d && t < d.tiers.length && st.ach.v[i] >= d.tiers[t][0];
+}
+function achReadyCount(st) {
+	return st.ach ? achDefs().filter((d, i) => achReady(st, i)).length : 0;
+}
+/** The goal tracker above the bottom buttons: hidden while a building's panel is open and when placing. A medal shows
+ *  achievements whose reward waits; once the line is done the card leads to the achievements. */
 function updateGoal() {
 	const el = $('kGoal');
 	const st = K.st;
 	const g = st && st.goal && goalDef(st.goal.i);
-	el.hidden = !g || !!K.place || !$('kPanel').hidden;
+	const ready = st ? achReadyCount(st) : 0;
+	el.hidden = !st || !st.goal || (!g && !achDefs().length) || !!K.place || !$('kPanel').hidden;
 	if (el.hidden) return;
-	const n = g.n || 1;
-	const v = Math.min(st.goal.v, n);
-	const key = st.goal.i + ':' + v + ':' + st.goal.done;
+	const n = g ? g.n || 1 : 1;
+	const v = g ? Math.min(st.goal.v, n) : 0;
+	const key = st.goal.i + ':' + v + ':' + st.goal.done + ':' + ready + ':' + (st.ach ? st.ach.t.join() : '');
 	if (el.dataset.k === key) return;
 	el.dataset.k = key;
-	el.classList.toggle('done', !!st.goal.done);
-	el.innerHTML = icoHtml(goalIcon(g), goalTile(g)) + '<span class="gt"><small>' + (st.goal.done ? 'Цель выполнена · заберите награду' : 'Цель ' + (st.goal.i + 1) + ' из ' + goalDefs().length +
-		(n > 1 ? ' · ' + fmtShort(v) + ' / ' + fmtShort(n) : '')) + '</small><b>' + esc(goalName(g)) + '</b><span class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></span></span>';
-	el.title = goalName(g) + (g.hint ? '. ' + g.hint : '');
+	el.classList.toggle('done', !!st.goal.done || ready > 0);
+	const badge = ready ? '<span class="achBadge" title="Награды за достижения">' + DotIcons.svg('ui.medal') + ready + '</span>' : '';
+	if (g) {
+		el.innerHTML = icoHtml(goalIcon(g), goalTile(g)) + '<span class="gt"><small>' + (st.goal.done ? 'Цель выполнена · заберите награду' : 'Цель ' + (st.goal.i + 1) + ' из ' + goalDefs().length +
+			(n > 1 ? ' · ' + fmtShort(v) + ' / ' + fmtShort(n) : '')) + '</small><b>' + esc(goalName(g)) + '</b><span class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></span></span>' + badge;
+		el.title = goalName(g) + (g.hint ? '. ' + g.hint : '');
+	} else {
+		const got = st.ach.t.reduce((a, x) => a + x, 0);
+		const all = achDefs().reduce((a, d) => a + d.tiers.length, 0);
+		el.innerHTML = icoHtml('ui.medal', 'bld medal b2') + '<span class="gt"><small>' + (ready ? 'Есть награды · заберите' : 'Путь лорда пройден') + '</small><b>Достижения: ' + got + ' из ' + all +
+			'</b><span class="progress thin"><i style="width:' + Math.round((100 * got) / Math.max(1, all)) + '%"></i></span></span>' + badge;
+		el.title = 'Достижения: ' + got + ' из ' + all;
+	}
 }
 function announceGoal(prev, st) {
+	if (prev.ach && st.ach && prev.ach.t.length === st.ach.t.length) {
+		// One toast for the first achievement that just reached a tier.
+		const i = achDefs().findIndex((d, j) => achReady(st, j) && !achReady(prev, j) && st.ach.t[j] === prev.ach.t[j]);
+		if (i >= 0) toast('Достижение «' + achDefs()[i].name + ' ' + ROMAN[st.ach.t[i] + 1] + '»: ' + TIER_NAMES[st.ach.t[i]] + '! Награда ждёт в достижениях', 'gold');
+	}
 	if (!prev.goal || !st.goal || prev.goal.i !== st.goal.i || prev.goal.done || !st.goal.done) return;
 	const g = goalDef(st.goal.i);
 	if (g) toast('Цель выполнена: ' + goalName(g) + '. Заберите награду', 'gold');
 }
-function openGoals() {
-	if (!goalDefs().length) return;
+/** One achievement: its medal in the colour of the next tier, the count towards it, the pips of the tiers paid. */
+function achCard(st, d, i) {
+	const t = st.ach.t[i];
+	const done = t >= d.tiers.length;
+	const ready = achReady(st, i);
+	const next = d.tiers[Math.min(t, d.tiers.length - 1)];
+	const v = st.ach.v[i];
+	const frac = done ? 1 : Math.min(1, v / next[0]);
+	const pips = d.tiers.map((x, k) => '<i class="pip b' + k + (k < t ? ' on' : '') + '" title="' + TIER_NAMES[k] + ': ' + fmt(x[0]) + '"></i>').join('');
+	const btn = ready ? '<div class="row"><button class="btn primary" data-act="ach-claim" data-id="' + i + '">Забрать ' + TIER_NAMES[t] + ' · +' + fmt(next[1]) + ' ' + iconSvg('gems') + '</button></div>' : '';
+	return '<div class="landCard achCard' + (done ? ' won' : '') + (ready ? ' ready' : '') + '">' + icoHtml('ui.medal', 'bld medal b' + Math.min(t, d.tiers.length - 1) + (done ? ' all' : '')) +
+		'<div class="info"><b>' + esc(d.name) + (done ? '' : ' ' + ROMAN[t + 1]) + '</b><span>' + esc(d.desc) + '</span>' +
+		'<span class="achLine"><span class="pips">' + pips + '</span>' + (done ? 'Все ступени пройдены' : fmt(Math.min(v, next[0])) + ' из ' + fmt(next[0]) + ' · ' + TIER_NAMES[t] + ' +' + fmt(next[1]) + ' ' + iconSvg('gems')) + '</span>' +
+		'<div class="progress thin"><i style="width:' + Math.round(100 * frac) + '%"></i></div></div>' + btn + '</div>';
+}
+function openGoals(tab) {
+	if (!goalDefs().length && !achDefs().length) return;
+	if (tab) K.goalTab = tab;
+	else if (K.st && (!goalDef(K.st.goal.i) || (!K.st.goal.done && achReadyCount(K.st) > 0))) K.goalTab = 'ach';
+	else K.goalTab = 'goals';
 	cancelPlace();
 	select(null);
 	openSheet(() => {
 		const st = K.st;
+		const ready = achReadyCount(st);
+		const tabs = '<div class="shopTabs"><button class="' + (K.goalTab !== 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="goals">Путь лорда</button>' +
+			'<button class="' + (K.goalTab === 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="ach">Достижения' + (ready ? ' · ' + ready : '') + '</button></div>';
+		if (K.goalTab === 'ach') {
+			const defs = achDefs();
+			const got = st.ach.t.reduce((a, x) => a + x, 0);
+			const all = defs.reduce((a, d) => a + d.tiers.length, 0);
+			const gems = defs.reduce((a, d) => a + d.tiers.reduce((x, y) => x + y[1], 0), 0);
+			// Rewards first, then the closest to their next tier, the finished ones last.
+			const order = defs.map((d, i) => i).sort((a, b) => {
+				const rank = (i) => (achReady(st, i) ? 0 : st.ach.t[i] >= defs[i].tiers.length ? 2 : 1);
+				const near = (i) => (st.ach.t[i] >= defs[i].tiers.length ? 0 : st.ach.v[i] / defs[i].tiers[st.ach.t[i]][0]);
+				return rank(a) - rank(b) || near(b) - near(a) || a - b;
+			});
+			const html = sheetTitle(icoHtml('ui.medal', 'bld medal b2'), 'Достижения') + tabs +
+				'<p class="fine">Бронза, серебро и золото за бои, сбор, стройки, титанов и земли. Каждая ступень платит самоцветы один раз, всего ' + fmt(gems) + '. Счёт действий идёт с этой версии игры.</p>' +
+				'<div class="costline"><span>Получено ступеней</span><b>' + got + ' из ' + all + '</b></div>' + order.map((i) => achCard(st, defs[i], i)).join('') + '<div class="actions">' + closeBtn + '</div>';
+			return { key: ['ach', st.ach.v.join(), st.ach.t.join()].join('|'), html };
+		}
 		const all = goalDefs();
 		const i = st.goal.i;
 		const g = all[i];
 		let body;
 		if (!g) {
-			body = '<div class="landCard won">' + icoHtml('ui.goal', 'gold land') + '<div class="info"><b>Все цели пройдены</b><span>Дальше — ежедневные задания, сезоны, лиги альянсов и кампании.</span></div></div>';
+			body = '<div class="landCard won">' + icoHtml('ui.goal', 'gold land') + '<div class="info"><b>Все цели пройдены</b><span>Дальше — достижения, ежедневные задания, сезоны, лиги альянсов и кампании.</span></div></div>';
 		} else {
 			const n = g.n || 1;
 			const v = Math.min(st.goal.v, n);
@@ -3555,13 +3622,26 @@ function openGoals() {
 			if (next) body += '<h3>Дальше</h3><ul class="goalNext">' + next + '</ul>';
 		}
 		const gems = all.reduce((a, x) => a + ((x.reward && x.reward.gems) || 0), 0);
-		const html = sheetTitle(icoHtml('ui.goal', 'bld other'), 'Путь лорда') +
+		const html = sheetTitle(icoHtml('ui.goal', 'bld other'), 'Путь лорда') + tabs +
 			'<p class="fine">Цели по порядку ведут от первого урожая до Замка 9: постройки, армия, земли, титаны, заклинания, альянс. За каждую — награда, за весь путь ' +
 			fmt(gems) + ' самоцветов. «Показать» откроет нужную постройку или окно.</p>' +
 			'<div class="costline"><span>Пройдено целей</span><b>' + Math.min(i, all.length) + ' из ' + all.length + '</b></div>' +
 			'<div class="progress"><i style="width:' + Math.round((100 * Math.min(i, all.length)) / all.length) + '%"></i></div>' + body + '<div class="actions">' + closeBtn + '</div>';
-		return { key: ['goals', i, st.goal.v, st.goal.done].join('|'), html };
+		return { key: ['goals', i, st.goal.v, st.goal.done, ready].join('|'), html };
 	});
+}
+function claimAch(i) {
+	const d = achDefs()[i];
+	const t = K.st.ach.t[i];
+	const r = K.bridge.achClaim(i);
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Следующая ступень ещё не достигнута' : r.err === E.Nothing ? 'Все ступени уже получены' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('Достижение «' + d.name + ' ' + ROMAN[t + 1] + '», ' + TIER_NAMES[t] + ': ' + rewardParts(r).join(', '), 'gold');
+	persist();
+	refresh(true);
 }
 function claimGoal() {
 	const g = goalDef(K.st.goal.i);

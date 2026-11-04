@@ -2091,6 +2091,101 @@ void TestGoals()
 	KD_CHECK(S.CancelTrain(static_cast<int>(S.TrainQueue().size()) - 1) == Error::None && S.GoalValue() == 0);
 }
 
+int AchIx(const char* Id)
+{
+	for (size_t I = 0; I < Content().achievements.size(); ++I)
+	{
+		if (Content().achievements[I].id == Id)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+std::string WithAch(const std::string& Save, const std::string& Ach)
+{
+	const size_t P = Save.find("\"achievements\":{");
+	const size_t E = Save.find(",\"goal\":{");
+	return P == std::string::npos || E == std::string::npos ? Save : Save.substr(0, P) + "\"achievements\":" + Ach + Save.substr(E);
+}
+
+void TestAchievements()
+{
+	const KingdomContent& Ct = Content();
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	// Bronze, silver and gold for gems (master prompt 13.5); about 900 gems in all, over months of play.
+	KD_CHECK(Ct.achievements.size() >= 20);
+	int64_t Gems = 0;
+	std::vector<bool> Events(static_cast<size_t>(QuestEvent::Count), false);
+	for (const AchievementDef& A : Ct.achievements)
+	{
+		KD_CHECK(A.tiers.size() == 3 && A.tiers[0].second > 0 && A.tiers[0].second < A.tiers[1].second && A.tiers[1].second < A.tiers[2].second);
+		for (const auto& T : A.tiers)
+		{
+			Gems += T.second;
+		}
+		if (A.check == GoalCheck::Event)
+		{
+			Events[static_cast<size_t>(A.event)] = true;
+		}
+	}
+	KD_CHECK(Gems >= 600 && Gems <= 1200);
+	KD_CHECK(Events[static_cast<size_t>(QuestEvent::Win)] && Events[static_cast<size_t>(QuestEvent::CollectGold)] && Events[static_cast<size_t>(QuestEvent::Train)]);
+	KD_CHECK(std::string(QuestEventName(QuestEvent::CollectGold)) == "collectGold" && std::string(QuestEventName(QuestEvent::Count)).empty());
+
+	// Counted over the whole game, whatever the goal or the daily quests are.
+	Kingdom K(Ct);
+	K.NewGame(T0, 13);
+	const uint64_t Fresh = K.Hash();
+	const int Gold = AchIx("ach_gold");
+	const int Train = AchIx("ach_train");
+	const int Castle = AchIx("ach_castle");
+	KD_CHECK(Gold >= 0 && Train >= 0 && Castle >= 0);
+	KD_CHECK(K.AchievementValue(Gold) == 0 && K.AchievementTier(Gold) == 0 && !K.AchievementReady(Gold));
+	KD_CHECK(K.AchievementValue(Castle) == 1 && !K.AchievementReady(Castle));
+	KD_CHECK(K.ClaimAchievement(Gold, nullptr) == Error::NotReady && K.ClaimAchievement(-1, nullptr) == Error::BadId &&
+		K.ClaimAchievement(static_cast<int>(Ct.achievements.size()), nullptr) == Error::BadId);
+	K.Advance(T0 + Hour);
+	KD_CHECK(K.Collect(FindId(K, "gold_mine")) == Error::None && K.Lifetime(QuestEvent::CollectGold) == 100 && K.AchievementValue(Gold) == 100);
+	KD_CHECK(K.Hash() != Fresh);
+	const int Mil = Troop("troop.militia");
+	KD_CHECK(K.Train(Mil) == Error::None && K.Train(Mil) == Error::None && K.Lifetime(QuestEvent::Train) == 2);
+	KD_CHECK(K.CancelTrain(1) == Error::None && K.AchievementValue(Train) == 1); // a cancelled squad does not count
+
+	// The first tier pays once; the next one needs more.
+	std::string Error;
+	const std::string Save = K.Save();
+	KD_CHECK(Save.find("\"achievements\":{\"counts\":{\"collectGold\":100,\"train\":1},\"claimed\":{}}") != std::string::npos);
+	Kingdom A(Ct);
+	KD_CHECK(A.Load(WithAch(Save, "{\"counts\":{\"collectGold\":99950,\"train\":1},\"claimed\":{}}"), Error) && !A.AchievementReady(Gold));
+	A.Advance(T0 + 2 * Hour);
+	KD_CHECK(A.Collect(FindId(A, "gold_mine")) == Error::None && A.AchievementValue(Gold) == 100050 && A.AchievementReady(Gold));
+	const int64_t GemsBefore = A.Amount(Res::Gems);
+	Reward R;
+	KD_CHECK(A.ClaimAchievement(Gold, &R) == Error::None && R.res[GemsI] == Ct.achievements[static_cast<size_t>(Gold)].tiers[0].second);
+	KD_CHECK(A.Amount(Res::Gems) == GemsBefore + R.res[GemsI] && A.AchievementTier(Gold) == 1 && !A.AchievementReady(Gold));
+	KD_CHECK(A.ClaimAchievement(Gold, nullptr) == Error::NotReady);
+	const std::string Paid = A.Save();
+	KD_CHECK(Paid.find("\"claimed\":{\"ach_gold\":1}") != std::string::npos);
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(Paid, Error) && B.Hash() == A.Hash() && B.Save() == Paid && B.AchievementTier(Gold) == 1);
+	// Every tier paid: Nothing. Unknown ids and too many tiers are dropped.
+	KD_CHECK(B.Load(WithAch(Paid, "{\"counts\":{\"collectGold\":-5,\"bogus\":3},\"claimed\":{\"ach_gold\":9,\"gone\":1}}"), Error));
+	KD_CHECK(B.Lifetime(QuestEvent::CollectGold) == 0 && B.AchievementTier(Gold) == 3 && !B.AchievementReady(Gold) && B.ClaimAchievement(Gold, nullptr) == Error::Nothing);
+	// A fact of the kingdom: Castle 5 reaches bronze.
+	KD_CHECK(B.Load(Replace(Paid, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5"), Error) && B.AchievementValue(Castle) == 5 && B.AchievementReady(Castle));
+	KD_CHECK(B.ClaimAchievement(Castle, &R) == Error::None && R.res[GemsI] == 5 && B.AchievementTier(Castle) == 1 && !B.AchievementReady(Castle));
+	// A save from before achievements counts from zero and keeps its hash.
+	Kingdom N(Ct);
+	N.NewGame(T0, 13);
+	const std::string NewSave = N.Save();
+	Kingdom O(Ct);
+	const size_t P = NewSave.find(",\"achievements\":{");
+	KD_CHECK(P != std::string::npos && O.Load(NewSave.substr(0, P) + NewSave.substr(NewSave.find(",\"goal\":{")), Error) && O.Hash() == Fresh);
+	KD_CHECK(O.Lifetime(QuestEvent::Win) == 0 && O.AchievementTier(Gold) == 0);
+}
+
 Kingdom WithVp(uint64_t Seed, int64_t Vp, const std::string& Extra = std::string())
 {
 	Kingdom K(Content());
@@ -2378,7 +2473,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements},
 	};
 	for (const auto& T : Tests)
 	{

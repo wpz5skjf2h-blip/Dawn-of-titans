@@ -322,6 +322,9 @@ const DotIcons = (() => {
 			line('M17 15H31M17 20H29M17 25H25', '#c9b48a', 1.6) + line('M20 31L24 35L33 24', '#3f9a4a', 3.4) + spark(40, 9, 3, K.fireY),
 		// The main line of goals: a banner on a pole with a gold star.
 		'ui.goal': stick('M13 44V5', K.woodD, 2.4) + c(13, 4, 2.6, K.gold) + p('M14 7H39L32.5 15.5L39 24H14Z', K.red) + spark(24, 15.5, 4.6, K.gold) + hi('M16.5 10H33'),
+		// Achievements: a medal on a ribbon with a star.
+		'ui.medal': p('M15 3H23L28 19H20Z', K.blue) + p('M33 3H25L20 19H28Z', K.red) + c(24, 30, 13, K.gold) + c(24, 30, 9, 'none', 'stroke="' + K.goldD + '" stroke-width="1.6"') +
+			p('M24 23.5L26 28H30.5L27 31L28.3 35.5L24 33L19.7 35.5L21 31L17.5 28H22Z', K.cream, 'stroke-width="1.4"') + hi('M15.5 26C16.5 22.5 19 20 22 19.3'),
 		// A star chest of a campaign act.
 		'ui.chest': p('M8 22H40V40C40 41.5 39 42 37.5 42H10.5C9 42 8 41.5 8 40Z', K.wood) + p('M8 22C8 12 40 12 40 22Z', K.woodL) +
 			r(8, 20.5, 32, 4, 1, K.gold) + r(13, 14.5, 4, 27.5, 1, K.gold) + r(31, 14.5, 4, 27.5, 1, K.gold) + r(20.5, 23, 7, 8, 1.5, K.gold) +

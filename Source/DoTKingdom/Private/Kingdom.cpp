@@ -131,6 +131,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	RollQuests();
 	GoalAt = 0;
 	GoalEvents = 0;
+	LifetimeCounts.fill(0);
+	AchTiers.assign(C.achievements.size(), 0);
 	FillWorld();
 	ResetRivals();
 }
@@ -2761,6 +2763,8 @@ void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
 			Q.progress = std::max<int64_t>(0, Q.progress + Amount);
 		}
 	}
+	int64_t& Life = LifetimeCounts[static_cast<size_t>(Event)];
+	Life = std::max<int64_t>(0, Life + Amount);
 	if (GoalAt < static_cast<int>(C.goals.size()))
 	{
 		const GoalDef& G = C.goals[static_cast<size_t>(GoalAt)];
@@ -2899,23 +2903,28 @@ int64_t Kingdom::GoalValue() const
 		return 0;
 	}
 	const GoalDef& G = C.goals[static_cast<size_t>(GoalAt)];
+	return CheckValue(G.check, G.building, G.troop, GoalEvents);
+}
+
+int64_t Kingdom::CheckValue(GoalCheck Check, int BuildingDef, int Troop, int64_t Events) const
+{
 	int64_t V = 0;
-	switch (G.check)
+	switch (Check)
 	{
 	case GoalCheck::Castle:
 		return CastleLevel();
 	case GoalCheck::Build:
-		return std::count_if(BuildingList.begin(), BuildingList.end(), [&G](const Building& B) { return B.def == G.building && B.level >= 1; });
+		return std::count_if(BuildingList.begin(), BuildingList.end(), [BuildingDef](const Building& B) { return B.def == BuildingDef && B.level >= 1; });
 	case GoalCheck::Level:
 		for (const Building& B : BuildingList)
 		{
-			V = B.def == G.building ? std::max<int64_t>(V, B.level) : V;
+			V = B.def == BuildingDef ? std::max<int64_t>(V, B.level) : V;
 		}
 		return V;
 	case GoalCheck::Army:
 		return ArmyTotal();
 	case GoalCheck::TroopLevel:
-		return TroopLevel(G.troop);
+		return TroopLevel(Troop);
 	case GoalCheck::Lands:
 		return static_cast<int64_t>(LandList.size());
 	case GoalCheck::LandLevel:
@@ -2968,7 +2977,7 @@ int64_t Kingdom::GoalValue() const
 		}
 		return V;
 	case GoalCheck::Event:
-		return GoalEvents;
+		return Events;
 	case GoalCheck::Count:
 		break;
 	}
@@ -3003,6 +3012,67 @@ Error Kingdom::ClaimGoal(Reward* Out)
 	}
 	++GoalAt;
 	GoalEvents = 0;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Achievements ------------------------------------------------------------------------------------
+
+int64_t Kingdom::Lifetime(QuestEvent E) const
+{
+	return E < QuestEvent::Count ? LifetimeCounts[static_cast<size_t>(E)] : 0;
+}
+
+int64_t Kingdom::AchievementValue(int I) const
+{
+	if (I < 0 || I >= static_cast<int>(C.achievements.size()))
+	{
+		return 0;
+	}
+	const AchievementDef& A = C.achievements[static_cast<size_t>(I)];
+	return CheckValue(A.check, A.building, A.troop, A.check == GoalCheck::Event ? Lifetime(A.event) : 0);
+}
+
+int Kingdom::AchievementTier(int I) const
+{
+	return I >= 0 && I < static_cast<int>(AchTiers.size()) ? AchTiers[static_cast<size_t>(I)] : 0;
+}
+
+bool Kingdom::AchievementReady(int I) const
+{
+	if (I < 0 || I >= static_cast<int>(C.achievements.size()))
+	{
+		return false;
+	}
+	const AchievementDef& A = C.achievements[static_cast<size_t>(I)];
+	const int Tier = AchievementTier(I);
+	return Tier < static_cast<int>(A.tiers.size()) && AchievementValue(I) >= A.tiers[static_cast<size_t>(Tier)].first;
+}
+
+Error Kingdom::ClaimAchievement(int I, Reward* Out)
+{
+	if (I < 0 || I >= static_cast<int>(C.achievements.size()) || I >= static_cast<int>(AchTiers.size()))
+	{
+		return Error::BadId;
+	}
+	const AchievementDef& A = C.achievements[static_cast<size_t>(I)];
+	int& Tier = AchTiers[static_cast<size_t>(I)];
+	if (Tier >= static_cast<int>(A.tiers.size()))
+	{
+		return Error::Nothing;
+	}
+	if (!AchievementReady(I))
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const int64_t Before = Amount(Res::Gems);
+	AddResource(Res::Gems, A.tiers[static_cast<size_t>(Tier)].second);
+	R.res[static_cast<size_t>(ResIndex(Res::Gems))] = Amount(Res::Gems) - Before;
+	++Tier;
 	if (Out)
 	{
 		*Out = R;
@@ -5353,6 +5423,32 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Achievements (optional): counts over the whole game by event, tiers paid by id.
+	W.Key("achievements");
+	W.BeginObject();
+	W.Key("counts");
+	W.BeginObject();
+	for (int E = 0; E < static_cast<int>(QuestEvent::Count); ++E)
+	{
+		if (LifetimeCounts[static_cast<size_t>(E)] != 0)
+		{
+			W.Key(QuestEventName(static_cast<QuestEvent>(E)));
+			W.Int(LifetimeCounts[static_cast<size_t>(E)]);
+		}
+	}
+	W.EndObject();
+	W.Key("claimed");
+	W.BeginObject();
+	for (size_t I = 0; I < AchTiers.size() && I < C.achievements.size(); ++I)
+	{
+		if (AchTiers[I] != 0)
+		{
+			W.Key(C.achievements[I].id.c_str());
+			W.Int(AchTiers[I]);
+		}
+	}
+	W.EndObject();
+	W.EndObject();
 	// Main line of goals (optional): the current goal by id (its index for content that changed) and its event count.
 	W.Key("goal");
 	W.BeginObject();
@@ -6005,6 +6101,26 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Achievements (saves before them count from now).
+	LifetimeCounts.fill(0);
+	AchTiers.assign(C.achievements.size(), 0);
+	if (const JsonValue* AchJ = J.Find("achievements"))
+	{
+		if (const JsonValue* Counts = AchJ->Find("counts"))
+		{
+			for (int E = 0; E < static_cast<int>(QuestEvent::Count); ++E)
+			{
+				LifetimeCounts[static_cast<size_t>(E)] = std::max<int64_t>(0, Counts->GetInt64(QuestEventName(static_cast<QuestEvent>(E)), 0));
+			}
+		}
+		if (const JsonValue* Claimed = AchJ->Find("claimed"))
+		{
+			for (size_t I = 0; I < C.achievements.size(); ++I)
+			{
+				AchTiers[I] = std::max(0, std::min(static_cast<int>(C.achievements[I].tiers.size()), Claimed->GetInt(C.achievements[I].id.c_str(), 0)));
+			}
+		}
+	}
 	// Main line of goals (saves before it start at the first goal).
 	GoalAt = 0;
 	GoalEvents = 0;
@@ -6312,6 +6428,20 @@ uint64_t Kingdom::Hash() const
 	{
 		W.I32(GoalAt);
 		W.I64(GoalEvents);
+	}
+	// The same for achievements: only once something was counted or paid.
+	const bool bAch = std::any_of(LifetimeCounts.begin(), LifetimeCounts.end(), [](int64_t V) { return V != 0; }) ||
+		std::any_of(AchTiers.begin(), AchTiers.end(), [](int V) { return V != 0; });
+	if (bAch)
+	{
+		for (const int64_t V : LifetimeCounts)
+		{
+			W.I64(V);
+		}
+		for (const int V : AchTiers)
+		{
+			W.I32(V);
+		}
 	}
 	return W.Hash();
 }

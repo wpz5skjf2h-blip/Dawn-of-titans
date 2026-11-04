@@ -1165,6 +1165,18 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
+	// Achievements (kingdom.json "achievements"): what each counts now and the tiers already paid.
+	O.Key("ach").Raw("{").Key("v").Raw("[");
+	for (int I = 0; I < static_cast<int>(C.achievements.size()); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AchievementValue(I));
+	}
+	O.Raw("],").Key("t").Raw("[");
+	for (int I = 0; I < static_cast<int>(C.achievements.size()); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AchievementTier(I));
+	}
+	O.Raw("]},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
@@ -1512,6 +1524,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_quest_claim(int Slot)
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimQuest(Slot, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Pays the next tier of an achievement (gems). */
+EMSCRIPTEN_KEEPALIVE const char* dk_ach_claim(int I)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimAchievement(I, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

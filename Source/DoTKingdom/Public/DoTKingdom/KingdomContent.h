@@ -290,6 +290,8 @@ enum class QuestEvent : uint8_t
 	Count
 };
 DOTKINGDOM_API bool ParseQuestEvent(const std::string& S, QuestEvent& Out);
+/** The event's name in content and saves ("win", "collectGold"...). */
+DOTKINGDOM_API const char* QuestEventName(QuestEvent E);
 
 /** A daily quest of the pool: its target by Castle level and its reward. */
 struct QuestDef
@@ -347,6 +349,18 @@ struct GoalDef
 	int troop = -1; // for TroopLevel
 	int64_t n = 1;
 	ResArray reward{};
+};
+
+/** An achievement (kingdom.json "achievements", master prompt 13.5): actions over the whole game (Event) or a fact of
+ *  the kingdom, in up to three tiers (bronze, silver, gold), each paying gems once. */
+struct AchievementDef
+{
+	std::string id;
+	GoalCheck check = GoalCheck::Event;
+	QuestEvent event = QuestEvent::Win; // for GoalCheck::Event
+	int building = -1; // for Build and Level
+	int troop = -1; // for TroopLevel
+	std::vector<std::pair<int64_t, int64_t>> tiers; // (count, gems), ascending
 };
 
 /** Alliances and their leagues (kingdom.json "alliances"). */
@@ -557,6 +571,7 @@ struct KingdomContent
 	CampaignRules campaigns;
 	QuestRules quests;
 	std::vector<GoalDef> goals; // the main line, in order
+	std::vector<AchievementDef> achievements;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};
