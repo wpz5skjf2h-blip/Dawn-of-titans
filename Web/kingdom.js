@@ -2135,7 +2135,8 @@ function initHud() {
 	$('rBuilders').addEventListener('click', openBuilders);
 	$('kQuestBtn').innerHTML = DotIcons.svg('ui.quest') + '<span></span>';
 	$('kQuestBtn').addEventListener('click', openQuests);
-	$('kGoal').addEventListener('click', () => openGoals());
+	// The card opens the lord's path; its badge opens the rewards that wait (the calendar first).
+	$('kGoal').addEventListener('click', (e) => openGoals(e.target.closest('.achBadge') ? (calReadyCount(K.st) > 0 ? 'cal' : 'ach') : undefined));
 	$('kMenuBtn').addEventListener('click', openMenu);
 	$('kAttack').addEventListener('click', openWorldMap);
 	$('kShopBtn').addEventListener('click', openShop);
@@ -3554,7 +3555,7 @@ function updateGoal() {
 	el.dataset.k = key;
 	el.classList.toggle('done', !!st.goal.done || ready > 0);
 	const calN = st.cal ? calReadyCount(st) : 0;
-	const badge = ready ? '<span class="achBadge" title="Награды за достижения и календарь">' + DotIcons.svg(calN ? 'ui.calendar' : 'ui.medal') + ready + '</span>' : '';
+	const badge = ready ? '<span class="achBadge" title="' + (calN ? 'Награды календаря' : 'Награды за достижения') + '">' + DotIcons.svg(calN ? 'ui.calendar' : 'ui.medal') + ready + '</span>' : '';
 	if (g) {
 		el.innerHTML = icoHtml(goalIcon(g), goalTile(g)) + '<span class="gt"><small>' + (st.goal.done ? 'Цель выполнена · заберите награду' : 'Цель ' + (st.goal.i + 1) + ' из ' + goalDefs().length +
 			(n > 1 ? ' · ' + fmtShort(v) + ' / ' + fmtShort(n) : '')) + '</small><b>' + esc(goalName(g)) + '</b><span class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></span></span>' + badge;
@@ -3595,8 +3596,7 @@ function achCard(st, d, i) {
 function openGoals(tab) {
 	if (!goalDefs().length && !achDefs().length) return;
 	if (tab) K.goalTab = tab;
-	else if (K.st && !K.st.goal.done && calReadyCount(K.st) > 0) K.goalTab = 'cal';
-	else if (K.st && (!goalDef(K.st.goal.i) || (!K.st.goal.done && achReadyCount(K.st) > 0))) K.goalTab = 'ach';
+	else if (K.st && !goalDef(K.st.goal.i)) K.goalTab = calReadyCount(K.st) > 0 ? 'cal' : 'ach';
 	else K.goalTab = 'goals';
 	cancelPlace();
 	select(null);
