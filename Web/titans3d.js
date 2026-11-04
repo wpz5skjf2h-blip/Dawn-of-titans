@@ -98,7 +98,9 @@ const DotTitans3D = (() => {
 	};
 
 	// --- The titans -----------------------------------------------------------------------------------------
+	// A recipe takes its body proportions from its class, or from `build` when it is drawn on another class's frame.
 	const R = {};
+	const frameOf = (rec) => BUILD[rec.build || rec.cls];
 
 	R['titan.thor'] = {
 		cls: 'Ravager',
@@ -483,6 +485,67 @@ const DotTitans3D = (() => {
 		],
 	};
 
+	R['titan.veles'] = {
+		// A Mystic in the sim, built on the broad Warden frame because the shaman is a large titan.
+		cls: 'Mystic',
+		build: 'Warden',
+		mat: { skin: ['#cfa47c', 0, 0.62], fur: ['#7a5434', 0, 0.9, 0, 'cloth'], furD: ['#4f3420', 0, 0.9], robe: ['#33503f', 0, 0.85], robeL: ['#46684f', 0, 0.82],
+			beard: ['#a9a393', 0, 0.9], ash: ['#7d7868', 0, 0.85], horn: ['#eadfc4', 0, 0.6], oak: ['#6b4a2a', 0, 0.85], hide: ['#ecdcb4', 0, 0.75], ochre: ['#a2452e', 0, 0.8],
+			nav: ['#5fe0b0', 0, 0.35, 2.2] },
+		body: { torso: 'robeL', hips: 'robe', belt: 'furD', buckle: 'horn', neck: 'skin', head: 'skin', legs: 'robe', shins: 'robe', boots: 'furD', arms: 'robeL', fore: 'robeL',
+			bracer: 'fur', hands: 'skin', pauldron: 'fur' },
+		parts: [
+			// A long robe to the ground (the legs walk inside it), a panel in the side's colour and a fur hem.
+			{ s: 'cyl', b: 'body', m: 'robe', p: [0, 0.26, 0], d: [0.15, 0.27, 0.46] },
+			{ s: 'box', b: 'body', m: 'team', p: [0, 0.26, -0.212], d: [0.055, 0.4, 0.01], r: [14.6, 0, 0] },
+			{ s: 'cape', b: 'body', m: 'fur', p: [0, 0.065, 0], d: [0.262, 0.282, 0.07, -180, 360, 12, 0.008] },
+			// Fur mantle over the shoulders with tufts along its edge, and a bone amulet with the horned sign of Veles.
+			{ s: 'lathe', b: 'body', m: 'fur', pts: [[0.06, 0.85], [0.115, 0.832], [0.178, 0.805], [0.212, 0.77], [0.226, 0.735], [0.23, 0.715]], d: [1, 0.68] },
+			{ s: 'cone', b: 'body', m: 'fur', p: [0.115, 0.703, -0.1354], d: [0.022, 0.045], r: [180, 0, 0], x: 1 },
+			{ s: 'cone', b: 'body', m: 'fur', p: [0.195, 0.703, -0.0829], d: [0.022, 0.045], r: [180, 0, 0], x: 1 },
+			{ s: 'cyl', b: 'body', m: 'horn', p: [0, 0.55, -0.09], d: [0.032, 0.032, 0.008], r: [90, 0, 0] },
+			{ s: 'tor', b: 'body', m: 'ochre', p: [0, 0.538, -0.095], d: [0.019, 0.0035, 180] },
+			{ s: 'sph', b: 'body', m: 'nav', p: [0, 0.542, -0.095], d: [0.009, 0.009, 0.006] },
+			// Bear hood: dark fur behind the head, a lighter rim framing the face, two small ears and ox horns.
+			{ s: 'cyl', b: 'head', m: 'furD', p: [0, 0.055, 0.01], d: [0.074, 0.086, 0.15, -120, 240] },
+			{ s: 'sph', b: 'head', m: 'furD', p: [0, 0.115, 0.02], d: [0.158, 0.11, 0.14] },
+			{ s: 'tor', b: 'head', m: 'fur', p: [0, 0.06, -0.035], d: [0.075, 0.014, 200], r: [-10, 0, -10] },
+			{ s: 'sph', b: 'head', m: 'furD', p: [0.05, 0.168, 0.025], d: [0.04, 0.04, 0.025], x: 1 },
+			{ s: 'tube', b: 'head', m: 'horn', pts: [[0.045, 0.12, 0.005], [0.111, 0.132, -0.005], [0.15, 0.177, -0.012], [0.158, 0.25, -0.008]], d: [0.019, 0.003], x: 1 },
+			// Stern brows over eyes that glow with the fire of Nav.
+			{ s: 'sph', b: 'head', m: 'nav', p: [0.024, 0.078, -0.068], d: [0.022, 0.009, 0.01], x: 1 },
+			{ s: 'box', b: 'head', m: 'ink', p: [0.025, 0.091, -0.068], d: [0.03, 0.007, 0.008], r: [0, 0, 12], x: 1 },
+			// Long grey beard from the cheeks down over the mantle, ending in a point.
+			{ s: 'sph', b: 'head', m: 'beard', p: [0, 0.028, -0.042], d: [0.112, 0.08, 0.065] },
+			{ s: 'sph', b: 'head', m: 'beard', p: [0, -0.08, -0.12], d: [0.13, 0.22, 0.075], r: [18, 0, 0] },
+			{ s: 'cone', b: 'head', m: 'beard', p: [0, -0.2, -0.159], d: [0.035, 0.06], r: [198, 0, 0] },
+			{ s: 'sph', b: 'head', m: 'ash', p: [0, 0.034, -0.074], d: [0.068, 0.016, 0.022] },
+			// Brown fur cloak behind, ragged at the hem.
+			{ s: 'cape', b: 'cape', m: 'fur', p: [0, -0.32, -0.13], d: [0.155, 0.285, 0.66, -80, 160, 8, 0.02] },
+			// The staff in his right hand: a crook with a glowing wisp of Nav in its hook and two bone charms below it.
+			{ s: 'cyl', b: 'hdR', m: 'oak', p: [0, 0.0649, -0.0262], d: [0.011, 0.013, 0.62], r: [-22, 0, 0] },
+			{ s: 'tube', b: 'hdR', m: 'oak', pts: [[0, 0.352, -0.1425], [0.034, 0.3752, -0.1519], [0.048, 0.403, -0.1631], [0.043, 0.4289, -0.1736], [0.016, 0.4428, -0.1793]], d: [0.011, 0.008] },
+			{ s: 'sph', b: 'hdR', m: 'nav', p: [0.02, 0.3974, -0.1609], d: [0.034, 0.034, 0.034] },
+			{ s: 'halo', b: 'hdR', c: '#5fe0b0', p: [0.02, 0.3974, -0.1609], d: [0.24] },
+			{ s: 'emit', b: 'hdR', k: 'nav', p: [0.02, 0.3974, -0.1609], d: [0.3, 3] },
+			{ s: 'cyl', b: 'hdR', m: 'ash', p: [-0.0145, 0.2742, -0.111], d: [0.0016, 0.0016, 0.0613], r: [-22, 0, -30] },
+			{ s: 'cyl', b: 'hdR', m: 'ash', p: [0.0125, 0.2705, -0.1095], d: [0.0016, 0.0016, 0.0669], r: [-22, 0, 23.5] },
+			{ s: 'sph', b: 'hdR', m: 'horn', p: [-0.029, 0.2491, -0.1009], d: [0.018, 0.018, 0.018] },
+			{ s: 'sph', b: 'hdR', m: 'horn', p: [0.025, 0.2417, -0.0979], d: [0.018, 0.018, 0.018] },
+			// A frame drum in his left hand, turned forward and out, the horned sign painted on it in ochre, charms on its rim.
+			{ s: 'tor', b: 'hdL', m: 'oak', p: [-0.025, 0, -0.03], d: [0.084, 0.008, 360], r: [0, 35, 0], sc: [1, 1.2, 1] },
+			{ s: 'cyl', b: 'hdL', m: 'hide', p: [-0.025, 0, -0.03], d: [0.082, 0.082, 0.006], r: [90, 0, -35], sc: [1, 1, 1.2] },
+			{ s: 'tor', b: 'hdL', m: 'ochre', p: [-0.0279, -0.042, -0.0341], d: [0.045, 0.0045, 180], r: [0, 35, 0] },
+			{ s: 'box', b: 'hdL', m: 'ochre', p: [-0.0598, 0.023, -0.0117], d: [0.006, 0.036, 0.004], r: [0, 35, 23] },
+			{ s: 'box', b: 'hdL', m: 'ochre', p: [0.0041, 0.023, -0.0565], d: [0.006, 0.036, 0.004], r: [0, 35, -23] },
+			{ s: 'sph', b: 'hdL', m: 'nav', p: [-0.0273, -0.021, -0.0333], d: [0.014, 0.014, 0.014] },
+			{ s: 'cyl', b: 'hdL', m: 'ash', p: [-0.0967, -0.0925, 0.0202], d: [0.0018, 0.0018, 0.052], r: [0, 35, -29] },
+			{ s: 'cyl', b: 'hdL', m: 'ash', p: [0.0467, -0.0925, -0.0802], d: [0.0018, 0.0018, 0.052], r: [0, 35, 29] },
+			{ s: 'sph', b: 'hdL', m: 'horn', p: [-0.1069, -0.125, 0.0274], d: [0.02, 0.02, 0.02] },
+			{ s: 'sph', b: 'hdL', m: 'horn', p: [0.0569, -0.125, -0.0874], d: [0.02, 0.02, 0.02] },
+		],
+	};
+
 	// --- Geometry -------------------------------------------------------------------------------------------
 	function shape(T, part) {
 		const d = part.d || [];
@@ -588,7 +651,7 @@ const DotTitans3D = (() => {
 	}
 	function allParts(id) {
 		const rec = R[id];
-		const b = BUILD[rec.cls];
+		const b = frameOf(rec);
 		const out = [];
 		for (const part of baseBody(b, rec.body).concat(rec.parts)) {
 			out.push(part);
@@ -636,7 +699,7 @@ const DotTitans3D = (() => {
 		const rec = R[id];
 		const H = opts.H;
 		const team = opts.team || new T.Color(0x3a8dde);
-		const b = BUILD[rec.cls];
+		const b = frameOf(rec);
 		const root = new T.Group();
 		const scaler = new T.Group();
 		scaler.scale.setScalar(H);
@@ -749,7 +812,7 @@ const DotTitans3D = (() => {
 		/** The full recipe of a titan (base body and its own parts, mirrored parts written out) as plain JSON. */
 		recipe(id) {
 			const rec = R[id];
-			return { id, cls: rec.cls, units: 'titan height', build: BUILD[rec.cls], bones: bones(BUILD[rec.cls]), materials: Object.assign({}, COMMON, rec.mat), parts: allParts(id) };
+			return { id, cls: rec.cls, units: 'titan height', build: frameOf(rec), bones: bones(frameOf(rec)), materials: Object.assign({}, COMMON, rec.mat), parts: allParts(id) };
 		},
 	};
 })();
