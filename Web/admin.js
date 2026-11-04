@@ -107,7 +107,7 @@ const admin = {
 	on: lsGet(ON_KEY) === '1' || /[?#&]admin\b/.test(location.search + location.hash),
 	open: false, tab: lsGet(TAB_KEY) || 'res', taps: [], msg: '', backup: null, checks: null, monkey: null, showSave: false, logErrorsOnly: false,
 	battle: { sc: '', titan: '', tlv: 0, tst: 0, asc: false, etitan: '', elv: 0, est: 0, ai: 'veteran' },
-	relic: { kind: 0, rarity: 3, full: true }, land: { type: 0, lv: 1 }, monkeySteps: 200, monkeySeed: 1, keepMonkey: false,
+	relic: { kind: 0, rarity: 3, full: true }, land: { type: 0, lv: 1 }, goal: null, monkeySteps: 200, monkeySeed: 1, keepMonkey: false,
 	typed: {}, // text in the panel's fields, kept across re-renders
 };
 try { admin.backup = JSON.parse(lsGet(BACKUP_KEY) || 'null'); } catch (e) { admin.backup = null; }
@@ -183,6 +183,7 @@ function newId(s) { const id = s.nextId || 1; s.nextId = id + 1; return id; }
 const army = () => kd().K.army;
 const defs = () => kd().K.defs;
 const rules = () => kd().K.rules;
+const goalText = (g) => g.name.replace('{n}', fmt(g.n || 1));
 function defIndex(id) { return defs().findIndex((d) => d.id === id); }
 function castleOf(s) { const c = s.buildings.find((b) => b.def === 'castle'); return c ? c.level : 1; }
 /** Highest level of a building the Castle allows (the Castle itself: its last level). */
@@ -234,14 +235,29 @@ function firstDiff(a, b) {
 	while (i < a.length && a[i] === b[i]) i++;
 	return '…' + a.slice(Math.max(0, i - 40), i + 40) + '… / …' + b.slice(Math.max(0, i - 40), i + 40) + '…';
 }
-/** Land stores from one state to the next: only collecting empties them, and a store a guard filled above the plain
- *  cap keeps what it holds once the guard leaves but grows no more. */
+/** Raids won on lands between two states: land id → what they took. Null when the raid log (it keeps the last few
+ *  reports) may have dropped some of them. */
+function raidsTook(prev, st) {
+	const key = (r) => r.at + ':' + r.land + ':' + r.lv + ':' + r.rp;
+	const was = new Set(((prev.raids && prev.raids.log) || []).map(key));
+	const log = (st.raids && st.raids.log) || [];
+	const cap = (rules().raids && rules().raids.log) || Infinity;
+	if (log.length >= cap && !was.has(key(log[0]))) return null;
+	const took = new Map();
+	for (const r of log) if (r.land && !was.has(key(r))) took.set(r.land, (took.get(r.land) || 0) + r.lost.reduce((x, y) => x + y, 0));
+	return took;
+}
+/** Land stores from one state to the next: only collecting and raids empty them, and a store a guard filled above
+ *  the plain cap keeps what it holds once the guard leaves but grows no more. */
 function landStores(prev, st, add, collected) {
 	const before = new Map(prev.lands.map((l) => [l.id, l]));
+	const took = raidsTook(prev, st);
 	for (const l of st.lands) {
 		const p = before.get(l.id);
 		if (!p) continue;
-		if (!collected && l.st < p.st) add('bad', 'Земля #' + l.id + ': хранилище уменьшилось без сбора, ' + p.st + ' → ' + l.st + ' из ' + l.cap);
+		// A raid takes a share of what the store held then, which is at least what it held before.
+		const raid = took ? took.get(l.id) || 0 : 0;
+		if (!collected && took && l.st < p.st - raid) add('bad', 'Земля #' + l.id + ': хранилище уменьшилось без сбора' + (raid ? ' больше, чем забрал налёт (' + raid + ')' : '') + ', ' + p.st + ' → ' + l.st + ' из ' + l.cap);
 		if (l.st > l.cap && l.st > p.st && l.st > p.cap) add('bad', 'Земля #' + l.id + ': хранилище растёт сверх вместимости, ' + p.st + ' → ' + l.st + ' из ' + l.cap);
 	}
 }
@@ -293,6 +309,12 @@ function invariants(st, add) {
 		if (l.titan && !st.titans.some((t) => t.id === l.titan)) add('bad', 'Землю #' + l.id + ' охраняет титан #' + l.titan + ', которого нет');
 		if (l.titan && guards.has(l.titan)) add('bad', 'Титан #' + l.titan + ' охраняет две земли');
 		if (l.titan) guards.set(l.titan, l.id);
+	}
+	const goals = rules().goals;
+	if (st.goal && goals) {
+		if (!(st.goal.i >= 0 && st.goal.i <= goals.length)) add('bad', 'Цель ' + (st.goal.i + 1) + ' вне линии из ' + goals.length + ' целей');
+		else if (st.goal.i === goals.length && st.goal.done) add('bad', 'Линия целей пройдена, а цель отмечена выполненной');
+		if (!Number.isFinite(st.goal.v) || st.goal.v < 0) add('bad', 'Счёт цели ' + (st.goal.i + 1) + ' = ' + st.goal.v);
 	}
 	if (st.world.length !== rules().lands.worldSize) add('bad', 'Земель мира ' + st.world.length + ', а должно быть ' + rules().lands.worldSize);
 	if (st.spells.total > st.spells.cap) add('warn', 'Заклинаний больше вместимости Кузницы: ' + st.spells.total + ' из ' + st.spells.cap);
@@ -437,6 +459,7 @@ function runMonkey(steps, seed, keep) {
 		['основать альянс', 1, () => B.create('Тест ' + Math.floor(r() * 1000), 'Т' + Math.floor(r() * 100))],
 		['выйти из альянса', 1, () => (r() < 0.3 ? B.leave() : -1)],
 		['подкрепления', 2, () => B.reinforce()],
+		['цель', 3, () => (B.goalClaim ? B.goalClaim().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -466,6 +489,10 @@ function runMonkey(steps, seed, keep) {
 				};
 				invariants(st2, note);
 				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
+				// Only claiming the reward moves the main line on, one goal at a time.
+				if (st.goal && st2.goal && st2.goal.i !== st.goal.i && (act[0] !== 'цель' || st2.goal.i !== st.goal.i + 1)) {
+					note('bad', 'Цель сменилась с ' + (st.goal.i + 1) + ' на ' + (st2.goal.i + 1));
+				}
 			} catch (e) {
 				fails.push([i, act[0], 'исключение: ' + (e.message || e)]);
 			}
@@ -750,6 +777,17 @@ function renderTab(tab) {
 			row('Расширения города <b>' + st.expansions + ' из ' + rules().expansions.length + '</b>', b('exp', '−', { n: -1 }) + b('exp', '+', { n: 1 })) +
 			row('Купленные места для земель <b>' + st.extraSlots + '</b>', b('slots', '−', { n: -1 }) + b('slots', '+', { n: 1 }), 'лимит земель ' + st.landCap) +
 			row('Строители <b>' + st.busy + ' заняты из ' + st.builders + '</b>', b('finish', 'Достроить всё', { w: 'build' }), 'число строителей задаёт Двор строителей') + '</div>';
+		const goals = rules().goals;
+		if (st.goal && goals && goals.length) {
+			const g = goals[st.goal.i];
+			const pick = clamp(admin.goal === null ? st.goal.i : admin.goal, 0, goals.length);
+			h += '<h3>Цели</h3><div class="admList">' +
+				row(g ? 'Цель <b>' + (st.goal.i + 1) + ' из ' + goals.length + '</b> ' + esc(goalText(g)) : 'Линия целей пройдена <b>' + goals.length + ' из ' + goals.length + '</b>',
+					b('goal-to', '◀', { i: st.goal.i - 1 }) + b('goal-to', '▶', { i: st.goal.i + 1 }) + (st.goal.done ? b('goal-claim', 'Забрать награду') : ''),
+					g ? 'счёт ' + fmt(st.goal.v) + ' из ' + fmt(g.n || 1) + (st.goal.done ? ' · выполнена' : '') : '') +
+				row('Перейти к цели', select('goal-pick', goals.map((x, k) => [k, k + 1 + '. ' + goalText(x)]).concat([[goals.length, 'Вся линия пройдена']]), pick) +
+					b('goal-to', 'Перейти', { i: 'pick' })) + '</div>';
+		}
 		return h;
 	}
 	case 'bld': {
@@ -991,6 +1029,19 @@ function act(a, el, n, id, i) {
 	case 'exp': edit((s) => { s.expansions = clamp((s.expansions || 1) + n, 1, rules().expansions.length); }, 'Расширений: изменено'); break;
 	case 'slots': edit((s) => { s.extraSlots = Math.max(0, (s.extraSlots || 0) + n); }, 'Мест для земель: изменено'); break;
 	case 'finish': finishTimers(el.dataset.w); break;
+	case 'goal-to': {
+		const goals = rules().goals || [];
+		const at = clamp(el.dataset.i === 'pick' ? admin.goal === null ? d.K.st.goal.i : admin.goal : i, 0, goals.length);
+		admin.goal = null;
+		edit((s) => { s.goal = { at, id: at < goals.length ? goals[at].id : '', events: 0 }; }, at < goals.length ? 'Цель ' + (at + 1) + ': ' + goalText(goals[at]) : 'Линия целей пройдена');
+		break;
+	}
+	case 'goal-claim': {
+		const r = d.K.bridge.goalClaim();
+		if (r.err) toast('Награда не выдана, код ' + r.err, 'bad');
+		applied(r.err ? '' : 'Награда за цель получена');
+		break;
+	}
 	case 'stones': edit((s, st) => { s.resources.stones = Math.max(s.resources.stones, st.cap[3]); s.stonesAt = s.time; }, 'Камни портала полны'); break;
 	case 'altar': edit((s) => { s.relicAt = s.time; }, 'Ежедневный алтарь открыт'); break;
 	// Buildings
@@ -1158,6 +1209,7 @@ function onChange(e) {
 	try {
 		if (c === 'relic-kind') admin.relic.kind = +v;
 		else if (c === 'land-type') admin.land.type = +v;
+		else if (c === 'goal-pick') admin.goal = +v;
 		else if (c === 'b-sc') { admin.battle.sc = v; render(); }
 		else if (c === 'b-titan') admin.battle.titan = v;
 		else if (c === 'b-etitan') admin.battle.etitan = v;

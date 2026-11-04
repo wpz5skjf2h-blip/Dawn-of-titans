@@ -28,16 +28,16 @@ kingdom cannot start, the battle screen shows why.
 
 Admin mode: open the kingdom menu (☰) and tap the line with the state hash seven times (in a battle: the engine line of
 the battle menu), or open the page with `?admin`. A wrench button appears on the right; the same seven taps or the
-panel's button switch it off. The panel has tabs for resources and the city, buildings, army and spells, titans and
-relics, time (skips, speed, timers, the season, reinforcements), lands (world lands of any level and type, attacks,
-owned lands), battles (speed, pause, auto, end a land battle with 0–3 stars, any scenario with any titans and AI),
-checks, the save and the log. Kingdom edits change the C++ save (`dk_save` → JSON → `dk_load`, which clamps it) and keep a
-copy of the kingdom from before the first edit, which the save tab brings back.
-"Проверки" runs invariants (save round trip, the same hash after loading, six hours at once equal to 72 steps of five
-minutes, resources, limits, building placement, relics, guards, land stores, the season). "Случайная игра" plays
-hundreds of random actions through the regular `dk_*` calls (battles with random results, time jumps), checks the
-invariants after every action, reports the first action that broke each one and restores the kingdom. The log records
-page errors, rejected promises, console errors and warnings and files that failed to load; "Скопировать отчёт" puts the
-browser, screen, kingdom summary, the last 60 entries and the save on the clipboard (or in a .txt file; inside claude.ai
-files are offered through the artifact's `downloads` capability, so the page is published with `downloads` besides `db`
-and `user`).
+panel's button switch it off. The panel has tabs for resources, the city and the main line of goals, buildings, army and
+spells, titans and relics, time (skips, speed, timers, the season, reinforcements), lands (world lands of any level and
+type, attacks, owned lands), battles (speed, pause, auto, end a land battle with 0–3 stars, any scenario with any titans
+and AI), checks, the save and the log. Kingdom edits change the C++ save (`dk_save` → JSON → `dk_load`, which clamps it)
+and keep a copy of the kingdom from before the first edit, which the save tab brings back. "Проверки" runs invariants
+(save round trip, the same hash after loading, six hours at once equal to 72 steps of five minutes, resources, limits,
+building placement, relics, guards, land stores between two moments with raids taken into account, the goal line, the
+season). "Случайная игра" plays hundreds of random actions through the regular `dk_*` calls (battles with random
+results, time jumps), checks the invariants after every action, reports the first action that broke each one and
+restores the kingdom. The log records page errors, rejected promises, console errors and warnings and files that failed
+to load; "Скопировать отчёт" puts the browser, screen, kingdom summary, the last 60 entries and the save on the
+clipboard (or in a .txt file; inside claude.ai files are offered through the artifact's `downloads` capability, so the
+page is published with `downloads` besides `db` and `user`).
