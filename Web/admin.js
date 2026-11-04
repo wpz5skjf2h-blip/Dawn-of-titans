@@ -235,6 +235,15 @@ function firstDiff(a, b) {
 	while (i < a.length && a[i] === b[i]) i++;
 	return '…' + a.slice(Math.max(0, i - 40), i + 40) + '… / …' + b.slice(Math.max(0, i - 40), i + 40) + '…';
 }
+/** Gold, food and portal stones from one state to the next: rewards (goals, quests, chests, calendars) are paid on
+ *  top of full vaults, everything else stops at the cap, so above it they grow only through a reward. */
+function resourceCaps(prev, st, add, reward) {
+	if (reward) return;
+	[[0, 'Золото выросло'], [1, 'Еда выросла'], [3, 'Камни портала выросли']].forEach(([k, what]) => {
+		const v = st.res[k];
+		if (v > st.cap[k] && v > prev.res[k] && v > prev.cap[k]) add('bad', what + ' сверх хранилищ без награды: ' + fmt(prev.res[k]) + ' → ' + fmt(v) + ' из ' + fmt(st.cap[k]));
+	});
+}
 /** Raids won on lands between two states: land id → what they took. Null when the raid log (it keeps the last few
  *  reports) may have dropped some of them. */
 function raidsTook(prev, st) {
@@ -268,9 +277,6 @@ function invariants(st, add) {
 	const B = K.bridge;
 	const res = ['золото', 'еда', 'самоцветы', 'камни портала', 'осколки', 'очки победы'];
 	st.res.forEach((v, i) => { if (!Number.isFinite(v) || v < 0) add('bad', 'Ресурс «' + res[i] + '» = ' + v); });
-	if (st.res[0] > st.cap[0]) add('warn', 'Золота больше хранилищ: ' + fmt(st.res[0]) + ' из ' + fmt(st.cap[0]));
-	if (st.res[1] > st.cap[1]) add('warn', 'Еды больше хранилищ: ' + fmt(st.res[1]) + ' из ' + fmt(st.cap[1]));
-	if (st.res[3] > st.cap[3]) add('warn', 'Камней портала больше лимита: ' + st.res[3] + ' из ' + st.cap[3]);
 	if (st.busy > st.builders) add('bad', 'Строек больше, чем строителей: ' + st.busy + ' из ' + st.builders);
 	for (const b of st.b) {
 		const df = K.defs[b.def];
@@ -348,6 +354,7 @@ function runChecks() {
 		const hA = stA.hash;
 		const sA = B.save();
 		landStores(st, stA, (l, txt) => add(l, txt + ' (за 6 часов)'), false);
+		resourceCaps(st, stA, (l, txt) => add(l, txt + ' (за 6 часов)'), false);
 		B.load(s0);
 		for (let i = 1; i <= 72; i++) B.advance(t0 + 300 * i);
 		const hB = B.state().hash;
@@ -390,6 +397,8 @@ function runMonkey(steps, seed, keep) {
 	const fails = [];
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
+	// Actions that pay a reward, which may go on top of full vaults.
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -460,6 +469,15 @@ function runMonkey(steps, seed, keep) {
 		['выйти из альянса', 1, () => (r() < 0.3 ? B.leave() : -1)],
 		['подкрепления', 2, () => B.reinforce()],
 		['цель', 3, () => (B.goalClaim ? B.goalClaim().err : -1)],
+		['задание', 3, (st) => (B.questClaim && st.quests && st.quests.list.length ? B.questClaim(Math.floor(r() * st.quests.list.length)).err : -1)],
+		['замена задания', 1, (st) => (B.questReroll && st.quests && st.quests.list.length ? B.questReroll(Math.floor(r() * st.quests.list.length)) : -1)],
+		['сундук заданий', 1, () => (B.questChest ? B.questChest().err : -1)],
+		['достижение', 2, (st) => (B.achClaim && st.ach && st.ach.v.length ? B.achClaim(Math.floor(r() * st.ach.v.length)).err : -1)],
+		['календарь новичка', 1, () => {
+			const days = (rules().calendar && rules().calendar.newcomer) || [];
+			return B.calNewcomer && days.length ? B.calNewcomer(Math.floor(r() * days.length), Math.floor(r() * 3)).err : -1;
+		}],
+		['календарь месяца', 1, () => (B.calMonth ? B.calMonth().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -489,6 +507,7 @@ function runMonkey(steps, seed, keep) {
 				};
 				invariants(st2, note);
 				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
+				resourceCaps(st, st2, note, REWARDS.has(act[0]));
 				// Only claiming the reward moves the main line on, one goal at a time.
 				if (st.goal && st2.goal && st2.goal.i !== st.goal.i && (act[0] !== 'цель' || st2.goal.i !== st.goal.i + 1)) {
 					note('bad', 'Цель сменилась с ' + (st.goal.i + 1) + ' на ' + (st2.goal.i + 1));
