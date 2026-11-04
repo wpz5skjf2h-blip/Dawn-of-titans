@@ -2026,6 +2026,7 @@ function refresh(force) {
 	K.lastStateAt = performance.now();
 	if (prev && !force) announce(prev, K.st);
 	if (prev) announceQuests(prev, K.st);
+	if (prev) announceGoal(prev, K.st);
 	announceSeason(K.st);
 	announceRaids(K.st);
 	syncViews();
@@ -2128,6 +2129,7 @@ function initHud() {
 	$('rBuilders').addEventListener('click', openBuilders);
 	$('kQuestBtn').innerHTML = DotIcons.svg('ui.quest') + '<span></span>';
 	$('kQuestBtn').addEventListener('click', openQuests);
+	$('kGoal').addEventListener('click', openGoals);
 	$('kMenuBtn').addEventListener('click', openMenu);
 	$('kAttack').addEventListener('click', openWorldMap);
 	$('kShopBtn').addEventListener('click', openShop);
@@ -2199,6 +2201,7 @@ function updateHud() {
 	}
 	$('kAttackSub').textContent = st.res[3] + ' ' + plural(st.res[3], 'камень', 'камня', 'камней');
 	$('kArmySub').textContent = st.army.total + ' / ' + st.army.cap + ' · ' + st.titans.length + ' ' + plural(st.titans.length, 'титан', 'титана', 'титанов');
+	updateGoal();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2226,6 +2229,10 @@ function select(s) {
 }
 let panelKey = '';
 function updatePanel() {
+	updatePanelOnly();
+	updateGoal();
+}
+function updatePanelOnly() {
 	const el = $('kPanel');
 	const s = K.sel;
 	const wide = K.app.viewW >= 900;
@@ -2439,6 +2446,9 @@ function onAct(e) {
 	case 'quest-claim': claimQuest(id); break;
 	case 'quest-reroll': run(K.bridge.questReroll(id), 'Задание заменено'); break;
 	case 'quest-chest': openQuestChest(); break;
+	case 'goals': openGoals(); break;
+	case 'goal-claim': claimGoal(); break;
+	case 'goal-go': showGoal(); break;
 	case 'site-reset': gemAction('site-reset:' + id, +el.dataset.gems, () => run(K.bridge.siteReset(id), siteDef(id).name + ': можно снова в бой')); break;
 	case 'capture': startAttack(id, true); break;
 	case 'world': openWorldMap(); break;
@@ -3136,6 +3146,8 @@ function openShop() {
 		const st = K.st;
 		const tabs = CATS.map(([id, name]) => '<button class="' + (id === K.shopTab ? 'on' : '') + '" data-act="tab" data-tab="' + id + '">' + name + '</button>').join('');
 		const cards = [];
+		// The building the current goal asks for gets a gold edge.
+		const hint = goalBuilds(st);
 		K.defs.forEach((d, i) => {
 			if (d.category !== K.shopTab || i === K.rules.castleIndex) return;
 			const s = st.shop[i];
@@ -3145,7 +3157,7 @@ function openShop() {
 			if (ck.err === E.Locked) why = 'Откроется на Замке ' + ck.c;
 			else if (ck.err === E.LimitReached) why = ck.c ? 'Ещё одна — на Замке ' + ck.c : 'Построено максимум';
 			else if (!usable) why = errText(ck.err, ck);
-			cards.push('<button class="shopCard' + (usable ? '' : ' off') + '" data-act="shop" data-id="' + i + '"' + (usable ? '' : ' aria-disabled="true"') + '>' +
+			cards.push('<button class="shopCard' + (usable ? '' : ' off') + (i === hint ? ' hint' : '') + '" data-act="shop" data-id="' + i + '"' + (usable ? '' : ' aria-disabled="true"') + '>' +
 				'<span class="pic">' + (thumbs.has(i) ? '<img alt="" src="' + thumbs.get(i) + '">' : '') + buildingIcon(i) + '</span>' +
 				'<b>' + esc(d.name) + '</b><span class="meta"><span>' + s.cnt + ' / ' + s.max + '</span><span>' + (ck.t > 0 ? fmtDur(ck.t) : 'сразу') + '</span></span>' +
 				'<span class="meta">' + costHtml(ck.cost, st.res) + '</span>' + (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</button>');
@@ -3470,6 +3482,141 @@ function openQuestChest() {
 	toast('Ежедневный сундук: ' + parts.join(', '), 'gold');
 	persist();
 	refresh(true);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Main line of goals (master prompt 9.4 and 13.5): one goal at a time, from the first harvest to Castle 9
+// ---------------------------------------------------------------------------------------------
+const GOAL_ICON = { castle: 'building.castle', army: 'ui.army', troopLevel: 'building.armoury', lands: 'land.forest', landLevel: 'land.forest', guard: 'ui.attack',
+	garrison: 'building.garrison', titans: 'building.hall_of_titans', titanLevel: 'building.hall_of_titans', relics: 'building.relic_temple',
+	skills: 'building.hall_of_titans', spells: 'building.spell_forge', spellLevel: 'building.arcane_tower', alliance: 'ui.alliance', missions: 'ui.campaign' };
+const goalDefs = () => K.rules.goals || [];
+const goalDef = (i) => goalDefs()[i];
+const goalName = (g) => g.name.replace('{n}', fmt(g.n || 1));
+const goalReward = (g) => RES.map((k) => (g.reward && g.reward[k]) || 0);
+const defIndex = (id) => K.defs.findIndex((d) => d.id === id);
+function goalIcon(g) {
+	const n = g.check === 'build' || g.check === 'level' ? 'building.' + g.building : g.check === 'event' ? QUEST_ICON[g.event] : GOAL_ICON[g.check];
+	return n && DotIcons.has(n) ? n : 'ui.goal';
+}
+function goalTile(g) {
+	const d = g.check === 'build' || g.check === 'level' ? K.defs[defIndex(g.building)] : null;
+	return 'bld ' + (d ? d.category : 'other');
+}
+/** The building the current goal asks to build (its index), or -1. */
+function goalBuilds(st) {
+	const g = st.goal && goalDef(st.goal.i);
+	return g && g.check === 'build' && !st.goal.done ? defIndex(g.building) : -1;
+}
+/** The goal tracker above the bottom buttons: hidden while a building's panel is open, when placing, and once the line is done. */
+function updateGoal() {
+	const el = $('kGoal');
+	const st = K.st;
+	const g = st && st.goal && goalDef(st.goal.i);
+	el.hidden = !g || !!K.place || !$('kPanel').hidden;
+	if (el.hidden) return;
+	const n = g.n || 1;
+	const v = Math.min(st.goal.v, n);
+	const key = st.goal.i + ':' + v + ':' + st.goal.done;
+	if (el.dataset.k === key) return;
+	el.dataset.k = key;
+	el.classList.toggle('done', !!st.goal.done);
+	el.innerHTML = icoHtml(goalIcon(g), goalTile(g)) + '<span class="gt"><small>' + (st.goal.done ? 'Цель выполнена · заберите награду' : 'Цель ' + (st.goal.i + 1) + ' из ' + goalDefs().length +
+		(n > 1 ? ' · ' + fmtShort(v) + ' / ' + fmtShort(n) : '')) + '</small><b>' + esc(goalName(g)) + '</b><span class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></span></span>';
+	el.title = goalName(g) + (g.hint ? '. ' + g.hint : '');
+}
+function announceGoal(prev, st) {
+	if (!prev.goal || !st.goal || prev.goal.i !== st.goal.i || prev.goal.done || !st.goal.done) return;
+	const g = goalDef(st.goal.i);
+	if (g) toast('Цель выполнена: ' + goalName(g) + '. Заберите награду', 'gold');
+}
+function openGoals() {
+	if (!goalDefs().length) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const all = goalDefs();
+		const i = st.goal.i;
+		const g = all[i];
+		let body;
+		if (!g) {
+			body = '<div class="landCard won">' + icoHtml('ui.goal', 'gold land') + '<div class="info"><b>Все цели пройдены</b><span>Дальше — ежедневные задания, сезоны, лиги альянсов и кампании.</span></div></div>';
+		} else {
+			const n = g.n || 1;
+			const v = Math.min(st.goal.v, n);
+			const btn = st.goal.done ? '<button class="btn primary" data-act="goal-claim">Забрать ' + resPlus(goalReward(g)) + '</button>' : '<button class="btn primary" data-act="goal-go">Показать</button>';
+			body = '<div class="landCard goalCard' + (st.goal.done ? ' won' : '') + '">' + icoHtml(goalIcon(g), goalTile(g)) +
+				'<div class="info"><b>' + esc(goalName(g)) + '</b>' + (g.hint ? '<span>' + esc(g.hint) + '</span>' : '') +
+				'<span>' + (st.goal.done ? 'Выполнено' : 'Сделано ' + fmt(v) + ' из ' + fmt(n)) + ' · награда ' + resPlus(goalReward(g)) + '</span>' +
+				'<div class="progress thin"><i style="width:' + Math.round((100 * v) / n) + '%"></i></div></div><div class="row">' + btn + '</div></div>';
+			const next = all.slice(i + 1, i + 4).map((x) => '<li><span>' + esc(goalName(x)) + '</span><span class="cost">' + resPlus(goalReward(x)) + '</span></li>').join('');
+			if (next) body += '<h3>Дальше</h3><ul class="goalNext">' + next + '</ul>';
+		}
+		const gems = all.reduce((a, x) => a + ((x.reward && x.reward.gems) || 0), 0);
+		const html = sheetTitle(icoHtml('ui.goal', 'bld other'), 'Путь лорда') +
+			'<p class="fine">Цели по порядку ведут от первого урожая до Замка 9: постройки, армия, земли, титаны, заклинания, альянс. За каждую — награда, за весь путь ' +
+			fmt(gems) + ' самоцветов. «Показать» откроет нужную постройку или окно.</p>' +
+			'<div class="costline"><span>Пройдено целей</span><b>' + Math.min(i, all.length) + ' из ' + all.length + '</b></div>' +
+			'<div class="progress"><i style="width:' + Math.round((100 * Math.min(i, all.length)) / all.length) + '%"></i></div>' + body + '<div class="actions">' + closeBtn + '</div>';
+		return { key: ['goals', i, st.goal.v, st.goal.done].join('|'), html };
+	});
+}
+function claimGoal() {
+	const g = goalDef(K.st.goal.i);
+	const r = K.bridge.goalClaim();
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Цель ещё не выполнена' : r.err === E.Nothing ? 'Все цели уже пройдены' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	const parts = rewardParts(r);
+	toast('Цель «' + goalName(g) + '»: ' + (parts.length ? parts.join(', ') : 'награда не поместилась в хранилища'), 'gold');
+	persist();
+	refresh(true);
+	const next = goalDef(K.st.goal.i);
+	toast(next ? 'Новая цель: ' + goalName(next) : 'Все цели пройдены! Дальше — ежедневные задания, сезоны и лиги', next ? '' : 'gold');
+}
+/** Centres the view on the highest building of a kind and selects it; false when there is none. */
+function showBuildingOf(def, building) {
+	const b = K.st.b.filter((x) => x.def === def && (!building || x.lv === 0)).sort((x, y) => y.lv - x.lv)[0];
+	if (!b) return false;
+	const v = world.views.get(b.id);
+	if (v) focusOn(v.anchor.x, v.anchor.z);
+	select({ kind: 'b', id: b.id });
+	return true;
+}
+function shopFor(def) {
+	const d = K.defs[def];
+	if (d) K.shopTab = d.category;
+	openShop();
+}
+/** «Показать»: the building or the screen where the current goal is done. */
+function showGoal() {
+	const g = goalDef(K.st.goal.i);
+	if (!g) return;
+	closeSheet();
+	const own = (id) => K.st.b.some((b) => b.def === defIndex(id) && b.lv >= 1);
+	const at = (id, open) => (own(id) ? open() : shopFor(defIndex(id)));
+	switch (g.check === 'event' ? g.event : g.check) {
+	case 'castle': showBuildingOf(K.rules.castleIndex); break;
+	// One already being built is shown with its timer; otherwise the shop, on the building's tab.
+	case 'build': if (!showBuildingOf(defIndex(g.building), true)) shopFor(defIndex(g.building)); break;
+	case 'level': if (!showBuildingOf(defIndex(g.building))) shopFor(defIndex(g.building)); break;
+	case 'collectGold': showBuildingOf(defIndex('gold_mine')); break;
+	case 'collectFood': showBuildingOf(defIndex('farm')); break;
+	case 'army': case 'train': openBarracks(); break;
+	case 'troopLevel': at('armoury', openArmoury); break;
+	case 'garrison': at('garrison', openDefense); break;
+	case 'titans': case 'titanLevel': case 'skills': openTitans(); break;
+	case 'relics': at('relic_temple', openRelics); break;
+	case 'spells': case 'craft': at('spell_forge', openForge); break;
+	case 'spellLevel': at('arcane_tower', openArcane); break;
+	case 'alliance': openAlliance(); break;
+	case 'missions': case 'mission': at('adventurers_guild', () => openCampaign()); break;
+	case 'upgrade': openShop(); break;
+	default: openWorldMap(); // lands, their levels and guards, raids, wins, stars, sites, stones
+	}
 }
 
 /** A land to attack (neutral or a neighbouring lord's): what fighting it gives and the raid and capture buttons. */
@@ -3825,7 +3972,7 @@ function openWelcome() {
 		key: 'welcome',
 		html: '<h2 id="kSheetTitle">Ваше королевство</h2>' +
 			'<p>Город стоит на осколке расколотого мира, парящем в облаках. Замок — сердце королевства: его уровень открывает новые постройки и их уровни.</p>' +
-			'<dl class="keys"><dt>Золото и еда</dt><dd>копятся в шахтах и на фермах; нажмите на значок над постройкой, чтобы собрать в хранилища</dd>' +
+			'<dl class="keys"><dt>Цель</dt><dd>слева внизу — следующий шаг пути лорда; нажмите на неё, чтобы увидеть подсказку, награду и кнопку «Показать»</dd><dt>Золото и еда</dt><dd>копятся в шахтах и на фермах; нажмите на значок над постройкой, чтобы собрать в хранилища</dd>' +
 			'<dt>Строители</dt><dd>каждый ведёт одну стройку; стройки идут по реальному времени, их можно ускорить самоцветами</dd>' +
 			'<dt>«Строить»</dt><dd>магазин построек; перетащите новую постройку на свободное место</dd>' +
 			'<dt>«Армия»</dt><dd>Казармы обучают отряды за еду, Арсенал поднимает их уровень, Зал титанов и Храм реликвий — ваши титаны; без Лазарета раненые отряды гибнут, как в оригинале</dd>' +
