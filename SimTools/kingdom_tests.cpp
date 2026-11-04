@@ -2220,10 +2220,11 @@ void TestCalendars()
 	KD_CHECK(K.LoginDays() == 1 && K.MonthStartDay() == T0 / Day && K.MonthLogins() == 1 && K.Hash() != Fresh);
 	KD_CHECK(K.NewcomerReady(0) && !K.NewcomerReady(1) && K.ClaimNewcomer(1, 0, nullptr) == Error::NotReady && K.ClaimNewcomer(7, 0, nullptr) == Error::BadId);
 	const int64_t Gems = K.Amount(Res::Gems);
-	const int64_t Room = K.Capacity(Res::Gold) - K.Amount(Res::Gold);
+	const int64_t Gold = K.Amount(Res::Gold);
 	Reward R;
 	KD_CHECK(K.ClaimNewcomer(0, 0, &R) == Error::None && R.res[GemsI] == Cal.newcomer[0].res[GemsI] && K.Amount(Res::Gems) == Gems + R.res[GemsI]);
-	KD_CHECK(R.res[GoldI] == std::min(Room, Cal.newcomer[0].res[GoldI])); // gold and food only as far as the vaults hold
+	// A gift goes on top of full vaults; the vault then collects nothing until gold is spent.
+	KD_CHECK(Gold + Cal.newcomer[0].res[GoldI] > K.Capacity(Res::Gold) && R.res[GoldI] == Cal.newcomer[0].res[GoldI] && K.Amount(Res::Gold) == Gold + R.res[GoldI]);
 	KD_CHECK(K.NewcomerClaimed(0) && !K.NewcomerReady(0) && K.ClaimNewcomer(0, 0, nullptr) == Error::Nothing);
 	KD_CHECK(K.ClaimMonthly(&R) == Error::None && K.MonthClaimed() == 1 && K.ClaimMonthly(nullptr) == Error::NotReady);
 

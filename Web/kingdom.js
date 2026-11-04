@@ -3705,7 +3705,7 @@ function calendarHtml(st) {
 			const act = ready && !d.choice ? 'data-act="cal-new" data-id="' + i + '" data-choice="0"' : '';
 			return calTile(d, st.castle, i + 1, got ? 'got' : ready ? 'ready' : 'locked', act);
 		}).join('');
-		html += '<h3>Неделя новичка</h3><p class="fine">Награда дня открывается на N-й день входа в игру и ждёт, пока её не заберут. Вход засчитан: ' + c.logins + ' ' + plural(c.logins, 'день', 'дня', 'дней') + '.</p>' +
+		html += '<h3>Неделя новичка</h3><p class="fine">Награда дня открывается на N-й день входа в игру и ждёт, пока её не заберут; золото и еда ложатся и сверх склада. Вход засчитан: ' + c.logins + ' ' + plural(c.logins, 'день', 'дня', 'дней') + '.</p>' +
 			'<div class="calGrid">' + tiles + '</div>';
 		const pick = R.newcomer.findIndex((d, i) => d.choice && calNewcomerReady(st, i));
 		if (pick >= 0) {

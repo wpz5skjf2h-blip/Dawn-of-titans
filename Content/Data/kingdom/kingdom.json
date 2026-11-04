@@ -521,7 +521,7 @@
   // Login calendars (master prompt 13.6). A login is the first visit of a UTC day. "newcomer": day N opens on the N-th
   // login (day 3: one of three Epic titans, day 7: a Rare titan, as in the prompt with our roster). "monthly": 28-day
   // cycles; the N-th reward opens on the N-th login of the cycle, missed days are caught up for gems (3 a cycle).
-  // Gold and food are per level of the Castle. Numbers are ours.
+  // Gold and food are per level of the Castle and go on top of full vaults (a gift is never lost). Numbers are ours.
   "calendar": {
     "newcomer": [
       {"res": {"gems": 20, "gold": 1000}},

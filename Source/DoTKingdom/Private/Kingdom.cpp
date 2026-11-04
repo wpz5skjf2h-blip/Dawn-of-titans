@@ -3144,13 +3144,13 @@ Error Kingdom::PayCalendarDay(const CalendarDay& D, int Choice, uint64_t H, Rewa
 	for (int I = 0; I < kResCount; ++I)
 	{
 		const Res X = static_cast<Res>(I);
-		// Gold and food grow with the Castle, so the reward stays worth taking.
+		// Gold and food grow with the Castle, so the reward stays worth taking. A gift goes on top of full vaults (a new
+		// lord's are small); the vaults then collect nothing until it is spent.
 		const int64_t Pay = D.res[static_cast<size_t>(I)] * ((X == Res::Gold || X == Res::Food) ? std::max(1, CastleLevel()) : 1);
 		if (Pay > 0)
 		{
-			const int64_t Before = Amount(X);
-			AddResource(X, Pay);
-			R.res[static_cast<size_t>(I)] += Amount(X) - Before;
+			Res_[static_cast<size_t>(ResIndex(X))] += Pay;
+			R.res[static_cast<size_t>(I)] += Pay;
 		}
 	}
 	const int Titan = D.choice.empty() ? D.titan : D.choice[static_cast<size_t>(Choice)];
