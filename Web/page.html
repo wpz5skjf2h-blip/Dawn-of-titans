@@ -289,6 +289,60 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
 #kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+/* Titan skills: one line per slot. */
+ul.skills { margin: 4px 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+ul.skills li.fine { list-style: circle; }
+/* Daily quests: claimed of today's; a gold edge and a dot when a reward waits. */
+#kQuestBtn { position: relative; font-weight: 700; font-variant-numeric: tabular-nums; }
+#kQuestBtn svg { width: 22px; height: 22px; }
+#kQuestBtn.ready { border-color: var(--bronze); color: var(--valor); }
+#kQuestBtn.ready::after { content: ''; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
+/* The main line of goals: the current goal above the bottom buttons (left); gold when its reward waits. */
+#kGoal { position: absolute; left: var(--gut-l); bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 76px); width: min(300px, calc(100vw - var(--gut-l) - var(--gut-r)));
+  display: flex; align-items: center; gap: 9px; padding: 6px 12px 7px 6px; border-radius: 14px; text-align: left; color: var(--parch);
+  background: linear-gradient(180deg, #1b2229e6, #12171ce6); border: 1px solid var(--hair); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+#kBottom[hidden] ~ #kGoal { display: none; }
+#kGoal .ico.bld { width: 38px; height: 38px; border-radius: 9px; }
+#kGoal .ico svg { width: 30px; height: 30px; }
+#kGoal .gt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+#kGoal small { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+#kGoal b { font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#kGoal .progress { height: 5px; }
+#kGoal.done { border-color: var(--bronze); animation: goalGlow 1.6s ease-in-out infinite; }
+#kGoal.done small { color: var(--valor); font-weight: 700; }
+#kGoal.done::after { content: ''; position: absolute; top: -3px; right: -3px; width: 11px; height: 11px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
+@keyframes goalGlow { 50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(242, 193, 78, 0.35); } }
+ul.goalNext { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+ul.goalNext li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); font-size: 13px; color: var(--dim); }
+ul.goalNext li .cost { white-space: nowrap; }
+.shopCard.hint { border-color: var(--bronze); box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.35); }
+/* Achievements: the medal tile takes the colour of the next tier; pips show the tiers paid. */
+.ico.medal.b0 { background: radial-gradient(circle at 40% 35%, #e3a76f, #7a4420); }
+.ico.medal.b1 { background: radial-gradient(circle at 40% 35%, #e8edf2, #7d8896); }
+.ico.medal.b2 { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); }
+.achCard.ready { border-color: var(--bronze); }
+.achCard.won .info b { color: var(--valor); }
+.achLine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.achLine svg { width: 14px; height: 14px; vertical-align: -2px; }
+.pips { display: inline-flex; gap: 3px; }
+.pips .pip { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.25); }
+.pips .pip.on.b0 { background: #c98a4e; border-color: #c98a4e; }
+.pips .pip.on.b1 { background: #cfd6de; border-color: #cfd6de; }
+.pips .pip.on.b2 { background: #f2c14e; border-color: #f2c14e; }
+#kGoal .achBadge { display: inline-flex; align-items: center; gap: 2px; flex: none; font-weight: 800; font-size: 13px; color: var(--valor); padding: 6px 7px; margin: -6px -4px -6px 0; border-radius: 10px; background: rgba(255, 255, 255, 0.07); }
+#kGoal .achBadge svg { width: 20px; height: 20px; }
+/* Login calendars: a grid of day tiles; gold when the reward can be taken, dim when taken. */
+.calGrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.calDay { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 2px 6px; border-radius: 10px; min-width: 0; height: auto;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); color: var(--parch); font: inherit; cursor: default; }
+.calDay small { font-size: 10px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.calDay svg { width: 24px; height: 24px; }
+.calDay b { font-size: 11px; font-weight: 700; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calDay.ready { border-color: var(--bronze); background: rgba(242, 193, 78, 0.14); }
+.calDay.ready[data-act] { cursor: pointer; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.35); }
+.calDay.got { opacity: 0.45; }
+.calDay.got small::after { content: ' ✓'; color: var(--good); }
+.calDay.locked { opacity: 0.8; }
 #kBottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
   padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding-left: var(--gut-l); padding-right: var(--gut-r); pointer-events: none; }
 #kBottom > * { pointer-events: auto; }
@@ -340,6 +394,39 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .landCard .info span { font-size: 12px; color: var(--dim); }
 .landCard .row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .landCard .row .btn { flex: 1 1 140px; }
+/* Campaign missions: a won mission gets a gold edge; Ilsa Wren's briefing spans the card. */
+.landCard.won { border-color: rgba(244, 196, 79, 0.3); }
+.landCard .brief { grid-column: 1 / -1; margin: 0; font-style: italic; }
+.landCard .info b.gold { color: var(--valor); font-size: inherit; }
+/* World map (kingdom.js openWorldMap): islands on a sky chart; lords and their lands carry the lord's colour (--lord). */
+.landCard.rival, .landCard.lord { border-left: 3px solid var(--lord); }
+.ico.land.lordIco { background: radial-gradient(circle at 40% 35%, #5a626e, #1d2229); box-shadow: inset 0 0 0 2px var(--lord); }
+.lordLine { display: flex; align-items: center; gap: 6px; }
+.lordLine i, .lordChip i { width: 10px; height: 10px; border-radius: 50%; background: var(--lord); flex: 0 0 auto; }
+.worldMap { flex: none; width: 100%; max-width: 480px; margin: 0 auto; border-radius: 16px; overflow: hidden; border: 1px solid var(--hair); aspect-ratio: 1 / 1; }
+#kSheetPanel .worldMap svg.wmap { display: block; width: 100%; height: 100%; vertical-align: top; }
+.wmap .cloud { fill: rgba(220, 232, 245, 0.05); }
+.wmap .orbit { fill: none; stroke: rgba(239, 231, 214, 0.08); stroke-dasharray: 2 6; }
+.wmap .link { stroke-width: 1.4; stroke-dasharray: 3 4; opacity: 0.6; }
+.wmap .mn { cursor: pointer; }
+.wmap .mn .hit { fill: transparent; }
+.wmap .mn .isle { stroke-width: 2; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45)); }
+.wmap .mn.dim .isle, .wmap .mn.dim .gi { opacity: 0.45; }
+.wmap .mn .halo { fill: rgba(255, 255, 255, 0.12); stroke: #fff; stroke-width: 2.2; animation: wmPulse 1.4s ease-in-out infinite; }
+.wmap .mn .shield { fill: rgba(143, 211, 255, 0.1); stroke: #8fd3ff; stroke-width: 1.4; stroke-dasharray: 3 2.5; }
+.wmap .mn .full { fill: #ffd970; stroke: #2a1a05; stroke-width: 1; }
+.wmap .mn .lb circle { fill: #1b232b; stroke: var(--bronze); stroke-width: 1; }
+.wmap .mn .lb text { fill: var(--parch); font: 700 9px var(--font-ui); text-anchor: middle; dominant-baseline: central; }
+@keyframes wmPulse { 50% { stroke-opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .wmap .mn .halo { animation: none; } }
+.mapLegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--dim); margin-top: -4px; }
+.mapLegend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; margin-right: 5px; vertical-align: -2px; }
+.mapLegend i.multi { border-color: #e0645a #e8a33c #a487ea #46b5a6; }
+.mapLegend i.dia { border-radius: 2px; transform: rotate(45deg) scale(0.85); border-color: #f2d38a; }
+.mapLegend i.sh { border: 1.5px dashed #8fd3ff; }
+.lordChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lordChip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--panel-hi); border: 1px solid var(--hair); font-size: 13px; font-weight: 600; }
+.lordChip.on { border-color: var(--lord); box-shadow: inset 0 0 0 1px var(--lord); }
 /* Alliances: emblem shields (colour by emblem index), league tables, the founding form. */
 .emb { width: 44px; height: 44px; border-radius: 10px 10px 22px 22px; display: grid; place-items: center; flex: 0 0 auto; font-family: var(--font-display);
   font-weight: 800; font-size: 12px; letter-spacing: 0.02em; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden;
@@ -407,12 +494,19 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .titanCard.locked { opacity: 0.62; border-style: dashed; }
 .titanCard.locked .ico { filter: grayscale(1); }
 .titanCard .head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.titanCard .head[data-act] { cursor: pointer; }
 .titanCard .head b { font-family: var(--font-display); font-size: 17px; }
 .titanCard .meta { font-size: 12px; color: var(--dim); }
 .titanCard .meta:empty { display: none; }
 .titanCard .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .titanCard .row .btn { flex: 1 1 auto; height: 36px; font-size: 13px; padding: 0 10px; }
 .titanCard .tag { font-size: 12px; color: var(--valor); font-weight: 700; }
+/* Titan figure from titans.js: idles, and the buttons under it play the attack and both abilities. */
+.titanStage { display: grid; grid-template-columns: minmax(0, 190px) 1fr; gap: 12px; align-items: center; margin: 4px 0 10px; }
+#kSheetPanel .titanStage svg.dtF { width: 100%; height: auto; display: block; border-radius: 12px; background: radial-gradient(circle at 50% 38%, #3b4a66, #151b28); }
+.titanStage .clips { display: flex; flex-direction: column; gap: 6px; }
+.titanStage .clips .btn { height: 36px; font-size: 13px; }
+@media (max-width: 420px) { .titanStage { grid-template-columns: 1fr; } .titanStage .dtF { max-width: 220px; margin: 0 auto; } }
 .opt[disabled] { opacity: 0.45; }
 .ico.spell { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 20px;
   background: radial-gradient(circle at 40% 35%, #b08cff, #4b2a8a); color: #f3ecff; }
@@ -494,12 +588,15 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   .bigbtn .bt { max-width: 100%; }
   .bigbtn small { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #kToasts { top: calc(max(8px, env(safe-area-inset-top, 0px)) + 84px); }
+  #kGoal { bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 80px); }
 }
 @media (max-height: 430px) {
   .res { height: 30px; }
   .bigbtn { height: 50px; font-size: 16px; }
   #kPanel { padding: 8px 12px; gap: 6px; }
   #kPanel h3 { font-size: 18px; }
+  #kGoal { bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 62px); width: min(260px, calc(100vw - var(--gut-l) - var(--gut-r))); padding: 4px 10px 5px 4px; }
+  #kGoal .ico.bld { width: 32px; height: 32px; }
 }
 /* ===== Admin mode (Web/admin.js): hidden until switched on; a wrench button and its panel ===== */
 #admBtn { position: absolute; right: var(--gut-r); top: 50%; transform: translateY(-50%); color: #ffb36b; border-color: rgba(255, 150, 70, 0.6); }
@@ -553,6 +650,7 @@ body.adm-perf #perf { display: block !important; }
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
       </button>
       <div class="chip" id="kCastle">Замок 1</div>
+      <button class="chip" id="kQuestBtn" aria-label="Ежедневные задания" hidden></button>
       <div class="res gold" id="rGold" title="Золото"></div>
       <div class="res food" id="rFood" title="Еда"></div>
       <div class="res gems" id="rGems" title="Самоцветы"></div>
@@ -568,6 +666,7 @@ body.adm-perf #perf { display: block !important; }
       <button class="bigbtn alt" id="kArmyBtn"><span class="bt">Армия<small id="kArmySub">Титаны и войска</small></span></button>
       <button class="bigbtn alt" id="kShopBtn"><span class="bt">Строить<small>Магазин</small></span></button>
     </footer>
+    <button id="kGoal" hidden aria-label="Текущая цель"></button>
     <div id="kPanel" hidden></div>
     <div id="kPlace" hidden>
       <p id="kPlaceText">Перетащите постройку на свободное место.</p>
@@ -720,6 +819,7 @@ body.adm-perf #perf { display: block !important; }
 <script id="content-data" type="application/json">/*CONTENT_JSON*/</script>
 <script>
 /*ICONS_JS*/
+/*TITANS_JS*/
 </script>
 <script>
 /*APP_JS*/

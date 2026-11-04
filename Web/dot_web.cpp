@@ -210,6 +210,11 @@ EMSCRIPTEN_KEEPALIVE int dot_load_content()
 	{
 		S.Error = "Content error: " + Error;
 	}
+	if (S.Kingdom)
+	{
+		// Raids on the kingdom resolve with the battle content's troop and titan stats.
+		S.Kingdom->SetBattleContent(S.bContentLoaded ? &S.Content : nullptr);
+	}
 	return S.bContentLoaded ? 1 : 0;
 }
 
@@ -680,7 +685,7 @@ EMSCRIPTEN_KEEPALIVE const char* dot_frame()
 		O.Key("dead").Int(T.dead ? 1 : 0).Comma().Key("fall").Num(Yaw(T.fallDir), 3).Comma();
 		O.Key("ls").Int(T.leapStart).Comma().Key("le").Int(T.leapEnd).Comma().Key("la").Int(T.leapAbility).Comma().Key("stg").Int(T.staggerUntil).Comma();
 		O.Key("ar").Raw("[").Int(T.abilityReadyTick[0]).Comma().Int(T.abilityReadyTick[1]).Raw("]").Comma();
-		O.Key("ch").Int(Sim.TitanChains(T)).Comma().Key("bd").Int(T.boundUntil).Comma();
+		O.Key("ch").Int(Sim.TitanChains(T)).Comma().Key("pn").Int(Sim.TitanPins(T)).Comma().Key("bd").Int(T.boundUntil).Comma();
 		O.Key("au").Int(T.autoControl ? 1 : 0).Comma().Key("o").Int(static_cast<int>(T.order)).Comma().Key("cast").Int(T.castingAbility);
 		if (T.side == dot::Side::Attacker && T.order != dot::OrderType::None)
 		{
@@ -754,6 +759,18 @@ EMSCRIPTEN_KEEPALIVE const char* dot_frame()
 		}
 		bFirst = false;
 		O.Raw("[").Fx(F.center.x).Comma().Fx(F.center.z).Comma().Fx(F.radius).Comma().Int(F.endTick).Raw("]");
+	}
+	// Crewmen still serving each living siege engine: [soldier index, crew].
+	O.Raw("],").Key("cw").Raw("[");
+	bFirst = true;
+	for (size_t I = 0; I < Sim.Soldiers().size(); ++I)
+	{
+		const int Crew = Sim.CrewAlive(Sim.Soldiers()[I]);
+		if (Crew > 0)
+		{
+			O.Raw(bFirst ? "[" : ",[").Int(static_cast<int>(I)).Comma().Int(Crew).Raw("]");
+			bFirst = false;
+		}
 	}
 	const dot::ClashState& Cl = Sim.Clash();
 	O.Raw("],").Key("cl").Raw("{").Key("on").Int(Cl.active ? 1 : 0).Comma().Key("ex").Int(Cl.exchange).Comma();
@@ -891,6 +908,7 @@ EMSCRIPTEN_KEEPALIVE int dk_init()
 		return 0;
 	}
 	S.Kingdom = std::make_unique<dot::kingdom::Kingdom>(S.KingdomContent);
+	S.Kingdom->SetBattleContent(S.bContentLoaded ? &S.Content : nullptr);
 	return 1;
 }
 
@@ -1049,9 +1067,12 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		bFirst = false;
 		O.Raw("{").Key("id").Int(L.id).Comma().Key("type").Int(L.type).Comma().Key("lv").Int(L.level).Comma().Key("titan").Int(L.titanId).Comma();
 		O.Key("st").Int(Km->UncollectedLand(L)).Comma().Key("cap").Int(Km->LandStoreCap(L)).Comma().Key("rate").Int(Km->LandRate(L)).Comma();
-		O.Key("fill").Int(Km->LandFillHours(L)).Raw("}");
+		O.Key("fill").Int(Km->LandFillHours(L)).Comma().Key("up").Int(L.upgrading ? 1 : 0).Comma().Key("s").Int(L.startAt).Comma();
+		O.Key("f").Int(L.finishAt).Comma().Key("skip").Int(Km->LandSkipCost(L.id)).Comma().Key("shield").Int(L.shieldUntil).Comma().Key("nx");
+		WriteCheck(O, Km->CheckLandUpgrade(L.id));
+		O.Raw("}");
 	}
-	O.Raw("],").Key("world").Raw("[");
+	O.Raw("],").Key("landMaxLv").Int(Km->MaxLandLevel()).Comma().Key("world").Raw("[");
 	bFirst = true;
 	for (const WorldLand& W : Km->World())
 	{
@@ -1063,7 +1084,114 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma();
 		O.Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->VictoryVp(W.level)).Raw("}");
 	}
-	O.Raw("],").Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
+	// Neighbouring lords: which lord (rules.rivals.lords), their Castle, titan (army titan index), lands held and the
+	// next land they win back; then their lands with the owner, shield, loot, VP and the guarding titan's level.
+	O.Raw("],").Key("rivals").Raw("[");
+	for (size_t R = 0; R < Km->Rivals().size(); ++R)
+	{
+		const Rival& Rv = Km->Rivals()[R];
+		int Held = 0;
+		for (const WorldLand& W : Km->RivalLands())
+		{
+			Held += W.owner == static_cast<int>(R) ? 1 : 0;
+		}
+		O.Raw(R ? "," : "").Raw("{").Key("lord").Int(Rv.lord).Comma().Key("castle").Int(Km->RivalCastle(static_cast<int>(R))).Comma();
+		O.Key("titan").Int(Km->RivalTitan(static_cast<int>(R))).Comma().Key("lands").Int(Held).Comma();
+		O.Key("target").Int(Km->RivalLandTarget(static_cast<int>(R))).Comma().Key("back").Int(Rv.regrow.empty() ? 0 : Rv.regrow.front()).Raw("}");
+	}
+	O.Raw("],").Key("rivalLands").Raw("[");
+	bFirst = true;
+	for (const WorldLand& W : Km->RivalLands())
+	{
+		if (!bFirst)
+		{
+			O.Comma();
+		}
+		bFirst = false;
+		O.Raw("{").Key("id").Int(W.id).Comma().Key("type").Int(W.type).Comma().Key("lv").Int(W.level).Comma().Key("own").Int(W.owner).Comma();
+		O.Key("shield").Int(W.shieldUntil).Comma().Key("loot").Int(Km->RaidLoot(W)).Comma().Key("vp").Int(Km->WorldVp(W)).Comma();
+		O.Key("tdef").Int(Km->RivalTitan(W.owner)).Comma().Key("tlv").Int(Km->RivalTitanLevel(W)).Raw("}");
+	}
+	// Titan Monuments and XP Arenas: when each opens again, what fighting it now would say, the reset price.
+	O.Raw("],").Key("sites").Raw("[");
+	for (int I = 0; I < Km->SiteCount(); ++I)
+	{
+		O.Raw(I ? "," : "").Raw("{").Key("ready").Int(Km->SiteReadyAt(I)).Comma().Key("gems").Int(Km->SiteResetGems(I)).Comma().Key("ck");
+		WriteCheck(O, Km->CheckSite(I));
+		O.Raw("}");
+	}
+	// Campaigns: best stars and each mission's check (error code) by act, opened chests, and the full check of the next
+	// mission to play (the first not won yet, else the last).
+	O.Raw("],").Key("campaign").Raw("[");
+	for (int A = 0; A < Km->ActCount(); ++A)
+	{
+		const int N = Km->MissionCount(A);
+		int Next = N - 1;
+		for (int M = N - 1; M >= 0; --M)
+		{
+			if (Km->MissionStars(A, M) == 0)
+			{
+				Next = M;
+			}
+		}
+		O.Raw(A ? "," : "").Raw("{").Key("stars").Raw("[");
+		for (int M = 0; M < N; ++M)
+		{
+			O.Raw(M ? "," : "").Int(Km->MissionStars(A, M));
+		}
+		O.Raw("],").Key("err").Raw("[");
+		for (int M = 0; M < N; ++M)
+		{
+			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckMission(A, M).error));
+		}
+		O.Raw("],").Key("chests").Raw("[");
+		for (size_t I = 0; I < C.campaigns.acts[static_cast<size_t>(A)].chests.size(); ++I)
+		{
+			O.Raw(I ? "," : "").Int(Km->ChestClaimed(A, static_cast<int>(I)) ? 1 : 0);
+		}
+		O.Raw("],").Key("total").Int(Km->ActStars(A)).Comma().Key("next").Int(Next).Comma().Key("ck");
+		WriteCheck(O, Km->CheckMission(A, Next));
+		O.Raw("}");
+	}
+	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
+	O.Raw("],").Key("quests").Raw("{").Key("list").Raw("[");
+	for (size_t I = 0; I < Km->Quests().size(); ++I)
+	{
+		const dot::kingdom::DailyQuest& Q = Km->Quests()[I];
+		O.Raw(I ? "," : "").Raw("{").Key("def").Int(Q.def).Comma().Key("target").Int(Q.target).Comma().Key("progress").Int(Q.progress).Comma();
+		O.Key("claimed").Int(Q.claimed ? 1 : 0).Raw("}");
+	}
+	O.Raw("],").Key("rerolls").Int(Km->QuestRerollsLeft()).Comma().Key("chest").Int(Km->QuestChestClaimed() ? 1 : 0).Comma();
+	O.Key("dayEnd").Int(Km->QuestDayEnd()).Raw("},");
+	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
+	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
+	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
+	// catch-ups used, days missed) and today's UTC day.
+	O.Key("cal").Raw("{").Key("logins").Int(Km->LoginDays());
+	{
+		int64_t Mask = 0;
+		for (int D = 0; D < static_cast<int>(C.calendar.newcomer.size()); ++D)
+		{
+			Mask |= Km->NewcomerClaimed(D) ? (int64_t{1} << D) : 0;
+		}
+		O.Comma().Key("ncMask").Int(Mask);
+	}
+	O.Comma().Key("ms").Int(Km->MonthStartDay()).Comma().Key("ml").Int(Km->MonthLogins()).Comma().Key("mc").Int(Km->MonthClaimed());
+	O.Comma().Key("cu").Int(Km->MonthCatchUps()).Comma().Key("miss").Int(Km->MonthMissed()).Comma().Key("today").Int(Km->Now() / 86400).Raw("},");
+	// Achievements (kingdom.json "achievements"): what each counts now and the tiers already paid.
+	O.Key("ach").Raw("{").Key("v").Raw("[");
+	for (int I = 0; I < static_cast<int>(C.achievements.size()); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AchievementValue(I));
+	}
+	O.Raw("],").Key("t").Raw("[");
+	for (int I = 0; I < static_cast<int>(C.achievements.size()); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AchievementTier(I));
+	}
+	O.Raw("]},");
+	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
+	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1131,7 +1259,19 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		{
 			O.Raw(B ? "," : "").Int(Km->TitanRelicBonus(T.id, static_cast<dot::kingdom::RelicStat>(B)));
 		}
-		O.Raw("]}");
+		// Relics and skills together (capped) as the titan takes them into battle; the skills by slot (kind, tier).
+		O.Raw("],").Key("total").Raw("[");
+		for (int B = 0; B <= static_cast<int>(dot::kingdom::RelicStat::Xp); ++B)
+		{
+			O.Raw(B ? "," : "").Int(Km->TitanBonus(T.id, static_cast<dot::kingdom::RelicStat>(B)));
+		}
+		O.Raw("],").Key("skills").Raw("[");
+		for (size_t K = 0; K < T.skills.size(); ++K)
+		{
+			O.Raw(K ? ",[" : "[").Int(T.skills[K].kind).Comma().Int(T.skills[K].tier).Raw("]");
+		}
+		O.Raw("],").Key("sslots").Int(Km->SkillSlots(T));
+		O.Raw("}");
 	}
 	O.Raw("],").Key("tcap").Int(Km->TitanCapacity()).Comma().Key("relicAt").Int(Km->RelicFreeAt()).Comma().Key("altars").Raw("[");
 	for (size_t I = 0; I < C.altars.size(); ++I)
@@ -1184,6 +1324,30 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->PendingSpells()[I]);
 	}
 	O.Raw("]},");
+	// Raids on the kingdom: the Garrison's defense, the city's shield, the reports (forecasts come from dk_forecast).
+	O.Key("raids").Raw("{").Key("castle").Int(C.raids.castle).Comma().Key("next").Int(Km->NextRaidAt()).Comma();
+	O.Key("visit").Int(Km->LastVisit()).Comma().Key("away").Int(C.raids.awaySec).Comma().Key("shield").Int(Km->CityShieldUntil()).Comma();
+	O.Key("read").Int(Km->RaidsReadAt()).Comma().Key("slots").Int(Km->DefenseSlots()).Comma().Key("gtier").Int(Km->GuardTier()).Comma();
+	O.Key("bonus").Int(Km->DefenseBonusPct()).Comma().Key("titan").Int(Km->GarrisonTitan()).Comma().Key("squads").Raw("[");
+	for (size_t I = 0; I < Km->GarrisonSquads().size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->GarrisonSquads()[I]);
+	}
+	O.Raw("],").Key("log").Raw("[");
+	bFirst = true;
+	for (const RaidReport& R : Km->Raids())
+	{
+		O.Raw(bFirst ? "" : ",");
+		bFirst = false;
+		O.Raw("{").Key("at").Int(R.at).Comma().Key("land").Int(R.landId).Comma().Key("type").Int(R.landType).Comma().Key("lv").Int(R.level).Comma();
+		O.Key("stars").Int(R.stars).Comma().Key("rp").Int(R.raidPower).Comma().Key("dp").Int(R.defensePower).Comma().Key("lost").Raw("[");
+		for (size_t I = 0; I < R.lost.size(); ++I)
+		{
+			O.Raw(I ? "," : "").Int(R.lost[I]);
+		}
+		O.Raw("],").Key("vp").Int(R.vp).Comma().Key("titan").Int(R.titanId).Comma().Key("sq").Int(R.squads).Comma().Key("shield").Int(R.shieldUntil).Raw("}");
+	}
+	O.Raw("]},");
 	// Relic items: kind, rarity, durability left (battles, or seconds for economy relics), the titan or building
 	// it is on, effect levels (0 = locked) and their values in tenths of a percent.
 	O.Key("relics").Raw("[");
@@ -1194,14 +1358,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		bFirst = false;
 		O.Raw("{").Key("id").Int(R.id).Comma().Key("kind").Int(R.kind).Comma().Key("r").Int(R.rarity).Comma().Key("dur").Int(Km->RelicLeft(R)).Comma();
 		O.Key("max").Int(Km->RelicMax(R)).Comma().Key("on").Int(Km->RelicTitan(R.id)).Comma().Key("b").Int(R.building).Comma().Key("lv").Raw("[");
-		for (size_t S = 0; S < R.levels.size(); ++S)
+		for (size_t Slot = 0; Slot < R.levels.size(); ++Slot)
 		{
-			O.Raw(S ? "," : "").Int(R.levels[S]);
+			O.Raw(Slot ? "," : "").Int(R.levels[Slot]);
 		}
 		O.Raw("],").Key("v").Raw("[");
-		for (size_t S = 0; S < R.levels.size(); ++S)
+		for (size_t Slot = 0; Slot < R.levels.size(); ++Slot)
 		{
-			O.Raw(S ? "," : "").Int(Km->RelicEffectValue(R, static_cast<int>(S)));
+			O.Raw(Slot ? "," : "").Int(Km->RelicEffectValue(R, static_cast<int>(Slot)));
 		}
 		O.Raw("]}");
 	}
@@ -1282,6 +1446,16 @@ EMSCRIPTEN_KEEPALIVE int dk_abandon_land(int Id)
 	return K() ? static_cast<int>(K()->AbandonLand(Id)) : -1;
 }
 
+EMSCRIPTEN_KEEPALIVE int dk_land_upgrade(int Id, int UseGems)
+{
+	return K() ? static_cast<int>(K()->UpgradeLand(Id, UseGems != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_land_speedup(int Id)
+{
+	return K() ? static_cast<int>(K()->SpeedupLand(Id)) : -1;
+}
+
 /** Squads are troop indices separated by commas (one per squad); TitanId 0 means no titan; Reinforce 1 takes the
  *  allies' squads that have arrived in the Alliance Camp. */
 EMSCRIPTEN_KEEPALIVE int dk_attack_start(int WorldId, int Capture, const char* Squads, int TitanId, const char* Spells, int Reinforce)
@@ -1290,10 +1464,9 @@ EMSCRIPTEN_KEEPALIVE int dk_attack_start(int WorldId, int Capture, const char* S
 }
 
 /** Survivors: each squad's surviving share in percent, in the order the squads were sent. */
-EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int Stars, const char* Survivors, const char* SpellsUsed)
+/** A finished battle's reward as JSON (lands and sites alike). */
+const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 {
-	dot::kingdom::Reward R;
-	const dot::kingdom::Error E = K() ? K()->FinishAttack(WorldId, Capture != 0, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
 	Out O(G().Text);
 	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("gold").Int(R.res[0]).Comma().Key("food").Int(R.res[1]).Comma();
 	O.Key("shards").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Shards))]).Comma();
@@ -1301,6 +1474,9 @@ EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int 
 	O.Key("land").Int(R.landId).Comma().Key("lost").Int(R.squadsLost).Comma().Key("back").Int(R.squadsBack).Comma();
 	O.Key("titan").Int(R.titanId).Comma().Key("xp").Int(R.titanXp).Comma().Key("levels").Int(R.titanLevels).Comma();
 	O.Key("broken").Int(R.relicsBroken).Comma().Key("relicsLost").Int(R.relicsLost).Comma().Key("reinf").Int(R.reinforcements).Comma();
+	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
+	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
+	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1308,6 +1484,110 @@ EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int 
 	}
 	O.Raw("]}");
 	return G().Text.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_attack_finish(int WorldId, int Capture, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishAttack(WorldId, Capture != 0, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** A Titan Monument or XP Arena battle: the army as for dk_attack_start. */
+EMSCRIPTEN_KEEPALIVE int dk_site_start(int Site, const char* Squads, int TitanId, const char* Spells, int Reinforce)
+{
+	return K() ? static_cast<int>(K()->StartSiteAttack(Site, ParseInts(Squads), TitanId, ParseInts(Spells), Reinforce != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_site_finish(int Site, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishSiteAttack(Site, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_site_reset(int Site)
+{
+	return K() ? static_cast<int>(K()->ResetSite(Site)) : -1;
+}
+
+/** A campaign mission battle: the army as for dk_attack_start. */
+EMSCRIPTEN_KEEPALIVE int dk_mission_start(int Act, int Mission, const char* Squads, int TitanId, const char* Spells, int Reinforce)
+{
+	return K() ? static_cast<int>(K()->StartMission(Act, Mission, ParseInts(Squads), TitanId, ParseInts(Spells), Reinforce != 0)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_mission_finish(int Act, int Mission, int Stars, const char* Survivors, const char* SpellsUsed)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishMission(Act, Mission, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Opens a campaign act's star chest: the reward as for a battle (gems, stones, relics, newTitan). */
+EMSCRIPTEN_KEEPALIVE const char* dk_chest(int Act, int Chest)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimChest(Act, Chest, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims a done daily quest: the reward as for a battle (gems, stones). */
+EMSCRIPTEN_KEEPALIVE const char* dk_quest_claim(int Slot)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimQuest(Slot, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims a day of the newcomer calendar (choice: the titan picked on a day with a choice). */
+EMSCRIPTEN_KEEPALIVE const char* dk_cal_newcomer(int Day, int Choice)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimNewcomer(Day, Choice, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims the next reward of the monthly calendar. */
+EMSCRIPTEN_KEEPALIVE const char* dk_cal_month()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimMonthly(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_cal_catchup()
+{
+	return K() ? static_cast<int>(K()->CatchUpMonthly()) : -1;
+}
+
+/** Pays the next tier of an achievement (gems). */
+EMSCRIPTEN_KEEPALIVE const char* dk_ach_claim(int I)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimAchievement(I, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims the current goal of the main line: the reward as for a battle (gold, food, gems, stones). */
+EMSCRIPTEN_KEEPALIVE const char* dk_goal_claim()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimGoal(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_quest_reroll(int Slot)
+{
+	return K() ? static_cast<int>(K()->RerollQuest(Slot)) : -1;
+}
+
+/** Opens the daily chest: the reward as for a battle (gems, stones, relics). */
+EMSCRIPTEN_KEEPALIVE const char* dk_quest_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimQuestChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
 }
 
 EMSCRIPTEN_KEEPALIVE int dk_train(int Troop)
@@ -1538,5 +1818,41 @@ EMSCRIPTEN_KEEPALIVE int dk_skip_titan(int Id)
 EMSCRIPTEN_KEEPALIVE int dk_ascend(int Id, int UseGems)
 {
 	return K() ? static_cast<int>(K()->Ascend(Id, UseGems != 0)) : -1;
+}
+
+/** The player is here (call after advancing): raiders keep coming while the player keeps visiting. */
+EMSCRIPTEN_KEEPALIVE void dk_visit()
+{
+	if (K())
+	{
+		K()->Visit();
+	}
+}
+
+/** Squads are troop indices (one per squad) that defend the city; TitanId 0 means no titan on guard. */
+EMSCRIPTEN_KEEPALIVE int dk_set_garrison(const char* Squads, int TitanId)
+{
+	return K() ? static_cast<int>(K()->SetGarrison(ParseInts(Squads), TitanId)) : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_read_raids()
+{
+	return K() ? static_cast<int>(K()->ReadRaids()) : -1;
+}
+
+/** What a defense can expect now: the city (LandId 0) or a land. */
+EMSCRIPTEN_KEEPALIVE const char* dk_forecast(int LandId)
+{
+	Out O(G().Text);
+	if (!K())
+	{
+		O.Raw("null");
+		return G().Text.c_str();
+	}
+	const dot::kingdom::RaidForecast F = K()->Forecast(LandId);
+	O.Raw("{").Key("on").Int(F.active ? 1 : 0).Comma().Key("dp").Int(F.defense).Comma().Key("rp").Int(F.raiders).Comma();
+	O.Key("lo").Int(F.levelLow).Comma().Key("hi").Int(F.levelHigh).Comma().Key("hold").Int(F.holdPct).Comma().Key("titan").Int(F.titanId).Comma();
+	O.Key("sq").Int(F.squads).Comma().Key("gd").Int(F.guards).Raw("}");
+	return G().Text.c_str();
 }
 }

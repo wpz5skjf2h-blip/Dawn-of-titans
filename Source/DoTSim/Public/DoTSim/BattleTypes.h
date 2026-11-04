@@ -173,6 +173,8 @@ enum class SimEventType : uint8_t
 	ChainThrown,
 	/** A titan is Bound by chains: a = titan id. */
 	TitanBound,
+	/** A ballista bolt lands: a = source squad id, b = soldiers it went through (0 = it hit a titan or nothing), value = pins on the titan. */
+	BoltImpact,
 	Count
 };
 

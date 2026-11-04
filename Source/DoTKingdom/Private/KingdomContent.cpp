@@ -366,6 +366,46 @@ bool LoadArmy(const JsonValue& J, KingdomContent& Out, std::string& Error)
 		Error = "kingdom/army.json: relics need kinds";
 		return false;
 	}
+	if (const JsonValue* S = J.Find("skills"))
+	{
+		SkillRules& Sk = Out.skills;
+		Sk.slots = std::max(1, S->GetInt("slots", Sk.slots));
+		Sk.openPct = std::max(0, std::min(100, S->GetInt("openPct", Sk.openPct)));
+		Sk.upgradePct = std::max(0, std::min(100, S->GetInt("upgradePct", Sk.upgradePct)));
+		const JsonValue* Kinds = S->Find("kinds");
+		for (size_t I = 0; Kinds && I < Kinds->Size(); ++I)
+		{
+			const JsonValue& KJ = (*Kinds)[I];
+			SkillKind K;
+			K.id = KJ.GetString("id");
+			K.name = KJ.GetString("name", K.id);
+			const JsonValue* Tiers = KJ.Find("tiers");
+			if (K.id.empty() || !ParseRelicStat(KJ.GetString("stat"), K.stat) || !Tiers || Tiers->Size() != 3)
+			{
+				Error = "kingdom/army.json: skill '" + K.id + "' needs an id, a titan stat and three tiers";
+				return false;
+			}
+			for (size_t T = 0; T < 3; ++T)
+			{
+				const double V = (*Tiers)[T].AsDouble(0);
+				K.tiers[T] = static_cast<int64_t>(V * 10 + 0.5);
+			}
+			Sk.kinds.push_back(K);
+		}
+		if (const JsonValue* Classes = S->Find("classes"))
+		{
+			for (size_t I = 0; I < Classes->keys.size(); ++I)
+			{
+				std::vector<int64_t> W(Sk.kinds.size(), 0);
+				const JsonValue& CJ = Classes->items[I];
+				for (size_t K = 0; K < Sk.kinds.size(); ++K)
+				{
+					W[K] = std::max<int64_t>(0, CJ.GetInt64(Sk.kinds[K].id.c_str(), 0));
+				}
+				Sk.classWeights.emplace_back(Classes->keys[I], W);
+			}
+		}
+	}
 	Out.landTitanPctPerLevel = J.GetInt64("landTitanPctPerLevel", 1);
 	Out.skipSecPerGem = std::max<int64_t>(1, J.GetInt64("skipSecPerGem", 60));
 	Out.startArmy.assign(Out.troops.size(), 0);
@@ -433,6 +473,45 @@ bool ParseRelicStat(const std::string& S, RelicStat& Out)
 		if (S == ToString(static_cast<RelicStat>(I)))
 		{
 			Out = static_cast<RelicStat>(I);
+			return true;
+		}
+	}
+	return false;
+}
+
+namespace
+{
+const char* const QuestEventNames[] = {"win", "threeStars", "raid", "collectGold", "collectFood", "train", "upgrade", "craft", "stones", "site", "mission"};
+static_assert(sizeof(QuestEventNames) / sizeof(QuestEventNames[0]) == static_cast<size_t>(QuestEvent::Count), "a name for every quest event");
+} // namespace
+
+const char* QuestEventName(QuestEvent E)
+{
+	return E < QuestEvent::Count ? QuestEventNames[static_cast<int>(E)] : "";
+}
+
+bool ParseQuestEvent(const std::string& S, QuestEvent& Out)
+{
+	for (int I = 0; I < static_cast<int>(QuestEvent::Count); ++I)
+	{
+		if (S == QuestEventNames[I])
+		{
+			Out = static_cast<QuestEvent>(I);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ParseGoalCheck(const std::string& S, GoalCheck& Out)
+{
+	static const char* const Names[] = {"castle", "build", "level", "army", "troopLevel", "lands", "landLevel", "guard", "garrison", "titans", "titanLevel",
+		"relics", "skills", "spells", "spellLevel", "alliance", "missions", "event"};
+	for (int I = 0; I < static_cast<int>(GoalCheck::Count); ++I)
+	{
+		if (S == Names[I])
+		{
+			Out = static_cast<GoalCheck>(I);
 			return true;
 		}
 	}
@@ -621,6 +700,9 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			L.spellSlots = LJ.GetInt64("spellSlots", 0);
 			L.maxSpellLevel = LJ.GetInt64("maxSpellLevel", 0);
 			L.reinforcements = LJ.GetInt64("reinforcements", 0);
+			L.defenseSlots = LJ.GetInt64("defenseSlots", 0);
+			L.guardTier = LJ.GetInt64("guardTier", 0);
+			L.defenseBonusPct = LJ.GetInt64("defenseBonusPct", 0);
 			L.estimated = LJ.GetString("src", "est") != "wiki";
 			if (const JsonValue* Reqs = LJ.Find("requires"))
 			{
@@ -650,6 +732,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	Out.armoury = Out.FindBuilding("armoury");
 	Out.medicalSchool = Out.FindBuilding("medical_school");
 	Out.hallOfTitans = Out.FindBuilding("hall_of_titans");
+	Out.garrison = Out.FindBuilding("garrison");
 	Out.relicTemple = Out.FindBuilding("relic_temple");
 	Out.spellForge = Out.FindBuilding("spell_forge");
 	Out.arcaneTower = Out.FindBuilding("arcane_tower");
@@ -723,6 +806,12 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 		}
 		ReadInts(Lands->Find("victoryVp"), Out.victoryVp);
+		ReadInts(Lands->Find("upgradeGold"), Out.landUpgradeGold);
+		ReadInts(Lands->Find("upgradeHours"), Out.landUpgradeSec);
+		for (int64_t& Sec : Out.landUpgradeSec)
+		{
+			Sec *= 3600;
+		}
 		if (const JsonValue* Types = Lands->Find("types"))
 		{
 			for (size_t I = 0; I < Types->Size(); ++I)
@@ -738,6 +827,13 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				ReadInts(J.Find("raidLoot"), T.raidLoot);
 				T.castle = std::max(1, J.GetInt("castle", 1));
 				T.weight = std::max<int64_t>(0, J.GetInt64("weight", 1));
+				if (const JsonValue* Swap = J.Find("swap"))
+				{
+					for (size_t K = 0; K < Swap->keys.size(); ++K)
+					{
+						T.swap.emplace_back(Swap->keys[K], Swap->items[K].AsString());
+					}
+				}
 				if (T.produce.empty())
 				{
 					Error = "kingdom/kingdom.json: land type '" + T.id + "' needs produce";
@@ -751,6 +847,78 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	{
 		Error = "kingdom/kingdom.json: lands need types, fillHours and raidLoot";
 		return false;
+	}
+	if (const JsonValue* Battles = Rules.Find("battles"))
+	{
+		for (size_t I = 0; I < Battles->Size(); ++I)
+		{
+			const JsonValue& J = (*Battles)[I];
+			BattleRowDef B;
+			B.ai = J.GetString("ai", "veteran");
+			B.tier = std::max(1, J.GetInt("tier", 1));
+			if (const JsonValue* Squads = J.Find("squads"))
+			{
+				for (size_t K = 0; K < Squads->Size(); ++K)
+				{
+					B.squads.push_back((*Squads)[K].AsString());
+				}
+			}
+			if (const JsonValue* Titan = J.Find("titan"))
+			{
+				B.titanLevel = std::max(1, Titan->GetInt("level", 1));
+			}
+			Out.battles.push_back(B);
+		}
+	}
+	if (const JsonValue* Raids = Rules.Find("raids"))
+	{
+		RaidRules& R = Out.raids;
+		R.castle = std::max(1, Raids->GetInt("castle", R.castle));
+		R.firstSec = Raids->GetInt64("firstHours", R.firstSec / 3600) * 3600;
+		if (const JsonValue* Every = Raids->Find("everyHours"))
+		{
+			if (Every->Size() == 2)
+			{
+				R.everyMinSec = std::max<int64_t>(1, (*Every)[0].AsInt64(6)) * 3600;
+				R.everyMaxSec = std::max<int64_t>(R.everyMinSec, (*Every)[1].AsInt64(10) * 3600);
+			}
+		}
+		R.awaySec = Raids->GetInt64("awayHours", R.awaySec / 3600) * 3600;
+		R.cityPct = Raids->GetInt64("cityPct", R.cityPct);
+		R.cityShieldSec = Raids->GetInt64("cityShieldHours", R.cityShieldSec / 3600) * 3600;
+		R.landShieldSec = Raids->GetInt64("landShieldHours", R.landShieldSec / 3600) * 3600;
+		R.stealPct = Raids->GetInt64("stealPct", R.stealPct);
+		R.vpPct = Raids->GetInt64("vpPct", R.vpPct);
+		R.landStealPct = Raids->GetInt64("landStealPct", R.landStealPct);
+		R.defenseVpPct = Raids->GetInt64("defenseVpPct", R.defenseVpPct);
+		ReadInts(Raids->Find("citySquads"), R.citySquads);
+		ReadInts(Raids->Find("titanLevels"), R.titanLevels);
+		if (const JsonValue* Guards = Raids->Find("guards"))
+		{
+			for (size_t K = 0; K < Guards->Size(); ++K)
+			{
+				R.guards.push_back((*Guards)[K].AsString());
+			}
+		}
+		R.defaultSlots = std::max(1, Raids->GetInt("noGarrisonSlots", R.defaultSlots));
+		R.defaultGuardTier = std::max(1, Raids->GetInt("noGarrisonTier", R.defaultGuardTier));
+		R.defenderAi = Raids->GetString("defenderAi", R.defenderAi);
+		if (const JsonValue* Odds = Raids->Find("odds"))
+		{
+			R.titanPct = std::max<int64_t>(0, Odds->GetInt64("titanPct", R.titanPct));
+			if (const JsonValue* Ai = Odds->Find("aiPct"))
+			{
+				for (size_t K = 0; K < Ai->keys.size(); ++K)
+				{
+					R.aiPct.emplace_back(Ai->keys[K], std::max<int64_t>(1, Ai->items[K].AsInt64(100)));
+				}
+			}
+			R.oddsKQuarters = std::max(1, std::min(32, static_cast<int>(Odds->GetDouble("k", R.oddsKQuarters / 4.0) * 4.0 + 0.5)));
+			R.oddsC = std::max<int64_t>(1, Odds->GetInt64("c", R.oddsC));
+			R.threeStarRatio = Odds->GetInt64("threeStars", R.threeStarRatio);
+			R.twoStarRatio = Odds->GetInt64("twoStars", R.twoStarRatio);
+		}
+		R.log = std::max(1, Raids->GetInt("log", R.log));
 	}
 	if (const JsonValue* Season = Rules.Find("seasons"))
 	{
@@ -773,6 +941,179 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 					return false;
 				}
 				Out.leagues.push_back(L);
+			}
+		}
+	}
+	if (const JsonValue* Rivals = Rules.Find("rivals"))
+	{
+		RivalRules& R = Out.rivals;
+		if (const JsonValue* Lords = Rivals->Find("lords"))
+		{
+			for (size_t I = 0; I < Lords->Size(); ++I)
+			{
+				const JsonValue& J = (*Lords)[I];
+				R.lords.push_back({J.GetString("name"), J.GetString("realm")});
+			}
+		}
+		std::vector<int64_t> Offsets;
+		ReadInts(Rivals->Find("castleOffsets"), Offsets);
+		for (const int64_t O : Offsets)
+		{
+			R.castleOffsets.push_back(static_cast<int>(O));
+		}
+		R.castle = std::max(1, Rivals->GetInt("castle", R.castle));
+		if (const JsonValue* Lands = Rivals->Find("lands"))
+		{
+			R.landsBase = std::max(1, Lands->GetInt("base", R.landsBase));
+			R.landsPerCastle = std::max(1, Lands->GetInt("perCastle", R.landsPerCastle));
+			R.landsMax = std::max(R.landsBase, Lands->GetInt("max", R.landsMax));
+		}
+		R.regrowSec = std::max<int64_t>(1, Rivals->GetInt64("regrowHours", R.regrowSec / 3600)) * 3600;
+		R.shieldSec = std::max<int64_t>(0, Rivals->GetInt64("shieldHours", R.shieldSec / 3600)) * 3600;
+		R.lootPct = std::max<int64_t>(0, Rivals->GetInt64("lootPct", R.lootPct));
+		R.vpPct = std::max<int64_t>(0, Rivals->GetInt64("vpPct", R.vpPct));
+		ReadInts(Rivals->Find("titanLevels"), R.titanLevels);
+		if (R.lords.size() < R.castleOffsets.size())
+		{
+			Error = "kingdom/kingdom.json: rivals need at least one lord per castle offset";
+			return false;
+		}
+	}
+	if (const JsonValue* Sites = Rules.Find("sites"))
+	{
+		SiteRules& S = Out.sites;
+		S.cooldownSec = std::max<int64_t>(0, Sites->GetInt64("cooldownHours", S.cooldownSec / 3600)) * 3600;
+		S.stones = std::max<int64_t>(0, Sites->GetInt64("stones", S.stones));
+		if (const JsonValue* Pct = Sites->Find("shardPct"))
+		{
+			for (size_t I = 0; I < Pct->Size() && I < S.shardPct.size(); ++I)
+			{
+				S.shardPct[I] = std::max<int64_t>(0, std::min<int64_t>(100, (*Pct)[I].AsInt64(0)));
+			}
+		}
+		if (const JsonValue* SiteList = Sites->Find("list"))
+		{
+			for (size_t I = 0; I < SiteList->Size(); ++I)
+			{
+				const JsonValue& J = (*SiteList)[I];
+				SiteDef D;
+				D.id = J.GetString("id");
+				D.name = J.GetString("name", D.id);
+				D.arena = J.GetString("kind", "monument") == "arena";
+				D.level = std::max(1, std::min(static_cast<int>(Out.battles.size()), J.GetInt("level", 1)));
+				D.castle = std::max(1, J.GetInt("castle", 1));
+				D.ai = J.GetString("ai");
+				D.map = J.GetString("map");
+				D.shards = std::max<int64_t>(0, J.GetInt64("shards", 0));
+				D.xpPct = std::max<int64_t>(0, J.GetInt64("xpPct", 100));
+				D.resetGems = std::max<int64_t>(0, J.GetInt64("resetGems", 0));
+				if (D.id.empty() || Out.battles.empty())
+				{
+					Error = "kingdom/kingdom.json: sites need an id and the battles table";
+					return false;
+				}
+				Out.sites.list.push_back(D);
+			}
+		}
+	}
+	if (const JsonValue* Camp = Rules.Find("campaigns"))
+	{
+		CampaignRules& G = Out.campaigns;
+		G.stones = std::max<int64_t>(0, Camp->GetInt64("stones", G.stones));
+		const std::string Guild = Camp->GetString("guild");
+		G.guild = Guild.empty() ? -1 : Out.FindBuilding(Guild);
+		if (!Guild.empty() && G.guild < 0)
+		{
+			Error = "kingdom/kingdom.json: campaigns.guild names an unknown building";
+			return false;
+		}
+		if (const JsonValue* Acts = Camp->Find("acts"))
+		{
+			for (size_t I = 0; I < Acts->Size(); ++I)
+			{
+				const JsonValue& AJ = (*Acts)[I];
+				ActDef A;
+				A.id = AJ.GetString("id");
+				A.castle = std::max(1, AJ.GetInt("castle", 1));
+				if (const JsonValue* Missions = AJ.Find("missions"))
+				{
+					for (size_t M = 0; M < Missions->Size(); ++M)
+					{
+						const JsonValue& MJ = (*Missions)[M];
+						MissionDef D;
+						D.id = MJ.GetString("id");
+						D.level = std::max(1, std::min(static_cast<int>(Out.battles.size()), MJ.GetInt("level", 1)));
+						ReadCost(MJ.Find("first"), D.first);
+						A.missions.push_back(D);
+					}
+				}
+				if (const JsonValue* Chests = AJ.Find("chests"))
+				{
+					for (size_t K = 0; K < Chests->Size(); ++K)
+					{
+						const JsonValue& CJ = (*Chests)[K];
+						ChestDef D;
+						D.stars = std::max(1, CJ.GetInt("stars", 1));
+						ReadCost(&CJ, D.res);
+						D.relic = std::max(0, std::min(5, CJ.GetInt("relic", 0)));
+						D.titan = std::max(0, std::min(4, CJ.GetInt("titan", 0)));
+						A.chests.push_back(D);
+					}
+				}
+				// Missions are stored as one byte of stars each and chests as bits of a 32-bit mask.
+				if (A.id.empty() || A.missions.empty() || A.missions.size() > 99 || A.chests.size() > 32 || Out.battles.empty())
+				{
+					Error = "kingdom/kingdom.json: a campaign act needs an id, 1-99 missions, at most 32 chests and the battles table";
+					return false;
+				}
+				G.acts.push_back(A);
+			}
+		}
+	}
+	if (const JsonValue* Qj = Rules.Find("dailyQuests"))
+	{
+		QuestRules& Q = Out.quests;
+		Q.count = std::max(0, Qj->GetInt("count", Q.count));
+		Q.rerolls = std::max(0, Qj->GetInt("rerolls", Q.rerolls));
+		// (from Castle level, value) pairs, ascending by level.
+		const auto ReadSteps = [](const JsonValue* StepsJ, std::vector<std::pair<int, int64_t>>& Steps) {
+			for (size_t I = 0; StepsJ && I < StepsJ->Size(); ++I)
+			{
+				const JsonValue& Step = (*StepsJ)[I];
+				if (Step.Size() == 2)
+				{
+					Steps.emplace_back(Step[0].AsInt(1), Step[1].AsInt64(0));
+				}
+			}
+		};
+		if (const JsonValue* Chest = Qj->Find("chest"))
+		{
+			ReadCost(Chest, Q.chest);
+			std::vector<std::pair<int, int64_t>> Relic;
+			ReadSteps(Chest->Find("relic"), Relic);
+			for (const std::pair<int, int64_t>& R : Relic)
+			{
+				Q.chestRelic.emplace_back(R.first, static_cast<int>(std::max<int64_t>(0, std::min<int64_t>(5, R.second))));
+			}
+		}
+		if (const JsonValue* Pool = Qj->Find("pool"))
+		{
+			for (size_t I = 0; I < Pool->Size(); ++I)
+			{
+				const JsonValue& J = (*Pool)[I];
+				QuestDef D;
+				D.id = J.GetString("id");
+				D.castle = std::max(1, J.GetInt("castle", 1));
+				const std::string Needs = J.GetString("needs");
+				D.building = Needs.empty() ? -1 : Out.FindBuilding(Needs);
+				ReadSteps(J.Find("target"), D.target);
+				ReadCost(J.Find("reward"), D.reward);
+				if (D.id.empty() || !ParseQuestEvent(J.GetString("event"), D.event) || D.target.empty() || (!Needs.empty() && D.building < 0))
+				{
+					Error = "kingdom/kingdom.json: daily quest " + D.id + " needs an id, a known event and building, and targets";
+					return false;
+				}
+				Q.pool.push_back(D);
 			}
 		}
 	}
@@ -902,6 +1243,115 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	if (!LoadArmy(Army, Out, Error))
 	{
 		return false;
+	}
+	// The main line of goals names troops, so it comes after the army.
+	if (const JsonValue* Gj = Rules.Find("goals"))
+	{
+		for (size_t I = 0; I < Gj->Size(); ++I)
+		{
+			const JsonValue& J = (*Gj)[I];
+			GoalDef D;
+			D.id = J.GetString("id");
+			const std::string Building = J.GetString("building");
+			const std::string Troop = J.GetString("troop");
+			D.building = Building.empty() ? -1 : Out.FindBuilding(Building);
+			D.troop = Troop.empty() ? -1 : Out.FindTroop(Troop);
+			D.n = std::max<int64_t>(1, J.GetInt64("n", 1));
+			ReadCost(J.Find("reward"), D.reward);
+			const bool bCheck = ParseGoalCheck(J.GetString("check"), D.check);
+			const bool bEvent = !bCheck || D.check != GoalCheck::Event || ParseQuestEvent(J.GetString("event"), D.event);
+			const bool bNeedsBuilding = D.check == GoalCheck::Build || D.check == GoalCheck::Level;
+			const bool bNeedsTroop = D.check == GoalCheck::TroopLevel;
+			if (D.id.empty() || !bCheck || !bEvent || bNeedsBuilding != (D.building >= 0) || bNeedsTroop != (D.troop >= 0) ||
+				(!Building.empty() && D.building < 0) || (!Troop.empty() && D.troop < 0))
+			{
+				Error = "kingdom/kingdom.json: goal " + D.id + " needs an id, a known check (and event) and the building or troop it names";
+				return false;
+			}
+			Out.goals.push_back(D);
+		}
+	}
+	if (const JsonValue* Aj = Rules.Find("achievements"))
+	{
+		for (size_t I = 0; I < Aj->Size(); ++I)
+		{
+			const JsonValue& J = (*Aj)[I];
+			AchievementDef D;
+			D.id = J.GetString("id");
+			const std::string Building = J.GetString("building");
+			const std::string Troop = J.GetString("troop");
+			D.building = Building.empty() ? -1 : Out.FindBuilding(Building);
+			D.troop = Troop.empty() ? -1 : Out.FindTroop(Troop);
+			bool bOk = !D.id.empty() && ParseGoalCheck(J.GetString("check", "event"), D.check);
+			bOk = bOk && (D.check != GoalCheck::Event || ParseQuestEvent(J.GetString("event"), D.event));
+			bOk = bOk && ((D.check == GoalCheck::Build || D.check == GoalCheck::Level) == (D.building >= 0));
+			bOk = bOk && ((D.check == GoalCheck::TroopLevel) == (D.troop >= 0));
+			if (const JsonValue* T = J.Find("tiers"))
+			{
+				for (size_t K = 0; K < T->Size(); ++K)
+				{
+					const JsonValue& Tier = (*T)[K];
+					const int64_t N = Tier.Size() >= 1 ? Tier[0].AsInt64() : 0;
+					const int64_t Gems = Tier.Size() >= 2 ? Tier[1].AsInt64() : 0;
+					bOk = bOk && N >= 1 && Gems >= 0 && (D.tiers.empty() || N > D.tiers.back().first);
+					D.tiers.emplace_back(N, Gems);
+				}
+			}
+			bOk = bOk && !D.tiers.empty() && D.tiers.size() <= 3;
+			for (const AchievementDef& Other : Out.achievements)
+			{
+				bOk = bOk && Other.id != D.id;
+			}
+			if (!bOk)
+			{
+				Error = "kingdom/kingdom.json: achievement " + D.id + " needs a unique id, a known check (and event or building) and 1-3 rising tiers";
+				return false;
+			}
+			Out.achievements.push_back(D);
+		}
+	}
+	if (const JsonValue* Cal = Rules.Find("calendar"))
+	{
+		const auto ReadDays = [&Out](const JsonValue* DayList, std::vector<CalendarDay>& Days) {
+			for (size_t I = 0; DayList && I < DayList->Size(); ++I)
+			{
+				const JsonValue& J = (*DayList)[I];
+				CalendarDay D;
+				ReadCost(J.Find("res"), D.res);
+				const std::string Titan = J.GetString("titan");
+				D.titan = Titan.empty() ? -1 : Out.FindTitan(Titan);
+				bool bOk = Titan.empty() || D.titan >= 0;
+				if (const JsonValue* Choice = J.Find("choice"))
+				{
+					for (size_t K = 0; K < Choice->Size(); ++K)
+					{
+						const int T = Out.FindTitan((*Choice)[K].AsString());
+						bOk = bOk && T >= 0;
+						D.choice.push_back(T);
+					}
+				}
+				D.relic = J.GetInt("relic", 0);
+				bOk = bOk && D.relic >= 0 && D.relic <= 5 && !(D.titan >= 0 && !D.choice.empty());
+				if (!bOk)
+				{
+					return false;
+				}
+				Days.push_back(D);
+			}
+			return true;
+		};
+		CalendarRules& Cr = Out.calendar;
+		const JsonValue* Monthly = Cal->Find("monthly");
+		if (!ReadDays(Cal->Find("newcomer"), Cr.newcomer) || !ReadDays(Monthly ? Monthly->Find("days") : nullptr, Cr.monthly) || Cr.newcomer.size() > 32)
+		{
+			Error = "kingdom/kingdom.json: a calendar day names an unknown titan, a titan and a choice, or a bad relic";
+			return false;
+		}
+		if (Monthly)
+		{
+			Cr.catchUpGems = std::max<int64_t>(0, Monthly->GetInt64("catchUpGems", Cr.catchUpGems));
+			Cr.catchUps = std::max(0, Monthly->GetInt("catchUps", Cr.catchUps));
+		}
 	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;

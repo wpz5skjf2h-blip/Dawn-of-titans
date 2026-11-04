@@ -273,9 +273,13 @@ building("garrison", "Гарнизон", "troops", "other", [3, 3], 2, [[2, 1]],
          {1: 800, 5: 17500, 10: 334300, 15: 1665400, 20: 4497800, 22: 5886600, 23: 6640000},
          {1: secs("5m"), 5: secs("2h 15m"), 10: secs("23h 25m"), 15: secs("3d 17h 50m"), 20: secs("9d 7h 35m"), 22: secs("13d 10h")},
          lambda lv: max(1, lv), gems={1: 5, 5: 291, 10: 1458, 15: 2869, 20: 5562, 22: 7453},
-         stats={"defenders": {1: E(5), 23: E(60)}},
+         # Squads that defend the city, the tier of the Garrison's own guards in the slots the player leaves empty and
+         # a bonus to the city's defense (1.8: a defense buff and extra defense slots; the numbers are ours).
+         stats={"defenseSlots": {lv: E(3 + (lv >= 4) + (lv >= 8) + (lv >= 12) + (lv >= 16) + (lv >= 20)) for lv in range(1, 24)},
+                "guardTier": {lv: E(1 + (lv >= 8) + (lv >= 16)) for lv in range(1, 24)},
+                "defenseBonusPct": {lv: E(lv - 1) for lv in range(1, 24)}},
          reqs={5: [("gold_reserve", 2, 1)], 10: [("food_reserve", 7, 2)]},
-         desc="Войска гарнизона защищают город от нападений других игроков.")
+         desc="Войска и титан гарнизона защищают город от налётчиков.")
 building("armoury", "Арсенал", "troops", "other", [3, 3], 2, [[2, 1]], 24,
          {1: E(1500), 15: 1999000, 16: 2513900, 17: 3096900, 18: 3662800, 19: 4261100, 24: E(7200000)},
          {1: secs("5m"), 15: secs("3d 23h 10m"), 16: secs("4d 18h 10m"), 17: secs("5d 17h"), 18: secs("6d 20h 25m"),
@@ -307,7 +311,7 @@ COUNCILS = [
     ("council_rimeheim", "Совет Римхейма", 6, 35000,
      "Посланники ледяного севера. Их пикинеры бьют морозной сталью и замедляют врага; с 3-го уровня приходят цепеломы."),
     ("council_jade", "Совет Нефритовых Пиков", 7, 55000,
-     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг."),
+     "Посланники горных кланов. Их голиафы медленны, но дубина сбивает с ног всех вокруг; с 3-го уровня приходят расчёты баллист."),
     ("council_mistmoor", "Совет Туманных Топей", 8, 80000,
      "Посланники лесных племён. Их пантеры — самые быстрые войска, укус оставляет яд."),
 ]
@@ -320,7 +324,8 @@ for cid, cname, cunlock, ccost, cdesc in COUNCILS:
 # --- Spells -------------------------------------------------------------------------------
 building("arcane_tower", "Магическая башня", "spells", "other", [2, 2], 6, [[6, 1]], 18,
          {1: 57200, 17: 6009300, 18: 6708500}, {},
-         lambda lv: 6 if lv == 1 else min(25, 6 + lv),
+         # Level L from Castle 5 + L: Castle 9 needs the tower at 3 (wiki), so level 3 must open at Castle 8 or below.
+         lambda lv: min(25, 5 + lv),
          stats={"spellSlots": {1: 1, 18: 6}, "maxSpellLevel": {1: 6, 17: 22, 18: 23}}, time_from_cost=True,
          desc="Улучшает заклинания. Уровень башни задаёт число одновременных улучшений и их предел.")
 building("spell_forge", "Кузня заклинаний", "spells", "other", [3, 3], 5, [[5, 1]], 9,
@@ -412,10 +417,13 @@ TROOPS = [
     troop("troop.knights", "Рыцари", 11, {1: E(240)}, 480, 16000, False),
     # Envoy council troops (see COUNCILS). The original's four peoples' troops cost about twice the Militia to upgrade
     # (guide: 822 000 vs 411 000 at level 10, 7 785 000 vs 3 892 000 at 25), so their upgrades start at 2 x 3 500.
-    # War priests and chainbreakers are the master prompt's own troops; here two councils send them from level 3.
+    # War priests, chainbreakers and the ballista crew are the master prompt's own troops; three councils send them from
+    # level 3. The ballista costs about four militia (master prompt 6.2: 500 food + 500 gold against 240 food) and is the
+    # slowest to train.
     troop("troop.grenadiers", "Гренадеры", 5, {1: E(180)}, 300, 7000, False, "council_sunreach"),
     troop("troop.priests", "Боевые жрецы", 9, {1: E(200)}, 280, 10000, False, "council_sunreach", 3),
     troop("troop.chainbreakers", "Цепеломы", 10, {1: E(200)}, 320, 12000, False, "council_rimeheim", 3),
+    troop("troop.ballista", "Расчёт баллисты", 11, {1: E(300)}, 560, 12000, False, "council_jade", 3),
     troop("troop.pikemen", "Пикинеры", 6, {1: E(240)}, 320, 7000, False, "council_rimeheim"),
     troop("troop.goliaths", "Голиафы", 7, {1: E(420)}, 600, 7000, False, "council_jade"),
     troop("troop.panthers", "Пантеры", 8, {1: E(300)}, 450, 7000, False, "council_mistmoor"),
@@ -427,8 +435,13 @@ TITANS = [
     ("titan.perun", "Перун", "Berserker", 2), ("titan.atlas", "Атлант", "Guardian", 2), ("titan.ymir", "Имир", "Champion", 2),
     ("titan.surtr", "Сурт", "Berserker", 3), ("titan.hecate", "Геката", "Sorcerer", 3), ("titan.artemis", "Артемида", "Ranger", 3),
     ("titan.thor", "Тор", "Berserker", 4),
+    # The original's Infiltrator and Paladin classes (appended so the titans above keep their indices).
+    ("titan.loki", "Локи", "Infiltrator", 2), ("titan.tyr", "Тюр", "Paladin", 3),
+    # The original's Shaman class: the eighth and last class of the roster.
+    ("titan.veles", "Велес", "Shaman", 4),
 ]
-CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт"}
+CLASS_RU = {"Champion": "Чемпион", "Berserker": "Берсерк", "Guardian": "Страж", "Sorcerer": "Чародей", "Ranger": "Следопыт",
+            "Infiltrator": "Лазутчик", "Paladin": "Паладин", "Shaman": "Шаман"}
 ARMY = {
     "schemaVersion": 1,
     "source": "docs/Original_Reference.md",
@@ -439,8 +452,32 @@ ARMY = {
     "titanXp": {"next": [30 * lv * lv + 70 * lv for lv in range(1, 60)], "battle": [60, 90, 120, 160, 200, 250, 300, 360, 420],
                 "starsPct": [30, 100, 120, 150], "recoveryFromLevel": 10, "recoverySecPerLevel": 120},
     # Ascension (wiki, Ascension): only a max-level titan; shards and food by rarity R1..R4; ten more levels,
-    # better health and damage (from the levels) and a new relic slot. The new skill slot is not modelled yet.
+    # better health and damage (from the levels), a new relic slot and a new skill slot ("skills").
     "ascension": {"shards": [5, 25, 50, 100], "food": [180000, 820000, 2300000, 4800000], "levels": 10, "relicSlots": 1},
+    # Titan skills (wiki: skills come by class, fusion opens and raises them, ascension adds one). Kinds, tiers in
+    # percent (crit: percentage points) and the odds are ours; the weights pick a kind by the titan's class.
+    "skills": {
+        "slots": 4, "openPct": 35, "upgradePct": 25,
+        "kinds": [
+            {"id": "might", "name": "Мощь", "stat": "atkPct", "tiers": [3, 5, 8]},
+            {"id": "vigor", "name": "Живучесть", "stat": "hpPct", "tiers": [3, 5, 8]},
+            {"id": "cuirass", "name": "Кираса", "stat": "armorPct", "tiers": [3, 5, 8]},
+            {"id": "precision", "name": "Меткость", "stat": "critPct", "tiers": [2, 3, 4]},
+            {"id": "sunder", "name": "Сокрушение брони", "stat": "piercePct", "tiers": [3, 5, 7]},
+            {"id": "war_cry", "name": "Боевой клич", "stat": "troopAtkPct", "tiers": [2, 3, 4]},
+            {"id": "banner", "name": "Знамя стойкости", "stat": "troopHpPct", "tiers": [2, 3, 4]},
+        ],
+        "classes": {
+            "Champion": {"might": 2, "vigor": 3, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 3},
+            "Guardian": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 1, "banner": 3},
+            "Paladin": {"might": 1, "vigor": 4, "cuirass": 4, "precision": 1, "sunder": 1, "war_cry": 2, "banner": 4},
+            "Berserker": {"might": 4, "vigor": 2, "cuirass": 1, "precision": 3, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Infiltrator": {"might": 4, "vigor": 1, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 1, "banner": 1},
+            "Ranger": {"might": 3, "vigor": 2, "cuirass": 1, "precision": 4, "sunder": 3, "war_cry": 2, "banner": 1},
+            "Sorcerer": {"might": 4, "vigor": 3, "cuirass": 1, "precision": 2, "sunder": 2, "war_cry": 3, "banner": 2},
+            "Shaman": {"might": 2, "vigor": 3, "cuirass": 2, "precision": 1, "sunder": 1, "war_cry": 4, "banner": 4},
+        },
+    },
     # Fusion unlocks at Castle 7 and costs food (wiki); XP and the food amount are estimates.
     "fusion": {"castle": 7, "foodPerStar": 2000, "xpPerStarSq": 150, "keepXpPct": 50},
     # Relic Temple: a free relic every day (wiki); altars for 1 000 and 4 000 gems (wiki); R4 only from altars (wiki).

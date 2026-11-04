@@ -1,7 +1,8 @@
 'use strict';
 // Game icons: hand-drawn SVG glyphs (48 x 48, ink outline) shared by the kingdom screen and the battle HUD.
 // The tile behind a glyph (colour by category) comes from CSS (.ico ...), so the same glyph works on any background.
-// Names: troop.<id>, building.<id>, spell.<id>, relic.<kind id>, class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins>, ui.<name>.
+// Names: troop.<id>, building.<id>, spell.<id>, relic.<kind id>, class.<Class>, altar.<id>, land.<gold|food|forest|lake|mountain|ruins|monument|arena>,
+// mission.<hunt|elite|boss>, ui.<name>.
 
 const DotIcons = (() => {
 	const INK = '#26180c';
@@ -36,6 +37,8 @@ const DotIcons = (() => {
 		r(11.5, 29, 25, 4.5, 2, K.gold) + p('M13 33.5H19.5V42C16 42 13 39 13 36Z', K.steel) + p('M35 33.5H28.5V42C32 42 35 39 35 36Z', K.steel) +
 		r(22.3, 33, 3.4, 9, 1.5, K.steel) + hi('M17 25C18 22.5 20 21.5 22 21');
 	const HAMMER = stick('M24 15V44', K.wood, 3.4) + r(13, 6, 22, 9, 2, '#8e98a6') + hi('M15.5 8.5H32.5');
+	const DAGGER = p('M24 5L27 10V27H21V10Z', K.steel) + line('M24 10V25', K.steelD, 1.2) + r(16.5, 26.5, 15, 3.6, 1.6, K.gold) +
+		r(22, 30, 4, 8, 1.2, K.woodD) + c(24, 40.5, 2.4, K.gold);
 	const SACK = p('M15 17C10 23 8 31 9 37C10 43 38 43 39 37C40 31 38 23 33 17Z', K.burlap) + r(15, 14, 18, 4.5, 2.2, K.woodD) +
 		p('M17 14.5C15 9 21 7 24 11C27 7 33 9 31 14.5Z', K.burlap) +
 		line('M24 38V27M24 30.5L20.5 27.5M24 30.5L27.5 27.5M24 34.5L20.5 31.5M24 34.5L27.5 31.5', '#9a7a3e', 1.6) + hi('M14 24C12 28 12 32 13 35');
@@ -109,6 +112,11 @@ const DotIcons = (() => {
 			p('M17 24L22 26.5L17 28Z', '#9cff6a', 'stroke-width="1"') + p('M31 24L26 26.5L31 28Z', '#9cff6a', 'stroke-width="1"') +
 			p('M21 31.5H27L24 34.5Z', '#4a4452', 'stroke-width="1"') + p('M21 36L22 40L23 36Z', K.white, 'stroke-width="0.8"') + p('M25 36L26 40L27 36Z', K.white, 'stroke-width="0.8"') +
 			drop(26, 40, 0.55, '#8fdc4f') + hi('M13 21C14 18.5 16 17 18 16.5'),
+		// A bolt-thrower seen from the side: two wheels, the stock, the bow arms with their string and a steel-headed bolt.
+		'troop.ballista': stick('M7 39L30 17', K.wood, 4.4) + c(11, 40, 5.2, K.woodD) + c(11, 40, 1.8, K.iron) + c(25, 41, 5.2, K.woodD) + c(25, 41, 1.8, K.iron) +
+			'<g fill="none">' + stick('M19 6Q24 22 41 28', K.woodL, 3) + line('M19 6L21 26L41 28', K.cream, 1.3) + '</g>' +
+			stick('M21 26L39 8', K.woodD, 2.2) + p('M45 2L42.5 11L36.5 5Z', K.steel) + p('M20 23L24 27L20 30L16 26Z', K.red, 'stroke-width="1"') +
+			hi('M11 33L26 18'),
 
 		// --- Buildings ----------------------------------------------------------------------------
 		'building.castle': r(4, 18, 11, 25, 1, K.stone) + p('M3 19L9.5 6L16 19Z', K.blue) + r(33, 18, 11, 25, 1, K.stone) + p('M32 19L38.5 6L45 19Z', K.blue) +
@@ -264,6 +272,14 @@ const DotIcons = (() => {
 		'class.Sorcerer': stick('M24 46V19', K.wood, 3) + p('M16.5 17C17 23 31 23 31.5 17L28 19.5L24 15.5L20 19.5Z', K.gold) + c(24, 11, 8, '#c48bff') +
 			c(21.5, 8.5, 2.6, '#f3e6ff', 'stroke="none"') + spark(36, 6, 2.8, K.white) + spark(11, 20, 2.2, K.white),
 		'class.Ranger': BOW('#5fbf4a'),
+		// Paladin: an upright sword in a halo. Infiltrator: two crossed daggers.
+		'class.Paladin': c(24, 15, 11, 'none', 'stroke-width="5.4"') + c(24, 15, 11, 'none', 'stroke="' + K.gold + '" stroke-width="2.6"') + SWORD +
+			spark(38, 7, 3, K.white) + spark(10, 9, 2.4, K.white),
+		'class.Infiltrator': rot(-38, DAGGER) + rot(38, DAGGER) + c(24, 31, 3.2, '#5fbf4a', 'stroke-width="1.4"'),
+		// Shaman: a frame drum painted with a horned sign, and its beater.
+		'class.Shaman': c(21, 26, 16, K.woodD) + c(21, 26, 12.5, K.cream, 'stroke-width="1.4"') + line('M13 31C15 21 27 21 29 31', '#a2452e', 2.4) +
+			line('M16 22.5L13 17M26 22.5L29 17', '#a2452e', 2) + c(21, 28, 2.6, '#5fe0b0', 'stroke-width="1.2"') + stick('M31 39L42 10', K.wood, 2.6) + c(42, 9, 3.8, K.bone) +
+			hi('M11 20C13 15 17 12 21 11.5'),
 
 		// --- Relic Temple altars, lands, menu -------------------------------------------------------
 		'altar.daily': r(9, 21, 30, 22, 2, '#ff6b5e') + r(7, 15, 34, 7, 2, '#ff8a7d') + r(21.5, 15, 5, 28, 0, K.gold) +
@@ -281,6 +297,12 @@ const DotIcons = (() => {
 			p('M26 24L33 13L40 24Z', '#7f7a6e') + STAR(39, 7, 5, K.gold),
 		'land.ruins': ISLAND + r(10, 9, 5, 15, 1, K.stone) + r(9, 7, 7, 3, 1, K.stoneD) + r(31, 14, 5, 10, 1, K.stone) +
 			p('M31 14L33 12L36 14Z', K.stone, 'stroke-width="1.2"') + p('M24 4L28.5 12L24 22L19.5 12Z', '#8fd8ff') + hi('M22 11L24 6.5') + spark(39, 6, 2.8, K.white),
+		// Titan Monument: a titan's statue on a plinth, with a shard beside it.
+		'land.monument': ISLAND + r(15, 18, 14, 5, 1, K.stoneD) + p('M17 18L18.5 10L16 6.5L19 3.5H25L28 6.5L25.5 10L27 18Z', K.stone) + c(22, 3.6, 2.6, K.stone) +
+			hi('M19.5 7L20.5 12') + p('M35 9L38 14L35 21L32 14Z', '#8fd8ff') + hi('M34 13L35 10.5'),
+		// XP Arena: a stone ring with crossed blades over it.
+		'land.arena': ISLAND + '<ellipse cx="24" cy="20" rx="14" ry="4.8" fill="' + K.stone + '"/>' + '<ellipse cx="24" cy="19.4" rx="9" ry="2.6" fill="#d9b779"/>' +
+			at(13.5, -1.5, 0.45, rot(38, SWORD) + rot(-38, SWORD)) + spark(39, 7, 3, K.white),
 		'ui.attack': rot(40, SWORD) + rot(-40, SWORD),
 		'ui.army': HELMET,
 		'ui.build': rot(-30, HAMMER),
@@ -291,6 +313,35 @@ const DotIcons = (() => {
 		'ui.crystal': p('M24 3L34 13L30 43H18L14 13Z', '#b9a6ff') + p('M24 3L28 13L26 43H22L20 13Z', '#d9ceff', 'stroke-width="1.2"') +
 			line('M14 13H34', '#6b55c4', 1.4) + hi('M17 15L19.5 38') + spark(37, 7, 3.2, K.white) + spark(9, 26, 2.4, K.white),
 		'ui.crack': line('M15 7L22 19L17 25L28 36L26 45', INK, 3.4) + line('M15 7L22 19L17 25L28 36L26 45', K.white, 1.2),
+		// Campaigns: a map with a dashed road to a red cross.
+		'ui.campaign': p('M6 11L17 7L31 11L42 7V37L31 41L17 37L6 41Z', K.cream) + line('M17 7V37M31 11V41', '#c9b48a', 1.3) +
+			line('M11 33C15 26 20 30 23 23C26 17 31 21 34 15', K.woodD, 1.8, 'stroke-dasharray="2.6 2.4"') +
+			line('M33 11L38 16M38 11L33 16', K.red, 2.4) + c(11, 33, 2.2, K.gold),
+		// Daily quests: a scroll with a green tick.
+		'ui.quest': r(9, 4, 30, 7, 3.5, K.burlap) + p('M12 8H36V40H12Z', K.cream) + r(9, 37, 30, 7, 3.5, K.burlap) +
+			line('M17 15H31M17 20H29M17 25H25', '#c9b48a', 1.6) + line('M20 31L24 35L33 24', '#3f9a4a', 3.4) + spark(40, 9, 3, K.fireY),
+		// The main line of goals: a banner on a pole with a gold star.
+		'ui.goal': stick('M13 44V5', K.woodD, 2.4) + c(13, 4, 2.6, K.gold) + p('M14 7H39L32.5 15.5L39 24H14Z', K.red) + spark(24, 15.5, 4.6, K.gold) + hi('M16.5 10H33'),
+		// Achievements: a medal on a ribbon with a star.
+		'ui.medal': p('M15 3H23L28 19H20Z', K.blue) + p('M33 3H25L20 19H28Z', K.red) + c(24, 30, 13, K.gold) + c(24, 30, 9, 'none', 'stroke="' + K.goldD + '" stroke-width="1.6"') +
+			p('M24 23.5L26 28H30.5L27 31L28.3 35.5L24 33L19.7 35.5L21 31L17.5 28H22Z', K.cream, 'stroke-width="1.4"') + hi('M15.5 26C16.5 22.5 19 20 22 19.3'),
+		// Login calendars: a calendar page with rings and a star on the day.
+		'ui.calendar': r(6, 9, 36, 33, 4, K.cream) + p('M6 13C6 10.8 7.8 9 10 9H38C40.2 9 42 10.8 42 13V18H6Z', K.red) + r(14, 4, 4, 9, 2, K.steelD) + r(30, 4, 4, 9, 2, K.steelD) +
+			line('M12 25H16M20 25H24M28 25H32M12 31H16M20 31H24M12 37H16M20 37H24', '#c9b48a', 2.2) + spark(33, 33, 6, K.gold),
+		// A star chest of a campaign act.
+		'ui.chest': p('M8 22H40V40C40 41.5 39 42 37.5 42H10.5C9 42 8 41.5 8 40Z', K.wood) + p('M8 22C8 12 40 12 40 22Z', K.woodL) +
+			r(8, 20.5, 32, 4, 1, K.gold) + r(13, 14.5, 4, 27.5, 1, K.gold) + r(31, 14.5, 4, 27.5, 1, K.gold) + r(20.5, 23, 7, 8, 1.5, K.gold) +
+			c(24, 27, 1.4, INK) + spark(41, 9, 3.2, K.fireY) + hi('M11 18C13 15.5 17 14.5 20 14.5'),
+		// Mission types: a titan hunt (a horned head in the sights), an elite fight (a shield with a star), a boss (a crowned skull).
+		'mission.hunt': p('M14 20C9 17 7 10 10 5C11 11 15 13 18 15Z', K.bone) + p('M34 20C39 17 41 10 38 5C37 11 33 13 30 15Z', K.bone) +
+			p('M15 22C15 13 33 13 33 22V30C33 37 28 41 24 41C20 41 15 37 15 30Z', K.brown) + c(20, 26, 1.8, K.fireY) + c(28, 26, 1.8, K.fireY) +
+			line('M24 2V10M24 38V46M2 26H10M38 26H46', K.red, 2.2) + c(24, 26, 15, 'none', 'stroke="' + K.red + '" stroke-width="2"'),
+		'mission.elite': p('M24 4L40 9V23C40 33 33 40 24 44C15 40 8 33 8 23V9Z', K.blue) + p('M24 8L36 12V23C36 31 31 36 24 40Z', '#78aef0', 'stroke="none"') +
+			STAR(24, 23, 9, K.gold) + hi('M12 12V22'),
+		'mission.boss': p('M11 20L14 6L20 13L24 4L28 13L34 6L37 20Z', K.gold) + c(14, 6, 1.6, K.red) + c(24, 4, 1.6, K.blue) + c(34, 6, 1.6, K.red) +
+			p('M12 22C12 15 36 15 36 22V31C36 34 33 35 31 35V41H17V35C15 35 12 34 12 31Z', K.bone) +
+			p('M16 25C16 22 22 22 22 25C22 28 16 28 16 25Z', INK) + p('M26 25C26 22 32 22 32 25C32 28 26 28 26 25Z', INK) +
+			p('M22.5 31L24 28.5L25.5 31Z', INK) + line('M21 35V41M24 35V41M27 35V41', INK, 1.2),
 	};
 
 	function svg(name, cls) {
