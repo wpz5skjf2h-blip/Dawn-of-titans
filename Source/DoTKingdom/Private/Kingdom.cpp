@@ -195,6 +195,13 @@ void Kingdom::ResetArmy()
 		StartSkills(T);
 		TitanList.push_back(T);
 	}
+	CodexSeenMask = 0;
+	CodexPaidMask = 0;
+	CodexPageMask = 0;
+	for (const TitanState& T : TitanList)
+	{
+		NoteCodex(T.def);
+	}
 	RelicAt = Time;
 	RelicCounter = 0;
 	ResetSpellsAndRelics();
@@ -3353,6 +3360,162 @@ Error Kingdom::ClaimComeback(Reward* Out)
 	return Error::None;
 }
 
+// --- Codex and Lineage Resonance (master prompt 5.9) -------------------------------------------------
+
+void Kingdom::NoteCodex(int Def)
+{
+	if (C.codex.on && Def >= 0 && Def < static_cast<int>(C.titans.size()))
+	{
+		CodexSeenMask |= uint64_t(1) << Def;
+	}
+}
+
+uint64_t Kingdom::OwnedKinds() const
+{
+	uint64_t Mask = 0;
+	for (const TitanState& T : TitanList)
+	{
+		if (T.def >= 0 && T.def < 64)
+		{
+			Mask |= uint64_t(1) << T.def;
+		}
+	}
+	return Mask;
+}
+
+bool Kingdom::CodexSeen(int Def) const
+{
+	return C.codex.on && Def >= 0 && Def < static_cast<int>(C.titans.size()) && (CodexSeenMask >> Def & 1) != 0;
+}
+
+bool Kingdom::CodexClaimed(int Def) const
+{
+	return C.codex.on && Def >= 0 && Def < static_cast<int>(C.titans.size()) && (CodexPaidMask >> Def & 1) != 0;
+}
+
+bool Kingdom::CodexPageClaimed(int Line) const
+{
+	return C.codex.on && Line >= 0 && Line < static_cast<int>(C.lineages.size()) && (CodexPageMask >> Line & 1) != 0;
+}
+
+int Kingdom::CodexEntries() const
+{
+	int N = 0;
+	for (uint64_t M = CodexSeenMask; M; M &= M - 1)
+	{
+		++N;
+	}
+	return N;
+}
+
+Error Kingdom::ClaimCodex(int Def, Reward* Out)
+{
+	if (!C.codex.on || Def < 0 || Def >= static_cast<int>(C.titans.size()))
+	{
+		return Error::BadId;
+	}
+	if (!CodexSeen(Def))
+	{
+		return Error::Locked;
+	}
+	if (CodexClaimed(Def))
+	{
+		return Error::Nothing;
+	}
+	Reward R;
+	ResArray Pay{};
+	const int Stars = std::max(1, std::min(4, C.titans[static_cast<size_t>(Def)].stars));
+	Pay[static_cast<size_t>(ResIndex(Res::Gems))] = C.codex.entryGems[static_cast<size_t>(Stars - 1)];
+	PayGift(Pay, R);
+	CodexPaidMask |= uint64_t(1) << Def;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimCodexPage(int Line, Reward* Out)
+{
+	if (!C.codex.on || Line < 0 || Line >= static_cast<int>(C.lineages.size()))
+	{
+		return Error::BadId;
+	}
+	for (const int Def : C.lineages[static_cast<size_t>(Line)].titans)
+	{
+		if (!CodexSeen(Def))
+		{
+			return Error::NotReady;
+		}
+	}
+	if (CodexPageClaimed(Line))
+	{
+		return Error::Nothing;
+	}
+	Reward R;
+	if (PayEvent(C.lineages[static_cast<size_t>(Line)].page, 0x636f646578ULL, static_cast<uint64_t>(Line), R) == Error::InventoryFull)
+	{
+		return Error::InventoryFull;
+	}
+	CodexPageMask |= uint64_t(1) << Line;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+int Kingdom::ResonanceCount(int Line) const
+{
+	if (!C.codex.on || Line < 0 || Line >= static_cast<int>(C.lineages.size()))
+	{
+		return 0;
+	}
+	int N = 0;
+	for (const int Def : C.lineages[static_cast<size_t>(Line)].titans)
+	{
+		for (const TitanState& T : TitanList)
+		{
+			if (T.def == Def && T.level >= C.codex.level)
+			{
+				++N;
+				break;
+			}
+		}
+	}
+	return N;
+}
+
+int Kingdom::ResonanceTier(int Line) const
+{
+	const int N = ResonanceCount(Line);
+	int Tier = 0;
+	for (size_t I = 0; I < C.codex.resonance.size(); ++I)
+	{
+		if (N >= C.codex.resonance[I].count)
+		{
+			Tier = static_cast<int>(I) + 1;
+		}
+	}
+	return Tier;
+}
+
+int64_t Kingdom::TitanResonanceBonus(int32_t TitanId, RelicStat Stat) const
+{
+	const TitanState* T = FindTitan(TitanId);
+	if (!T || !C.codex.on || T->def < 0 || T->def >= static_cast<int>(C.lineageOf.size()))
+	{
+		return 0;
+	}
+	const int Tier = ResonanceTier(C.lineageOf[static_cast<size_t>(T->def)]);
+	if (Tier <= 0)
+	{
+		return 0;
+	}
+	const auto& R = C.codex.resonance[static_cast<size_t>(Tier - 1)];
+	return 10 * static_cast<int64_t>(Stat == RelicStat::Hp ? R.hpPct : Stat == RelicStat::Atk ? R.atkPct : Stat == RelicStat::Armor ? R.armorPct : 0);
+}
+
 // --- Daily quests ----------------------------------------------------------------------------------
 
 bool Kingdom::QuestOpen(const QuestDef& D) const
@@ -6173,6 +6336,7 @@ Error Kingdom::PayCalendarDay(const CalendarDay& D, int Choice, uint64_t H, Rewa
 		T.def = Titan;
 		StartSkills(T);
 		TitanList.push_back(T);
+		NoteCodex(Titan);
 		R.newTitan = T.id;
 	}
 	if (D.relic > 0)
@@ -6977,6 +7141,7 @@ int32_t Kingdom::AddTitanOf(int Def)
 	T.def = Def;
 	StartSkills(T);
 	TitanList.push_back(T);
+	NoteCodex(Def);
 	return T.id;
 }
 
@@ -7167,7 +7332,7 @@ int64_t Kingdom::TitanSkillBonus(int32_t TitanId, RelicStat Stat) const
 
 int64_t Kingdom::TitanBonus(int32_t TitanId, RelicStat Stat) const
 {
-	return CapBonus(Stat, TitanRelicSum(TitanId, Stat) + TitanSkillBonus(TitanId, Stat));
+	return CapBonus(Stat, TitanRelicSum(TitanId, Stat) + TitanSkillBonus(TitanId, Stat) + TitanResonanceBonus(TitanId, Stat));
 }
 
 const Building* Kingdom::Find(int32_t Id) const
@@ -8671,6 +8836,37 @@ std::string Kingdom::Save() const
 		W.Int(ComebackAt);
 		W.EndObject();
 	}
+	// The Codex (optional): titan kinds ever bound, entries and lineage pages paid, by id.
+	if (C.codex.on)
+	{
+		const auto Kinds = [&](const char* Key, uint64_t Mask) {
+			W.Key(Key);
+			W.BeginArray();
+			for (size_t I = 0; I < C.titans.size(); ++I)
+			{
+				if (Mask >> I & 1)
+				{
+					W.String(C.titans[I].id);
+				}
+			}
+			W.EndArray();
+		};
+		W.Key("codex");
+		W.BeginObject();
+		Kinds("seen", CodexSeenMask);
+		Kinds("paid", CodexPaidMask);
+		W.Key("pages");
+		W.BeginArray();
+		for (size_t I = 0; I < C.lineages.size(); ++I)
+		{
+			if (CodexPageMask >> I & 1)
+			{
+				W.String(C.lineages[I].id);
+			}
+		}
+		W.EndArray();
+		W.EndObject();
+	}
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -9712,6 +9908,37 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		ComebackSec = C.comeback.days > 0 ? std::max<int64_t>(0, CbJ->GetInt64("away", 0)) : 0;
 		ComebackAt = ComebackSec > 0 ? std::max<int64_t>(ComebackSec, CbJ->GetInt64("at", 0)) : 0;
 	}
+	// The Codex (saves before it open the entries of the titans held); kinds and lineages the content no longer has
+	// are dropped, and an entry is paid only once open.
+	CodexSeenMask = 0;
+	CodexPaidMask = 0;
+	CodexPageMask = 0;
+	if (C.codex.on)
+	{
+		const auto Kinds = [&](const JsonValue* List) {
+			uint64_t Mask = 0;
+			for (size_t I = 0; List && I < List->Size(); ++I)
+			{
+				const int Def = C.FindTitan((*List)[I].AsString());
+				Mask |= Def >= 0 ? uint64_t(1) << Def : 0;
+			}
+			return Mask;
+		};
+		const JsonValue* XJ = J.Find("codex");
+		CodexSeenMask = (XJ ? Kinds(XJ->Find("seen")) : 0) | OwnedKinds();
+		CodexPaidMask = (XJ ? Kinds(XJ->Find("paid")) : 0) & CodexSeenMask;
+		const JsonValue* Pages = XJ ? XJ->Find("pages") : nullptr;
+		for (size_t I = 0; Pages && I < Pages->Size(); ++I)
+		{
+			for (size_t L = 0; L < C.lineages.size(); ++L)
+			{
+				if (C.lineages[L].id == (*Pages)[I].AsString())
+				{
+					CodexPageMask |= uint64_t(1) << L;
+				}
+			}
+		}
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -10621,6 +10848,13 @@ uint64_t Kingdom::Hash() const
 	{
 		W.I64(ComebackSec);
 		W.I64(ComebackAt);
+	}
+	// And for the Codex: only once it holds more than the titans in the Hall, or something was paid.
+	if (CodexSeenMask != (C.codex.on ? OwnedKinds() : 0) || CodexPaidMask || CodexPageMask)
+	{
+		W.U64(CodexSeenMask);
+		W.U64(CodexPaidMask);
+		W.U64(CodexPageMask);
 	}
 	// And for Heroic missions: only once one is won or a Heroic chest opened.
 	for (size_t A = 0; A < HeroicStarList.size() || A < HeroicChestMask.size(); ++A)

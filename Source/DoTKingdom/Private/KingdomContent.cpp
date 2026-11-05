@@ -1475,6 +1475,47 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	// Titan lineages (shared by the Lineage Trial and the Codex): a titan in one lineage at most.
+	Out.lineageOf.assign(Out.titans.size(), -1);
+	if (const JsonValue* Lj = Rules.Find("lineages"))
+	{
+		bool bOk = Lj->Size() <= 32;
+		for (size_t I = 0; I < Lj->Size() && bOk; ++I)
+		{
+			const JsonValue& J = (*Lj)[I];
+			LineageDef L;
+			L.id = J.GetString("id");
+			L.name = J.GetString("name", L.id);
+			const JsonValue* Ts = J.Find("titans");
+			for (size_t K = 0; Ts && K < Ts->Size(); ++K)
+			{
+				const int X = Out.FindTitan((*Ts)[K].AsString());
+				bOk = bOk && X >= 0 && Out.lineageOf[static_cast<size_t>(X)] < 0;
+				if (X >= 0)
+				{
+					Out.lineageOf[static_cast<size_t>(X)] = static_cast<int>(I);
+				}
+				L.titans.push_back(X);
+			}
+			if (const JsonValue* Pj = J.Find("page"))
+			{
+				ReadCost(Pj, L.page.res);
+				L.page.relic = std::max(0, std::min(5, Pj->GetInt("relic", 0)));
+				L.page.divine = std::max<int64_t>(0, Pj->GetInt64("divine", 0));
+			}
+			bOk = bOk && !L.id.empty() && !L.titans.empty();
+			for (const LineageDef& Other : Out.lineages)
+			{
+				bOk = bOk && Other.id != L.id;
+			}
+			Out.lineages.push_back(L);
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: lineages need distinct ids, at least one known titan each, and no titan in two lineages";
+			return false;
+		}
+	}
 	if (const JsonValue* Dj = Rules.Find("dailyTrials"))
 	{
 		DailyTrialRules& D = Out.dailyTrials;
@@ -1491,7 +1532,15 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				D.tierCastle.push_back(Castle);
 			}
 		}
-		if (const JsonValue* Lines = Dj->Find("lineages"))
+		if (!Dj->Find("lineages"))
+		{
+			// The shared lineages, in their order.
+			for (const LineageDef& L : Out.lineages)
+			{
+				D.lineages.push_back(L.titans);
+			}
+		}
+		else if (const JsonValue* Lines = Dj->Find("lineages"))
 		{
 			for (size_t I = 0; I < Lines->Size(); ++I)
 			{
@@ -1869,6 +1918,41 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		Cb.gift.relic = std::max(0, std::min(5, Cj->GetInt("relic", 0)));
 		Cb.gift.divine = std::max<int64_t>(0, Cj->GetInt64("divine", 0));
 		Cb.scrolls = std::max<int64_t>(0, Cj->GetInt64("scrolls", 0));
+	}
+	if (const JsonValue* Xj = Rules.Find("codex"))
+	{
+		// The Codex keeps its entries in a 64-bit mask, so it needs lineages and 64 titans at most.
+		CodexRules& X = Out.codex;
+		X.on = !Out.lineages.empty() && Out.titans.size() <= 64;
+		if (const JsonValue* Gj = Xj->Find("entryGems"))
+		{
+			for (size_t I = 0; I < Gj->Size() && I < X.entryGems.size(); ++I)
+			{
+				X.entryGems[I] = std::max<int64_t>(0, (*Gj)[I].AsInt64());
+			}
+		}
+		X.power = std::max<int64_t>(0, std::min<int64_t>(1000000, Xj->GetInt64("power", 0)));
+		X.level = std::max(1, std::min(100, Xj->GetInt("level", X.level)));
+		bool bOk = true;
+		if (const JsonValue* Rj = Xj->Find("resonance"))
+		{
+			for (size_t I = 0; I < Rj->Size() && I < 8; ++I)
+			{
+				const JsonValue& J = (*Rj)[I];
+				ResonanceTier T;
+				T.count = J.GetInt("count", 0);
+				T.hpPct = std::max(0, std::min(100, J.GetInt("hp", 0)));
+				T.atkPct = std::max(0, std::min(100, J.GetInt("atk", 0)));
+				T.armorPct = std::max(0, std::min(100, J.GetInt("armor", 0)));
+				bOk = bOk && T.count >= 1 && (X.resonance.empty() || T.count > X.resonance.back().count);
+				X.resonance.push_back(T);
+			}
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: codex resonance tiers need rising counts from 1";
+			return false;
+		}
 	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{

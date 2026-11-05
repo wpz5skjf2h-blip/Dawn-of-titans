@@ -2089,6 +2089,123 @@ std::string WithTitans(const std::string& Save, const std::vector<std::pair<int3
 	return Replace(Save, "\"titans\":[", "\"titans\":[" + List);
 }
 
+/** The Codex and Lineage Resonance (master prompt 5.9): entries for every titan kind ever bound, lineage pages, Kingdom
+ *  Power per entry, and Resonance bonuses by the kinds of a lineage at the Codex level. */
+void TestCodex()
+{
+	const KingdomContent& Ct = Content();
+	const CodexRules& X = Ct.codex;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int Talos = Ct.FindTitan("titan.talos");
+	const int Perun = Ct.FindTitan("titan.perun");
+	const int Thor = Ct.FindTitan("titan.thor");
+	const int Veles = Ct.FindTitan("titan.veles");
+	// Three lineages, every titan in one; the Lineage Trial takes the same ones.
+	KD_CHECK(X.on && Ct.lineages.size() == 3 && Ct.lineages[0].id == "olympus" && Ct.lineages[0].titans.size() == 6 && Ct.lineages[2].titans.size() == 2);
+	KD_CHECK(Ct.lineageOf.size() == Ct.titans.size() && std::all_of(Ct.lineageOf.begin(), Ct.lineageOf.end(), [](int L) { return L >= 0; }));
+	KD_CHECK(Ct.lineageOf[static_cast<size_t>(Talos)] == 0 && Ct.lineageOf[static_cast<size_t>(Thor)] == 1 && Ct.lineageOf[static_cast<size_t>(Perun)] == 2);
+	KD_CHECK(Ct.dailyTrials.lineages.size() == Ct.lineages.size() && Ct.dailyTrials.lineages[1] == Ct.lineages[1].titans);
+	KD_CHECK(X.entryGems == (std::array<int64_t, 4>{5, 10, 20, 40}) && X.power == 5 && X.level == 20 && X.resonance.size() == 3);
+	KD_CHECK(X.resonance[0].count == 2 && X.resonance[0].hpPct == 2 && X.resonance[1].atkPct == 2 && X.resonance[2].count == 6 && X.resonance[2].armorPct == 2);
+	KD_CHECK(Ct.lineages[0].page.res[GemsI] == 60 && Ct.lineages[0].page.relic == 4 && Ct.lineages[2].page.divine == 40);
+
+	// A new kingdom: the start titans' entries are open, none paid; the hash is as before the Codex.
+	Kingdom K(Ct);
+	K.NewGame(T0, 141);
+	KD_CHECK(K.CodexSeen(Talos) && K.CodexSeen(Perun) && !K.CodexSeen(Thor) && K.CodexEntries() == 2 && !K.CodexClaimed(Talos));
+	const uint64_t H0 = K.Hash();
+	// Bad ids, a kind never bound, then an entry paid once by its stars.
+	KD_CHECK(K.ClaimCodex(-1, nullptr) == Error::BadId && K.ClaimCodex(static_cast<int>(Ct.titans.size()), nullptr) == Error::BadId);
+	KD_CHECK(K.ClaimCodex(Thor, nullptr) == Error::Locked);
+	const int64_t Gems = K.Amount(Res::Gems);
+	Reward R;
+	KD_CHECK(K.ClaimCodex(Perun, &R) == Error::None && R.res[GemsI] == 10 && K.Amount(Res::Gems) == Gems + 10 && K.CodexClaimed(Perun));
+	KD_CHECK(K.ClaimCodex(Perun, &R) == Error::Nothing && K.Amount(Res::Gems) == Gems + 10 && K.Hash() != H0);
+	KD_CHECK(K.ClaimCodex(Talos, &R) == Error::None && R.res[GemsI] == 5);
+	// Pages: not before every entry of the lineage is open.
+	KD_CHECK(K.ClaimCodexPage(2, nullptr) == Error::NotReady && K.ClaimCodexPage(3, nullptr) == Error::BadId && K.ClaimCodexPage(-1, nullptr) == Error::BadId);
+
+	// A summon opens the entry; it stays open after the titan is gone (saved by id).
+	std::string Error;
+	Kingdom KS(Ct);
+	KD_CHECK(KS.Load(WithBuilding(Replace(K.Save(), "\"divine\":{\"gems\":0", "\"divine\":{\"gems\":2500"), "eternal_shrine", 1, 30), Error) && !KS.CodexSeen(Veles));
+	int32_t VelesId = 0;
+	KD_CHECK(KS.BuyDivine(0, Veles, &VelesId) == Error::None && VelesId > 0 && KS.CodexSeen(Veles) && KS.CodexEntries() == 3);
+	const std::string WithVeles = KS.Save();
+	KD_CHECK(WithVeles.find("\"codex\":{\"seen\":[") != std::string::npos && WithVeles.find("\"titan.veles\"") != std::string::npos);
+	const std::string Gone = Replace(WithVeles, "{\"id\":" + std::to_string(VelesId) + ",\"def\":\"titan.veles\"", "{\"id\":" + std::to_string(VelesId) + ",\"def\":\"titan.talos\"");
+	Kingdom G(Ct);
+	KD_CHECK(G.Load(Gone, Error) && G.CodexSeen(Veles) && G.CodexClaimed(Perun) && !G.CodexClaimed(Veles) && G.CodexEntries() == 3);
+	// The Nav and Prav page: 40 gems and 40 divine gems, once.
+	const int64_t Divine = G.DivineGems();
+	KD_CHECK(G.ClaimCodexPage(2, &R) == Error::None && R.res[GemsI] == 40 && R.divine == 40 && G.DivineGems() == Divine + 40 && G.CodexPageClaimed(2));
+	KD_CHECK(G.ClaimCodexPage(2, &R) == Error::Nothing);
+	// Saved and loaded: the same kingdom and hash.
+	Kingdom G2(Ct);
+	KD_CHECK(G2.Load(G.Save(), Error) && G2.Save() == G.Save() && G2.Hash() == G.Hash() && G2.CodexPageClaimed(2));
+	// Kinds the content does not know and pages paid before their entries are dropped; paid needs open.
+	const std::string Odd = Replace(G.Save(), "\"paid\":[", "\"paid\":[\"titan.thor\",\"titan.nobody\",");
+	Kingdom O(Ct);
+	KD_CHECK(O.Load(Odd, Error) && !O.CodexClaimed(Thor) && O.Hash() == G.Hash());
+
+	// A save before the Codex opens the entries of the titans it holds, and hashes as before.
+	const size_t At = WithVeles.find(",\"codex\":{");
+	const std::string Old = WithVeles.substr(0, At) + WithVeles.substr(WithVeles.find("]}", WithVeles.find("\"pages\":[", At)) + 2);
+	Kingdom OldK(Ct);
+	KD_CHECK(Old.find("codex") == std::string::npos && OldK.Load(Old, Error) && OldK.CodexSeen(Veles) && OldK.CodexEntries() == 3 && !OldK.CodexClaimed(Perun));
+	Kingdom Fresh(Ct);
+	Fresh.NewGame(T0, 141);
+	const size_t FAt = Fresh.Save().find(",\"codex\":{");
+	const std::string FreshSave = Fresh.Save();
+	const std::string FreshOld = FreshSave.substr(0, FAt) + FreshSave.substr(FreshSave.find("]}", FreshSave.find("\"pages\":[", FAt)) + 2);
+	KD_CHECK(OldK.Load(FreshOld, Error) && OldK.Hash() == H0);
+
+	// The Olympus page: all six kinds bound (two Talos count once); a full relic inventory refuses it whole.
+	const std::string Olympus = WithTitans(K.Save(), {{801, "titan.talos"}, {802, "titan.minotaur"}, {803, "titan.cyclops"}, {804, "titan.atlas"}, {805, "titan.hecate"}, {806, "titan.artemis"}});
+	std::string Many = RelicJson(1000, "atk", 1, 20, "[1]");
+	for (int I = 1; I < Ct.maxRelics; ++I)
+	{
+		Many += "," + RelicJson(1000 + I, "atk", 1, 20, "[1]");
+	}
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(Replace(Olympus, "\"relics\":[],\"relicAt\"", "\"relics\":[" + Many + "],\"relicAt\""), Error) && static_cast<int>(F.Relics().size()) == Ct.maxRelics);
+	const int64_t FGems = F.Amount(Res::Gems);
+	KD_CHECK(F.ClaimCodexPage(0, &R) == Error::InventoryFull && F.Amount(Res::Gems) == FGems && !F.CodexPageClaimed(0));
+	Kingdom Ol(Ct);
+	KD_CHECK(Ol.Load(Olympus, Error) && Ol.CodexEntries() == 7);
+	const size_t Relics = Ol.Relics().size();
+	KD_CHECK(Ol.ClaimCodexPage(0, &R) == Error::None && R.res[GemsI] == 60 && R.relics.size() == 1 && Ol.Relics().size() == Relics + 1 && Ol.FindRelic(R.relics[0])->rarity == 4);
+	// Kingdom Power: 5 an entry.
+	KD_CHECK(Ol.KingdomPower().codex == 35 && KS.KingdomPower().codex == 15 && K.KingdomPower().codex == 10);
+
+	// Resonance: the kinds of a lineage at level 20 or higher; level 19 does not count, a second Talos neither.
+	const auto Leveled = [&](const std::vector<std::pair<int32_t, int>>& Levels) {
+		std::string S = Olympus;
+		for (const std::pair<int32_t, int>& L : Levels)
+		{
+			const std::string Id = "{\"id\":" + std::to_string(L.first) + ",";
+			const size_t P = S.find(Id);
+			const size_t Lv = S.find("\"level\":1,", P);
+			S = S.substr(0, Lv) + "\"level\":" + std::to_string(L.second) + "," + S.substr(Lv + 10);
+		}
+		return S;
+	};
+	Kingdom N(Ct);
+	KD_CHECK(N.Load(Leveled({{801, 20}, {802, 19}}), Error) && N.ResonanceCount(0) == 1 && N.ResonanceTier(0) == 0 && N.TitanResonanceBonus(801, RelicStat::Hp) == 0);
+	KD_CHECK(N.Load(Leveled({{801, 20}, {802, 20}}), Error) && N.ResonanceCount(0) == 2 && N.ResonanceTier(0) == 1);
+	KD_CHECK(N.TitanResonanceBonus(801, RelicStat::Hp) == 20 && N.TitanResonanceBonus(803, RelicStat::Hp) == 20 && N.TitanResonanceBonus(801, RelicStat::Atk) == 0);
+	// Other lineages get nothing; the bonus is in what the titan takes into battle.
+	const int32_t PerunId = std::find_if(N.Titans().begin(), N.Titans().end(), [&](const kingdom::TitanState& T) { return T.def == Perun; })->id;
+	KD_CHECK(N.TitanResonanceBonus(PerunId, RelicStat::Hp) == 0 && N.ResonanceTier(2) == 0);
+	KD_CHECK(N.TitanBonus(803, RelicStat::Hp) == N.TitanRelicBonus(803, RelicStat::Hp) + N.TitanSkillBonus(803, RelicStat::Hp) + 20);
+	KD_CHECK(N.Load(Leveled({{801, 20}, {802, 20}, {803, 25}, {804, 30}}), Error) && N.ResonanceTier(0) == 2 && N.TitanResonanceBonus(805, RelicStat::Atk) == 20 && N.TitanResonanceBonus(805, RelicStat::Hp) == 40);
+	KD_CHECK(N.Load(Leveled({{801, 20}, {802, 20}, {803, 20}, {804, 20}, {805, 20}, {806, 20}}), Error) && N.ResonanceTier(0) == 3);
+	KD_CHECK(N.TitanResonanceBonus(806, RelicStat::Hp) == 60 && N.TitanResonanceBonus(806, RelicStat::Atk) == 40 && N.TitanResonanceBonus(806, RelicStat::Armor) == 20 && N.TitanResonanceBonus(806, RelicStat::Crit) == 0);
+	// The Resonance is derived: it is neither saved nor hashed.
+	Kingdom N2(Ct);
+	KD_CHECK(N2.Load(Leveled({{801, 20}, {802, 20}, {803, 20}, {804, 20}, {805, 20}, {806, 20}}), Error) && N2.Hash() == N.Hash());
+}
+
 void TestTitanSkills()
 {
 	const KingdomContent& Ct = Content();
@@ -3612,10 +3729,13 @@ void TestKingdomPower()
 	KD_CHECK(Ct.power.building == 10 && Ct.power.castleMul == 5 && Ct.power.titans == 5 && Ct.power.research == 25);
 	Kingdom K(Ct);
 	K.NewGame(T0, 7);
-	// Without the battle content: the Castle at level 1 is 10 × 5, the other start buildings 10 each, no research.
+	// Without the battle content: the Castle at level 1 is 10 × 5, the other start buildings 10 each, no research; the
+	// Codex gives 5 for each start titan's kind.
 	KingdomPowerInfo P = K.KingdomPower();
 	const int64_t StartBuildings = 50 + 10 * static_cast<int64_t>(Ct.startBuildings.size() - 1);
-	KD_CHECK(P.buildings == StartBuildings && P.titans == 0 && P.top.empty() && P.research == 0 && P.total == StartBuildings);
+	const int64_t StartCodex = 5 * K.CodexEntries();
+	KD_CHECK(Ct.codex.power == 5 && K.CodexEntries() >= 1 && P.codex == StartCodex);
+	KD_CHECK(P.buildings == StartBuildings && P.titans == 0 && P.top.empty() && P.research == 0 && P.total == StartBuildings + StartCodex);
 	KD_CHECK(K.TitanPowerOf(K.Titans()[0].id) == 0);
 	const uint64_t Hash = K.Hash();
 	K.SetBattleContent(&Battle());
@@ -3646,7 +3766,7 @@ void TestKingdomPower()
 		KD_CHECK(I == 0 || P.top[I - 1].second >= P.top[I].second);
 		Sum += P.top[I].second;
 	}
-	KD_CHECK(P.titans == Sum && P.total == StartBuildings + Sum && P.research == 0);
+	KD_CHECK(P.titans == Sum && P.total == StartBuildings + StartCodex + Sum && P.research == 0);
 	KD_CHECK(K.TitanPowerOf(-5) == 0);
 
 	// Levels count as L^1.5 rounded down (2 gives 28, 4 gives 80, 9 gives 270), the Castle five times.
@@ -3699,7 +3819,8 @@ void TestKingdomPower()
 	KD_CHECK(Ach >= 0 && Ct.achievements[static_cast<size_t>(Ach)].check == GoalCheck::Power);
 	KD_CHECK(M.AchievementValue(Ach) == Many.total && K.AchievementValue(Ach) == P.total);
 	Kingdom NoBattle(Ct);
-	KD_CHECK(NoBattle.Load(S, Error) && NoBattle.AchievementValue(Ach) == Many.buildings + Many.research);
+	KD_CHECK(NoBattle.Load(S, Error) && NoBattle.AchievementValue(Ach) == Many.buildings + Many.research + Many.codex);
+	KD_CHECK(Many.codex == 5 * M.CodexEntries() && M.CodexEntries() > K.CodexEntries());
 }
 
 /** Scouting before a battle (master prompt 9.3): the odds of the raids for any battle. */
@@ -4865,6 +4986,7 @@ int main()
 		{"Spire", TestSpire},
 		{"Heroic", TestHeroic},
 		{"Comeback", TestComeback},
+		{"Codex", TestCodex},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},

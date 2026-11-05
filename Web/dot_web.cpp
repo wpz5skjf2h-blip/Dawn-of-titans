@@ -1227,6 +1227,28 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	// The comeback gift waiting: the absence that earned it and when it began (0: none).
 	O.Key("comeback").Raw("{").Key("away").Int(Km->ComebackAway()).Comma().Key("since").Int(Km->ComebackSince()).Raw("},");
+	// The Codex: per titan kind (army.json order) 0 never bound, 1 open, 2 paid; per lineage its page (0 not full, 1 full,
+	// 2 paid) and Resonance (kinds at the Codex level, tier reached).
+	{
+		O.Key("codex").Raw("{").Key("on").Raw(C.codex.on ? "true" : "false").Comma().Key("e").Raw("[");
+		for (size_t I = 0; I < C.titans.size(); ++I)
+		{
+			const int Def = static_cast<int>(I);
+			O.Raw(I ? "," : "").Int(Km->CodexClaimed(Def) ? 2 : Km->CodexSeen(Def) ? 1 : 0);
+		}
+		O.Raw("]").Comma().Key("p").Raw("[");
+		for (size_t L = 0; L < C.lineages.size(); ++L)
+		{
+			const int Line = static_cast<int>(L);
+			bool bFull = true;
+			for (const int Def : C.lineages[L].titans)
+			{
+				bFull = bFull && Km->CodexSeen(Def);
+			}
+			O.Raw(L ? "," : "").Raw("[").Int(Km->CodexPageClaimed(Line) ? 2 : bFull ? 1 : 0).Comma().Int(Km->ResonanceCount(Line)).Comma().Int(Km->ResonanceTier(Line)).Raw("]");
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1485,7 +1507,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Raw("]},");
 	// Kingdom Power (master prompt 7.7): buildings, the strongest titans (id, Power), research, total.
 	const dot::kingdom::KingdomPowerInfo Pw = Km->KingdomPower();
-	O.Key("power").Raw("{").Key("b").Int(Pw.buildings).Comma().Key("t").Int(Pw.titans).Comma().Key("r").Int(Pw.research).Comma().Key("total").Int(Pw.total);
+	O.Key("power").Raw("{").Key("b").Int(Pw.buildings).Comma().Key("t").Int(Pw.titans).Comma().Key("r").Int(Pw.research).Comma().Key("c").Int(Pw.codex).Comma().Key("total").Int(Pw.total);
 	O.Comma().Key("top").Raw("[");
 	for (size_t I = 0; I < Pw.top.size(); ++I)
 	{
@@ -1890,6 +1912,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_comeback_claim()
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimComeback(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Pays a Codex entry (Def: index into army.json titans) or, with Page set, a lineage's page: the reward. */
+EMSCRIPTEN_KEEPALIVE const char* dk_codex_claim(int Index, int Page)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = !K() ? dot::kingdom::Error::BadId : Page ? K()->ClaimCodexPage(Index, &R) : K()->ClaimCodex(Index, &R);
 	return RewardJson(E, R);
 }
 

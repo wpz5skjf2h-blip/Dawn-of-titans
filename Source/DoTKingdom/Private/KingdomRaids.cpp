@@ -787,7 +787,8 @@ KingdomPowerInfo Kingdom::KingdomPower() const
 	{
 		Out.research += (L - 1) * P.research;
 	}
-	Out.total = Out.buildings + Out.titans + Out.research;
+	Out.codex = C.codex.on ? CodexEntries() * C.codex.power : 0;
+	Out.total = Out.buildings + Out.titans + Out.research + Out.codex;
 	return Out;
 }
 

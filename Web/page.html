@@ -303,7 +303,7 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .pwBar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
 .pwBar i { display: block; height: 100%; }
 .pwBar i + i { border-left: 2px solid rgba(10, 13, 16, 0.7); }
-.pb { background: #d2a25a; } .pt { background: #e0664f; } .pr { background: #6fb0e8; }
+.pb { background: #d2a25a; } .pt { background: #e0664f; } .pr { background: #6fb0e8; } .pc { background: #a98be0; }
 .pwPart { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
 .pwPart .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 .pwPart .info { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 0; }
@@ -585,6 +585,8 @@ ul.goalNext li .cost { white-space: nowrap; }
 .titanCard.on { border-color: var(--bronze); background: rgba(210, 162, 90, 0.12); }
 .titanCard.locked { opacity: 0.62; border-style: dashed; }
 .titanCard.locked .ico { filter: grayscale(1); }
+/* Codex entries: the titan's lore under its name. */
+.titanCard .lore { margin: 0; font-size: 13px; line-height: 1.4; color: var(--parch); font-style: italic; }
 .titanCard .head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
 .titanCard .head[data-act] { cursor: pointer; }
 .titanCard .head b { font-family: var(--font-display); font-size: 17px; }

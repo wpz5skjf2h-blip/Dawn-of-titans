@@ -510,6 +510,25 @@ function invariants(st, add) {
 		if (sp.at && sp.at !== sp.next) add('warn', 'Башня: бой на этаже ' + sp.at + ', а следующий ' + sp.next + ' (неделя сменилась во время боя?)');
 		if (sp.at && !inBattle()) add('warn', 'Висит незавершённый бой в башне');
 	}
+	// Codex: every kind in the Hall has its entry open; a page full or paid only with all its entries open; Resonance by
+	// the kinds of the lineage at the Codex level, its tier by the content's counts.
+	const cxr = rules().codex;
+	const lines = rules().lineages || [];
+	if (cxr && st.codex && st.codex.on) {
+		const cx = st.codex;
+		const tix = (id) => army().titans.findIndex((x) => x.id === id);
+		for (const t of st.titans) if (!(cx.e[t.def] > 0)) add('bad', 'Кодекс: титан #' + t.id + ' в Зале, а его запись закрыта');
+		if (cx.e.some((v) => v !== 0 && v !== 1 && v !== 2) || cx.e.length !== army().titans.length) add('bad', 'Кодекс: записи ' + cx.e.join(''));
+		lines.forEach((L, k) => {
+			const [page, cnt, tier] = cx.p[k] || [];
+			const full = L.titans.every((id) => cx.e[tix(id)] > 0);
+			if ((page > 0) !== full) add('bad', 'Кодекс: страница «' + L.name + '» в состоянии ' + page + ', а записи ' + (full ? 'все открыты' : 'не все'));
+			const want = L.titans.filter((id) => st.titans.some((t) => t.def === tix(id) && t.lv >= cxr.level)).length;
+			if (cnt !== want) add('bad', 'Кодекс: резонанс «' + L.name + '» считает ' + cnt + ' титанов, а их ' + want);
+			const wantTier = (cxr.resonance || []).reduce((n, r, i) => (want >= r.count ? i + 1 : n), 0);
+			if (tier !== wantTier) add('bad', 'Кодекс: резонанс «' + L.name + '» ступени ' + tier + ', а по счёту ' + wantTier);
+		});
+	}
 	// Comeback gift: only for a week or more away, from its Castle, and the absence ended no later than now.
 	const cbr = rules().comeback;
 	if (cbr && st.comeback) {
@@ -521,7 +540,10 @@ function invariants(st, add) {
 	const pw = st.power;
 	if (pw) {
 		const most = (rules().power || {}).titans || 5;
-		if (![pw.b, pw.t, pw.r, pw.total].every((v) => Number.isFinite(v) && v >= 0) || pw.b + pw.t + pw.r !== pw.total) add('bad', 'Сила королевства: ' + pw.b + ' + ' + pw.t + ' + ' + pw.r + ' ≠ ' + pw.total);
+		const pc = pw.c || 0;
+		if (![pw.b, pw.t, pw.r, pc, pw.total].every((v) => Number.isFinite(v) && v >= 0) || pw.b + pw.t + pw.r + pc !== pw.total) add('bad', 'Сила королевства: ' + pw.b + ' + ' + pw.t + ' + ' + pw.r + ' + ' + pc + ' ≠ ' + pw.total);
+		const cx = rules().codex;
+		if (st.codex && st.codex.on && cx && pc !== cx.power * st.codex.e.filter((x) => x > 0).length) add('bad', 'Сила королевства: Кодекс даёт ' + pc + ', а записей ' + st.codex.e.filter((x) => x > 0).length);
 		if (pw.top.length > most || pw.top.some((x, i) => i > 0 && x[1] > pw.top[i - 1][1])) add('bad', 'Сила королевства: титаны не по убыванию или их больше ' + most);
 		if (pw.top.reduce((s, x) => s + x[1], 0) !== pw.t) add('bad', 'Сила королевства: титаны дают ' + pw.t + ', а их сумма ' + pw.top.reduce((s, x) => s + x[1], 0));
 		for (const [id, p] of pw.top) {
@@ -1011,6 +1033,29 @@ function runMonkey(steps, seed, keep) {
 			if (res.err === 0 && (res.gold + res.food) !== (stars > 0 ? band.pay * Math.max(1, st.castle) : 0)) throw new Error('башня: этаж ' + sp.next + ' заплатил ' + res.gold + ' золота и ' + res.food + ' еды');
 			return res.err;
 		}],
+		['кодекс', 2, (st) => {
+			if (!B.codexClaim || !st.codex || !st.codex.on) return -1;
+			const cx = st.codex;
+			// Mostly something waiting; now and then a page or an entry not ready, to see the refusal.
+			const ready = cx.e.map((v, i) => [v, i]).filter((x) => x[0] === 1).map((x) => x[1]);
+			const pages = cx.p.map((v, i) => [v[0], i]).filter((x) => x[0] === 1).map((x) => x[1]);
+			const page = pages.length && r() < 0.5 ? true : !ready.length ? r() < 0.5 : false;
+			const i = page ? (pages.length ? pick(pages) : Math.floor(r() * cx.p.length)) : (ready.length && r() < 0.8 ? pick(ready) : Math.floor(r() * cx.e.length));
+			const gems = st.res[2];
+			const res = B.codexClaim(i, page);
+			const st2 = B.state();
+			const was = page ? cx.p[i][0] : cx.e[i];
+			const want = was === 1 ? 0 : was === 2 ? 13 : page ? 23 : 6;
+			if (res.err !== want && !(page && was === 1 && res.err === 28)) throw new Error('кодекс: ' + (page ? 'страница ' : 'запись ') + i + ' в состоянии ' + was + ', отказ ' + res.err + ' вместо ' + want);
+			if (res.err !== 0) {
+				if (st2.res.join() !== st.res.join() || JSON.stringify(st2.codex) !== JSON.stringify(cx)) throw new Error('отказ кодекса ' + res.err + ' всё же что-то изменил');
+				return res.err;
+			}
+			const now = page ? st2.codex.p[i][0] : st2.codex.e[i];
+			if (now !== 2) throw new Error('кодекс: после награды ' + (page ? 'страница ' : 'запись ') + i + ' в состоянии ' + now);
+			if (!page && st2.res[2] !== gems + rules().codex.entryGems[army().titans[i].stars - 1]) throw new Error('кодекс: запись ' + i + ' дала ' + (st2.res[2] - gems) + ' самоцветов');
+			return 0;
+		}],
 		['подарок за возвращение', 2, (st) => {
 			if (!B.comebackClaim || !st.comeback) return -1;
 			// A visit after a week or more away earns the gift (sometimes the week passes here); then mostly claim it.
@@ -1359,6 +1404,12 @@ function renderTab(tab) {
 			h += row('Башня титанов: взято <b>' + st.spire.top + '</b>', [0, 9, 49, st.spire.fixed - 1, st.spire.fixed + 5].map((n) => b('spire-set', String(n), { n })).join(''),
 				'следующий этаж ' + (st.spire.next || '—'));
 		}
+		if (st.codex && st.codex.on) {
+			// The Codex: every entry open (nothing paid), or back to the titans in the Hall.
+			const open = st.codex.e.filter((x) => x > 0).length;
+			h += row('Кодекс титанов <b>' + open + ' из ' + st.codex.e.length + '</b>', b('codex-set', 'Открыть все', { n: 1 }) + b('codex-set', 'Сбросить', { n: 0 }),
+				'наград ждёт ' + (st.codex.e.filter((x) => x === 1).length + st.codex.p.filter((x) => x[0] === 1).length));
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1618,6 +1669,7 @@ function act(a, el, n, id, i) {
 		const week = Math.floor((Math.floor(Math.max(0, st.now) / 86400) + 3) / 7);
 		s.spire = { top: Math.min(n, fixed), week: n > fixed ? week : -1, weekTop: n > fixed ? n : 0, at: 0 };
 	}, 'Башня: взято ' + n); break;
+	case 'codex-set': edit((s) => { s.codex = { seen: n ? army().titans.map((t) => t.id) : [], paid: [], pages: [] }; }, n ? 'Кодекс: все записи открыты' : 'Кодекс сброшен'); break;
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;
