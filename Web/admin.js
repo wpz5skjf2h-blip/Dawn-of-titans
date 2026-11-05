@@ -398,7 +398,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -481,6 +481,25 @@ function runMonkey(steps, seed, keep) {
 		['недельное задание', 2, (st) => (B.weekClaim && st.week && st.week.list.length ? B.weekClaim(Math.floor(r() * st.week.list.length)).err : -1)],
 		['замена недельного задания', 1, (st) => (B.weekReroll && st.week && st.week.list.length ? B.weekReroll(Math.floor(r() * st.week.list.length)) : -1)],
 		['недельный сундук', 1, () => (B.weekChest ? B.weekChest().err : -1)],
+		['испытание', 3, (st) => {
+			if (!B.trialStart || !st.trial || st.trial.i < 0) return -1;
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = pick(st.titans.filter((x) => x.rec <= st.now));
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.trialStart(squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			const err = B.trialFinish(Math.floor(r() * 4), Math.floor(r() * 7000)).err;
+			// Nothing is lost in a trial.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('испытание забрало отряды или заклинания');
+			if (st2.trial.best > 5500 || st2.trial.best < st.trial.best) throw new Error('лучший счёт испытания ' + st2.trial.best + ' после ' + st.trial.best);
+			return err;
+		}],
+		['награда испытания', 1, (st) => (B.trialMilestone && st.trial && st.trial.i >= 0 ? B.trialMilestone(Math.floor(r() * 3)).err : -1)],
+		['место в испытании', 1, (st) => (B.trialRank && st.trial && st.trial.i >= 0 ? B.trialRank().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
