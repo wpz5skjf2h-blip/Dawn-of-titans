@@ -486,9 +486,14 @@ function mat(hex, o) {
 	const key = hex + (o ? JSON.stringify(o) : '');
 	let m = matCache.get(key);
 	if (!m) {
-		m = new T.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.85, metalness: 0, flatShading: true }, o || {}));
+		m = cloudShaded(new T.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.85, metalness: 0, flatShading: true }, o || {})));
 		matCache.set(key, m);
 	}
+	return m;
+}
+/** Lets the drifting cloud shadows from gfx.js (DotGfx.cloudShadows) pass over a material, when gfx.js is loaded. */
+function cloudShaded(m) {
+	if (typeof DotGfx !== 'undefined' && DotGfx.cloudShadows && DotGfx.ready) DotGfx.cloudShadows(m, 'kingdom');
 	return m;
 }
 const glow = (hex, i) => mat(hex, { emissive: hex, emissiveIntensity: i || 1, roughness: 0.5 });
@@ -1078,7 +1083,7 @@ function swirlTexture() {
 const scene = new T.Scene();
 const cam = new T.PerspectiveCamera(45, 1, 1, 2000);
 const world = {
-	island: null, rim: null, sun: null, shadows: null, fall: null, clouds: [], decor: null, border: null, exp: -1,
+	island: null, rim: null, sun: null, shadows: null, fall: null, clouds: [], sea: [], puffs: [], decor: null, border: null, exp: -1,
 	views: new Map(), lands: new Map(), selRing: null, grid: null, ghost: null, pond: null,
 };
 const hitMat = new T.MeshBasicMaterial({ visible: false });
@@ -1093,7 +1098,8 @@ function mulberry(seed) {
 	};
 }
 
-const ISLE = { grass: 0x6fa645, grass2: 0x63993d, grassD: 0x4f7d30, dirt: 0x8a6a45, rock1: 0x8b7f6c, rock2: 0x6f6555, rock3: 0x5b5246 };
+// Sage grass and grey cliffs, muted as on the original's island; grass keeps green well over red, which islandMaterial reads as grass.
+const ISLE = { grass: 0x7a8c6a, grass2: 0x6f805f, grassD: 0x556445, dirt: 0x7a6248, rock1: 0x7d796d, rock2: 0x625f56, rock3: 0x4d4b45 };
 /**
  * A floating island: flat grassy top (out to flatTop of the rim), a bumpy grass edge, then a rocky
  * underside narrowing to a point. calm = [angle, width] keeps the edge flat where a stream leaves.
@@ -1166,6 +1172,28 @@ function islandGeometry(R, depth, seed, seg, flatTop, bumps, calm) {
 let islandMat = null;
 function islandMaterial() {
 	if (islandMat) return islandMat;
+	// With the battle's photo textures (gfx.js): grass and rock detail from them, while the vertex colours keep the island's hues.
+	if (typeof DotGfx !== 'undefined' && DotGfx.hasArt) {
+		const tG = DotGfx.tex('tex_grass', { repeat: true, scale: 2 });
+		const tR = DotGfx.tex('tex_rock', { repeat: true, scale: 2 });
+		islandMat = new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+		islandMat.customProgramCacheKey = () => 'island-art';
+		islandMat.onBeforeCompile = (sh) => {
+			Object.assign(sh.uniforms, { tG: { value: tG }, tR: { value: tR } });
+			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vIuv;')
+				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvIuv = uv;');
+			// Green faces take the grass photo, the rest the rock photo, as brightness around 1 (0.191 and 0.139 are their means), contrast raised.
+			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tG, tR;\nvarying vec2 vIuv;')
+				.replace('#include <color_fragment>', [
+					'#include <color_fragment>',
+					'float grassy = clamp((vColor.g - vColor.r) * 14.0, 0.0, 1.0);',
+					'const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);',
+					'float lum = mix(dot(texture2D(tR, vIuv * 0.7).rgb, LUMA) / 0.139, dot(texture2D(tG, vIuv * 1.6).rgb, LUMA) / 0.191, grassy);',
+					'diffuseColor.rgb *= max(0.25, mix(1.0, lum, 1.5)) * 0.85;',
+				].join('\n'));
+		};
+		return cloudShaded(islandMat);
+	}
 	const tex = canvasTex(128, 128, (g, w, h) => {
 		g.fillStyle = '#e6e6e6';
 		g.fillRect(0, 0, w, h);
@@ -1177,7 +1205,7 @@ function islandMaterial() {
 		}
 	});
 	tex.wrapS = tex.wrapT = T.RepeatWrapping;
-	islandMat = new T.MeshStandardMaterial({ vertexColors: true, map: tex, flatShading: true, roughness: 0.95 });
+	islandMat = cloudShaded(new T.MeshStandardMaterial({ vertexColors: true, map: tex, flatShading: true, roughness: 0.95 }));
 	return islandMat;
 }
 
@@ -1212,7 +1240,7 @@ function buildIsland() {
 	scene.add(world.island);
 
 	// Pond, stream and the waterfall pouring off the edge.
-	const water = new T.MeshStandardMaterial({ color: 0x3f93c8, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.9 });
+	const water = new T.MeshStandardMaterial({ color: 0x4f7c8a, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.9 });
 	const pc = { x: Math.cos(calmAngle) * 52, z: Math.sin(calmAngle) * 52 };
 	const pond = new T.Mesh(new T.CircleGeometry(4.6, 22), water);
 	pond.rotation.x = -Math.PI / 2;
@@ -1264,14 +1292,14 @@ function buildIsland() {
 function buildSky() {
 	scene.background = canvasTex(4, 256, (g, w, h) => {
 		const grd = g.createLinearGradient(0, 0, 0, h);
-		grd.addColorStop(0, '#5d9bd6');
-		grd.addColorStop(0.5, '#a6cdea');
-		grd.addColorStop(0.72, '#d8ebf6');
-		grd.addColorStop(1, '#eef5f8');
+		grd.addColorStop(0, '#6c9cc0');
+		grd.addColorStop(0.5, '#b2cddd');
+		grd.addColorStop(0.72, '#e2ecf0');
+		grd.addColorStop(1, '#f6f8f6');
 		g.fillStyle = grd;
 		g.fillRect(0, 0, w, h);
 	});
-	scene.fog = new T.Fog(0xd7e9f4, 280, 680);
+	scene.fog = new T.Fog(0xe6eef0, 250, 660);
 	scene.add(new T.HemisphereLight(0xeaf3ff, 0x5d4e33, 0.82));
 	const sun = new T.DirectionalLight(0xfff0d8, 1.55);
 	sun.position.set(-70, 140, -25);
@@ -1283,40 +1311,110 @@ function buildSky() {
 	scene.add(sun);
 	scene.add(sun.target);
 	world.sun = sun;
+	if (typeof DotGfx !== 'undefined' && DotGfx.cloudShadowSet && DotGfx.ready) {
+		// Shadows of the clouds drifting over the island (see cloudShaded).
+		const cs = DotGfx.cloudShadowSet('kingdom');
+		cs.uCsSun.value.copy(sun.position).normalize();
+		cs.uCsK.value = 0.4;
+		cs.uCsScale.value = 1 / 190;
+		cs.wind.set(1.9, 0.8);
+	}
 
-	const cloudTex = canvasTex(128, 128, (g) => {
-		const rnd = mulberry(3);
-		for (let i = 0; i < 7; i++) {
-			const x = 30 + rnd() * 68;
-			const y = 44 + rnd() * 40;
-			const r = 22 + rnd() * 20;
-			const grd = g.createRadialGradient(x, y, 2, x, y, r);
-			grd.addColorStop(0, 'rgba(255,255,255,0.95)');
-			grd.addColorStop(1, 'rgba(255,255,255,0)');
-			g.fillStyle = grd;
-			g.fillRect(0, 0, 128, 128);
+	// Clouds: soft 3D cumulus heaps from gfx.js (DotGfx.puffClouds) when it is loaded, flat sprites otherwise.
+	const PG = typeof DotGfx !== 'undefined' && DotGfx.puffClouds && DotGfx.ready ? DotGfx : null;
+	if (PG) {
+		const sunDir = sun.position.clone().normalize();
+		const r2 = mulberry(31);
+		// The sea: low mounds all round, packed close by the cliffs, which sink into them, and thinning out into the haze.
+		// Each heap stands on a flat base its puffs dissolve below, so the mounds rise out of the flat layer under them.
+		const sea = [];
+		for (let i = 0; i < 96; i++) {
+			const a = r2() * Math.PI * 2;
+			const near = i < 26;
+			const r = near ? 62 + r2() * 38 : 100 + Math.pow(r2(), 0.8) * 560;
+			const w = near ? 28 + r2() * 20 : 40 + r2() * 50 + r * 0.06;
+			PG.cloudHeap(sea, r2, Math.cos(a) * r, near ? -50 - r2() * 6 : -60 - r2() * 4, Math.sin(a) * r, w, w * (near ? 0.45 : 0.3), near ? 7 : 5);
+		}
+		// Towering heaps at the island's height and above it, out beyond the captured lands.
+		const high = [];
+		for (let i = 0; i < 9; i++) {
+			const a = (i / 9) * Math.PI * 2 + r2() * 0.5;
+			const r = 215 + r2() * 220;
+			const w = 34 + r2() * 30;
+			PG.cloudHeap(high, r2, Math.cos(a) * r, 8 + r2() * 40, Math.sin(a) * r, w, w * 0.55, 12);
+		}
+		for (const [puffs, speed, near, baseFade, fogK] of [[sea, 0.0035, 10, 6, 0.6], [high, -0.006, 20, 9, 0.75]]) {
+			const c = PG.puffClouds(puffs, { sun: sunDir, lit: 0xfffbf2, shade: 0xb2c0d4, rim: 0x8c8678, near, baseFade, fogK });
+			c.speed = speed;
+			world.puffs.push(c);
+			scene.add(c.mesh);
+		}
+	} else {
+		const cloudTex = canvasTex(128, 128, (g) => {
+			const rnd = mulberry(3);
+			for (let i = 0; i < 7; i++) {
+				const x = 30 + rnd() * 68;
+				const y = 44 + rnd() * 40;
+				const r = 22 + rnd() * 20;
+				const grd = g.createRadialGradient(x, y, 2, x, y, r);
+				grd.addColorStop(0, 'rgba(255,255,255,0.95)');
+				grd.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = grd;
+				g.fillRect(0, 0, 128, 128);
+			}
+		});
+		const rnd = mulberry(11);
+		for (let i = 0; i < 26; i++) {
+			const high = i % 5 === 0;
+			const s = new T.Sprite(new T.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, opacity: 0.55 + rnd() * 0.35, fog: true }));
+			const sc2 = 45 + rnd() * 80;
+			s.scale.set(sc2, sc2 * 0.55, 1);
+			const c = { s, a: rnd() * Math.PI * 2, r: (high ? 190 : 70) + rnd() * 200, y: high ? 6 + rnd() * 26 : -22 - rnd() * 75, w: (0.004 + rnd() * 0.01) * (rnd() < 0.5 ? 1 : -1) };
+			world.clouds.push(c);
+			scene.add(s);
+		}
+	}
+
+	// Under it all a flat sea of cloud that fills the gaps between the heaps (and, without gfx.js, a second, higher layer).
+	// Its puffs are drawn as an opaque grey map used as alphaMap, so the cloud colour stays white without dark fringes.
+	const sea = canvasTex(256, 256, (g, w, h) => {
+		g.fillStyle = '#000';
+		g.fillRect(0, 0, w, h);
+		const r2 = mulberry(21);
+		for (let i = 0; i < 120; i++) {
+			const x = r2() * w, y = r2() * h, r = 12 + r2() * 38, a = 0.25 + r2() * 0.35;
+			for (const [ox, oy] of [[0, 0], [w, 0], [-w, 0], [0, h], [0, -h], [w, h], [-w, -h], [w, -h], [-w, h]]) {
+				const grd = g.createRadialGradient(x + ox, y + oy, 1, x + ox, y + oy, r);
+				grd.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+				grd.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = grd;
+				g.fillRect(x + ox - r, y + oy - r, 2 * r, 2 * r);
+			}
 		}
 	});
-	const rnd = mulberry(11);
-	for (let i = 0; i < 26; i++) {
-		const high = i % 5 === 0;
-		const s = new T.Sprite(new T.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, opacity: 0.55 + rnd() * 0.35, fog: true }));
-		const sc2 = 45 + rnd() * 80;
-		s.scale.set(sc2, sc2 * 0.55, 1);
-		const c = { s, a: rnd() * Math.PI * 2, r: (high ? 190 : 70) + rnd() * 200, y: high ? 6 + rnd() * 26 : -22 - rnd() * 75, w: (0.004 + rnd() * 0.01) * (rnd() < 0.5 ? 1 : -1) };
-		world.clouds.push(c);
-		scene.add(s);
+	sea.encoding = T.LinearEncoding;
+	for (const [y, op, rep, speed] of PG ? [[-72, 1, 5, 0.0016]] : [[-72, 1, 5, 0.0016], [-46, 0.6, 3, -0.0024]]) {
+		const t = sea.clone();
+		t.needsUpdate = true;
+		t.wrapS = t.wrapT = T.RepeatWrapping;
+		t.repeat.set(rep, rep);
+		const m = new T.Mesh(new T.PlaneGeometry(2600, 2600).rotateX(-Math.PI / 2),
+			new T.MeshBasicMaterial({ color: 0xf6f8f6, alphaMap: t, transparent: true, opacity: op, depthWrite: false, fog: true }));
+		m.position.y = y;
+		m.renderOrder = -1;
+		world.sea.push([t, speed]);
+		scene.add(m);
 	}
 }
 
 function buildDecor() {
 	const pine = coloredParts([
 		[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.6, 0, 0.28, 1.2, 0.28],
-		[cylGeo(0, 8), 0x3f7a35, 0, 1.9, 0, 1.25, 1.8, 1.25], [cylGeo(0, 8), 0x468a3a, 0, 2.8, 0, 0.95, 1.5, 0.95], [cylGeo(0, 8), 0x4f9640, 0, 3.6, 0, 0.62, 1.2, 0.62],
+		[cylGeo(0, 8), 0x2f4c2a, 0, 1.9, 0, 1.25, 1.8, 1.25], [cylGeo(0, 8), 0x365731, 0, 2.8, 0, 0.95, 1.5, 0.95], [cylGeo(0, 8), 0x3e6236, 0, 3.6, 0, 0.62, 1.2, 0.62],
 	]);
-	const round = coloredParts([[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.7, 0, 0.26, 1.4, 0.26], [G.ico, 0x5c9a3e, 0, 2.2, 0, 1.25, 1.1, 1.25], [G.ico, 0x6aa848, 0.4, 2.7, 0.2, 0.75, 0.7, 0.75]]);
+	const round = coloredParts([[cylGeo(0.7, 6), 0x6b4a2b, 0, 0.7, 0, 0.26, 1.4, 0.26], [G.ico, 0x4a6c34, 0, 2.2, 0, 1.25, 1.1, 1.25], [G.ico, 0x567a3c, 0.4, 2.7, 0.2, 0.75, 0.7, 0.75]]);
 	const rock = coloredParts([[G.rock, 0x8f8879, 0, 0.3, 0, 0.9, 0.6, 0.8], [G.rock, 0x7c7567, 0.7, 0.2, 0.3, 0.45, 0.35, 0.45]]);
-	const dm = new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+	const dm = cloudShaded(new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
 	const pts = [];
 	const rnd = mulberry(4242);
 	const h = gridHalf();
@@ -3250,6 +3348,10 @@ function makeThumbs() {
 	out.width = Math.round(w * pr);
 	out.height = Math.round(h * pr);
 	const oc = out.getContext('2d');
+	// No cloud shadows on the shop pictures.
+	const cs = typeof DotGfx !== 'undefined' && DotGfx.cloudShadowSet && DotGfx.ready ? DotGfx.cloudShadowSet('kingdom').uCsK : { value: 0 };
+	const csK = cs.value;
+	cs.value = 0;
 	r.setScissorTest(true);
 	K.defs.forEach((d, i) => {
 		const model = getModel(i, 1, 'done');
@@ -3274,6 +3376,7 @@ function makeThumbs() {
 		ts.remove(inst.group);
 	});
 	r.setScissorTest(false);
+	cs.value = csK;
 	r.setViewport(0, 0, size.x, size.y);
 }
 function openShop() {
@@ -5690,10 +5793,22 @@ function worldMapSvg(st, sel) {
 	let s = '<svg class="wmap" viewBox="0 0 480 480" role="group" aria-label="Карта мира"><defs>' +
 		grad('gold', '#f6d77c', '#9a6a1f') + grad('food', '#c8ec8c', '#4f7a24') + grad('vp', '#9fd48a', '#2f5d3a') + grad('shards', '#b9c6d8', '#44506a') +
 		grad('home', '#8fd07a', '#2d5a3c') + grad('lord', '#4a515c', '#1d2229') +
-		'<radialGradient id="wm-sky" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#2a4560"/><stop offset="0.65" stop-color="#172636"/><stop offset="1" stop-color="#0d151e"/></radialGradient></defs>' +
+		'<radialGradient id="wm-sky" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#2a4560"/><stop offset="0.65" stop-color="#172636"/><stop offset="1" stop-color="#0d151e"/></radialGradient>' +
+		// One cloud puff: lit from the upper left, its edge fading out, so overlapping puffs make a soft heap.
+		'<radialGradient id="wm-puff" cx="44%" cy="36%" r="58%"><stop offset="0" stop-color="#eef4fb"/><stop offset="0.55" stop-color="#c9d6e6" stop-opacity="0.85"/>' +
+		'<stop offset="1" stop-color="#9fb2c9" stop-opacity="0"/></radialGradient></defs>' +
 		'<rect width="480" height="480" fill="url(#wm-sky)"/>';
-	// Drifting clouds and the orbits of the rings.
-	for (const [cx, cy, rx] of [[70, 92, 46], [402, 120, 38], [96, 400, 40], [392, 396, 52], [240, 36, 30]]) s += '<ellipse class="cloud" cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + rx * 0.42 + '"/>';
+	// Clouds drifting slowly in the free corners (heaps of soft puffs on a flat base), and the orbits of the rings.
+	const cr = mulberry(7);
+	for (const [cx, cy, w] of [[70, 92, 100], [404, 118, 84], [92, 402, 88], [390, 400, 108], [240, 34, 70]]) {
+		s += '<g class="cloud" style="animation-duration:' + Math.round(48 + cr() * 40) + 's;animation-delay:-' + Math.round(cr() * 40) + 's">';
+		for (let i = 0; i < 6; i++) {
+			const t = i / 5;
+			const r = w * (0.14 + 0.14 * Math.sin(Math.PI * t)) * (0.85 + 0.3 * cr());
+			s += '<circle cx="' + (cx + (t - 0.5) * w * 0.78).toFixed(1) + '" cy="' + (cy - r * 0.5 * Math.sin(Math.PI * t) - r * 0.2).toFixed(1) + '" r="' + r.toFixed(1) + '"/>';
+		}
+		s += '<ellipse cx="' + cx + '" cy="' + (cy + w * 0.06).toFixed(1) + '" rx="' + (w * 0.56).toFixed(1) + '" ry="' + (w * 0.14).toFixed(1) + '"/></g>';
+	}
 	for (const r of [78, 134, 178, 222]) s += '<circle class="orbit" cx="' + MAP_C + '" cy="' + MAP_C + '" r="' + r + '"/>';
 	for (const n of nodes) if (n.from) s += '<line class="link" x1="' + n.from[0].toFixed(1) + '" y1="' + n.from[1].toFixed(1) + '" x2="' + n.x.toFixed(1) + '" y2="' + n.y.toFixed(1) + '" stroke="' + n.ring + '"/>';
 	for (const n of nodes) {
@@ -7545,6 +7660,9 @@ function frameUpdate(dt, t) {
 		c.a += c.w * dt;
 		c.s.position.set(Math.cos(c.a) * c.r, c.y, Math.sin(c.a) * c.r);
 	}
+	for (const [t, speed] of world.sea) { t.offset.x = (t.offset.x + dt * speed) % 1; t.offset.y = (t.offset.y + dt * speed * 0.6) % 1; }
+	for (const c of world.puffs) { c.mesh.rotation.y += c.speed * dt; c.update(dt, cam); }
+	if (typeof DotGfx !== 'undefined' && DotGfx.stepCloudShadows && DotGfx.ready) DotGfx.stepCloudShadows('kingdom', dt);
 	world.fall.material.map.offset.y = (world.fall.material.map.offset.y + dt * 1.1) % 1;
 	if (world.selRing.visible) world.selRing.children[0].material.emissiveIntensity = 0.75 + Math.sin(ts * 5) * 0.45;
 	if (world.ghost) {

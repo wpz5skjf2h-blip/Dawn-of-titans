@@ -208,6 +208,12 @@ sc.left = -150; sc.right = 150; sc.top = 150; sc.bottom = -150; sc.near = 10; sc
 sun.shadow.bias = -0.0008;
 scene.add(sun);
 scene.add(sun.target);
+// Textures, sky, foliage and particles (gfx.js) and the titan figures (titans3d.js); without them the plain look stays.
+const GFX = typeof DotGfx !== 'undefined' ? DotGfx : null;
+if (GFX) {
+	GFX.init(THREE, renderer);
+	scene.environment = GFX.envMap();
+}
 
 let viewW = 1;
 let viewH = 1;
@@ -221,6 +227,7 @@ function applyQuality() {
 	const q = qualityLevel();
 	const dpr = window.devicePixelRatio || 1;
 	renderer.setPixelRatio(Math.min(dpr, q === 'high' ? 2 : 1.35));
+	if (GFX) GFX.setQuality(q);
 	const shadows = q === 'high';
 	if (renderer.shadowMap.enabled !== shadows) {
 		renderer.shadowMap.enabled = shadows;
@@ -243,7 +250,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// Camera rig: perspective, pitch eases 42..60 degrees with zoom, pan with inertia, shake.
+// Camera rig: perspective, pitch eases 28..52 degrees with zoom (low, as in the original), pan with inertia, shake.
 const cam = { x: 120, z: -60, dist: 110, minD: 28, maxD: 185, vx: 0, vz: 0, shake: 0, shakeT: 0, follow: null, mapW: 240, mapD: 160 };
 
 function clampCam() {
@@ -266,7 +273,7 @@ function placeCamera(dt) {
 	cam.vz *= decay;
 	clampCam();
 	const t = (cam.dist - cam.minD) / (cam.maxD - cam.minD);
-	const pitch = rad(42 + 18 * t);
+	const pitch = rad(28 + 24 * t);
 	const ground = game.sim ? game.sim.height(cam.x, -cam.z) : 0;
 	cam.shakeT += dt * 40;
 	cam.shake *= Math.exp(-dt * 6);
@@ -639,18 +646,25 @@ function buildTerrain(st) {
 	terrain.receiveShadow = true;
 	view.terrain = terrain;
 	view.terrainGroup.add(terrain);
+	if (GFX) {
+		GFX.attach(scene, camera, { height: (x, z) => (game.sim ? game.sim.height(x, z) : 0), quality: qualityLevel() });
+		GFX.dressTerrain(terrain, st, CF);
+		GFX.surroundings(view.terrainGroup, W, D);
+	}
 
 	// Darker land beyond the battlefield.
-	const outer = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400).rotateX(-Math.PI / 2), lambert(0x4f6a2c));
-	outer.position.set(W / 2, -0.25, -D / 2);
-	outer.receiveShadow = true;
-	view.terrainGroup.add(outer);
-	const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(W, 0.3, 0),
-		new THREE.Vector3(W, 0.3, -D), new THREE.Vector3(0, 0.3, -D)]), new THREE.LineBasicMaterial({ color: 0x2a3418, transparent: true, opacity: 0.5 }));
-	view.terrainGroup.add(edge);
+	if (!GFX) {
+		const outer = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400).rotateX(-Math.PI / 2), lambert(0x4f6a2c));
+		outer.position.set(W / 2, -0.25, -D / 2);
+		outer.receiveShadow = true;
+		view.terrainGroup.add(outer);
+		const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(W, 0.3, 0),
+			new THREE.Vector3(W, 0.3, -D), new THREE.Vector3(0, 0.3, -D)]), new THREE.LineBasicMaterial({ color: 0x2a3418, transparent: true, opacity: 0.5 }));
+		view.terrainGroup.add(edge);
+	}
 
-	const water = new THREE.MeshPhongMaterial({ color: 0x2b6f93, specular: 0xbfe6ff, shininess: 90, transparent: true, opacity: 0.86 });
-	const shallow = new THREE.MeshPhongMaterial({ color: 0x5fa3bf, specular: 0xffffff, shininess: 60, transparent: true, opacity: 0.5 });
+	const water = GFX ? GFX.water(true) : new THREE.MeshPhongMaterial({ color: 0x2b6f93, specular: 0xbfe6ff, shininess: 90, transparent: true, opacity: 0.86 });
+	const shallow = GFX ? GFX.water(false) : new THREE.MeshPhongMaterial({ color: 0x5fa3bf, specular: 0xffffff, shininess: 60, transparent: true, opacity: 0.5 });
 	const trunks = [];
 	const crowns = [];
 	const rocks = [];
@@ -661,8 +675,12 @@ function buildTerrain(st) {
 		const sx = f.c ? f.r * 2 : f.x1 - f.x0;
 		const sz = f.c ? f.r * 2 : f.z1 - f.z0;
 		if (f.t === FT.Deep || f.t === FT.Shallow) {
-			const geo = f.c ? new THREE.CircleGeometry(f.r, 48) : new THREE.PlaneGeometry(sx, sz); // round lakes and marshes
-			const m = new THREE.Mesh(geo.rotateX(-Math.PI / 2), f.t === FT.Deep ? water : shallow);
+			// Round lakes and marshes; rings of vertices near the edge let GFX fade the shore.
+			const geo = f.c ? (GFX ? new THREE.RingGeometry(0, f.r, 48, 6) : new THREE.CircleGeometry(f.r, 48))
+				: (GFX ? new THREE.PlaneGeometry(sx, sz, Math.max(1, Math.round(sx / 3)), Math.max(1, Math.round(sz / 3))) : new THREE.PlaneGeometry(sx, sz));
+			geo.rotateX(-Math.PI / 2);
+			if (GFX) { GFX.worldUv(geo, cx, -cz, 26); GFX.shore(geo, f.c, f.t === FT.Deep ? 2.5 : 4); }
+			const m = new THREE.Mesh(geo, f.t === FT.Deep ? water : shallow);
 			m.position.set(cx, f.t === FT.Deep ? -0.05 : 0.02, -cz);
 			m.renderOrder = 1;
 			view.terrainGroup.add(m);
@@ -722,10 +740,11 @@ function buildTerrain(st) {
 		view.terrainGroup.add(m);
 	};
 	const resetObj = (o) => { o.rotation.set(0, 0, 0); o.scale.set(1, 1, 1); };
-	inst(new THREE.CylinderGeometry(0.22, 0.32, 1, 6), lambert(0x5b3d22), trunks, (o, t) => { resetObj(o); o.position.set(t[0], t[1] + 1.4 * t[3], -t[2]); o.scale.set(t[3], 2.8 * t[3], t[3]); });
+	if (GFX) GFX.forest(view.terrainGroup, crowns);
+	else inst(new THREE.CylinderGeometry(0.22, 0.32, 1, 6), lambert(0x5b3d22), trunks, (o, t) => { resetObj(o); o.position.set(t[0], t[1] + 1.4 * t[3], -t[2]); o.scale.set(t[3], 2.8 * t[3], t[3]); });
 	const crownGeo = mergeParts([part(new THREE.ConeGeometry(1.7, 3.6, 7), 0x2f5a26, 0, 0, 0, 1, 1, 1), part(new THREE.ConeGeometry(1.3, 3.0, 7), 0x3a6b2c, 0, 1.9, 0, 1, 1, 1)]);
-	inst(crownGeo, lambert(0xffffff, { vertexColors: true }), crowns, (o, t) => { resetObj(o); o.position.set(t[0], t[1] + 4.2 * t[3], -t[2]); o.scale.setScalar(t[3]); o.rotation.y = t[4] * 6; });
-	inst(new THREE.DodecahedronGeometry(1, 0), lambert(0x86817a, { flatShading: true }), rocks, (o, t) => { resetObj(o); o.position.set(t[0], t[2] * 0.35, -t[1]); o.scale.set(t[2], t[2] * 0.75, t[2] * 0.9); o.rotation.set(t[3], t[3] * 4, 0); });
+	if (!GFX) inst(crownGeo, lambert(0xffffff, { vertexColors: true }), crowns, (o, t) => { resetObj(o); o.position.set(t[0], t[1] + 4.2 * t[3], -t[2]); o.scale.setScalar(t[3]); o.rotation.y = t[4] * 6; });
+	inst(GFX ? GFX.rockGeometry() : new THREE.DodecahedronGeometry(1, 0), lambert(0x86817a, { flatShading: true }), rocks, (o, t) => { resetObj(o); o.position.set(t[0], t[2] * 0.35, -t[1]); o.scale.set(t[2], t[2] * 0.75, t[2] * 0.9); o.rotation.set(t[3], t[3] * 4, 0); });
 	inst(GEO.box, lambert(0xa79d8c), stones, (o, t) => {
 		resetObj(o);
 		const column = t[2] > 0.55;
@@ -734,22 +753,36 @@ function buildTerrain(st) {
 		o.rotation.y = t[3] * 3;
 	});
 
-	// Deploy zones (shown during deployment).
+	if (GFX) GFX.foliage(view.terrainGroup, st, CF);
+
+	// Deploy zones (shown during deployment): as in the original, a thin light line with glowing corners over a faint tint.
 	view.deployZones = st.map.dep.map((z, side) => {
 		const m = new THREE.Mesh(new THREE.PlaneGeometry(z[2] - z[0], z[3] - z[1]).rotateX(-Math.PI / 2),
-			new THREE.MeshBasicMaterial({ color: SIDE_COLOR[side], transparent: true, opacity: side === 0 ? 0.16 : 0.08, depthWrite: false }));
+			new THREE.MeshBasicMaterial({ color: SIDE_COLOR[side], transparent: true, opacity: side === 0 ? 0.08 : 0.05, depthWrite: false }));
 		m.position.set((z[0] + z[2]) / 2, 0.4, -(z[1] + z[3]) / 2);
 		m.renderOrder = 2;
-		const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(z[0], 0.45, -z[1]), new THREE.Vector3(z[2], 0.45, -z[1]),
-			new THREE.Vector3(z[2], 0.45, -z[3]), new THREE.Vector3(z[0], 0.45, -z[3])]), new THREE.LineBasicMaterial({ color: SIDE_COLOR[side] }));
+		const line = SIDE_COLOR[side].clone().lerp(new THREE.Color(0xfff4dc), side === 0 ? 0.75 : 0.45);
+		const corners = [[z[0], z[1]], [z[2], z[1]], [z[2], z[3]], [z[0], z[3]]];
+		const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(corners.map(([x, y]) => new THREE.Vector3(x, 0.45, -y))),
+			new THREE.LineBasicMaterial({ color: line, transparent: true, opacity: 0.9 }));
 		const grp = new THREE.Group();
 		grp.add(m, border);
+		if (GFX) {
+			const mat = new THREE.SpriteMaterial({ map: GFX.glow(), color: line, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+			for (const [x, y] of corners) {
+				const s = new THREE.Sprite(mat);
+				s.position.set(x, 0.9, -y);
+				s.scale.set(7, 7, 1);
+				grp.add(s);
+			}
+		}
 		view.terrainGroup.add(grp);
 		return grp;
 	});
 }
 
 function disposeUnits() {
+	if (GFX) GFX.clear();
 	view.units.traverse((o) => { if (o.isMesh && o.geometry && o.userData.ownGeo) o.geometry.dispose(); });
 	view.units.clear();
 	view.groups = [];
@@ -858,7 +891,21 @@ const TITAN_LOOK = {
 	'titan.artemis': { skin: 0x7a8c5a, dark: 0x3a4628, glow: 0xe8ffb0, metal: 0.2, rough: 0.6, kind: 'bow' },
 };
 
+/** The titan's own figure from titans3d.js, posed by the same bones as the plain one. */
+function buildTitanFigure(t) {
+	const rig = DotTitans3D.build(THREE, t.def, { H: t.h, team: SIDE_COLOR[t.side], glow: () => GFX.glow(), emit: GFX.emit });
+	const ring = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: SIDE_COLOR[t.side], transparent: true, opacity: 0.8, depthWrite: false }));
+	ring.scale.setScalar(1.45 * t.r);
+	ring.position.y = 0.3;
+	ring.renderOrder = 3;
+	rig.root.add(ring);
+	view.units.add(rig.root);
+	return { root: rig.root, body: rig.body, hipL: rig.hipL, hipR: rig.hipR, shL: rig.shL, shR: rig.shR, H: t.h, R: t.r, ring, step: Math.max(t.step || 8, 2), walk: 0,
+		lastX: null, lastZ: 0, attack: -9, combo: 0, stomp: -9, grab: -9, cast: -9, death: -1, side: t.side, pose: rig.pose };
+}
+
 function buildTitan(t) {
+	if (GFX && typeof DotTitans3D !== 'undefined' && DotTitans3D.has(t.def)) return buildTitanFigure(t);
 	const H = t.h;
 	const R = t.r;
 	const look = TITAN_LOOK[t.def] || TITAN_LOOK['titan.talos'];
@@ -1010,6 +1057,7 @@ function abilityTint(A) {
 	return 'bolt';
 }
 function spawnFx(kind, x, z, y, dur, s0, s1, h) {
+	if (GFX) GFX.burst(kind, x, z, y, s0, s1, h);
 	if (effects.length > 120) return;
 	effects.push({ kind, x, z, y: y || 0, t0: now(), dur, s0, s1, h: h || 1 });
 }
@@ -1231,6 +1279,7 @@ function updateTitans(rt, alpha) {
 		setRot(v.hipR, hipR[0], hipR[1], hipR[2]);
 		setRot(v.shL, armL[0], armL[1], armL[2]);
 		setRot(v.shR, armR[0], armR[1], armR[2]);
+		if (v.pose) v.pose(t, v);
 		v.ring.material.opacity = game.selected === TITAN_BASE + i ? 0.95 : 0.45;
 	}
 }
@@ -1305,6 +1354,7 @@ function updateProjectiles(rt) {
 		if (A.del === DELIV.Delayed) {
 			const m = take('meteor', () => new THREE.Mesh(GEO.sphere, MAT.meteor));
 			m.position.set(px + (1 - k) * 25, g + (1 - k) * 70 + 1, -pz);
+			if (GFX) GFX.trail('meteor', m.position.x, m.position.y, m.position.z);
 			m.scale.setScalar(3.2);
 		}
 	}
@@ -1314,6 +1364,7 @@ function updateProjectiles(rt) {
 		const fade = clamp((end - rt) / 20, 0.2, 1);
 		m.position.set(x, game.sim.height(x, z) + 0.45, -z);
 		m.scale.setScalar(r * fade * (0.92 + 0.08 * Math.sin(rt * 1.7 + x)));
+		if (GFX && Math.random() < 0.5) { const a = Math.random() * 6.283; const d = r * fade * Math.sqrt(Math.random()); GFX.trail('burn', x + Math.cos(a) * d, m.position.y, -z + Math.sin(a) * d); }
 	}
 	// Harpoon chains: a taut line from the throwing squad to the titan, briefly.
 	const tNow = now();
@@ -1342,6 +1393,7 @@ function updateProjectiles(rt) {
 		const pulse = 1 + 0.05 * Math.sin(rt * 0.4);
 		m.position.set(x, game.sim.height(x, z) + 0.5, -z);
 		m.scale.setScalar(r * pulse);
+		if (GFX && Math.random() < 0.4) { const a = Math.random() * 6.283; const d = r * Math.sqrt(Math.random()); GFX.trail(heal ? 'heal' : 'ichor', x + Math.cos(a) * d, m.position.y, -z + Math.sin(a) * d); }
 	}
 }
 
@@ -1571,7 +1623,8 @@ function drawFrame(t) {
 		updateReticle();
 		poolsEnd();
 		updateEffects();
-		if (view.water) view.water.material.color.setHSL(0.56, 0.55, 0.37 + Math.sin(t / 900) * 0.015);
+		if (view.water && !GFX) view.water.material.color.setHSL(0.56, 0.55, 0.37 + Math.sin(t / 900) * 0.015);
+		if (GFX) GFX.update(game.paused ? 0 : dt * (game.speed || 1), t / 1000);
 		renderer.render(scene, camera);
 		drawOverlay(rt);
 		updateHud(rt);
@@ -2308,6 +2361,10 @@ function buildHud(st) {
 		const t = st.titans[ti];
 		tc.dataset.unit = String(t.id);
 		$('tName').textContent = RU.titan[t.def] || t.name;
+		const bust = $('tBust');
+		const portrait = typeof DotTitans !== 'undefined' && DotTitans.has(t.def);
+		bust.hidden = !portrait;
+		bust.innerHTML = portrait ? DotTitans.svg(t.def, { view: 'bust' }) : '';
 		$('tLv').textContent = 'ур. ' + t.lvl + ' ' + '★'.repeat(t.stars);
 		const ab = $('abil');
 		ab.innerHTML = '';

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: flame tongue particle (additive): white-yellow core, orange body, red tips. -->
+<defs>
+<linearGradient id="o" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffd27a"/><stop offset="0.45" stop-color="#ff8a2a"/><stop offset="1" stop-color="#c8341a" stop-opacity="0"/></linearGradient>
+<radialGradient id="i" cx="0.5" cy="0.72" r="0.5"><stop offset="0" stop-color="#fffbe8"/><stop offset="0.6" stop-color="#ffe08a" stop-opacity="0.8"/><stop offset="1" stop-color="#ffb03a" stop-opacity="0"/></radialGradient>
+<filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.2"/></filter>
+</defs>
+<g filter="url(#b)">
+<path d="M64 8C70 36 96 50 94 82C92 106 78 120 64 120C50 120 36 106 34 84C32 62 50 56 52 36C58 48 60 30 64 8Z" fill="url(#o)"/>
+<ellipse cx="64" cy="92" rx="20" ry="26" fill="url(#i)"/>
+</g>
+</svg>

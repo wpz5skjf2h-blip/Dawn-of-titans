@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: five-point star (stunned titans, Atlas's sky). -->
+<defs><radialGradient id="g"><stop offset="0" stop-color="#fff" stop-opacity="0.7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<circle cx="64" cy="66" r="60" fill="url(#g)"/>
+<path d="M64 14L77 48L114 50L85 72L95 108L64 88L33 108L43 72L14 50L51 48Z" fill="#fff"/>
+</svg>

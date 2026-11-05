@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: a tuft of grass blades (alpha cut-out), scattered over the battlefield and the island. -->
+<defs>
+<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="128" x2="0" y2="14"><stop offset="0" stop-color="#2f5219"/><stop offset="0.55" stop-color="#5f8c33"/><stop offset="1" stop-color="#a6c565"/></linearGradient>
+<linearGradient id="h" gradientUnits="userSpaceOnUse" x1="0" y1="128" x2="0" y2="30"><stop offset="0" stop-color="#284716"/><stop offset="1" stop-color="#7ea64a"/></linearGradient>
+</defs>
+<g fill="url(#h)">
+<path d="M52 128C50 104 40 80 22 60C42 76 54 100 58 128Z"/>
+<path d="M76 128C80 104 92 84 110 70C94 88 84 106 82 128Z"/>
+<path d="M60 128C60 100 66 72 78 48C70 76 66 102 66 128Z"/>
+</g>
+<g fill="url(#g)">
+<path d="M58 128C56 96 46 62 30 30C50 60 62 94 64 128Z"/>
+<path d="M62 128C64 92 68 52 62 14C74 50 72 92 68 128Z"/>
+<path d="M66 128C70 98 82 66 100 40C88 70 76 100 72 128Z"/>
+<path d="M54 128C48 108 34 92 12 84C34 88 50 104 60 128Z"/>
+<path d="M70 128C78 108 94 96 118 92C96 100 82 112 76 128Z"/>
+<path d="M60 128C54 104 54 78 44 52C60 76 62 104 64 128Z"/>
+<path d="M66 128C70 106 80 88 86 62C88 90 76 108 70 128Z"/>
+</g>
+</svg>

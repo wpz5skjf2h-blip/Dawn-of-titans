@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: cracked earth where a titan stomps or slams the ground. -->
+<defs><radialGradient id="r"><stop offset="0" stop-color="#2a1e12" stop-opacity="0.7"/><stop offset="0.6" stop-color="#3a2a1a" stop-opacity="0.25"/><stop offset="1" stop-color="#3a2a1a" stop-opacity="0"/></radialGradient></defs>
+<circle cx="64" cy="64" r="50" fill="url(#r)"/>
+<g fill="none" stroke="#1e140c" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.85">
+<path d="M64 64L44 50L30 52L14 40" stroke-width="3"/><path d="M64 64L70 40L64 26L72 8" stroke-width="3"/><path d="M64 64L90 52L104 58L120 50" stroke-width="2.6"/>
+<path d="M64 64L84 82L86 98L100 116" stroke-width="3"/><path d="M64 64L50 86L36 92L28 110" stroke-width="2.6"/><path d="M44 50L42 34M90 52L96 38M84 82L104 84M50 86L40 76" stroke-width="1.6"/>
+</g>
+</svg>

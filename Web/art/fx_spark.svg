@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Dawn of Titans: spark particle, a bright core with a four-point glint (additive). -->
+<defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset="0.22" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.25"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<circle cx="64" cy="64" r="40" fill="url(#g)"/>
+<path d="M64 6Q66 62 122 64Q66 66 64 122Q62 66 6 64Q62 62 64 6Z" fill="#fff" fill-opacity="0.9"/>
+</svg>
