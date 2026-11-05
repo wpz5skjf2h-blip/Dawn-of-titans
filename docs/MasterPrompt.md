@@ -1451,6 +1451,10 @@ A sandbox to test any composition you own against AI armies: no rewards, no loss
 ### 10.7 Titan Spire [POST]
 Endless tower of 100 floors with stacking modifiers. The top 10 floors reset weekly with leaderboards.
 
+> **Implemented now (Titan Spire):** 100 floors from Keep (Castle) 6 with no losses; every band of ten adds an enemy
+> modifier that stacks to the top, a floor pays once when first won, floors 91–100 reset every Monday and pay again,
+> with a weekly table of computer lords (docs/M0_Notes.md §6э).
+
 ---
 
 ## 11. PvP
