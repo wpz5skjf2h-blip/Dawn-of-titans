@@ -265,12 +265,25 @@ struct ActDef
 	std::vector<ChestDef> chests;
 };
 
+/** An entry of the missions' loot table: a repeat win or a sweep rolls one by weight. */
+struct MissionLoot
+{
+	int weight = 0;
+	ResArray res{}; // gold and food are per mission level
+	int relic = 0; // a relic of this rarity (0 = none)
+};
+
 /** Campaigns of the Adventurers' Guild (kingdom.json "campaigns"). */
 struct CampaignRules
 {
 	int64_t stones = 2; // portal stones per mission battle
 	int guild = -1; // building index that opens the campaigns (-1: none needed)
 	std::vector<ActDef> acts;
+	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food.
+	int64_t sweepFood = 0; // food per mission level (0: no sweeps)
+	int64_t scrollsStart = 0; // War Scrolls a new kingdom (or a save from before them) has
+	int64_t scrollsMax = 0; // the most a kingdom holds
+	std::vector<MissionLoot> loot; // rolled by repeat wins and sweeps (empty: titan XP only)
 };
 
 /** What a daily quest counts. */
@@ -310,6 +323,7 @@ struct QuestRules
 	int count = 5; // quests a day
 	int rerolls = 2; // free rerolls a day
 	ResArray chest{}; // the daily chest for claiming every quest
+	int64_t chestScrolls = 0; // War Scrolls in the chest
 	std::vector<std::pair<int, int>> chestRelic; // (from Castle level, relic rarity), ascending
 	std::vector<QuestDef> pool;
 };

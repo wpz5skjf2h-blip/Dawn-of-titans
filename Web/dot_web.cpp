@@ -1144,6 +1144,11 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		{
 			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckMission(A, M).error));
 		}
+		O.Raw("],").Key("sw").Raw("[");
+		for (int M = 0; M < N; ++M)
+		{
+			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckSweep(A, M).error));
+		}
 		O.Raw("],").Key("chests").Raw("[");
 		for (size_t I = 0; I < C.campaigns.acts[static_cast<size_t>(A)].chests.size(); ++I)
 		{
@@ -1153,8 +1158,10 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		WriteCheck(O, Km->CheckMission(A, Next));
 		O.Raw("}");
 	}
+	// War Scrolls for campaign sweeps.
+	O.Raw("],").Key("scrolls").Int(Km->Scrolls()).Comma();
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
-	O.Raw("],").Key("quests").Raw("{").Key("list").Raw("[");
+	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
 	{
 		const dot::kingdom::DailyQuest& Q = Km->Quests()[I];
@@ -1709,6 +1716,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
 	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
+	O.Key("scrolls").Int(R.scrolls).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1753,6 +1761,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_mission_finish(int Act, int Mission, int Sta
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->FinishMission(Act, Mission, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Sweeps a campaign mission won on 3 stars with this titan (0: none): the reward as for a battle. */
+EMSCRIPTEN_KEEPALIVE const char* dk_mission_sweep(int Act, int Mission, int TitanId)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->SweepMission(Act, Mission, TitanId, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

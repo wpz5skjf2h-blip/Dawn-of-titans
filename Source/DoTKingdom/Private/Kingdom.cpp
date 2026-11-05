@@ -127,6 +127,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	SiteCounter = 0;
 	MissionStarList.assign(C.campaigns.acts.size(), {});
 	ChestMask.assign(C.campaigns.acts.size(), 0);
+	ScrollCount = C.campaigns.scrollsStart;
+	LootRolls = 0;
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
@@ -2675,9 +2677,14 @@ Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<
 	Best.resize(static_cast<size_t>(MissionCount(Act)), 0);
 	uint8_t& Mine = Best[static_cast<size_t>(Mission)];
 	const uint8_t Won = static_cast<uint8_t>(std::max(0, std::min(3, Stars)));
+	if (Won > 0 && Mine > 0)
+	{
+		// Repeats roll the loot table (and give the titan XP).
+		RollMissionLoot(D.level, Won, R);
+	}
 	if (Won > 0 && Mine == 0)
 	{
-		// The first win pays the mission's reward (repeats give the titan XP only).
+		// The first win pays the mission's reward (repeats roll the loot table above).
 		R.firstClear = true;
 		for (int I = 0; I < kResCount; ++I)
 		{
@@ -2749,6 +2756,134 @@ Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 		*Out = R;
 	}
 	return Error::None;
+}
+
+// --- Campaign sweeps -------------------------------------------------------------------------------
+
+namespace
+{
+constexpr uint64_t LootSalt = 0x6c6f6f74ULL;
+}
+
+void Kingdom::RollMissionLoot(int Level, int Stars, Reward& R)
+{
+	int64_t Total = 0;
+	for (const MissionLoot& L : C.campaigns.loot)
+	{
+		Total += L.weight;
+	}
+	if (Total <= 0)
+	{
+		return;
+	}
+	const uint64_t H = Mix(Seed ^ LootSalt, LootRolls++);
+	int64_t Pick = static_cast<int64_t>(H % static_cast<uint64_t>(Total));
+	const MissionLoot* Got = &C.campaigns.loot.back();
+	for (const MissionLoot& L : C.campaigns.loot)
+	{
+		if (Pick < L.weight)
+		{
+			Got = &L;
+			break;
+		}
+		Pick -= L.weight;
+	}
+	// As on a land, fewer stars bring less of it.
+	const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
+	for (int I = 0; I < kResCount; ++I)
+	{
+		int64_t N = Got->res[static_cast<size_t>(I)];
+		if (N <= 0)
+		{
+			continue;
+		}
+		const Res Kind = static_cast<Res>(I);
+		if (Kind == Res::Gold || Kind == Res::Food)
+		{
+			N *= std::max(1, Level);
+		}
+		N = std::max<int64_t>(1, N * Pct / 100);
+		const int64_t Before = Amount(Kind);
+		AddResource(Kind, N);
+		R.res[static_cast<size_t>(I)] += Amount(Kind) - Before;
+	}
+	if (Got->relic > 0)
+	{
+		const int32_t Id = static_cast<int>(RelicList.size()) < C.maxRelics ? AddRelic(RollRelicKind(H >> 32), Got->relic) : 0;
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+		else
+		{
+			++R.relicsLost;
+		}
+	}
+}
+
+int64_t Kingdom::AddScrolls(int64_t N)
+{
+	const int64_t Before = ScrollCount;
+	ScrollCount = std::max(ScrollCount, std::min(C.campaigns.scrollsMax, ScrollCount + std::max<int64_t>(0, N)));
+	return ScrollCount - Before;
+}
+
+Check Kingdom::CheckSweep(int Act, int Mission) const
+{
+	Check Out = CheckMission(Act, Mission);
+	Out.cost.fill(0);
+	if (Out.error == Error::NeedStones)
+	{
+		Out.error = Error::None; // a sweep spends no stones
+	}
+	if (Out.error != Error::None)
+	{
+		return Out;
+	}
+	if (C.campaigns.sweepFood <= 0)
+	{
+		Out.error = Error::NotAllowed;
+		return Out;
+	}
+	const int Level = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Mission)].level;
+	const int64_t Food = C.campaigns.sweepFood * Level;
+	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = Food;
+	if (MissionStars(Act, Mission) < 3)
+	{
+		Out.error = Error::NotReady;
+	}
+	else if (ScrollCount <= 0)
+	{
+		Out.error = Error::LimitReached;
+	}
+	else if (Amount(Res::Food) < Food)
+	{
+		Out.error = Error::NotEnough;
+	}
+	return Out;
+}
+
+Error Kingdom::SweepMission(int Act, int Mission, int32_t TitanId, Reward* Out)
+{
+	const Check Ck = CheckSweep(Act, Mission);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	// The titan goes as to a battle (it must be rested), and the mission is won on 3 stars with nobody lost.
+	const Error E = BeginBattle(-(MissionBase + Act * 100 + Mission), false, 0, {}, TitanId, {}, false);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	int64_t& Food = Res_[static_cast<size_t>(ResIndex(Res::Food))];
+	Food = std::max<int64_t>(0, Food - Ck.cost[static_cast<size_t>(ResIndex(Res::Food))]);
+	--ScrollCount;
+	return FinishMission(Act, Mission, 3, {}, {}, Out);
 }
 
 // --- Daily quests ----------------------------------------------------------------------------------
@@ -2974,6 +3109,7 @@ Error Kingdom::ClaimChestIn(const QuestRules& Rules, const std::vector<DailyQues
 	}
 	Reward R;
 	PayGift(Rules.chest, R);
+	R.scrolls = AddScrolls(Rules.chestScrolls);
 	if (Rarity > 0)
 	{
 		const uint64_t H = Mix(Seed ^ Salt, static_cast<uint64_t>(Period));
@@ -7978,6 +8114,14 @@ std::string Kingdom::Save() const
 		W.EndObject();
 	}
 	W.EndObject();
+	// Sweeps (optional): War Scrolls held and the loot table's rolls.
+	W.Key("sweep");
+	W.BeginObject();
+	W.Key("scrolls");
+	W.Int(ScrollCount);
+	W.Key("rolls");
+	W.Int(static_cast<int64_t>(LootRolls));
+	W.EndObject();
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -8926,6 +9070,14 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			ChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("chests", 0)));
 		}
 	}
+	// Sweeps (saves before them start with the new kingdom's scrolls).
+	ScrollCount = C.campaigns.scrollsStart;
+	LootRolls = 0;
+	if (const JsonValue* SweepJ = J.Find("sweep"))
+	{
+		ScrollCount = std::max<int64_t>(0, std::min(C.campaigns.scrollsMax, SweepJ->GetInt64("scrolls", ScrollCount)));
+		LootRolls = static_cast<uint64_t>(std::max<int64_t>(0, SweepJ->GetInt64("rolls", 0)));
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -9779,6 +9931,12 @@ uint64_t Kingdom::Hash() const
 		}
 		W.I64(GiveDay);
 		W.I32(GiveCount);
+	}
+	// And for sweeps: only once a scroll was used or got, or the loot table rolled.
+	if (ScrollCount != C.campaigns.scrollsStart || LootRolls != 0)
+	{
+		W.I64(ScrollCount);
+		W.U64(LootRolls);
 	}
 	return W.Hash();
 }

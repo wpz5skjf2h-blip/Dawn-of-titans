@@ -1239,9 +1239,9 @@ void TestCampaigns()
 	KD_CHECK(P.StartMission(0, 0, {Militia}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 2, {100}, {}, &R) == Error::None);
 	KD_CHECK(R.firstClear && R.res[GemsI] == 10 && P.Amount(Res::Gems) == Gems + 10 && R.res[FoodI] == P.Amount(Res::Food) - Food && R.res[FoodI] > 0);
 	KD_CHECK(R.relics.empty() && P.MissionStars(0, 0) == 2 && P.ActStars(0) == 2 && P.CheckMission(0, 1).error == Error::None);
-	// Repeats give the titan XP only; the best stars stay.
+	// Repeats give the titan XP and roll the loot table (no gems); the best stars stay.
 	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 1, {}, {}, &R) == Error::None);
-	KD_CHECK(!R.firstClear && R.res[GemsI] == 0 && R.res[FoodI] == 0 && P.MissionStars(0, 0) == 2);
+	KD_CHECK(!R.firstClear && R.res[GemsI] == 0 && P.MissionStars(0, 0) == 2);
 	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 3, {}, {}, &R) == Error::None && P.MissionStars(0, 0) == 3);
 	KD_CHECK(P.ClaimChest(0, 0, &R) == Error::NotEnough && P.ClaimChest(0, 3, &R) == Error::BadId);
 	// Through the act with three stars: Act II waits for Castle 12 only.
@@ -1269,6 +1269,119 @@ void TestCampaigns()
 	Kingdom O(Content());
 	const std::string Old = Replace(AtCastle(8), "\"campaigns\":{}", "\"x\":0");
 	KD_CHECK(Old != AtCastle(8) && O.Load(Old, Error) && O.ActStars(0) == 0 && O.CheckMission(0, 0).error == Error::None);
+}
+
+void TestCampaignSweep()
+{
+	const KingdomContent& Ct = Content();
+	const CampaignRules& G = Ct.campaigns;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	KD_CHECK(G.sweepFood == 500 && G.scrollsStart == 5 && G.scrollsMax == 30 && G.loot.size() == 4);
+	KD_CHECK(G.loot[0].weight == 40 && G.loot[0].res[GoldI] == 600 && G.loot[1].res[FoodI] == 600 && G.loot[2].res[StonesI] == 3 && G.loot[3].relic == 1);
+	KD_CHECK(Ct.quests.chestScrolls == 3 && Ct.weekly.chestScrolls == 10);
+
+	Kingdom K(Ct);
+	K.NewGame(T0, 62);
+	KD_CHECK(K.Scrolls() == 5);
+	// Without the Guild or the mission nothing goes, and nothing is asked for.
+	const Check NoGuild = K.CheckSweep(0, 0);
+	KD_CHECK(NoGuild.error == Error::NeedRequirement && NoGuild.cost[StonesI] == 0 && NoGuild.cost[FoodI] == 0);
+	KD_CHECK(K.CheckSweep(0, 13).error == Error::BadId && K.CheckSweep(5, 0).error == Error::BadId && K.SweepMission(0, 0, 0, nullptr) == Error::NeedRequirement);
+	std::string Error;
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(Replace(WithBuilding(K.Save(), "adventurers_guild", 1, 2), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":8"), Error));
+	// Only a mission won on 3 stars can be swept; its cost is food by the mission's level.
+	const Check Unwon = P.CheckSweep(0, 0);
+	KD_CHECK(Unwon.error == Error::NotReady && Unwon.cost[FoodI] == 500 * 3 && Unwon.cost[StonesI] == 0 && P.CheckSweep(0, 1).error == Error::Locked);
+	Reward R;
+	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 2, {}, {}, &R) == Error::None && R.firstClear);
+	KD_CHECK(P.CheckSweep(0, 0).error == Error::NotReady && P.SweepMission(0, 0, 0, &R) == Error::NotReady && P.Scrolls() == 5);
+	P.RefillStones();
+	KD_CHECK(P.StartMission(0, 0, {}, 0, {}, false) == Error::None && P.FinishMission(0, 0, 3, {}, {}, &R) == Error::None && P.MissionStars(0, 0) == 3);
+	KD_CHECK(P.CheckSweep(0, 0).error == Error::None);
+	// Not while a battle is on.
+	P.RefillStones();
+	KD_CHECK(P.StartMission(0, 1, {}, 0, {}, false) == Error::None && P.SweepMission(0, 0, 0, &R) == Error::Busy && P.Scrolls() == 5);
+	KD_CHECK(P.FinishMission(0, 1, 0, {}, {}, &R) == Error::None && P.MissionStars(0, 1) == 0);
+	// A sweep spends a scroll and the food, no stones; the titan gets a 3-star win's XP and rests; nobody is lost.
+	const int32_t Perun = P.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	const int64_t Squads = P.ArmyCount(Militia);
+	const int64_t Stones = P.Amount(Res::Stones);
+	const int64_t Food = P.Amount(Res::Food);
+	const int64_t MissionsBefore = P.Lifetime(QuestEvent::Mission);
+	const int64_t WinsBefore = P.Lifetime(QuestEvent::Win);
+	KD_CHECK(P.SweepMission(0, 0, Perun, &R) == Error::None && P.Scrolls() == 4 && P.Amount(Res::Stones) == Stones && P.PendingAttack() == 0);
+	KD_CHECK(P.Amount(Res::Food) == Food - 1500 + R.res[FoodI] && R.squadsLost == 0 && R.squadsBack == 0 && P.ArmyCount(Militia) == Squads && !R.firstClear);
+	KD_CHECK(R.titanId == Perun && R.titanXp == Ct.titanBattleXp[2] * Ct.titanStarsPct[3] / 100 && R.res[GemsI] == 0 && P.MissionStars(0, 0) == 3);
+	KD_CHECK(P.Lifetime(QuestEvent::Mission) == MissionsBefore + 1 && P.Lifetime(QuestEvent::Win) == WinsBefore + 1);
+	const bool bRests = P.FindTitan(Perun)->level > Ct.titanRecoveryFromLevel;
+	KD_CHECK(bRests == (P.FindTitan(Perun)->recoverUntil > P.Now()));
+	if (bRests)
+	{
+		KD_CHECK(P.SweepMission(0, 0, Perun, &R) == Error::TitanRecovering && P.Scrolls() == 4);
+	}
+	KD_CHECK(P.SweepMission(0, 0, 999999, &R) == Error::BadId && P.Scrolls() == 4);
+	// Without a titan: no XP.
+	KD_CHECK(P.SweepMission(0, 0, 0, &R) == Error::None && P.Scrolls() == 3 && R.titanId == 0 && R.titanXp == 0);
+	// Saved as they are; the hash covers them; a save from before sweeps starts with the scrolls.
+	const std::string Base = P.Save();
+	Kingdom S(Ct);
+	KD_CHECK(Base.find("\"sweep\":{\"scrolls\":3,\"rolls\":") != std::string::npos && S.Load(Base, Error) && S.Hash() == P.Hash() && S.Save() == Base && S.Scrolls() == 3);
+	const size_t At = Base.find("\"sweep\":{");
+	const std::string Old = Base.substr(0, At) + Base.substr(Base.find('}', At) + 2);
+	KD_CHECK(Old.find("\"sweep\"") == std::string::npos && S.Load(Old, Error) && S.Scrolls() == 5 && S.Hash() != P.Hash());
+	// No scroll, or too little food.
+	KD_CHECK(S.Load(Replace(Base, "\"scrolls\":3", "\"scrolls\":0"), Error) && S.CheckSweep(0, 0).error == Error::LimitReached && S.SweepMission(0, 0, 0, &R) == Error::LimitReached);
+	KD_CHECK(S.Load(Replace(Base, "\"scrolls\":3", "\"scrolls\":99"), Error) && S.Scrolls() == 30);
+	// The save with these resources (gold, food, stones; 100 gems).
+	const auto WithRes = [](const std::string& Save, int64_t G0, int64_t F0, int64_t S0) {
+		const size_t From = Save.find("\"resources\":{");
+		const size_t To = Save.find('}', From);
+		return Save.substr(0, From) + "\"resources\":{\"gold\":" + std::to_string(G0) + ",\"food\":" + std::to_string(F0) + ",\"gems\":100,\"stones\":" +
+			std::to_string(S0) + ",\"shards\":0,\"vp\":0" + Save.substr(To);
+	};
+	KD_CHECK(S.Load(WithRes(Base, 0, 1499, 0), Error) && S.Amount(Res::Food) == 1499 && S.CheckSweep(0, 0).error == Error::NotEnough);
+	KD_CHECK(S.SweepMission(0, 0, 0, &R) == Error::NotEnough && S.Scrolls() == 3 && S.Amount(Res::Food) == 1499);
+
+	// The loot table: one entry by weight per roll, gold and food by the mission's level (3), all of it on 3 stars.
+	const size_t RollsAt = Base.find("\"rolls\":");
+	const std::string RollsKey = Base.substr(RollsAt, Base.find('}', RollsAt) - RollsAt);
+	int Kinds[4] = {0, 0, 0, 0};
+	int GoldRoll = -1;
+	for (int N = 0; N < 400; ++N)
+	{
+		KD_CHECK(S.Load(WithRes(Replace(Base, RollsKey, "\"rolls\":" + std::to_string(N)), 0, 2000, 0), Error));
+		const int64_t Gold = S.Amount(Res::Gold);
+		const int64_t GoldRoom = S.Capacity(Res::Gold) - Gold;
+		const int64_t StonesNow = S.Amount(Res::Stones);
+		KD_CHECK(S.SweepMission(0, 0, 0, &R) == Error::None);
+		const int Got = (R.res[GoldI] > 0 ? 1 : 0) + (R.res[FoodI] > 0 ? 1 : 0) + (R.res[StonesI] > 0 ? 1 : 0) + (R.relics.size() + static_cast<size_t>(R.relicsLost) > 0 ? 1 : 0);
+		KD_CHECK(Got == 1 && GoldRoom >= 1800 && StonesNow == 0);
+		KD_CHECK(R.res[GoldI] == 0 || (R.res[GoldI] == 1800 && S.Amount(Res::Gold) == Gold + 1800));
+		KD_CHECK(R.res[FoodI] == 0 || (R.res[FoodI] == 1800 && S.Amount(Res::Food) == 2000 - 1500 + 1800));
+		KD_CHECK(R.res[StonesI] == 0 || R.res[StonesI] == 3);
+		KD_CHECK(R.relics.empty() || S.FindRelic(R.relics[0])->rarity == 1);
+		Kinds[0] += R.res[GoldI] > 0 ? 1 : 0;
+		Kinds[1] += R.res[FoodI] > 0 ? 1 : 0;
+		Kinds[2] += R.res[StonesI] > 0 ? 1 : 0;
+		Kinds[3] += R.relics.size() + static_cast<size_t>(R.relicsLost) > 0 ? 1 : 0;
+		GoldRoll = GoldRoll < 0 && R.res[GoldI] == 1800 ? N : GoldRoll;
+	}
+	std::printf("  campaign loot in 400 rolls: gold %d, food %d, stones %d, relics %d\n", Kinds[0], Kinds[1], Kinds[2], Kinds[3]);
+	KD_CHECK(Kinds[0] >= 110 && Kinds[0] <= 210 && Kinds[1] >= 120 && Kinds[1] <= 200 && Kinds[3] >= 6 && Kinds[3] <= 40);
+	// A repeat battle rolls it too, by its stars (half on one star).
+	KD_CHECK(GoldRoll >= 0 && S.Load(WithRes(Replace(Base, RollsKey, "\"rolls\":" + std::to_string(GoldRoll)), 0, 0, 2), Error));
+	KD_CHECK(S.StartMission(0, 0, {}, 0, {}, false) == Error::None && S.FinishMission(0, 0, 1, {}, {}, &R) == Error::None);
+	KD_CHECK(R.res[GoldI] == 900 && S.Amount(Res::Gold) == 900 && S.MissionStars(0, 0) == 3);
+	// The same rolls on every client: a sweep from the same state ends in the same state.
+	Kingdom A(Ct);
+	Kingdom B(Ct);
+	const std::string Rich = WithRes(Base, 0, 5000, 0);
+	KD_CHECK(A.Load(Rich, Error) && B.Load(Rich, Error) && A.SweepMission(0, 0, 0, nullptr) == Error::None && B.SweepMission(0, 0, 0, nullptr) == Error::None && A.Hash() == B.Hash());
 }
 
 /** The save with its daily quests replaced (they are the last key of a save). */
@@ -1422,7 +1535,9 @@ void TestDailyQuests()
 	KD_CHECK(Ch.ClaimQuest(0, nullptr) == Error::None && Ch.ClaimQuestChest(&R) == Error::NotReady && Ch.ClaimQuest(1, nullptr) == Error::None);
 	const int64_t Gems2 = Ch.Amount(Res::Gems);
 	const size_t Relics = Ch.Relics().size();
+	const int64_t Scrolls = Ch.Scrolls();
 	KD_CHECK(Ch.ClaimQuestChest(&R) == Error::None && R.res[GemsI] == 10 && Ch.Amount(Res::Gems) == Gems2 + 10 && R.relics.empty() && Ch.Relics().size() == Relics);
+	KD_CHECK(R.scrolls == 3 && Ch.Scrolls() == Scrolls + 3); // War Scrolls for campaign sweeps
 	KD_CHECK(Ch.QuestChestClaimed() && Ch.ClaimQuestChest(&R) == Error::Nothing);
 	const std::string Save12 = Replace(WithBuilding(K.Save(), "relic_temple", 1, 34), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":12");
 	Kingdom Hi(Ct);
@@ -2346,6 +2461,7 @@ void TestWeeklyQuests()
 	const size_t Relics = Ch.Relics().size();
 	const int64_t Gems2 = Ch.Amount(Res::Gems);
 	KD_CHECK(Ch.ClaimWeeklyChest(&R) == Error::None && R.res[GemsI] == 30 && Ch.Amount(Res::Gems) == Gems2 + 30 && R.relics.size() == 1);
+	KD_CHECK(R.scrolls == 10 && Ch.Scrolls() == std::min<int64_t>(30, 5 + 10)); // War Scrolls, up to the most a kingdom holds
 	KD_CHECK(Ch.Relics().size() == Relics + 1 && Ch.FindRelic(R.relics[0])->rarity == 2 && Ch.ClaimWeeklyChest(nullptr) == Error::Nothing);
 
 	// Saving keeps the week; a new week brings new quests and a closed chest.
@@ -4220,6 +4336,7 @@ int main()
 		{"LandUpgrades", TestLandUpgrades},
 		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
 		{"Campaigns", TestCampaigns},
+		{"CampaignSweep", TestCampaignSweep},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},

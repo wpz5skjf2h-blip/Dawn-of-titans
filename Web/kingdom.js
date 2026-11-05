@@ -90,6 +90,9 @@ const ICONS = {
 	shards: [['p', 'M8.5 2l5 6.5-2.5 13.5-6-9.5z', '#9fe3ff', '#1f5f7a', 1.4], ['p', 'M15.5 7l5 4.5-4.5 10-2.6-2.4z', '#c6b3ff', '#4b2a8a', 1.4],
 		['p', 'M8.5 2l2.2 10', 'none', '#effcff', 1.1]],
 	vp: [['p', 'M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17.1l-5.9 3.2 1.3-6.5L2.5 9.3l6.6-.8z', '#ffcf4a', '#8a4a12', 1.4], ['p', 'M12 7.5v5', 'none', '#fff3c4', 1.6]],
+	// A War Scroll for campaign sweeps: parchment between two rods, with a red seal.
+	scroll: [['p', 'M6 5.5h12v13H6z', '#f0dfae', '#7a5a2a', 1.3], ['p', 'M4 3.5h16v3H4zM4 17.5h16v3H4z', '#c99a55', '#6a4a1e', 1.3],
+		['p', 'M8.5 9.5h7M8.5 12.5h4.5', 'none', '#8a6a3a', 1.3], ['c', 15.5, 14.2, 1.9, '#c0392b', '#7a1a10', 1]],
 };
 function iconSvg(kind) {
 	const parts = ICONS[kind].map((p) => p[0] === 'c'
@@ -178,6 +181,7 @@ class KingdomBridge {
 		return JSON.parse(this.str(this.M.ccall('dk_mission_finish', 'number', ['number', 'number', 'number', 'string', 'string'],
 			[act, m, stars, (survivors || []).join(','), (used || []).join(',')])));
 	}
+	missionSweep(act, m, titan) { return JSON.parse(this.str(this.M._dk_mission_sweep(act, m, titan || 0))); }
 	chest(act, i) { return JSON.parse(this.str(this.M._dk_chest(act, i))); }
 	questClaim(i) { return JSON.parse(this.str(this.M._dk_quest_claim(i))); }
 	questReroll(i) { return this.M._dk_quest_reroll(i); }
@@ -2540,6 +2544,8 @@ function onAct(e) {
 	case 'trial-rank': claimTrial('rank'); break;
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
+	case 'mission-sweep': sweepMission(Math.floor(id / 100), id % 100); break;
+	case 'camp-titan': K.campTitan = id; refreshSheet(true); break;
 	case 'chest': openChest(Math.floor(id / 100), id % 100); break;
 	case 'quest-claim': claimQuest(id, el.dataset.kind); break;
 	case 'quest-reroll': run(el.dataset.kind === 'week' ? K.bridge.weekReroll(id) : K.bridge.questReroll(id), 'Задание заменено'); break;
@@ -3353,7 +3359,7 @@ const firstRes = (md) => RES.map((k) => (md.first && md.first[k]) || 0);
 function missionRewardText(a, m) {
 	const md = missionDef(a, m);
 	const won = K.st.campaign[a].stars[m] > 0;
-	return (won ? 'Награда за первую победу уже получена; повтор даёт опыт титану.' : 'Первая победа: ' + resPlus(firstRes(md)) + '.') +
+	return (won ? 'Награда за первую победу уже получена; повтор даёт опыт титану и добычу.' : 'Первая победа: ' + resPlus(firstRes(md)) + '.') +
 		' Опыт титана как в бою за землю ' + md.level + '-го уровня. Миссию можно переигрывать ради звёзд.';
 }
 /** The act with a mission to play now (the golden statue on the Guild's tower in the original), or -1. */
@@ -3392,6 +3398,66 @@ function missionButton(c, a, m) {
 	return '<button class="btn' + (won ? '' : ' primary') + '" data-act="mission" data-id="' + (a * 100 + m) + '"' + (err === E.NeedStones ? ' disabled' : '') + '>' +
 		(won ? 'Ещё раз' : 'В бой') + ' · ' + stones + ' ' + iconSvg('stones') + '</button>';
 }
+// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food, as a
+// 3-star repeat win with no losses; the titan sent gets its XP and rests. Repeat wins and sweeps roll the loot table.
+const sweepRules = () => (K.rules.campaigns && K.rules.campaigns.sweep) || null;
+const sweepOn = () => !!(sweepRules() && sweepRules().food > 0);
+const sweepFood = (md) => sweepRules().food * md.level;
+/** The titan a sweep sends: the one picked while it is rested, else the strongest rested one (null: none). */
+function sweepTitan(st) {
+	if (K.campTitan === 0) return null;
+	const now = nowF();
+	const chosen = K.campTitan ? st.titans.find((t) => t.id === K.campTitan) : null;
+	if (chosen && chosen.rec <= now) return chosen;
+	return st.titans.filter((t) => t.rec <= now).sort((x, y) => y.pw - x.pw || x.id - y.id)[0] || null;
+}
+function sweepErrText(code) {
+	switch (code) {
+	case E.NotReady: return 'Зачистка открывается после победы на 3 звезды';
+	case E.LimitReached: return 'Нет боевых свитков: их дают сундуки заданий';
+	case E.NotEnough: return 'Не хватает еды на поход';
+	case E.Busy: return 'Сначала закончите бой';
+	case E.TitanRecovering: return 'Титан ещё отдыхает';
+	default: return errText(code);
+	}
+}
+function sweepButton(c, a, m) {
+	if (!sweepOn() || c.stars[m] < 3) return '';
+	const err = c.sw ? c.sw[m] : E.NotAllowed;
+	return '<button class="btn' + (err === E.None ? ' primary' : '') + '" data-act="mission-sweep" data-id="' + (a * 100 + m) + '"' +
+		(err === E.None ? '' : ' disabled title="' + esc(sweepErrText(err)) + '"') + '>Зачистка · 1 ' + iconSvg('scroll') + ' ' + fmtShort(sweepFood(missionDef(a, m))) + ' ' + iconSvg('food') + '</button>';
+}
+/** A repeat win's or a sweep's loot for a toast (relics go in the army toast). */
+function lootText(r) {
+	const loot = rewardParts(r);
+	if (loot.length) return ', добыча: ' + loot.join(', ');
+	const table = K.rules.campaigns.loot || [];
+	return table.length && !(r.relics || []).length && !r.relicsLost ? ', добыча не влезла: склады полны' : '';
+}
+/** Who goes on sweeps: the rested titans (the strongest by default) or none. */
+function sweepPicker(st, pick) {
+	const now = nowF();
+	const titans = st.titans.slice().sort((x, y) => y.pw - x.pw || x.id - y.id);
+	return '<div class="opts">' + titans.map((t) => {
+		const resting = t.rec > now;
+		return '<button class="opt wi' + (pick && pick.id === t.id ? ' on' : '') + '" data-act="camp-titan" data-id="' + t.id + '"' + (resting ? ' disabled' : '') + '>' + titanIcon(t) +
+			'<b>' + esc(titanName(t)) + ' ' + starsHtml(K.army.titans[t.def].stars) + '</b><span>' + (resting ? 'отдыхает' : 'ур. ' + t.lv) + '</span></button>';
+	}).join('') + '<button class="opt wi' + (!pick ? ' on' : '') + '" data-act="camp-titan" data-id="0">' + icoHtml('ui.army', 'troop') + '<b>Без титана</b><span>без опыта</span></button></div>';
+}
+function sweepMission(a, m) {
+	const md = missionDef(a, m);
+	const pick = sweepTitan(K.st);
+	const r = K.bridge.missionSweep(a, m, pick ? pick.id : 0);
+	if (r.err !== E.None) {
+		toast(sweepErrText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('Зачистка «' + md.name + '»: ★★★' + lootText(r), 'gold');
+	armyToast(r, []);
+	persist();
+	refresh(true);
+}
 function openCampaign(act) {
 	if (!K.rules.campaigns) return;
 	cancelPlace();
@@ -3429,23 +3495,31 @@ function openCampaign(act) {
 			const won = c.stars[m] > 0;
 			cards.push('<div class="landCard' + (won ? ' won' : '') + '">' + missionIcon(md) + '<div class="info"><b>' + (m + 1) + '. ' + esc(md.name) + ' · ур. ' + md.level + '</b>' +
 				'<span>' + MISSION_TYPE[md.type] + ' · ' + esc(enemyText(md.level, missionTitan(md), md.ai, md.squads.length)) + ' · поле боя: ' + esc(siteField(md).field) + '</span>' +
-				'<span>' + (won ? 'Лучший результат: <b class="gold">' + '★'.repeat(c.stars[m]) + '</b>' + '☆'.repeat(3 - c.stars[m]) + ' · повтор даёт опыт титану'
+				'<span>' + (won ? 'Лучший результат: <b class="gold">' + '★'.repeat(c.stars[m]) + '</b>' + '☆'.repeat(3 - c.stars[m]) + ' · повтор даёт опыт титану и добычу'
 					: 'Первая победа: ' + resPlus(firstRes(md))) + '</span></div>' +
-				(won ? '' : missionBrief(md)) + '<div class="row">' + missionButton(c, a, m) + '</div></div>');
+				(won ? '' : missionBrief(md)) + '<div class="row">' + missionButton(c, a, m) + sweepButton(c, a, m) + '</div></div>');
 		}
 		const hidden = A.missions.length - shown;
+		const sweepable = sweepOn() && c.stars.some((x) => x >= 3);
+		const pick = sweepable ? sweepTitan(st) : null;
+		const sweepHtml = sweepable ? '<h3>Зачистка</h3><p class="fine">Миссию, пройденную на 3 звезды, можно зачистить сразу, без боя: боевой свиток и еда на поход (' +
+			fmt(sweepRules().food) + ' за уровень миссии). Войска не гибнут, титан получает опыт победы на 3 звезды и уходит отдыхать. Свитки дают ежедневный и недельный сундуки заданий' +
+			(sweepRules().max ? ', держать можно до ' + sweepRules().max : '') + '. Кого послать:</p>' + sweepPicker(st, pick) : '';
 		const html = sheetTitle(icoHtml('ui.campaign', 'bld'), 'Кампании') +
 			'<p class="fine">Как в оригинале, кампании открывает Гильдия искателей приключений; новая миссия отмечена над Гильдией. Миссии идут по порядку. ' +
-			'Бой стоит ' + K.rules.campaigns.stones + ' камня портала и даёт титану опыт как бой за землю того же уровня, первая победа приносит награду миссии, а звёзды открывают сундуки акта.</p>' +
+			'Бой стоит ' + K.rules.campaigns.stones + ' камня портала и даёт титану опыт как бой за землю того же уровня, первая победа приносит награду миссии, а звёзды открывают сундуки акта. ' +
+			'Повторные победы приносят добычу: золото, еду, камни портала или реликвию.</p>' +
 			(acts.length > 1 ? '<div class="opts">' + tabs.join('') + '</div>' : '') +
 			'<h3>' + esc(A.name) + '</h3><p><b>' + esc(A.region) + '.</b> ' + esc(done ? A.outro : A.intro) + '</p>' +
 			(lockedAct ? '<p class="fine">' + (c.err[0] === E.NeedRequirement ? 'Сначала постройте Гильдию искателей приключений.' : c.ck.c ? 'Акт откроется на Замке ' + c.ck.c + '.' : 'Акт откроется, когда будет пройден предыдущий.') + '</p>' : '') +
-			'<div class="costline"><span>Звёзды акта</span><b>★ ' + c.total + ' / ' + max + '</b><span>камни ' + iconSvg('stones') + st.res[3] + '</span></div>' +
+			'<div class="costline"><span>Звёзды акта</span><b>★ ' + c.total + ' / ' + max + '</b><span>камни ' + iconSvg('stones') + st.res[3] + '</span>' +
+			(sweepOn() ? '<span>свитки ' + iconSvg('scroll') + (st.scrolls || 0) + '</span>' : '') + '</div>' +
 			'<h3>Миссии</h3>' + cards.join('') +
-			(hidden > 0 && !lockedAct ? '<p class="fine">Впереди ещё ' + hidden + ' ' + plural(hidden, 'миссия', 'миссии', 'миссий') + ': туман рассеивается по мере продвижения.</p>' : '') +
+			(hidden > 0 && !lockedAct ? '<p class="fine">Впереди ещё ' + hidden + ' ' + plural(hidden, 'миссия', 'миссии', 'миссий') + ': туман рассеивается по мере продвижения.</p>' : '') + sweepHtml +
 			'<h3>Сундуки за звёзды</h3>' + chests.join('') +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['camp', a, st.res[3] >= K.rules.campaigns.stones, st.campaign.map((x) => x.stars.join('') + ':' + x.err.join('.') + ':' + x.chests.join('')).join('/')].join('|'), html };
+		return { key: ['camp', a, st.res[3] >= K.rules.campaigns.stones, st.campaign.map((x) => x.stars.join('') + ':' + x.err.join('.') + ':' + (x.sw || []).join('.') + ':' + x.chests.join('')).join('/'),
+			st.scrolls, pick ? pick.id : 0, sweepable ? st.titans.map((t) => t.id + ':' + t.lv + ':' + (t.rec > nowF())).join() : ''].join('|'), html };
 	});
 }
 function startMission(a, m) {
@@ -3484,7 +3558,7 @@ function missionEnd(ctx, stars, retreat) {
 		else if (r.first) {
 			const got = RES.map((k, i) => (i === 0 ? r.gold : i === 1 ? r.food : i === 2 ? r.gems : i === 3 ? r.stones : 0));
 			toast('«' + md.name + '»: победа ' + '★'.repeat(stars) + '! Награда: ' + RES.map((k, i) => (got[i] > 0 ? resAmount(k, got[i]) : '')).filter(Boolean).join(', '), 'gold');
-		} else toast('«' + md.name + '»: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : ''), 'gold');
+		} else toast('«' + md.name + '»: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : '') + lootText(r), 'gold');
 		armyToast(r, used);
 		if (stars > 0 && r.first && m === A.missions.length - 1) setTimeout(() => toast(A.name + ' пройден! ' + A.outro, 'gold'), 900);
 	}
@@ -4773,6 +4847,7 @@ function rewardParts(r) {
 	if (r.food) parts.push(resAmount('food', r.food));
 	if (r.gems) parts.push('+' + fmt(r.gems) + ' самоцветов');
 	if (r.stones) parts.push('+' + fmt(r.stones) + ' камней портала');
+	if (r.scrolls) parts.push('+' + r.scrolls + ' ' + plural(r.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
 	return parts;
 }
 /** A toast for every quest that got done since the last state (same day, same week). */
@@ -4844,7 +4919,8 @@ function openQuests(tab) {
 			'<div class="costline"><span>Новые задания через</span><b data-live="qday">' + fmtDur(Math.max(0, end - nowF())) + '</b><span>замен ' + qs.rerolls + '</span></div>' +
 			cards.join('') +
 			'<h3>' + (week ? 'Сундук недели' : 'Ежедневный сундук') + '</h3><div class="landCard' + (qs.chest ? ' won' : '') + '">' + icoHtml('ui.chest', 'gold land') +
-			'<div class="info"><b>Сундук за все задания' + (week ? ' недели' : '') + '</b><span>' + resPlus(chestRes) + (rel ? ', реликвия ' + '★'.repeat(rel) : '') + '</span></div>' +
+			'<div class="info"><b>Сундук за все задания' + (week ? ' недели' : '') + '</b><span>' + resPlus(chestRes) + (rules.chest.scrolls ? ' +' + rules.chest.scrolls + ' ' + iconSvg('scroll') : '') +
+				(rel ? ', реликвия ' + '★'.repeat(rel) : '') + '</span></div>' +
 			'<div class="row">' + chestBtn + '</div></div>' +
 			'<div class="actions">' + closeBtn + '</div>';
 		return { key: ['quests', kind, end, qs.rerolls, qs.chest, st.castle, nDay, nWeek, nWp, qs.list.map((q) => q.def + ':' + Math.min(q.progress, q.target) + ':' + q.claimed).join()].join('|'), html,

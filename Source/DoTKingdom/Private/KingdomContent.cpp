@@ -1070,6 +1070,27 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				G.acts.push_back(A);
 			}
 		}
+		if (const JsonValue* SweepJ = Camp->Find("sweep"))
+		{
+			G.sweepFood = std::max<int64_t>(0, SweepJ->GetInt64("food", 0));
+			G.scrollsStart = std::max<int64_t>(0, SweepJ->GetInt64("start", 0));
+			G.scrollsMax = std::max<int64_t>(G.scrollsStart, SweepJ->GetInt64("max", G.scrollsStart));
+		}
+		if (const JsonValue* LootJ = Camp->Find("loot"))
+		{
+			for (size_t I = 0; I < LootJ->Size(); ++I)
+			{
+				const JsonValue& EJ = (*LootJ)[I];
+				MissionLoot L;
+				L.weight = std::max(0, EJ.GetInt("weight", 0));
+				ReadCost(&EJ, L.res);
+				L.relic = std::max(0, std::min(5, EJ.GetInt("relic", 0)));
+				if (L.weight > 0)
+				{
+					G.loot.push_back(L);
+				}
+			}
+		}
 	}
 	// Daily and weekly quests share a shape.
 	const auto ReadQuests = [&](const JsonValue* Qj, QuestRules& Q, const char* What) {
@@ -1093,6 +1114,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		if (const JsonValue* Chest = Qj->Find("chest"))
 		{
 			ReadCost(Chest, Q.chest);
+			Q.chestScrolls = std::max<int64_t>(0, Chest->GetInt64("scrolls", 0));
 			std::vector<std::pair<int, int64_t>> Relic;
 			ReadSteps(Chest->Find("relic"), Relic);
 			for (const std::pair<int, int64_t>& R : Relic)

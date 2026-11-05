@@ -434,6 +434,16 @@ function invariants(st, add) {
 			if (a[3] > st.now || a[4] <= st.now || a[4] - a[3] !== hr.openHours * 3600) add('bad', 'Просьба союзника ' + a[0] + ': открыта ' + a[3] + '–' + a[4] + ', сейчас ' + st.now);
 		}
 	}
+	// Campaign sweeps: War Scrolls within the most a kingdom holds; only a mission won on 3 stars can be swept, with a scroll.
+	const cr = rules().campaigns;
+	if (cr && cr.sweep && st.campaign) {
+		if (!(st.scrolls >= 0 && st.scrolls <= cr.sweep.max)) add('bad', 'Боевых свитков ' + st.scrolls + ' из ' + cr.sweep.max);
+		st.campaign.forEach((c, a) => (c.sw || []).forEach((e, m) => {
+			if (e === 0 && (c.stars[m] < 3 || st.scrolls < 1 || st.res[1] < cr.sweep.food * cr.acts[a].missions[m].level)) {
+				add('bad', 'Зачистка миссии ' + (a + 1) + '.' + (m + 1) + ' открыта: звёзд ' + c.stars[m] + ', свитков ' + st.scrolls + ', еды ' + st.res[1]);
+			}
+		}));
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -788,6 +798,47 @@ function runMonkey(steps, seed, keep) {
 				const st2 = B.state();
 				const n = st2.help.today - (st.help.today > st2.help.today ? 0 : st.help.today);
 				if (n < 1 || n > open || st2.help.ally.some((a) => !a[5] && st2.help.today < rules().allianceHelp.dailyCap)) throw new Error('помощь союзникам: открытых было ' + open + ', помогли ' + n + ', осталось ' + st2.help.ally.filter((a) => !a[5]).length);
+			}
+			return res.err;
+		}],
+		['бой миссии', 2, (st) => {
+			if (!st.campaign || !st.campaign.length) return -1;
+			const a = Math.floor(r() * st.campaign.length);
+			const c = st.campaign[a];
+			// The next mission or one won before, now and then one past it.
+			const m = Math.min(c.stars.length - 1, Math.floor(r() * (c.next + 2)));
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
+			const code = B.missionStart(a, m, squads, ti ? ti.id : 0, []);
+			if (code !== 0) return code;
+			if (c.err[m] !== 0 && c.err[m] !== undefined) throw new Error('бой миссии ' + (a + 1) + '.' + (m + 1) + ' начался при проверке ' + c.err[m]);
+			const stars = Math.floor(r() * 4);
+			const res = B.missionFinish(a, m, stars, squads.map(() => Math.floor(r() * 101)), []);
+			const st2 = B.state();
+			if (st2.campaign[a].stars[m] !== Math.max(c.stars[m], stars)) throw new Error('звёзды миссии ' + (a + 1) + '.' + (m + 1) + ': ' + c.stars[m] + ' и бой на ' + stars + ' → ' + st2.campaign[a].stars[m]);
+			if (!!res.first !== (stars > 0 && c.stars[m] === 0)) throw new Error('миссия ' + (a + 1) + '.' + (m + 1) + ': награда за первую победу ' + res.first + ' при звёздах ' + c.stars[m] + ' → ' + stars);
+			return res.err;
+		}],
+		['зачистка миссии', 3, (st) => {
+			if (!B.missionSweep || !st.campaign || !st.campaign.length) return -1;
+			const a = Math.floor(r() * st.campaign.length);
+			const c = st.campaign[a];
+			// Mostly a mission won on 3 stars.
+			const won = c.stars.map((x, k) => k).filter((k) => c.stars[k] >= 3);
+			const m = won.length && r() < 0.85 ? pick(won) : Math.floor(r() * c.stars.length);
+			const ti = r() < 0.8 ? pick(st.titans) : null;
+			const army = st.army.n.join();
+			const res = B.missionSweep(a, m, ti ? ti.id : 0);
+			if (res.err === 0) {
+				const st2 = B.state();
+				const food = rules().campaigns.sweep.food * rules().campaigns.acts[a].missions[m].level;
+				if (c.sw[m] !== 0 || c.stars[m] < 3) throw new Error('зачистка миссии ' + (a + 1) + '.' + (m + 1) + ' при проверке ' + c.sw[m] + ' и звёздах ' + c.stars[m]);
+				if (st2.scrolls !== st.scrolls - 1) throw new Error('зачистка: свитков ' + st.scrolls + ' → ' + st2.scrolls);
+				if (st2.army.n.join() !== army || res.lost) throw new Error('зачистка забрала отряды');
+				if (st2.res[1] !== st.res[1] - food + res.food) throw new Error('зачистка: еды ' + st.res[1] + ' − ' + food + ' + ' + res.food + ' → ' + st2.res[1]);
+				if (ti && (ti.rec > st.now || res.titan !== ti.id)) throw new Error('зачистка с титаном #' + ti.id + (ti.rec > st.now ? ', который отдыхал' : '') + ': опыт получил #' + res.titan);
+				if (st2.res[3] < st.res[3]) throw new Error('зачистка потратила камни портала');
 			}
 			return res.err;
 		}],

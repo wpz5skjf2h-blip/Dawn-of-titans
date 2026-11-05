@@ -769,6 +769,10 @@ score = 100 × CounterMultiplier(self, target)
 - **2× speed** and pause: PvE only.
 - **Sweep:** a mission cleared with 3★ can be resolved instantly with a War Scroll and its Food march cost. Rewards are rolled from the mission's loot table. No troops are lost.
 
+> **Implemented now:** sweeps of campaign missions won on 3★ for a War Scroll and 500 Food per mission level, with the
+> titan picked getting a 3★ win's XP; repeat wins and sweeps roll the campaigns' loot table (gold, food, portal stones
+> or a common relic); the daily and weekly quest chests give the scrolls, up to 30 held (docs/M0_Notes.md §6ъ).
+
 ### 4.20 Balance guardrails (time-to-kill targets at equal Power)
 | Matchup | Target |
 |---|---|
