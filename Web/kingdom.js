@@ -2468,6 +2468,11 @@ function onAct(e) {
 	case 'raid': startAttack(id, false); break;
 	case 'site': startSite(id); break;
 	case 'trials': openTrials(); break;
+	case 'practice': openPractice(); break;
+	case 'pr-lv': if (K.practice) { K.practice.lv += +el.dataset.d; refreshSheet(true); } break;
+	case 'pr-field': if (K.practice) { K.practice.field = id; refreshSheet(true); } break;
+	case 'pr-titan': if (K.practice) { K.practice.titan = !K.practice.titan; refreshSheet(true); } break;
+	case 'pr-go': openPrepare(0, false, -1, null, false, true); break;
 	case 'trial-go': startTrial(); break;
 	case 'trial-ms': claimTrial('ms', id); break;
 	case 'trial-rank': claimTrial('rank'); break;
@@ -3614,6 +3619,70 @@ function trialEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Practice (master prompt 10.6): the player's own army against a land battle of any level opened so far, on any
+// battlefield. Nothing is spent or lost and nothing is won; the kingdom is not told about the battle at all
+// ---------------------------------------------------------------------------------------------
+const PRACTICE_ID = 920001;
+/** The battlefields: the plain valley of gold and farm lands, then each land type with a map of its own. */
+function practiceFields() {
+	const out = [{ type: 0, name: 'Долина Хайвейл' }];
+	K.rules.lands.types.forEach((t, i) => { if (t.map && !out.some((f) => K.rules.lands.types[f.type].map === t.map)) out.push({ type: i, name: t.field || t.name }); });
+	return out;
+}
+/** Battle levels open for practice: up to the Castle's level (the lands of the world go that far). */
+const practiceMax = (st) => Math.max(1, Math.min(K.rules.battles.length, st.castle));
+function practiceState(st) {
+	if (!K.practice) K.practice = { lv: practiceMax(st), field: 0, titan: true, n: 0 };
+	K.practice.lv = Math.max(1, Math.min(practiceMax(st), K.practice.lv));
+	return K.practice;
+}
+function practiceTarget(st) {
+	const pr = practiceState(st);
+	const f = practiceFields()[pr.field] || practiceFields()[0];
+	return { id: PRACTICE_ID + pr.n, lv: pr.lv, type: f.type, own: -1, practice: true, noTitan: !pr.titan };
+}
+function practiceCard() {
+	return '<div class="landCard">' + icoHtml('ui.army', 'shards land') + '<div class="info"><b>Тренировка</b><span>ваше войско против земли любого открытого уровня: без камней, потерь и наград</span></div>' +
+		'<div class="row"><button class="btn" data-act="practice">Открыть</button></div></div>';
+}
+function openPractice() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const pr = practiceState(st);
+		const max = practiceMax(st);
+		const w = practiceTarget(st);
+		const et = enemyTitan(w);
+		const b = K.rules.battles[pr.lv - 1];
+		const fields = practiceFields();
+		const f = fields[pr.field] || fields[0];
+		const lt = landType(f.type);
+		const html = sheetTitle(icoHtml('ui.army', 'gold land'), 'Тренировка') +
+			'<p class="fine">Проверьте своё войско перед набегом: те же защитники, что на земле этого уровня, на выбранном поле боя. В тренировке никто не гибнет и не устаёт, ' +
+			'заклинания не тратятся, камни портала не нужны, а наград и опыта нет. Можно взять и отдыхающих титанов.</p>' +
+			'<div class="costline"><span>Уровень боя</span><div class="stepper"><button class="btn" data-act="pr-lv" data-d="-1"' + (pr.lv > 1 ? '' : ' disabled') + '>−</button><b>' + pr.lv + '</b>' +
+			'<button class="btn" data-act="pr-lv" data-d="1"' + (pr.lv < max ? '' : ' disabled') + '>+</button></div><span>открыто до ' + max + '-го, по уровню Замка</span></div>' +
+			'<h3>Поле боя</h3><div class="opts">' + fields.map((x, i) => '<button class="opt' + (i === pr.field ? ' on' : '') + '" data-act="pr-field" data-id="' + i + '"><b>' + esc(x.name) + '</b>' +
+				'<span>' + esc(i ? landType(x.type).name : 'золотые и фермерские земли') + '</span></button>').join('') + '</div>' +
+			(lt.fieldNote ? '<p class="fine">' + esc(lt.fieldNote) + '.</p>' : '') +
+			'<h3>Противник</h3><p>' + esc(enemyText(pr.lv, et, b.ai)) + '.</p>' +
+			(b.titan ? '<div class="opts"><button class="opt' + (pr.titan ? ' on' : '') + '" data-act="pr-titan"><b>' + (pr.titan ? 'С титаном врага' : 'Без титана врага') + '</b><span>нажмите, чтобы ' + (pr.titan ? 'убрать' : 'вернуть') + '</span></button></div>' : '') +
+			'<div class="actions"><button class="btn primary" data-act="pr-go">Собрать войско</button><button class="btn" data-act="world">Карта мира</button></div>' +
+			'<div class="actions">' + closeBtn + '</div>';
+		return { key: ['practice', pr.lv, pr.field, pr.titan, max, et ? et.def.id + ':' + et.level : ''].join('|'), html };
+	});
+}
+function practiceEnd(ctx, stars, retreat) {
+	const score = retreat ? 0 : battleScore();
+	K.practice.n = (K.practice.n + 1) % 1000;
+	refresh(true);
+	toast('Тренировка, уровень ' + ctx.level + ': ' + (retreat ? 'отступление' : stars > 0 ? '★'.repeat(stars) + ', ' + fmt(score) + ' очков' : 'поражение, ' + fmt(score) + ' очков') +
+		'. Войско вернулось целым, заклинания на месте', stars > 0 ? 'gold' : '');
+	openPractice();
+}
+
+// ---------------------------------------------------------------------------------------------
 // Daily quests: five a day for the Castle's level, a reward for each, the daily chest for all of them
 // ---------------------------------------------------------------------------------------------
 const QUEST_ICON = { win: 'ui.attack', threeStars: 'mission.elite', raid: 'land.forest', collectGold: 'building.gold_mine', collectFood: 'building.farm',
@@ -4303,7 +4372,7 @@ function openWorld() {
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + trialCard(st) +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + trialCard(st) + practiceCard() +
 			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
 			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
 				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
@@ -4443,7 +4512,7 @@ function openWorldMap() {
 			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
 			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
 			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + trialCard(st) +
-			'<div class="actions"><button class="btn" data-act="world-list">Списком</button>' + closeBtn + '</div>';
+			'<div class="actions"><button class="btn" data-act="world-list">Списком</button><button class="btn" data-act="practice">Тренировка</button>' + closeBtn + '</div>';
 		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
 }
@@ -4614,6 +4683,7 @@ const lordOf = (i) => (K.st.rivals && K.st.rivals[i] ? K.rules.rivals.lords[K.st
 function enemyTitan(w) {
 	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m));
 	if (w.trial >= 0) return trialTitan(trialDef(w.trial), w.lv);
+	if (w.practice && w.noTitan) return null;
 	// A lord's titan guards every one of its lands.
 	if (w.own >= 0) return { def: K.army.titans[w.tdef], level: w.tlv };
 	const b = K.rules.battles[Math.min(w.lv, K.rules.battles.length) - 1];
@@ -4635,7 +4705,7 @@ function landScenario(w, prep) {
 	const td = w.trial >= 0 ? trialDef(w.trial) : null;
 	const ty = td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
 	const lord = !md && !site && !td && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	sc.name = w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -4665,7 +4735,7 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
+	def.name = w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
 	def.ai = (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
@@ -4701,18 +4771,19 @@ function launchAttack() {
 	const site = p && p.site >= 0;
 	const ms = p && p.mission;
 	const trial = p && p.trial;
-	const w = trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
+	const practice = p && p.practice;
+	const w = practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
 	if (!squads.length && !p.titan) { toast('Выберите титана или хотя бы один отряд', 'bad'); return; }
 	const spells = p.spells.filter((i) => K.st.spells.stock[i] > 0);
-	const code = trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
+	const code = practice ? E.None : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
 		: site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
 	if (code !== E.None) { toast(errText(code), 'bad'); refresh(true); return; }
-	persist();
+	if (!practice) persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
-	const reinf = K.bridge.state().ally.pend;
+	const reinf = practice ? [] : K.bridge.state().ally.pend;
 	const sc = landScenario(w, { squads, titan: p.titan, spells, reinf });
 	const path = 'scenarios/land_battle.json';
 	K.app.sim.addFile(path, JSON.stringify(sc));
@@ -4720,7 +4791,8 @@ function launchAttack() {
 	select(null);
 	const charges = sc.sides.attacker.spellCharges.slice();
 	// A site battle is a land battle for the battle screen (retreat, stars back to the kingdom), with its site.
-	K.app.startLandBattle(path, sc.sides.defender.ai, trial ? { kind: 'land', trial: true, level: w.lv, squads: squads.length, charges }
+	K.app.startLandBattle(path, sc.sides.defender.ai, practice ? { kind: 'land', practice: true, level: w.lv, squads: squads.length, charges }
+		: trial ? { kind: 'land', trial: true, level: w.lv, squads: squads.length, charges }
 		: ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
 		: site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
 		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, own: w.own, squads: squads.length, charges });
@@ -4770,6 +4842,10 @@ function onBattleEnd(ctx, stars, retreat) {
 	}
 	if (ctx && ctx.kind === 'land' && ctx.trial) {
 		trialEnd(ctx, stars, retreat);
+		return;
+	}
+	if (ctx && ctx.kind === 'land' && ctx.practice) {
+		practiceEnd(ctx, stars, retreat);
 		return;
 	}
 	if (ctx && ctx.kind === 'land' && !(ctx.site >= 0)) {
@@ -5521,7 +5597,7 @@ function openRaidLog(away) {
 }
 
 /** Before a land battle: pick the titan and the squads (up to the Army Camp's battle slots). */
-function openPrepare(wid, capture, site, mission, trial) {
+function openPrepare(wid, capture, site, mission, trial, practice) {
 	cancelPlace();
 	select(null);
 	const a = K.st.army;
@@ -5530,7 +5606,8 @@ function openPrepare(wid, capture, site, mission, trial) {
 	const td = trial ? trialDef(K.st.trial.i) : null;
 	const okTitan = (t) => !td || trialAllowsTitan(td, t.def);
 	const okTroop = (t) => !td || trialAllowsTroop(td, t);
-	const ready = K.st.titans.filter((t) => t.rec <= now && okTitan(t)).sort((x, y) => K.army.titans[y.def].stars * 100 + y.lv - (K.army.titans[x.def].stars * 100 + x.lv));
+	// Practice tires no one: resting titans may go too.
+	const ready = K.st.titans.filter((t) => (practice || t.rec <= now) && okTitan(t)).sort((x, y) => K.army.titans[y.def].stars * 100 + y.lv - (K.army.titans[x.def].stars * 100 + x.lv));
 	const counts = a.n.map(() => 0);
 	let total = 0;
 	for (let guard = 0; guard < 100 && total < a.slots; guard++) {
@@ -5540,18 +5617,19 @@ function openPrepare(wid, capture, site, mission, trial) {
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: !td };
+	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: !td && !practice };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
 		const md = p.mission ? missionDef(p.mission.a, p.mission.m) : null;
 		const sd = !md && p.site >= 0 ? siteDef(p.site) : null;
-		const w = td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
+		const pr = p.practice;
+		const w = pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
 		const titanOpts = st.titans.slice().sort((x, y) => K.army.titans[y.def].stars * 100 + y.lv - (K.army.titans[x.def].stars * 100 + x.lv)).map((t) => {
-			const resting = t.rec > nowF();
+			const resting = !pr && t.rec > nowF();
 			const barred = !okTitan(t);
 			return '<button class="opt wi' + (p.titan === t.id ? ' on' : '') + '" data-act="prep-titan" data-id="' + t.id + '"' + (resting || barred ? ' disabled' : '') + '>' + titanIcon(t) + '<b>' + esc(titanName(t)) + ' ' + starsHtml(K.army.titans[t.def].stars) + '</b>' +
 				'<span>' + esc(K.army.titans[t.def].classRu) + ' · ур. ' + t.lv + (barred ? ' · не по правилу' : resting ? ' · отдыхает' : '') + '</span></button>';
@@ -5562,16 +5640,16 @@ function openPrepare(wid, capture, site, mission, trial) {
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots && okTroop(t) ? '' : ' disabled') + '>+</button></div></div>');
 		const ty = td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
-		const cost = td ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
+		const cost = td || pr ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
 		// Allies' squads that have arrived in the Alliance Camp fight once and are gone (the original).
-		const arrived = td ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
+		const arrived = td || pr ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
 		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
-		const html = sheetTitle(td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(ty.name) + ', ур. ' + w.lv) +
+		const html = sheetTitle(td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
 			'<p>Противник: ' + esc(td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
@@ -5582,9 +5660,9 @@ function openPrepare(wid, capture, site, mission, trial) {
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
 			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (td ? 'Берутся все заряды выбранных заклинаний; в испытании они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
-			'<p class="fine">' + (td ? 'В испытании никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
-			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan ? '' : ' disabled') + '>' + (td ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
+			'<p class="fine">' + (pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td ? 'В испытании никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan ? '' : ' disabled') + '>' + (td || pr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
+		return { key: ['prep', pr, p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
 	});
 }
 
