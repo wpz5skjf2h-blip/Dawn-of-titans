@@ -602,6 +602,28 @@ struct DivineRules
 	std::vector<DivineAltar> altars;
 };
 
+/** Ten floors of the Titan Spire (kingdom.json "spire" bands): every floor pays `pay` gold (odd floors) or food (even
+ *  floors) times the Castle the first time it falls, the middle floor adds `middle`, the top floor `top`. The battle
+ *  itself (its level, titan, bonuses and the band's modifier) is the client's. */
+struct SpireBand
+{
+	int64_t pay = 0;
+	EventReward middle;
+	EventReward top;
+};
+
+/** The Titan Spire (kingdom.json "spire", master prompt 10.7): floors climbed one after another from a Castle level;
+ *  the top `weekly` floors close again every Monday. */
+struct SpireRules
+{
+	int castle = 0; // 0: no spire
+	int perBand = 10; // floors in a band
+	int weekly = 10;
+	int bracket = 30; // lords in the weekly table, the kingdom among them
+	std::vector<SpireBand> bands;
+	int Floors() const { return perBand * static_cast<int>(bands.size()); }
+};
+
 /** Alliance help (kingdom.json "allianceHelp", master prompt 12.4): allies take time off the player's timers one help
  *  at a time, and the player helps theirs for a small reward. */
 struct AllianceHelpRules
@@ -849,6 +871,7 @@ struct KingdomContent
 	AllianceHelpRules allianceHelp;
 	LoadoutRules loadouts;
 	DivineRules divine;
+	SpireRules spire;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

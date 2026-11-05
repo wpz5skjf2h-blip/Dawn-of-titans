@@ -132,6 +132,10 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	LoadoutList.clear();
 	DivineCount = 0;
 	ShrineFrom = C.divine.building >= 0 && BuildingLevel(C.divine.building) ? Now : 0;
+	SpireTop = 0;
+	SpireWeek = -1;
+	SpireWeekTop = 0;
+	SpireAt = 0;
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
@@ -2307,7 +2311,8 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
 	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
-			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending || Target == WarPending ? QuestEvent::Count
+			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending || Target == WarPending
+				|| Target == SpirePending ? QuestEvent::Count
 			: QuestEvent::Site, 1);
 	return Error::None;
 }
@@ -3081,6 +3086,183 @@ Error Kingdom::BuyDivine(int Altar, int Pick, int32_t* OutId)
 	if (OutId)
 	{
 		*OutId = Id;
+	}
+	return Error::None;
+}
+
+// --- Titan Spire -------------------------------------------------------------------------------------
+
+int Kingdom::SpireReached() const
+{
+	const int Fixed = SpireFixed();
+	if (SpireTop < Fixed)
+	{
+		return SpireTop;
+	}
+	return SpireWeek == WeekOf() ? std::max(Fixed, SpireWeekTop) : Fixed;
+}
+
+int Kingdom::SpireFloor() const
+{
+	const int Reached = SpireReached();
+	return C.spire.castle > 0 && Reached < SpireFloors() ? Reached + 1 : 0;
+}
+
+EventReward Kingdom::SpireReward(int Floor) const
+{
+	EventReward R;
+	if (Floor < 1 || Floor > SpireFloors())
+	{
+		return R;
+	}
+	const SpireRules& S = C.spire;
+	const SpireBand& B = S.bands[static_cast<size_t>((Floor - 1) / S.perBand)];
+	const int Step = (Floor - 1) % S.perBand + 1;
+	R.res[static_cast<size_t>(ResIndex(Floor % 2 ? Res::Gold : Res::Food))] = B.pay;
+	const auto Add = [&R](const EventReward& X) {
+		for (size_t I = 0; I < R.res.size(); ++I)
+		{
+			R.res[I] += X.res[I];
+		}
+		R.relic = std::max(R.relic, X.relic);
+		R.divine += X.divine;
+	};
+	if (Step == S.perBand / 2)
+	{
+		Add(B.middle);
+	}
+	if (Step == S.perBand)
+	{
+		Add(B.top);
+	}
+	return R;
+}
+
+Check Kingdom::CheckSpire() const
+{
+	Check Out;
+	const int Floor = SpireFloor();
+	if (C.spire.castle <= 0)
+	{
+		Out.error = Error::BadId;
+	}
+	else if (CastleLevel() < C.spire.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.spire.castle;
+	}
+	else if (Floor == 0)
+	{
+		Out.error = Error::Nothing;
+		Out.timeSec = C.spire.weekly > 0 ? SpireResetAt() - Time : 0;
+	}
+	else if (SpireReward(Floor).relic > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		Out.error = Error::InventoryFull; // the floor's relic would be lost
+	}
+	return Out;
+}
+
+int Kingdom::SpireLordFloor(int Lord) const
+{
+	if (C.spire.castle <= 0 || Lord < 0 || Lord >= C.spire.bracket - 1)
+	{
+		return 0;
+	}
+	// Ours: each lord holds a floor anywhere up the fixed floors (about a quarter of them hold them all); of those, two in
+	// five climb some of the top floors again at a moment of the week's first five days.
+	const int Fixed = SpireFixed();
+	const uint64_t H = Mix(Seed ^ 0x7370697265ULL, static_cast<uint64_t>(Lord));
+	const int Held = std::max(1, std::min(Fixed, static_cast<int>(static_cast<int64_t>(Fixed) * (5 + static_cast<int64_t>((H >> 8) % 125)) / 100)));
+	if (Held < Fixed || C.spire.weekly <= 0)
+	{
+		return Held;
+	}
+	const uint64_t W = Mix(Seed ^ 0x7370697277ULL, static_cast<uint64_t>(WeekOf()) * 256 + static_cast<uint64_t>(Lord));
+	const int64_t At = SpireResetAt() - 7 * kSecondsPerDay + static_cast<int64_t>((W >> 40) % static_cast<uint64_t>(5 * kSecondsPerDay));
+	return W % 5 < 2 && Time >= At ? Fixed + 1 + static_cast<int>((W >> 8) % static_cast<uint64_t>(C.spire.weekly)) : Fixed;
+}
+
+int Kingdom::SpireRank() const
+{
+	const int Mine = SpireReached();
+	int Place = 1;
+	for (int L = 0; L < C.spire.bracket - 1; ++L)
+	{
+		Place += SpireLordFloor(L) > Mine ? 1 : 0;
+	}
+	return Place;
+}
+
+Error Kingdom::StartSpire(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	const Check Ck = CheckSpire();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	const int Floor = SpireFloor();
+	const Error E = BeginBattle(SpirePending, false, 0, Squads, TitanId, Spells, false);
+	if (E == Error::None)
+	{
+		SpireAt = Floor;
+	}
+	return E;
+}
+
+Error Kingdom::FinishSpire(int Stars, Reward* Out)
+{
+	if (Pending != SpirePending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const int Floor = SpireAt;
+	SpireAt = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// As in a Titan Trial every squad, spell and the titan come back as they went.
+	Reward R;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	// A win takes the floor that is next now (a week that turned during the battle closed the top floors again).
+	if (Stars > 0 && Floor >= 1 && Floor == SpireFloor())
+	{
+		if (Floor <= SpireFixed())
+		{
+			SpireTop = Floor;
+		}
+		else
+		{
+			SpireWeek = WeekOf();
+			SpireWeekTop = Floor;
+		}
+		EventReward Pay = SpireReward(Floor);
+		const uint64_t Pick = static_cast<uint64_t>(WeekOf()) * 1024 + static_cast<uint64_t>(Floor);
+		if (PayEvent(Pay, 0x7370697265ULL, Pick, R, true) != Error::None)
+		{
+			Pay.relic = 0; // the relic inventory filled up during the battle: the rest is paid
+			PayEvent(Pay, 0x7370697265ULL, Pick, R, true);
+			++R.relicsLost;
+		}
+	}
+	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
 	}
 	return Error::None;
 }
@@ -8368,6 +8550,18 @@ std::string Kingdom::Save() const
 	W.Key("from");
 	W.Int(ShrineFrom);
 	W.EndObject();
+	// Titan Spire (optional): the fixed floors won, this week's top floors won, the floor being fought.
+	W.Key("spire");
+	W.BeginObject();
+	W.Key("top");
+	W.Int(SpireTop);
+	W.Key("week");
+	W.Int(SpireWeek);
+	W.Key("weekTop");
+	W.Int(SpireWeekTop);
+	W.Key("at");
+	W.Int(SpireAt);
+	W.EndObject();
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -9375,6 +9569,23 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	{
 		ShrineFrom = std::max<int64_t>(1, Time);
 	}
+	// Titan Spire (saves before it: nothing climbed); floors the content no longer has are dropped.
+	SpireTop = 0;
+	SpireWeek = -1;
+	SpireWeekTop = 0;
+	SpireAt = 0;
+	if (const JsonValue* SpJ = J.Find("spire"))
+	{
+		SpireTop = std::max(0, std::min(SpireFixed(), SpJ->GetInt("top", 0)));
+		SpireWeek = std::max<int64_t>(-1, SpJ->GetInt64("week", -1));
+		SpireWeekTop = std::max(0, std::min(SpireFloors(), SpJ->GetInt("weekTop", 0)));
+		if (SpireWeek < 0 || SpireWeekTop <= SpireFixed())
+		{
+			SpireWeek = -1;
+			SpireWeekTop = 0;
+		}
+		SpireAt = std::max(0, std::min(SpireFloors(), SpJ->GetInt("at", 0)));
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -9753,11 +9964,16 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				: Pending == BossPending ? C.raidBoss.bosses.empty()
 				: Pending == DailyPending ? DailyAt < 0 || DailyAt >= DailyCount() || DailyAtTier < 1 || DailyAtTier > DailyTiers()
 				: Pending == WarPending ? !WarContent() || WarAt < 0
+				: Pending == SpirePending ? C.spire.castle <= 0 || SpireAt < 1
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
 			Pending = 0;
 		}
+	}
+	if (Pending != SpirePending)
+	{
+		SpireAt = 0;
 	}
 	FillWorld();
 	if (!RivalsJ)
@@ -10265,6 +10481,14 @@ uint64_t Kingdom::Hash() const
 		W.I64(DivineCount);
 		W.I64(ShrineFrom);
 		W.I64(Last.divine);
+	}
+	// And for the Titan Spire: only once a floor was fought.
+	if (SpireTop != 0 || SpireWeek != -1 || SpireWeekTop != 0 || SpireAt != 0)
+	{
+		W.I32(SpireTop);
+		W.I64(SpireWeek);
+		W.I32(SpireWeekTop);
+		W.I32(SpireAt);
 	}
 	return W.Hash();
 }
