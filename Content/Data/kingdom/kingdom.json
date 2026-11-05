@@ -496,20 +496,20 @@
   // For the web client only: "name", "note", "map", "ai", "timerSec", "enemy" (troops repeated over the squads of the
   // tier's battle level), "squads" (at most this many), "titans" (the enemy titan by the tier's rarity, 1 to 4 stars;
   // none: no titan; the Lineage Trial takes the week's lineage), "hpPct" (the enemy titan's extra health), "fort" (the
-  // enemy squads' extra health); tiers' "level" (battle table row), "titanLevel", "titanStars", "bonus" (enemy squads'
+  // enemy squads' extra health), "power" (their extra attack and health, %); tiers' "level" (battle table row), "titanLevel", "titanStars", "bonus" (enemy squads'
   // extra attack and health, %). No gems. Numbers are ours.
   "dailyTrials": {
     "castle": 3,
     "attempts": 3,
     "lineageBonusPct": 50,
     "tiers": [
-      { "castle": 3,  "level": 2, "titanLevel": 8,  "titanStars": 1, "bonus": 0 },
-      { "castle": 4,  "level": 3, "titanLevel": 12, "titanStars": 1, "bonus": 0 },
-      { "castle": 6,  "level": 4, "titanLevel": 16, "titanStars": 1, "bonus": 0 },
-      { "castle": 8,  "level": 5, "titanLevel": 20, "titanStars": 2, "bonus": 0 },
-      { "castle": 10, "level": 6, "titanLevel": 26, "titanStars": 2, "bonus": 0 },
-      { "castle": 12, "level": 7, "titanLevel": 30, "titanStars": 3, "bonus": 0 },
-      { "castle": 14, "level": 8, "titanLevel": 36, "titanStars": 3, "bonus": 0 },
+      { "castle": 3,  "level": 2, "titanLevel": 6,  "titanStars": 1, "bonus": 0 },
+      { "castle": 4,  "level": 3, "titanLevel": 9,  "titanStars": 1, "bonus": 0 },
+      { "castle": 6,  "level": 4, "titanLevel": 12, "titanStars": 1, "bonus": 0 },
+      { "castle": 8,  "level": 5, "titanLevel": 15, "titanStars": 1, "bonus": 0 },
+      { "castle": 10, "level": 6, "titanLevel": 20, "titanStars": 2, "bonus": 0 },
+      { "castle": 12, "level": 7, "titanLevel": 28, "titanStars": 3, "bonus": 0 },
+      { "castle": 14, "level": 8, "titanLevel": 34, "titanStars": 3, "bonus": 0 },
       { "castle": 16, "level": 9, "titanLevel": 40, "titanStars": 4, "bonus": 0 },
       { "castle": 18, "level": 9, "titanLevel": 45, "titanStars": 4, "bonus": 20 },
       { "castle": 20, "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 40 }
@@ -521,14 +521,15 @@
     ],
     "list": [
       { "id": "gold_vault", "day": 0, "pay": "gold", "name": "Золотая казна", "map": "map.highvale_01", "ai": "warlord", "timerSec": 150,
-        "note": "Разбойники напали на обоз с казной. Перехватите их, пока они не ушли с золотом",
+        "note": "Разбойники с вожаком-титаном напали на обоз с казной. Перехватите их, пока они не ушли с золотом",
         "enemy": ["troop.outriders", "troop.militia", "troop.panthers", "troop.archers", "troop.outriders", "troop.swordsmen"],
+        "titans": ["titan.talos", "titan.loki", "titan.tyr", "titan.veles"],
         "amounts": [4000, 6000, 10000, 16000, 25000, 36000, 50000, 68000, 90000, 120000] },
-      { "id": "essence_springs", "day": 1, "pay": "titanXp", "name": "Источники сущности", "map": "map.lake_01", "ai": "veteran", "squads": 0, "hpPct": 150,
+      { "id": "essence_springs", "day": 1, "pay": "titanXp", "name": "Источники сущности", "map": "map.lake_01", "ai": "veteran", "squads": 0, "hpPct": 100,
         "note": "Охота на дикого титана у источников. Сущность получит ваш титан, поэтому в бой без титана не пускают",
         "enemy": [], "titans": ["titan.minotaur", "titan.ymir", "titan.surtr", "titan.veles"],
         "amounts": [300, 450, 700, 1000, 1500, 2100, 2900, 3900, 5200, 7000] },
-      { "id": "forge_depths", "day": 2, "pay": "relic", "name": "Глубины кузни", "map": "map.mountain_01", "ai": "veteran", "fort": 25,
+      { "id": "forge_depths", "day": 2, "pay": "relic", "name": "Глубины кузни", "map": "map.mountain_01", "ai": "veteran", "fort": 15,
         "note": "Осада подземной кузни: за стенами гренадеры и баллисты, в горнах куются реликвии",
         "enemy": ["troop.pikemen", "troop.grenadiers", "troop.ballista", "troop.goliaths", "troop.archers", "troop.chainbreakers"],
         "titans": ["titan.talos", "titan.atlas", "titan.tyr", "titan.thor"],
@@ -537,12 +538,12 @@
         "note": "Полевая битва с титаном рода этой недели. Титан того же рода в вашем войске приносит больше осколков",
         "enemy": ["troop.swordsmen", "troop.archers", "troop.spearmen", "troop.knights", "troop.priests", "troop.outriders"],
         "amounts": [1, 1, 2, 2, 3, 3, 4, 5, 6, 8] },
-      { "id": "banner_grounds", "day": 4, "pay": "food", "name": "Знамённое поле", "map": "map.highvale_01", "ai": "warlord",
+      { "id": "banner_grounds", "day": 4, "pay": "food", "name": "Знамённое поле", "map": "map.highvale_01", "ai": "veteran",
         "note": "Полевая битва под знамёнами: конница врага рвётся к вашим стягам",
-        "enemy": ["troop.knights", "troop.outriders", "troop.panthers", "troop.spearmen", "troop.archers", "troop.knights"],
-        "titans": ["titan.cyclops", "titan.perun", "titan.artemis", "titan.thor"],
+        "enemy": ["troop.knights", "troop.spearmen", "troop.archers", "troop.outriders", "troop.swordsmen", "troop.archers"],
+        "titans": ["titan.cyclops", "titan.perun", "titan.artemis", "titan.veles"],
         "amounts": [4000, 6000, 10000, 16000, 25000, 36000, 50000, 68000, 90000, 120000] },
-      { "id": "hall_of_tomes", "day": 5, "pay": "study", "name": "Зал фолиантов", "map": "map.ruins_01", "ai": "veteran", "squads": 3, "hpPct": 200,
+      { "id": "hall_of_tomes", "day": 5, "pay": "study", "name": "Зал фолиантов", "map": "map.ruins_01", "ai": "veteran", "squads": 3, "hpPct": 50,
         "note": "Хранитель зала и его жрецы. Знания из фолиантов сокращают исследования, которые идут в Оружейной и в Магической башне",
         "enemy": ["troop.priests", "troop.swordsmen", "troop.priests"], "titans": ["titan.cyclops", "titan.loki", "titan.hecate", "titan.veles"],
         "amounts": [15, 20, 30, 45, 60, 90, 120, 150, 180, 240] }

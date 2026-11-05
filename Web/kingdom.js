@@ -3907,8 +3907,9 @@ function dailyEnemyText(trial, tier, st) {
 	if (et) parts.push(et.def.name + ' ур. ' + et.level + ' ' + '★'.repeat(et.stars) + (d.hpPct ? ', здоровья +' + d.hpPct + '%' : ''));
 	if (en.length) {
 		const kinds = en.filter((x, k) => en.indexOf(x) === k).map((x) => TROOP_RU[x] || x);
-		const extra = (t.bonus || 0) + (d.fort || 0);
-		parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' + (d.fort ? ', за стенами' : '') + (extra ? ', здоровья +' + extra + '%' : '') + (t.bonus ? ', урона +' + t.bonus + '%' : ''));
+		const atk = (t.bonus || 0) + (d.power || 0);
+		const extra = atk + (d.fort || 0);
+		parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' + (d.fort ? ', за стенами' : '') + (extra ? ', здоровья +' + extra + '%' : '') + (atk ? ', урона +' + atk + '%' : ''));
 	}
 	return parts.join('; ') || 'никого';
 }
@@ -5493,7 +5494,7 @@ function landScenario(w, prep) {
 	if (asd && asd.fort) def.troopBonus = { atkPct: 0, hpPct: asd.fort };
 	// A Daily Trial's high tiers make its squads stronger; walls give them more health.
 	if (dd) {
-		const bonus = dailyTierDef(w.daily.tier).bonus || 0;
+		const bonus = (dailyTierDef(w.daily.tier).bonus || 0) + (dd.power || 0);
 		if (bonus || dd.fort) def.troopBonus = { atkPct: bonus, hpPct: bonus + (dd.fort || 0) };
 	}
 	const et = enemyTitan(w);
