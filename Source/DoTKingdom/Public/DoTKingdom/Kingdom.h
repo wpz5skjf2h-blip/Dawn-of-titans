@@ -861,6 +861,12 @@ public:
 	/** Reports after this time are new to the player. */
 	int64_t RaidsReadAt() const { return RaidsRead; }
 	Error ReadRaids();
+	/** Scouting before a battle (master prompt 9.3): the chance in permille that an attack wins, by the raid odds fitted
+	 *  to simulated battles. Squads and titans are both sides' start Power as the battle counts it; the titans weigh
+	 *  odds.titanPct %, the defender's AI profile scales its side as for raiders. */
+	int64_t BattleWinPermille(int64_t AttackSquads, int64_t AttackTitans, int64_t DefenseSquads, int64_t DefenseTitans, const std::string& DefenseAi) const;
+	/** One side's Power for those odds: squads plus titans weighted, scaled by the AI profile (100% for a player). */
+	int64_t OddsPower(int64_t Squads, int64_t Titans, const std::string& Ai) const;
 
 private:
 	const LevelDef* CurrentLevel(const Building& B) const;

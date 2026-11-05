@@ -2038,6 +2038,58 @@ EMSCRIPTEN_KEEPALIVE int dk_read_raids()
 }
 
 /** What a defense can expect now: the city (LandId 0) or a land. */
+/** Scouting before a battle (master prompt 9.3) from the scenario the battle would get (JSON text): each side's start
+ *  Power as the battle counts it (titans and squads in the prompt's units, the simulation's / 100; spells 40 a level,
+ *  master prompt 5.10), the odds Power of both sides and the chance to win in permille. */
+EMSCRIPTEN_KEEPALIVE const char* dk_scout(const char* ScenarioText)
+{
+	WebState& S = G();
+	Out O(S.Text);
+	dot::JsonValue Json;
+	std::string Error;
+	dot::BattleSetup Setup;
+	if (!K() || !S.bContentLoaded || !dot::ParseJson(ScenarioText ? ScenarioText : "", Json, Error) || !dot::ParseBattleSetup(Json, Setup, Error))
+	{
+		O.Raw("{").Key("err").Str(Error.empty() ? "no content" : Error).Raw("}");
+		return S.Text.c_str();
+	}
+	Setup.contentHash = S.Content.hash;
+	dot::BattleSimulation Sim(S.Content);
+	if (!Sim.Init(Setup, Error))
+	{
+		O.Raw("{").Key("err").Str(Error).Raw("}");
+		return S.Text.c_str();
+	}
+	int64_t Titans[2] = {0, 0};
+	int64_t Squads[2] = {0, 0};
+	int64_t Spells[2] = {0, 0};
+	for (const dot::Titan& T : Sim.Titans())
+	{
+		Titans[dot::SideIndex(T.side)] += T.power;
+	}
+	for (const dot::Squad& Q : Sim.Squads())
+	{
+		Squads[dot::SideIndex(Q.side)] += Q.powerPerSoldier * Q.startCount;
+	}
+	for (int Sd = 0; Sd < 2; ++Sd)
+	{
+		const dot::SideSetup& Side = Setup.sides[Sd];
+		for (size_t I = 0; I < Side.spells.size(); ++I)
+		{
+			Spells[Sd] += 40 * (I < Side.spellLevels.size() ? Side.spellLevels[I] : Side.spellLevel);
+		}
+	}
+	const std::string& DefAi = Setup.sides[1].aiProfile;
+	O.Raw("{");
+	for (int Sd = 0; Sd < 2; ++Sd)
+	{
+		O.Key(Sd ? "def" : "att").Raw("{").Key("t").Int(Titans[Sd] / 100).Comma().Key("s").Int(Squads[Sd] / 100).Comma().Key("sp").Int(Spells[Sd]).Comma();
+		O.Key("odds").Int(K()->OddsPower(Squads[Sd], Titans[Sd], Sd ? DefAi : std::string()) / 100).Raw("},");
+	}
+	O.Key("win").Int(K()->BattleWinPermille(Squads[0], Titans[0], Squads[1], Titans[1], DefAi)).Raw("}");
+	return S.Text.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char* dk_forecast(int LandId)
 {
 	Out O(G().Text);

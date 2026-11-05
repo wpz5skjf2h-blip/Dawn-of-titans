@@ -3065,6 +3065,36 @@ void TestKingdomPower()
 	KD_CHECK(NoBattle.Load(S, Error) && NoBattle.AchievementValue(Ach) == Many.buildings + Many.research);
 }
 
+/** Scouting before a battle (master prompt 9.3): the odds of the raids for any battle. */
+void TestScouting()
+{
+	const KingdomContent& Ct = Content();
+	Kingdom K(Ct);
+	K.NewGame(T0, 3);
+	const RaidRules& R = Ct.raids;
+	// Titans weigh titanPct, the defender's AI profile scales its side, a player (no profile) and unknown ones are 100%.
+	KD_CHECK(R.titanPct > 100 && K.OddsPower(1000, 0, "") == 1000 && K.OddsPower(0, 1000, "") == 10 * R.titanPct);
+	KD_CHECK(K.OddsPower(1000, 0, "no such ai") == 1000);
+	for (const auto& A : R.aiPct)
+	{
+		KD_CHECK(K.OddsPower(1000, 500, A.first) == (1000 + 5 * R.titanPct) * A.second / 100);
+	}
+	// Equal armies: a little under even (c is a bit above 1); a fifth weaker: about one in four; never certain.
+	const int64_t Even = K.BattleWinPermille(50000, 400000, 50000, 400000, "");
+	KD_CHECK(Even > 400 && Even < 520);
+	const int64_t Weaker = K.BattleWinPermille(40000, 320000, 50000, 400000, "");
+	KD_CHECK(Weaker > 150 && Weaker < 330);
+	const int64_t Stronger = K.BattleWinPermille(60000, 480000, 50000, 400000, "");
+	KD_CHECK(Stronger > 650 && Stronger < 900);
+	KD_CHECK(K.BattleWinPermille(1, 0, 1000000, 1000000, "") >= 0 && K.BattleWinPermille(1000000, 1000000, 1, 0, "") <= 1000);
+	KD_CHECK(K.BattleWinPermille(0, 0, 100, 0, "") == 0 && K.BattleWinPermille(100, 0, 0, 0, "") == 1000);
+	// More squads, a stronger titan or a weaker enemy AI raise the chance.
+	KD_CHECK(K.BattleWinPermille(60000, 400000, 50000, 400000, "") > Even && K.BattleWinPermille(50000, 450000, 50000, 400000, "") > Even);
+	KD_CHECK(K.BattleWinPermille(50000, 400000, 50000, 400000, "recruit") > Even && K.BattleWinPermille(50000, 400000, 50000, 400000, "nightmare") < Even);
+	// A titan's Power weighs more than the same Power in squads.
+	KD_CHECK(K.BattleWinPermille(50000, 100000, 50000, 50000, "") > K.BattleWinPermille(100000, 50000, 50000, 50000, ""));
+}
+
 void TestAssault()
 {
 	const KingdomContent& Ct = Content();
@@ -3269,7 +3299,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting},
 	};
 	for (const auto& T : Tests)
 	{
