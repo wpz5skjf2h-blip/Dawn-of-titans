@@ -207,6 +207,8 @@ class KingdomBridge {
 	}
 	warFinish(stars) { return JSON.parse(this.str(this.M._dk_war_finish(stars))); }
 	warChest() { return JSON.parse(this.str(this.M._dk_war_chest())); }
+	helpAsk(kind, id) { return this.M._dk_help_ask(kind, id); }
+	helpGive() { return JSON.parse(this.str(this.M._dk_help_give())); }
 	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
 	wpSkip() { return this.M._dk_wp_skip(); }
 	wpBonus() { return JSON.parse(this.str(this.M._dk_wp_bonus())); }
@@ -2071,6 +2073,7 @@ function refresh(force) {
 	if (prev) announceAssault(prev, K.st);
 	if (prev) announceBoss(prev, K.st);
 	if (prev) announceWar(prev, K.st);
+	if (prev) announceHelp(prev, K.st);
 	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
 	announceSeason(K.st);
@@ -2226,6 +2229,9 @@ function updateHud() {
 	vp.querySelector('small').textContent = lgName.split(' ')[0];
 	vp.title = 'Очки победы за сезон: ' + fmt(st.res[5]) + '. Сезон кончится через ' + fmtDur(Math.max(0, st.season.end - nowF()));
 	const ally = st.ally;
+	const helpN = helpReady(st);
+	$('kAllyBtn').classList.toggle('ready', helpN > 0);
+	$('kAllyBtn').title = 'Альянс' + (helpN ? '. Помощь альянса: ' + [helpToGive(st) ? 'просят союзники' : '', helpAskable(st).length ? 'можно попросить помощи' : ''].filter(Boolean).join(', ') : '');
 	$('kAllySub').textContent = ally.my >= 0 ? '[' + ally.tag + '] ' + ally.place + ' из ' + ally.size : ally.rating >= K.rules.alliances.joinVp ? 'Вступить' : fmtShort(ally.rating) + ' / ' + fmtShort(K.rules.alliances.joinVp) + ' ОП';
 	const shards = $('rShards');
 	shards.hidden = st.res[4] <= 0 && !st.lands.some((L) => landType(L.type).resource === 'shards');
@@ -2338,7 +2344,7 @@ function buildingPanel(id) {
 	const key = ['b', id, b.lv, b.up, b.st > 0, armedSkip, brl ? brl.id + ':' + (brl.dur > 0) + ':' + brl.v.join('.') : '', gf ? [gf.on, gf.hold, gf.titan, gf.sq, st.raids.slots, shielded].join() : '',
 		d.role === 'storage' || d.role === 'castle' || d.role === 'portal' || d.role === 'builders' ? st.res.join() + st.busy + st.builders : '',
 		BUILDING_ACT[d.id] ? [st.army.queue.length, st.army.total, st.army.cap, st.army.rs.t, st.titans.length, st.army.surv, st.spells.total, st.spells.queue.length, st.spells.labs.length,
-			st.ally.my, st.ally.reinf.length].join() : ''].join('|');
+			st.ally.my, st.ally.reinf.length].join() : '', b.up ? helpBtnKey(st, 0, id) : ''].join('|');
 	const stats = [];
 	if (!cur) stats.push(esc(d.description));
 	else if (d.role === 'producer') {
@@ -2374,6 +2380,8 @@ function buildingPanel(id) {
 	const btn = [];
 	if (b.up) {
 		btn.push('<button class="btn tall primary" data-act="skip" data-id="' + id + '">' + (armedSkip ? 'Подтвердить' : 'Ускорить') + '<span class="sub" data-live="skip"></span></button>');
+		const hb = helpBtn(st, 0, id);
+		if (hb) btn.push(hb);
 	} else {
 		if (d.role === 'producer') btn.push('<button class="btn tall" data-act="collect" data-id="' + id + '"' + (b.st > 0 ? '' : ' disabled') + '>Собрать<span class="sub" data-live="stc"></span></button>');
 		if (nx) btn.push('<button class="btn tall primary" data-act="upgrade" data-id="' + id + '">' + (d.role === 'builders' ? 'Нанять строителя' : 'Улучшить') + '<span class="sub">до уровня ' + (b.lv + 1) + '</span></button>');
@@ -2449,11 +2457,11 @@ function landPanel(id) {
 			(lf.on ? '<span>Удержит налёт <b>' + lf.hold + '%</b></span>' : '') + (shielded ? '<span>Щит <b data-live="shield"></b></span>' : '') + '</div>' +
 		(ty.resource === 'vp' ? '<p class="fine">Земля очков победы: очки идут в счёт сезона (кнопка ОП вверху).</p>' : ty.resource === 'shards' ? '<p class="fine">Руины дают осколки: на них возвышают титанов в Зале титанов.</p>' : '') +
 		(L.up ? '<div class="uprow"><span>Улучшение до уровня ' + (L.lv + 1) + ', добыча идёт</span><b data-live="left"></b></div><div class="progress"><i data-live="bar"></i></div>' : '') +
-		'<div class="row"><button class="btn tall primary" data-act="land-collect" data-id="' + id + '">Собрать<span class="sub" data-live="stc"></span></button>' + up +
+		'<div class="row"><button class="btn tall primary" data-act="land-collect" data-id="' + id + '">Собрать<span class="sub" data-live="stc"></span></button>' + up + (L.up ? helpBtn(K.st, 1, id) : '') +
 		'<button class="btn tall" data-act="land-guard" data-id="' + id + '">' + (guard ? 'Страж: ' + esc(titanName(guard)) : 'Поставить титана') + '<span class="sub">' + (guard ? '+' + guard.lv + '% добычи, защита' : 'добыча и защита') + '</span></button>' +
 		'<button class="btn tall' + (armedA ? ' danger' : '') + '" data-act="land-abandon" data-id="' + id + '"' + (L.up ? ' disabled' : '') + '>' + (armedA ? 'Точно покинуть?' : 'Покинуть землю') + '<span class="sub">' + (L.up ? 'идёт улучшение' : 'место освободится') + '</span></button></div>';
 	return {
-		key: ['land', id, L.lv, armedA, armedSkip, L.titan, guard ? guard.lv : 0, L.rate, L.up, L.nx.err, L.nx.c, lf.on, lf.hold, shielded].join('|'), html,
+		key: ['land', id, L.lv, armedA, armedSkip, L.titan, guard ? guard.lv : 0, L.rate, L.up, L.nx.err, L.nx.c, lf.on, lf.hold, shielded, L.up ? helpBtnKey(K.st, 1, id) : ''].join('|'), html,
 		live(el) {
 			const LL = K.st.lands.find((x) => x.id === id);
 			if (!LL) return;
@@ -2503,6 +2511,10 @@ function onAct(e) {
 	case 'war': openWar(); break;
 	case 'war-go': startWar(id); break;
 	case 'war-chest': claimWarChest(); break;
+	case 'help': openHelp(); break;
+	case 'help-ask': askHelp(+el.dataset.kind, id); break;
+	case 'help-ask-all': askHelpAll(); break;
+	case 'help-give': giveHelp(); break;
 	case 'daily-trial': openDaily(id); break;
 	case 'daily-go': startDaily(id, +el.dataset.t || 1); break;
 	case 'daily-sweep': sweepDaily(id, +el.dataset.t || 1); break;
@@ -4303,6 +4315,190 @@ function warEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Alliance help (master prompt 12.4): allies take time off the player's constructions, land upgrades, research and
+// titans' rest one help at a time, and the player helps theirs for a little gold and food.
+// ---------------------------------------------------------------------------------------------
+const helpRules = () => K.rules.allianceHelp;
+const helpOn = (st) => !!(helpRules() && st.help);
+/** What a member's ask is about, by kind (0 building, 1 land, 2 Armoury, 3 Arcane Tower, 4 titan). */
+const HELP_ALLY = ['стройка', 'земля', 'Арсенал', 'Магическая башня', 'отдых титана'];
+/** A timer's name: the building, the land, the troop, the spell or the titan (Next: with the level it goes to). */
+function helpWhat(st, kind, id, next) {
+	if (kind === 0) {
+		const b = st.b.find((x) => x.id === id);
+		return b ? defOf(b.def).name + (next && b.up ? (b.lv ? ' → ур. ' + (b.lv + 1) : ' · стройка') : '') : 'Постройка';
+	}
+	if (kind === 1) {
+		const L = st.lands.find((x) => x.id === id);
+		return L ? landType(L.type).name + (next && L.up ? ' → ур. ' + (L.lv + 1) : '') : 'Земля';
+	}
+	if (kind === 2) return 'Арсенал: ' + ((K.army.troops[id] || {}).name || 'войско');
+	if (kind === 3) return 'Башня: ' + ((K.army.spells[id] || {}).name || 'заклинание');
+	const t = st.titans.find((x) => x.id === id);
+	return 'Отдых: ' + (t ? titanName(t) : 'титан');
+}
+const helpAskOf = (st, kind, id) => st.help.asks.find((a) => a[0] === kind && a[1] === id);
+/** Running timers the alliance could be asked to help with now. */
+const helpAskable = (st) => (helpOn(st) && st.ally.my >= 0 ? st.help.can.filter((c) => c[3] === E.None) : []);
+const builderAskable = (st) => helpAskable(st).some((c) => c[0] <= 1);
+/** Members' open asks not helped yet (none once today's helps are given). */
+const helpToGive = (st) => (helpOn(st) && st.ally.my >= 0 && st.help.gck.err === E.None ? st.help.ally.filter((a) => !a[5]).length : 0);
+const helpReady = (st) => helpAskable(st).length + helpToGive(st);
+function helpKey(st) {
+	const h = st.help;
+	return helpOn(st) ? [st.ally.my, h.lim, h.today, h.gck.err, st.castle, h.asks.map((a) => [a[0], a[1], a[5], a[6]].join(':')).join(), h.can.map((c) => [c[0], c[1], c[3]].join(':')).join(),
+		h.ally.map((a) => a[0] + ':' + a[5]).join(), h.log.length + ':' + (h.log.length ? h.log[h.log.length - 1][0] : 0)].join('|') : '';
+}
+function helpErrText(code, ck) {
+	switch (code) {
+	case E.NoAlliance: return 'Сначала вступите в альянс';
+	case E.NotBusy: return 'Таймер уже закончился';
+	case E.Nothing: return 'Помощь уже попрошена';
+	case E.NotAllowed: return 'Пока некому помочь: новобранцев ещё нет';
+	case E.LimitReached: return 'На сегодня хватит' + (ck && ck.t ? ': снова через ' + fmtDur(ck.t) : '');
+	default: return errText(code, ck);
+	}
+}
+/** A panel's button: ask for help with this timer, or how far the help has gone. */
+function helpBtn(st, kind, id) {
+	if (!helpOn(st) || st.ally.my < 0) return '';
+	const a = helpAskOf(st, kind, id);
+	if (a) return '<button class="btn tall" disabled>Помощь<span class="sub">' + a[5] + ' из ' + a[6] + (a[8] ? ', −' + fmtDur(a[8]) : '') + '</span></button>';
+	const c = st.help.can.find((x) => x[0] === kind && x[1] === id);
+	if (!c) return '';
+	return c[3] === E.None ? '<button class="btn tall" data-act="help-ask" data-kind="' + kind + '" data-id="' + id + '">Помощь<span class="sub">попросить альянс</span></button>'
+		: '<button class="btn tall" disabled>Помощь<span class="sub">' + esc(helpErrText(c[3])) + '</span></button>';
+}
+function helpBtnKey(st, kind, id) {
+	if (!helpOn(st)) return '';
+	const a = helpAskOf(st, kind, id);
+	const c = st.help.can.find((x) => x[0] === kind && x[1] === id);
+	return [st.ally.my, a ? a[5] + ':' + a[6] + ':' + a[8] : '', c ? c[3] : ''].join();
+}
+/** The pay for helps given (gold and food times the Castle). */
+const helpPay = (st, n) => eventPay({ gold: (helpRules().reward.gold || 0) * st.castle * n, food: (helpRules().reward.food || 0) * st.castle * n });
+function helpCard(st) {
+	if (!helpOn(st) || st.ally.my < 0) return '';
+	const ask = helpAskable(st).length;
+	const give = helpToGive(st);
+	const parts = [];
+	if (give) parts.push('союзники просят: ' + give);
+	if (ask) parts.push('можно попросить: ' + ask);
+	if (st.help.asks.length) parts.push('вам помогают: ' + st.help.asks.length);
+	const n = ask + give;
+	return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml('ui.alliance', 'food land') + '<div class="info"><b>Помощь альянса</b><span>' + esc(parts.join(' · ') || 'ускоряет стройки, исследования и отдых титанов') + '</span></div>' +
+		'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="help">' + (n ? 'Открыть · ' + n : 'Открыть') + '</button></div></div>';
+}
+function openHelp() {
+	if (!helpOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = helpRules();
+		const h = st.help;
+		const inAlly = st.ally.my >= 0;
+		const data = inAlly ? K.bridge.alliances() : null;
+		K.helpData = data;
+		const intro = '<p class="fine">Союзники ускоряют ваши стройки, улучшения земель, исследования и отдых титанов: каждая помощь — ' + R.cutPct + '% всего времени, но не меньше ' + Math.round(R.minCutSec / 60) + ' мин. ' +
+			'Один таймер получает до ' + R.base + ' помощей и ещё по одной за каждые ' + R.hallStep + ' уровня Лагеря альянса, всего не больше ' + R.max + ' и не больше, чем в альянсе других участников.</p>';
+		let body;
+		if (!inAlly) {
+			body = '<p>Помощь — для участников альянса. Вступите в альянс или основайте свой.</p><div class="actions"><button class="btn primary" data-act="alliance">Альянсы</button></div>';
+		} else {
+			const mine = h.can.map((c) => {
+				const [kind, id, , err] = c;
+				const a = helpAskOf(st, kind, id);
+				const right = a ? '<span class="v">' + a[5] + ' / ' + a[6] + '</span>'
+					: err === E.None ? '<button class="btn slim primary" data-act="help-ask" data-kind="' + kind + '" data-id="' + id + '">Попросить</button>'
+						: '<span class="fine">' + esc(helpErrText(err)) + '</span>';
+				return '<span class="nm">' + esc(helpWhat(st, kind, id, true)) + '<small data-live="h' + kind + '_' + id + '"></small></span>' + right;
+			}).join('');
+			const askAll = helpAskable(st).length > 1 ? '<div class="actions"><button class="btn primary" data-act="help-ask-all">Попросить для всех · ' + helpAskable(st).length + '</button></div>' : '';
+			const allyRows = h.ally.map((a) => '<span class="pl">' + (a[5] ? '✓' : '•') + '</span><span class="nm">' + esc(senderName(data, a[1]) || 'союзник') + '<small>' + HELP_ALLY[a[2]] + '</small></span>' +
+				'<span class="v fine" data-live="ha' + a[0] + '"></span>').join('');
+			const open = helpToGive(st);
+			const gck = h.gck;
+			const giveBtn = gck.err === E.None ? '<button class="btn primary" data-act="help-give">Помочь всем · ' + open + ' · ' + helpPay(st, Math.min(open, R.dailyCap - h.today)) + '</button>'
+				: '<button class="btn" disabled>' + esc(gck.err === E.Nothing ? 'Новых просьб нет' : helpErrText(gck.err, gck)) + '</button>';
+			const log = h.log.slice().reverse().map((g) => '<span class="pl">−</span><span class="nm">' + esc(senderName(data, g[3]) || 'союзник') + '<small>' + esc(helpWhat(st, g[1], g[2], false)) + '</small></span>' +
+				'<span class="v">−' + fmtDur(g[4]) + '</span>').join('');
+			body = '<div class="costline"><span>Помощей на таймер</span><b>' + h.lim + '</b><span>Лагерь альянса: ' + (st.b.filter((b) => defOf(b.def).id === 'alliance_camp').map((b) => 'ур. ' + b.lv).join(', ') || 'нет') + '</span></div>' +
+				'<h3>Ваши таймеры</h3>' + (mine ? '<div class="helpRows">' + mine + '</div>' : '<p class="fine">Сейчас ничего не строится, не изучается и титаны не отдыхают.</p>') + askAll +
+				'<h3>Просят союзники</h3>' + (allyRows ? '<div class="league">' + allyRows + '</div>' : '<p class="fine">Открытых просьб нет: союзники просят несколько раз в час.</p>') +
+				'<div class="actions">' + giveBtn + '</div>' +
+				'<p class="fine">Сегодня вы помогли ' + h.today + ' из ' + R.dailyCap + ' раз. За каждую помощь — ' + helpPay(st, 1) + '.</p>' +
+				(log ? '<h3>Вам помогли</h3><div class="league">' + log + '</div>' : '');
+		}
+		const html = sheetTitle(icoHtml('ui.alliance', 'food land'), 'Помощь альянса') + intro + body +
+			'<p class="fine">Из мастер-промпта: процент, минимум, число помощей и предел ' + R.dailyCap + ' в день. В оригинале помощи не было. Наше: Лагерь альянса вместо Зала альянса, ускорение земель и отдыха титанов, ' +
+			'а вместо очков чести (для магазина альянса, которого пока нет) — золото и еда. Пока нет сервера, союзники — компьютер: первый откликается через ' + R.firstSec[0] + '–' + R.firstSec[1] + ' с, следующие — с перерывами до ' + Math.round(R.gapSec[1] / 60) + ' мин.</p>' +
+			'<div class="actions">' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return {
+			key: ['help', inAlly, helpKey(st)].join('|'), html,
+			live(el) {
+				const s2 = K.st;
+				if (!helpOn(s2)) return;
+				const now = nowF();
+				for (const c of s2.help.can) {
+					const a = helpAskOf(s2, c[0], c[1]);
+					live(el, 'h' + c[0] + '_' + c[1], 'осталось ' + fmtDur(Math.max(0, c[2] - now)) + (a && a[8] ? ', помощь −' + fmtDur(a[8]) : ''));
+				}
+				for (const a of s2.help.ally) live(el, 'ha' + a[0], a[5] ? 'помогли' : 'ещё ' + fmtDur(Math.max(0, a[4] - now)));
+			},
+		};
+	});
+}
+function askHelp(kind, id) {
+	const code = K.bridge.helpAsk(kind, id);
+	if (code !== E.None) {
+		toast(helpErrText(code), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('Альянс поможет: ' + helpWhat(K.st, kind, id, false), 'gold');
+	persist();
+	refresh(true);
+}
+function askHelpAll() {
+	let n = 0;
+	for (const c of helpAskable(K.st)) n += K.bridge.helpAsk(c[0], c[1]) === E.None ? 1 : 0;
+	toast(n ? 'Альянс поможет: ' + n + ' ' + plural(n, 'таймер', 'таймера', 'таймеров') : 'Просить пока не о чем', n ? 'gold' : 'bad');
+	if (n) persist();
+	refresh(true);
+}
+function giveHelp() {
+	const st = K.st;
+	const n = Math.min(helpToGive(st), helpRules().dailyCap - st.help.today);
+	const r = K.bridge.helpGive();
+	if (r.err !== E.None) {
+		toast(r.err === E.Nothing ? 'Новых просьб нет' : helpErrText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('Вы помогли союзникам: ' + n + ' ' + plural(n, 'раз', 'раза', 'раз') + ' · ' + rewardParts(r).join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+/** Helps that came since the last state: one by name, several summed up. */
+function announceHelp(prev, st) {
+	if (!helpOn(st) || !prev.help || st.ally.my < 0 || prev.ally.my !== st.ally.my) return;
+	const old = prev.help.log;
+	const last = old[old.length - 1];
+	let from = 0;
+	if (last) {
+		const i = st.help.log.findIndex((g) => g[0] === last[0] && g[1] === last[1] && g[2] === last[2]);
+		from = i >= 0 ? i + 1 : 0;
+	}
+	const fresh = st.help.log.slice(from);
+	if (!fresh.length) return;
+	if (fresh.length === 1) {
+		const g = fresh[0];
+		toast('Помощь альянса от ' + (senderName(K.bridge.alliances(), g[3]) || 'союзника') + ': ' + helpWhat(st, g[1], g[2], false) + ', −' + fmtDur(g[4]), 'gold');
+	} else toast('Союзники помогли ' + fresh.length + ' ' + plural(fresh.length, 'раз', 'раза', 'раз') + ': −' + fmtDur(fresh.reduce((x, g) => x + g[4], 0)), 'gold');
+}
+
+// ---------------------------------------------------------------------------------------------
 // Practice (master prompt 10.6): the player's own army against a land battle of any level opened so far, on any
 // battlefield. Nothing is spent or lost and nothing is won; the kingdom is not told about the battle at all
 // ---------------------------------------------------------------------------------------------
@@ -5522,13 +5718,16 @@ function openBuilders() {
 			'<button class="btn primary" data-act="land-skip" data-id="' + L.id + '">' + (isArmed('lskip:' + L.id) ? 'Подтвердить ' : 'Ускорить ') + '<span data-live="g' + L.id + '"></span></button></div></div>'));
 		const html = sheetTitle(buildingIconById('builders_yard'), 'Строители') + '<p>Свободно ' + (st.builders - st.busy) + ' из ' + st.builders + '. Каждый строитель ведёт одну стройку; новых нанимают за самоцветы в Дворе строителей (до 5, как в оригинале).</p>' +
 			(rows.length ? rows.join('') : '<p class="fine">Сейчас никто не занят.</p>') +
-			'<div class="actions">' + (yard ? '<button class="btn" data-act="goto" data-id="' + yard.id + '">Двор строителей</button>' : '') + closeBtn + '</div>';
+			(helpOn(st) && st.ally.my >= 0 && (busy.length || busyL.length) ? '<p class="fine">Союзники по альянсу ускоряют стройки: каждая помощь — ' + helpRules().cutPct + '% всего времени, не меньше минуты.</p>' : '') +
+			'<div class="actions">' + (builderAskable(st) ? '<button class="btn primary" data-act="help-ask-all">Попросить помощи альянса</button>' : '') +
+			(yard ? '<button class="btn" data-act="goto" data-id="' + yard.id + '">Двор строителей</button>' : '') + closeBtn + '</div>';
 		return {
-			key: ['builders', busy.map((b) => b.id + ':' + isArmed('skip:' + b.id)).join(), busyL.map((L) => L.id + ':' + isArmed('lskip:' + L.id)).join(), st.builders].join('|'), html,
+			key: ['builders', busy.map((b) => b.id + ':' + isArmed('skip:' + b.id)).join(), busyL.map((L) => L.id + ':' + isArmed('lskip:' + L.id)).join(), st.builders, builderAskable(st), helpKey(st)].join('|'), html,
 			live(el) {
 				for (const b of K.st.b.concat(K.st.lands)) {
 					if (!b.up) continue;
-					live(el, 't' + b.id, 'осталось ' + fmtDur(b.f - nowF()));
+					const ha = helpOn(K.st) ? helpAskOf(K.st, K.st.lands.includes(b) ? 1 : 0, b.id) : null;
+					live(el, 't' + b.id, 'осталось ' + fmtDur(b.f - nowF()) + (ha ? ' · помощь ' + ha[5] + ' из ' + ha[6] : ''));
 					const n = el.querySelector('[data-live="g' + b.id + '"]');
 					if (n) n.innerHTML = gemSpan(b.skip);
 				}
@@ -6992,12 +7191,12 @@ function allianceMine(st, data) {
 		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
 		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
 		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
-		bossCard(st) + warCard(st) +
+		helpCard(st) + bossCard(st) + warCard(st) +
 		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
 		body +
 		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
 	return {
-		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st)].join('|'), html,
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st)].join('|'), html,
 		live(el) {
 			const d = K.allyData || data;
 			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));

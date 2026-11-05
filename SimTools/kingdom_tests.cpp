@@ -3596,6 +3596,196 @@ void TestAllianceWar()
 	KD_CHECK(Wars >= 20 && Wins * 5 >= Wars && Losses * 5 >= Wars && Helped > Wins);
 }
 
+/** A kingdom at Castle 6 (VP for any alliance) whose Alliance Camp of level 4 is being raised from T0 for Sec, and the
+ *  titan it starts with recovering until T0 + Rest. */
+Kingdom HelpKingdom(uint64_t Seed, int64_t Sec, int64_t Rest)
+{
+	Kingdom K = WarKingdom(Seed);
+	std::string Save = Replace(K.Save(), "\"buildings\":[", "\"buildings\":[{\"id\":960,\"def\":\"alliance_camp\",\"level\":4,\"x\":6,\"y\":36,\"upgrading\":true,\"startAt\":" +
+		std::to_string(T0) + ",\"finishAt\":" + std::to_string(T0 + Sec) + "},");
+	Save = Replace(Save, "\"recoverUntil\":0", "\"recoverUntil\":" + std::to_string(T0 + Rest));
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Save, Error) && L.Find(960) && L.Find(960)->upgrading && !L.Titans().empty() && L.Titans()[0].recoverUntil == T0 + Rest);
+	return L;
+}
+
+/** A computer alliance the kingdom can join with at least Size members besides the player. */
+int HelpAlliance(const Kingdom& K, int Size)
+{
+	for (int A = 0; A < K.AllianceCount(); ++A)
+	{
+		if (K.CheckJoin(A).error == Error::None && static_cast<int>(K.Members(A).size()) >= Size)
+		{
+			return A;
+		}
+	}
+	return -1;
+}
+
+void TestAllianceHelp()
+{
+	const KingdomContent& Ct = Content();
+	const AllianceHelpRules& H = Ct.allianceHelp;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	// Master prompt 12.4: a help takes 1% of the whole time off (at least 60 s); 5 + ⌊Alliance Hall ÷ 2⌋ helps a timer,
+	// at most 15; 50 helps given a day. Ours: the Alliance Camp stands for the Hall, when the helps come, the members'
+	// asks and the gold and food paid for a help (times the Castle) in place of Honor.
+	KD_CHECK(H.on && H.base == 5 && H.hallStep == 2 && H.max == 15 && H.cutPct == 1 && H.minCutSec == 60 && H.dailyCap == 50);
+	KD_CHECK(H.firstSec[0] == 30 && H.firstSec[1] == 120 && H.gapSec[0] == 20 && H.gapSec[1] == 300 && H.openHours == 2);
+	KD_CHECK(H.asksPerHour[0] == 1 && H.asksPerHour[1] == 3 && H.reward.res[GoldI] == 20 && H.reward.res[FoodI] == 20 && H.reward.relic == 0);
+
+	const int64_t Long = 200000; // a help takes 2 000 s off
+	const int32_t Camp = 960;
+	std::string Error;
+	Kingdom Base = HelpKingdom(130, Long, 3 * Hour);
+	const int32_t Titan = Base.Titans()[0].id;
+	KD_CHECK(Base.HelpCut(Long) == 2000 && Base.HelpCut(3000) == 60 && Base.HelpCut(0) == 60);
+	// Outside an alliance nobody helps and nobody asks.
+	KD_CHECK(Base.HelpLimit() == 0 && Base.CheckAskHelp(HelpKind::Building, Camp).error == Error::NoAlliance && Base.AskHelp(HelpKind::Building, Camp) == Error::NoAlliance);
+	KD_CHECK(Base.AllyAsks().empty() && Base.CheckGiveHelp().error == Error::NoAlliance && Base.GiveHelp(nullptr, nullptr) == Error::NoAlliance);
+	KD_CHECK(Base.CheckAskHelp(HelpKind::Building, 12345).error == Error::BadId && Base.CheckAskHelp(HelpKind::Count, Camp).error == Error::BadId);
+	KD_CHECK(Base.CheckAskHelp(HelpKind::Troop, -1).error == Error::BadId && Base.CheckAskHelp(HelpKind::Titan, 0).error == Error::BadId);
+
+	const int Big = HelpAlliance(Base, 10);
+	KD_CHECK(Big >= 0);
+	Kingdom K(Ct);
+	KD_CHECK(K.Load(Base.Save(), Error) && K.JoinAlliance(Big) == Error::None);
+	// Camp 4: 5 + 2 helps a timer.
+	KD_CHECK(K.HelpLimit() == 7);
+	KD_CHECK(K.CheckAskHelp(HelpKind::Building, FindId(K, "castle")).error == Error::NotBusy && K.CheckAskHelp(HelpKind::Troop, 0).error == Error::NotBusy);
+	KD_CHECK(K.CheckAskHelp(HelpKind::Spell, 0).error == Error::NotBusy && K.CheckAskHelp(HelpKind::Titan, Titan).error == Error::None);
+	KD_CHECK(K.AskHelp(HelpKind::Building, Camp) == Error::None && K.CheckAskHelp(HelpKind::Building, Camp).error == Error::Nothing);
+	KD_CHECK(K.AskHelp(HelpKind::Building, Camp) == Error::Nothing);
+	const std::vector<HelpAsk> A0 = K.HelpAsks();
+	KD_CHECK(A0.size() == 1 && A0[0].kind == HelpKind::Building && A0[0].id == Camp && A0[0].max == 7 && A0[0].got == 0 && A0[0].total == Long);
+	KD_CHECK(A0[0].end == T0 + Long && A0[0].start == T0 && A0[0].at == T0 && A0[0].next >= T0 + 30 && A0[0].next <= T0 + 120 && A0[0].cut == 0);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save() && L.HelpAsks().size() == 1);
+	}
+	// The helps come one by one, each from another member: 2 000 s off each.
+	K.Advance(A0[0].next - 1);
+	KD_CHECK(K.HelpAsks()[0].got == 0 && K.HelpLog().empty() && K.Find(Camp)->finishAt == T0 + Long);
+	K.Advance(A0[0].next);
+	KD_CHECK(K.HelpAsks()[0].got == 1 && K.HelpAsks()[0].end == T0 + Long - 2000 && K.Find(Camp)->finishAt == T0 + Long - 2000);
+	KD_CHECK(K.HelpLog().size() == 1 && K.HelpLog()[0].at == A0[0].next && K.HelpLog()[0].cut == 2000 && K.HelpLog()[0].kind == HelpKind::Building && K.HelpLog()[0].id == Camp);
+	const std::vector<AllianceMember> Ms = K.Members(Big);
+	KD_CHECK(K.HelpLog()[0].member >= 0 && K.HelpLog()[0].member < static_cast<int>(Ms.size()) && !Ms[static_cast<size_t>(K.HelpLog()[0].member)].name.empty());
+	K.Advance(T0 + 2 * Hour); // the 7 helps come within 120 + 6 × 300 s
+	const HelpAsk A1 = K.HelpAsks()[0];
+	KD_CHECK(A1.got == 7 && A1.cut == 14000 && A1.end == T0 + Long - 14000 && K.Find(Camp)->finishAt == A1.end && K.HelpLog().size() == 7);
+	std::vector<int> Helpers;
+	for (const HelpGot& G : K.HelpLog())
+	{
+		KD_CHECK(G.cut == 2000 && G.at <= T0 + 120 + 6 * 300 && !Ms[static_cast<size_t>(G.member)].name.empty());
+		Helpers.push_back(G.member);
+	}
+	std::sort(Helpers.begin(), Helpers.end());
+	KD_CHECK(std::unique(Helpers.begin(), Helpers.end()) == Helpers.end());
+	KD_CHECK(K.CheckAskHelp(HelpKind::Building, Camp).error == Error::Nothing); // asked: no more helps for this timer
+	// The titan's recovery: what was left counts, at least 60 s a help.
+	KD_CHECK(K.AskHelp(HelpKind::Titan, Titan) == Error::None && K.HelpAsks().size() == 2 && K.HelpAsks()[1].total == Hour && K.HelpAsks()[1].start == T0 + 2 * Hour);
+	K.Advance(T0 + 2 * Hour + 120);
+	KD_CHECK(K.Titans()[0].recoverUntil == T0 + 3 * Hour - 60 && K.HelpAsks()[1].got == 1);
+	K.Advance(T0 + 5 * Hour);
+	KD_CHECK(K.Titans()[0].recoverUntil >= T0 + 3 * Hour - 7 * 60 && K.Titans()[0].recoverUntil <= T0 + 3 * Hour - 60 && K.HelpAsks().size() == 1);
+	KD_CHECK(K.CheckAskHelp(HelpKind::Titan, Titan).error == Error::NotBusy);
+	// The upgrade ends earlier by what the helps took, and the ask goes with it.
+	K.Advance(A1.end - 1);
+	KD_CHECK(K.Find(Camp)->upgrading && K.HelpAsks().size() == 1);
+	K.Advance(A1.end);
+	KD_CHECK(!K.Find(Camp)->upgrading && K.Find(Camp)->level == 5 && K.HelpAsks().empty() && K.HelpLimit() == 7);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save());
+	}
+
+	// A short upgrade: 60 s a help, and the helps may finish it; a speed-up for gems ends the ask.
+	K.CollectAll();
+	const int32_t Mine = FindId(K, "gold_mine");
+	KD_CHECK(K.Upgrade(Mine, false) == Error::None && K.Find(Mine)->finishAt == K.Now() + 300 && K.AskHelp(HelpKind::Building, Mine) == Error::None);
+	const int64_t MineAt = K.Now();
+	K.Advance(MineAt + 240); // the first help comes by 120 s
+	KD_CHECK(K.Find(Mine)->level == 2 && !K.Find(Mine)->upgrading && K.HelpAsks().empty());
+	K.Advance(K.Now() + Hour);
+	K.CollectAll();
+	KD_CHECK(K.Upgrade(Mine, true) == Error::None && K.AskHelp(HelpKind::Building, Mine) == Error::None && K.Speedup(Mine) == Error::None);
+	KD_CHECK(K.HelpAsks().empty() && K.CheckAskHelp(HelpKind::Building, Mine).error == Error::NotBusy);
+	const size_t LogBefore = K.HelpLog().size();
+	K.Advance(K.Now() + Hour);
+	KD_CHECK(K.HelpLog().size() == LogBefore);
+
+	// The members ask too: a few asks an hour, each open for 2 h, none from before the player joined.
+	K.Advance(T0 + Long);
+	const std::vector<AllyAsk> Asks = K.AllyAsks();
+	KD_CHECK(Asks.size() >= 2 && Asks.size() <= 9);
+	for (const AllyAsk& A : Asks)
+	{
+		KD_CHECK(A.at <= K.Now() && A.until == A.at + 2 * Hour && A.until > K.Now() && !A.helped && A.kind < HelpKind::Count);
+		KD_CHECK(A.member >= 0 && A.member < static_cast<int>(Ms.size()) && !Ms[static_cast<size_t>(A.member)].name.empty());
+	}
+	KD_CHECK(K.HelpsGivenToday() == 0 && K.CheckGiveHelp().error == Error::None);
+	const int64_t Gold = K.Amount(Res::Gold);
+	int Given = 0;
+	Reward R;
+	KD_CHECK(K.GiveHelp(&Given, &R) == Error::None && Given == static_cast<int>(Asks.size()) && K.HelpsGivenToday() == Given);
+	const int GivenFirst = Given;
+	KD_CHECK(R.res[GoldI] == Given * 20 * 6 && R.res[FoodI] == Given * 20 * 6 && K.Amount(Res::Gold) == Gold + R.res[GoldI]);
+	KD_CHECK(K.CheckGiveHelp().error == Error::Nothing && K.GiveHelp(&Given, nullptr) == Error::Nothing && Given == 0);
+	for (const AllyAsk& A : K.AllyAsks())
+	{
+		KD_CHECK(A.helped);
+	}
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save() && L.HelpsGivenToday() == K.HelpsGivenToday() && L.AllyAsks().size() == Asks.size() && L.AllyAsks()[0].helped);
+	}
+	// 50 helps a day at most: then not until the next day.
+	{
+		Kingdom L(Ct);
+		const std::string Day = std::to_string(K.Now() / 86400);
+		KD_CHECK(L.Load(Replace(K.Save(), "\"day\":" + Day + ",\"given\":" + std::to_string(GivenFirst), "\"day\":" + Day + ",\"given\":50"), Error));
+		L.Advance(L.Now() + Hour);
+		const Check Ck = L.CheckGiveHelp();
+		KD_CHECK(L.HelpsGivenToday() == 50 && Ck.error == Error::LimitReached && Ck.timeSec == (L.Now() / 86400 + 1) * 86400 - L.Now());
+	}
+
+	// Leaving the alliance stops the helps: the asks and the log go.
+	K.CollectAll();
+	KD_CHECK(K.Upgrade(Mine, true) == Error::None && K.AskHelp(HelpKind::Building, Mine) == Error::None);
+	KD_CHECK(K.LeaveAlliance() == Error::None && K.HelpAsks().empty() && K.HelpLog().empty() && K.AllyAsks().empty() && K.HelpLimit() == 0);
+	const int64_t MineEnd = K.Find(Mine)->finishAt;
+	K.Advance(K.Now() + 200);
+	KD_CHECK(K.Find(Mine)->finishAt == MineEnd && K.HelpLog().empty());
+	// The helps given today stay with the player (the admin's random play found them lost on a reload).
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Save() == K.Save() && L.Hash() == K.Hash() && L.HelpsGivenToday() == K.HelpsGivenToday() && K.HelpsGivenToday() > 0);
+	}
+	// An own alliance helps once it has recruits.
+	KD_CHECK(K.CreateAlliance("Дом Рассвета", "ДОМ") == Error::None && K.HelpLimit() == 0 && K.CheckAskHelp(HelpKind::Building, Mine).error == Error::NotAllowed);
+	KD_CHECK(K.AllyAsks().empty() && K.CheckGiveHelp().error == Error::Nothing);
+	K.Advance(K.Now() + 2 * Ct.alliances.recruitSec);
+	KD_CHECK(K.HelpLimit() == 2);
+
+	// Over many kingdoms: when the 7 helps on a long timer are all in.
+	int64_t Sum = 0;
+	int64_t Worst = 0;
+	for (uint64_t S = 0; S < 50; ++S)
+	{
+		Kingdom B = HelpKingdom(140 + S, Long, 0);
+		const int A = HelpAlliance(B, 10);
+		KD_CHECK(A >= 0 && B.JoinAlliance(A) == Error::None && B.AskHelp(HelpKind::Building, Camp) == Error::None);
+		B.Advance(T0 + 2 * Hour);
+		KD_CHECK(B.HelpLog().size() == 7 && B.Find(Camp)->finishAt == T0 + Long - 14000);
+		Sum += B.HelpLog().back().at - T0;
+		Worst = std::max(Worst, B.HelpLog().back().at - T0);
+	}
+	std::printf("  alliance help: 7 helps in %lld s on average, %lld s at most\n", static_cast<long long>(Sum / 50), static_cast<long long>(Worst));
+}
+
 Kingdom BossKingdom(uint64_t Seed)
 {
 	Kingdom K = WithVp(Seed, 8000);
@@ -4033,7 +4223,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp},
 	};
 	for (const auto& T : Tests)
 	{

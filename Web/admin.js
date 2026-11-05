@@ -410,6 +410,30 @@ function invariants(st, add) {
 		}
 		if (st.pendingWar >= 0 && !inBattle()) add('warn', 'Висит незавершённая атака на войне альянсов');
 	}
+	// Alliance help: helps a timer within the rules, asks only of running timers with their ends, the time taken within the
+	// helps, no help late, the members' asks open, today's helps within the cap; nothing outside an alliance.
+	const hr = rules().allianceHelp;
+	const hp = st.help;
+	if (hr && hp) {
+		if (hp.lim < 0 || hp.lim > hr.max || (st.ally.my < 0 && hp.lim)) add('bad', 'Помощь альянса: помощей на таймер ' + hp.lim);
+		if (st.ally.my < 0 && (hp.asks.length || hp.log.length || hp.ally.length)) add('bad', 'Вне альянса есть помощь: просьб ' + hp.asks.length + ', в журнале ' + hp.log.length + ', просьб союзников ' + hp.ally.length);
+		if (hp.today < 0 || hp.today > hr.dailyCap) add('bad', 'Помощь альянса: сегодня помогли ' + hp.today + ' из ' + hr.dailyCap);
+		for (const a of hp.asks) {
+			const nm = 'Помощь альянса (вид ' + a[0] + ', #' + a[1] + '): ';
+			const cut = Math.max(hr.minCutSec, Math.floor((a[4] * hr.cutPct) / 100));
+			if (a[5] < 0 || a[5] > a[6] || a[6] < 1 || a[6] > hr.max) add('bad', nm + 'помощей ' + a[5] + ' из ' + a[6]);
+			if (a[3] <= st.now) add('bad', nm + 'таймер кончился, а просьба осталась');
+			if (a[8] < 0 || a[8] > a[5] * cut) add('bad', nm + 'снято ' + a[8] + ' с за ' + a[5] + ' помощей по ' + cut + ' с');
+			if (a[5] < a[6] && a[7] <= st.now) add('bad', nm + 'помощь опаздывает: ждали в ' + a[7] + ', сейчас ' + st.now);
+			const c = hp.can.find((x) => x[0] === a[0] && x[1] === a[1]);
+			if (!c || c[2] !== a[3]) add('bad', nm + 'конец ' + a[3] + ', а у таймера ' + (c ? c[2] : 'его нет'));
+			else if (c[3] === 0) add('bad', nm + 'о помощи можно попросить снова');
+		}
+		for (const g of hp.log) if (g[4] <= 0 || g[0] > st.now) add('bad', 'Помощь альянса в журнале: ' + g.join(', '));
+		for (const a of hp.ally) {
+			if (a[3] > st.now || a[4] <= st.now || a[4] - a[3] !== hr.openHours * 3600) add('bad', 'Просьба союзника ' + a[0] + ': открыта ' + a[3] + '–' + a[4] + ', сейчас ' + st.now);
+		}
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -507,7 +531,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'помочь союзникам']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -742,6 +766,31 @@ function runMonkey(steps, seed, keep) {
 			return err;
 		}],
 		['сундук войны', 1, () => (B.warChest ? B.warChest().err : -1)],
+		['просьба о помощи', 3, (st) => {
+			if (!B.helpAsk || !st.help) return -1;
+			// A running timer, now and then a wrong kind or one that is not running.
+			const c = r() < 0.85 ? pick(st.help.can) : null;
+			const kind = c ? c[0] : Math.floor(r() * 7) - 1;
+			const id = c ? c[1] : Math.floor(r() * 50);
+			const code = B.helpAsk(kind, id);
+			if (code === 0) {
+				const st2 = B.state();
+				const a = st2.help.asks.find((x) => x[0] === kind && x[1] === id);
+				if (!c || c[3] !== 0 || !a || a[5] !== 0 || a[6] !== st.help.lim) throw new Error('просьба о помощи (вид ' + kind + ', #' + id + ') принята: ' + (c ? 'проверка ' + c[3] : 'таймера нет') + ', просьба ' + (a ? a.join(',') : 'не появилась'));
+			}
+			return code;
+		}],
+		['помочь союзникам', 2, (st) => {
+			if (!B.helpGive || !st.help) return -1;
+			const open = st.help.ally.filter((a) => !a[5]).length;
+			const res = B.helpGive();
+			if (res.err === 0) {
+				const st2 = B.state();
+				const n = st2.help.today - (st.help.today > st2.help.today ? 0 : st.help.today);
+				if (n < 1 || n > open || st2.help.ally.some((a) => !a[5] && st2.help.today < rules().allianceHelp.dailyCap)) throw new Error('помощь союзникам: открытых было ' + open + ', помогли ' + n + ', осталось ' + st2.help.ally.filter((a) => !a[5]).length);
+			}
+			return res.err;
+		}],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
