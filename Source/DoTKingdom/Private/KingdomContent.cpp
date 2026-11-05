@@ -1395,6 +1395,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
 			ReadCost(&J, R.res);
 			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
 		};
 		bool bOk = true;
 		for (const char* Key : {"milestones", "ranks"})
@@ -1554,6 +1555,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		const auto ReadPay = [](const JsonValue& J, EventReward& R) {
 			ReadCost(&J, R.res);
 			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
 		};
 		if (const JsonValue* B = Wj->Find("bonus"))
 		{
@@ -1607,6 +1609,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				{
 					ReadCost(Pay, S.reward.res);
 					S.reward.relic = std::max(0, std::min(5, Pay->GetInt("relic", 0)));
+					S.reward.divine = std::max<int64_t>(0, Pay->GetInt64("divine", 0));
 				}
 				bOk = bOk && (S.extra == 0 || !A.garrison.empty());
 				A.stages.push_back(S);
@@ -1648,6 +1651,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
 			ReadCost(&J, R.res);
 			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
 		};
 		bool bOk = true;
 		if (const JsonValue* Tiers = Bj->Find("tiers"))
@@ -1736,6 +1740,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			{
 				ReadCost(J, R.res);
 				R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
+				R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
 			}
 		};
 		bool bOk = true;

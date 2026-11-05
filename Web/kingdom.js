@@ -3658,7 +3658,7 @@ function trialReady(st) {
 	K.rules.trials.milestones.forEach((m, i) => { if (!((tr.ms >> i) & 1) && tr.best >= m.score) n++; });
 	return n + (trialRankReady(st) ? 1 : 0);
 }
-const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
+const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
 /** The bracket: the lords by score with the kingdom before the lords it ties (as the kingdom counts its place). */
 function trialBoard(st) {
 	const rows = st.trial.lords.map((s, i) => ({ s, name: trialLordName(i) })).sort((a, b) => b.s - a.s);
@@ -4882,6 +4882,7 @@ function rewardParts(r) {
 	if (r.gems) parts.push('+' + fmt(r.gems) + ' самоцветов');
 	if (r.stones) parts.push('+' + fmt(r.stones) + ' камней портала');
 	if (r.scrolls) parts.push('+' + r.scrolls + ' ' + plural(r.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
+	if (r.divine) parts.push('+' + fmt(r.divine) + ' ' + plural(r.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
 	return parts;
 }
 /** A toast for every quest that got done since the last state (same day, same week). */
@@ -6601,7 +6602,7 @@ function buyDivine(alt, pick) {
 	refresh(true);
 	const t = a.titan ? K.st.titans.find((x) => x.id === r.id) : null;
 	const rl = a.titan ? null : K.st.relics.find((x) => x.id === r.id);
-	K.divGot = t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(K.army.titans[t.def].stars) : rl ? relicName(rl) + ' ' + '★'.repeat(rl.r) : '';
+	K.divGot = t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(K.army.titans[t.def].stars) : rl ? (/^реликвия/i.test(relicName(rl)) ? '' : 'реликвия ') + relicName(rl) + ' ' + '★'.repeat(rl.r) : '';
 	toast('Алтарь: ' + K.divGot, 'gold');
 	refreshSheet(true);
 }

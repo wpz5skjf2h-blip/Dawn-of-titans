@@ -3351,6 +3351,8 @@ Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Re
 		Res[static_cast<size_t>(ResIndex(Res::Food))] *= std::max(1, CastleLevel());
 	}
 	PayGift(Res, R);
+	DivineCount += Pay.divine;
+	R.divine += Pay.divine;
 	if (Pay.relic > 0)
 	{
 		const uint64_t H = Mix(Seed ^ Salt, Pick);

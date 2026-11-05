@@ -232,6 +232,7 @@ struct Reward
 	int32_t newTitan = 0; // a titan a star chest gave
 	int64_t studySec = 0; // research time a Daily Trial took off (each research running)
 	int64_t scrolls = 0; // War Scrolls a quest chest gave
+	int64_t divine = 0; // divine gems an event paid
 };
 
 /** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */

@@ -1469,6 +1469,13 @@ void TestDivine()
 	KD_CHECK(Lg.size() == 6 && Lg[0].divine == 0 && Lg[2].divine == 0 && Lg[3].divine == 40 && Lg[5].divine == 150);
 	KD_CHECK(K.LeagueReward(5, 1, 8).divine == 150 && K.LeagueReward(5, 3, 8).divine == 120 && K.LeagueReward(5, 8, 8).divine == 45);
 	KD_CHECK(K.LeagueReward(0, 1, 8).divine == 0 && K.LeagueReward(3, 8, 8).divine == 12);
+
+	// Events pay them too: the Titan Trials' top places, the Raid Boss's top tiers, the Alliance War's chests in the top
+	// leagues and two Assault stages.
+	KD_CHECK(Ct.trials.ranks[0].second.divine == 30 && Ct.trials.ranks[3].second.divine == 6 && Ct.trials.ranks[5].second.divine == 0);
+	KD_CHECK(Ct.raidBoss.tiers.back().chest.divine == 12 && Ct.raidBoss.tiers[0].chest.divine == 0);
+	KD_CHECK(Ct.allianceWar.chests.back().win.divine == 20 && Ct.allianceWar.chests.back().lose.divine == 0 && Ct.allianceWar.chests[0].win.divine == 0);
+	KD_CHECK(Ct.assault.stages.back().reward.divine == 40 && Ct.assault.stages[4].reward.divine == 15 && Ct.assault.stages[0].reward.divine == 0);
 }
 
 void TestLoadouts()
@@ -2725,7 +2732,9 @@ void TestTitanTrials()
 	const int Pick = L.TrialRankReward(L.TrialRank());
 	KD_CHECK(Pick >= 0 && L.TrialRankReward(1) == 0 && L.TrialRankReward(2) == 1 && L.TrialRankReward(100) == 5 && L.TrialRankReward(101) == -1);
 	const int64_t Gems2 = L.Amount(Res::Gems);
+	const int64_t Div2 = L.DivineGems();
 	KD_CHECK(L.ClaimTrialRank(&R) == Error::None && L.Amount(Res::Gems) == Gems2 + T.ranks[static_cast<size_t>(Pick)].second.res[GemsI]);
+	KD_CHECK(R.divine == T.ranks[static_cast<size_t>(Pick)].second.divine && L.DivineGems() == Div2 + R.divine);
 	KD_CHECK(L.TrialRankClaimed() && L.ClaimTrialRank(nullptr) == Error::Nothing);
 	// Saving keeps the week; the next Monday brings the next trial with nothing claimed.
 	Kingdom S(Ct);
@@ -3791,8 +3800,10 @@ void TestAllianceWar()
 	const WarChest& Ch = W.chests[static_cast<size_t>(I4.league)];
 	const EventReward& Want = I4.result > 0 ? Ch.win : I4.result < 0 ? Ch.lose : Ch.draw;
 	const int64_t Gems = K.Amount(Res::Gems);
+	const int64_t Div = K.DivineGems();
 	Reward Got;
 	KD_CHECK(K.ClaimWarChest(&Got) == Error::None && K.WarChestClaimed() && K.ClaimWarChest(nullptr) == Error::Nothing);
+	KD_CHECK(Got.divine == Want.divine && K.DivineGems() == Div + Want.divine);
 	KD_CHECK(Got.res[GemsI] == Want.res[GemsI] && K.Amount(Res::Gems) == Gems + Want.res[GemsI] && Got.res[GoldI] == (Want.res[GoldI] + 150 * 4) * 6 && Got.res[FoodI] == 600 * 6);
 	KD_CHECK(static_cast<int>(Got.relics.size()) == (Want.relic > 0 ? 1 : 0));
 	Kingdom K4(Ct);

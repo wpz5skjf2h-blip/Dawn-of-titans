@@ -1755,7 +1755,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
 	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
-	O.Key("scrolls").Int(R.scrolls).Comma();
+	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{

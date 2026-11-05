@@ -491,10 +491,10 @@
       { "score": 4000, "gems": 15, "relic": 2 }
     ],
     "ranks": [
-      { "place": 1,   "gems": 60, "relic": 3 },
-      { "place": 3,   "gems": 40, "relic": 3 },
-      { "place": 10,  "gems": 25, "relic": 2 },
-      { "place": 25,  "gems": 15, "stones": 12 },
+      { "place": 1,   "gems": 60, "relic": 3, "divine": 30 },
+      { "place": 3,   "gems": 40, "relic": 3, "divine": 20 },
+      { "place": 10,  "gems": 25, "relic": 2, "divine": 12 },
+      { "place": 25,  "gems": 15, "stones": 12, "divine": 6 },
       { "place": 50,  "gems": 10, "stones": 9 },
       { "place": 100, "gems": 5,  "stones": 6 }
     ],
@@ -637,12 +637,12 @@
       { "level": -2, "extra": 1, "fort": 0,  "map": "map.forest_01",   "reward": { "gems": 5, "stones": 6 } },
       { "level": -1, "extra": 0, "fort": 5,  "map": "map.lake_01",     "reward": { "food": 1000 } },
       { "level": -1, "extra": 1, "fort": 5,  "map": "map.mountain_01", "reward": { "gems": 5, "shards": 2 } },
-      { "level": 0,  "extra": 1, "fort": 10, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 10, "relic": 2 } },
+      { "level": 0,  "extra": 1, "fort": 10, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 10, "relic": 2, "divine": 15 } },
       { "level": 0,  "extra": 1, "fort": 10, "map": "map.highvale_01", "reward": { "gold": 2000 } },
       { "level": 1,  "extra": 1, "fort": 15, "map": "map.forest_01",   "reward": { "gems": 10, "stones": 9 } },
       { "level": 1,  "extra": 2, "fort": 15, "map": "map.lake_01",     "reward": { "food": 2000 } },
       { "level": 2,  "extra": 2, "fort": 20, "map": "map.mountain_01", "reward": { "gems": 10, "shards": 3 } },
-      { "level": 2,  "extra": 2, "fort": 25, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 30, "relic": 3 } }
+      { "level": 2,  "extra": 2, "fort": 25, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 30, "relic": 3, "divine": 40 } }
     ],
     "boons": [
       { "id": "fury",   "name": "Ярость",               "text": "+15% к атаке всех отрядов",           "atkPct": 15 },
@@ -696,11 +696,11 @@
       { "level": 20, "stars": 2, "escort": 1, "troopTier": 1, "chest": { "gems": 4, "stones": 6 } },
       { "level": 25, "stars": 2, "escort": 2, "troopTier": 2, "chest": { "gems": 5, "stones": 6, "relic": 2 } },
       { "level": 30, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 6, "stones": 8 } },
-      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 7, "stones": 8, "relic": 3 } },
-      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 8, "stones": 10 } },
-      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 9, "stones": 10, "relic": 3 } },
-      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 10, "stones": 12 } },
-      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 12, "stones": 12, "relic": 4 } }
+      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 7, "stones": 8, "relic": 3, "divine": 5 } },
+      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 8, "stones": 10, "divine": 6 } },
+      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 9, "stones": 10, "relic": 3, "divine": 8 } },
+      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 10, "stones": 12, "divine": 10 } },
+      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 12, "stones": 12, "relic": 4, "divine": 12 } }
     ],
     "milestones": [
       { "dmg": 50,  "gold": 200 },
@@ -767,9 +767,9 @@
       { "win": { "gems": 8,  "stones": 6,  "relic": 1 }, "draw": { "gems": 6,  "stones": 4 },  "lose": { "gems": 4,  "stones": 3 } },
       { "win": { "gems": 10, "stones": 8,  "relic": 2 }, "draw": { "gems": 7,  "stones": 5 },  "lose": { "gems": 5,  "stones": 4 } },
       { "win": { "gems": 12, "stones": 9,  "relic": 2 }, "draw": { "gems": 8,  "stones": 6 },  "lose": { "gems": 6,  "stones": 4 } },
-      { "win": { "gems": 15, "stones": 10, "relic": 3 }, "draw": { "gems": 10, "stones": 7 },  "lose": { "gems": 7,  "stones": 5 } },
-      { "win": { "gems": 18, "stones": 12, "relic": 3 }, "draw": { "gems": 12, "stones": 8 },  "lose": { "gems": 9,  "stones": 6 } },
-      { "win": { "gems": 22, "stones": 14, "relic": 4 }, "draw": { "gems": 15, "stones": 10 }, "lose": { "gems": 11, "stones": 7 } }
+      { "win": { "gems": 15, "stones": 10, "relic": 3, "divine": 10 }, "draw": { "gems": 10, "stones": 7, "divine": 5 },  "lose": { "gems": 7,  "stones": 5 } },
+      { "win": { "gems": 18, "stones": 12, "relic": 3, "divine": 15 }, "draw": { "gems": 12, "stones": 8, "divine": 8 },  "lose": { "gems": 9,  "stones": 6 } },
+      { "win": { "gems": 22, "stones": 14, "relic": 4, "divine": 20 }, "draw": { "gems": 15, "stones": 10, "divine": 10 }, "lose": { "gems": 11, "stones": 7 } }
     ],
     "star": { "gold": 150, "food": 150 }
   },
@@ -980,8 +980,10 @@
   // Buildings); the Divine Shrine's altars sell 5-star relics for 9 000 and divine titans for 12 000-15 000 divine
   // gems, each from its own altar (blog, 2020); the top leagues and events pay divine gems too (patch notes 1.32).
   // Ours: the shrine keeps up to "cap" until collected; the top three alliance leagues pay them (alliances.leagues
-  // "divine", for first place, less by place as gems); the altars sell a titan of the player's choice among those of
-  // "titan" stars, or a relic of the player's choice of kind at "relic" rarity; the prices are ours.
+  // "divine", for first place, less by place as gems), and so do events ("divine" in the rewards of the Titan Trials'
+  // top places, the Raid Boss's top tiers, the Alliance War's chests in the top leagues and two Assault stages); the
+  // altars sell a titan of the player's choice among those of "titan" stars, or a relic of the player's choice of kind
+  // at "relic" rarity. The prices and amounts are ours.
   "divine": {
     "building": "eternal_shrine",
     "perDay": 11,

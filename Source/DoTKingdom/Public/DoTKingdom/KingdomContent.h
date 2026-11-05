@@ -403,6 +403,7 @@ struct EventReward
 {
 	ResArray res{};
 	int relic = 0;
+	int64_t divine = 0; // divine gems
 };
 
 /** One Titan Trial (master prompt 10.4): a fixed rule for the player's side and a fixed enemy army. */
