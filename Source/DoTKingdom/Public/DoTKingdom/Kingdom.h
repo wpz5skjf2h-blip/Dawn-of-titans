@@ -230,6 +230,7 @@ struct Reward
 	bool firstClear = false; // a campaign mission won for the first time (res holds its reward)
 	int32_t newTitan = 0; // a titan a star chest gave
 	int64_t studySec = 0; // research time a Daily Trial took off (each research running)
+	int64_t scrolls = 0; // War Scrolls a quest chest gave
 };
 
 /** A squad of an Assault run: its troop (index), its level when the run began and its share of men still standing. */
@@ -767,6 +768,15 @@ public:
 	Error ClaimChest(int Act, int Chest, Reward* Out);
 	/** The pending battle's mission as Act * 100 + Mission (-1 when it is not a mission). */
 	int PendingMission() const { return -Pending >= MissionBase ? -Pending - MissionBase : -1; }
+	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
+	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
+	// quests and the Warpath count it. Quest chests give the scrolls.
+	int64_t Scrolls() const { return ScrollCount; }
+	/** CheckMission's errors (but stones), then NotReady (not won on 3 stars), LimitReached (no War Scroll), NotEnough
+	 *  (food); the cost is the food. */
+	Check CheckSweep(int Act, int Mission) const;
+	/** Sweeps a mission with this titan (0: none): BadId, TitanRecovering, Busy (a battle is on). */
+	Error SweepMission(int Act, int Mission, int32_t TitanId, Reward* Out);
 
 	// --- Daily quests ---
 	// Every day (00:00 UTC) brings new quests from the pool for the Castle's level; progress counts what the player does
@@ -1390,6 +1400,13 @@ private:
 	// Campaigns: best stars by act and mission, opened star chests by act (bits).
 	std::vector<std::vector<uint8_t>> MissionStarList;
 	std::vector<uint32_t> ChestMask;
+	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
+	int64_t ScrollCount = 0;
+	uint64_t LootRolls = 0;
+	/** Rolls the missions' loot table into R (gold and food by level and stars). */
+	void RollMissionLoot(int Level, int Stars, Reward& R);
+	/** Adds War Scrolls up to the most a kingdom holds; returns how many went in. */
+	int64_t AddScrolls(int64_t N);
 	// Daily quests: the day they belong to (days since the epoch, UTC), the quests, rerolls used, the chest, and a counter
 	// for rerolls.
 	int64_t QuestDay = -1;

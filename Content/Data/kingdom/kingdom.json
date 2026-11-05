@@ -259,10 +259,21 @@
   // missions and a boss in its regions, Ilsa Wren's briefings, first-clear gems, star chests at 12/24/36 of 39 stars.
   // Ours: the enemy armies, levels, maps, the stone cost, the rewards and the Castle for each act. A mission's "level" is
   // the land battle row for its titan XP; the clients build its army from squads/tier/ai/titan. Missions go in order;
-  // repeats give titan XP only. Types: field, hunt (a titan with a light escort), elite, boss.
+  // repeats give titan XP and roll the loot table. Types: field, hunt (a titan with a light escort), elite, boss.
+  // Sweeps (master prompt 4.19, ours): a mission won on 3 stars is resolved at once for a War Scroll and its march food
+  // ("food" per mission level), as a 3-star repeat win with no losses; the titan sent gets its XP and rests. The daily and
+  // weekly quest chests give the scrolls. The loot table: one entry by weight per repeat win or sweep, gold and food per
+  // mission level, 50/75/100% by stars as on a land.
   "campaigns": {
     "stones": 2,
     "guild": "adventurers_guild",
+    "sweep": { "start": 5, "food": 500, "max": 30 },
+    "loot": [
+      { "weight": 40, "gold": 600 },
+      { "weight": 40, "food": 600 },
+      { "weight": 15, "stones": 3 },
+      { "weight": 5, "relic": 1 }
+    ],
     "acts": [
       { "id": "act1", "name": "Акт I. Хайвейл", "region": "Хайвейл: зелёные долины и пашни", "castle": 8,
         "intro": "Пустота Морвейн докатилась до Хайвейла. Глашатай Васк жжёт фермы, а его Бронзовый Пустой — осквернённый Талос — стоит над долиной. Верните родные земли.",
@@ -421,7 +432,7 @@
   "dailyQuests": {
     "count": 5,
     "rerolls": 2,
-    "chest": { "gems": 10, "stones": 6, "relic": [[3, 1], [12, 2]] },
+    "chest": { "gems": 10, "stones": 6, "scrolls": 3, "relic": [[3, 1], [12, 2]] },
     "pool": [
       { "id": "q_win",     "event": "win",         "name": "Победите в битвах: {n}",              "target": [[1, 2], [6, 3], [12, 4]], "reward": { "gems": 2, "stones": 3 } },
       { "id": "q_stars",   "event": "threeStars",  "name": "Победите на 3 звезды: {n}",           "target": [[1, 1], [8, 2]], "reward": { "gems": 3, "stones": 3 } },
@@ -444,7 +455,7 @@
   "weeklyQuests": {
     "count": 5,
     "rerolls": 1,
-    "chest": { "gems": 30, "stones": 12, "relic": [[1, 2], [12, 3]] },
+    "chest": { "gems": 30, "stones": 12, "scrolls": 10, "relic": [[1, 2], [12, 3]] },
     "pool": [
       { "id": "w_win",     "event": "win",         "name": "Победите в битвах за неделю: {n}",          "target": [[1, 8], [6, 12], [12, 16]], "reward": { "gems": 5, "stones": 6 } },
       { "id": "w_stars",   "event": "threeStars",  "name": "Победите на 3 звезды за неделю: {n}",       "target": [[1, 4], [8, 8]], "reward": { "gems": 5, "stones": 6 } },
