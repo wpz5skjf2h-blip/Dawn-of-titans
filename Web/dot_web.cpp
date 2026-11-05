@@ -1246,6 +1246,34 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->AssaultLevel(I));
 	}
 	O.Raw("]},");
+	// Raid Boss: the last event (its boss is index i into kingdom.json "raidBoss" "bosses"), whether it is open, when it
+	// opens (or opened) and closes, what starting a battle now would say, the tier, the members' own tier and the next
+	// event's, battles left today, the pool and the damage (tenths of a percent of the boss's health), when it fell
+	// (0: it stands), the player's damage, battles and best battle, the chest opened, and the computer members as
+	// [name, damage, battles].
+	{
+		O.Key("boss").Raw("{").Key("i").Int(Km->BossIndex()).Comma().Key("no").Int(Km->BossEvent()).Comma().Key("open").Int(Km->BossOpen() ? 1 : 0).Comma();
+		O.Key("opens").Int(Km->BossOpensAt()).Comma().Key("closes").Int(Km->BossClosesAt()).Comma().Key("ck");
+		WriteCheck(O, Km->CheckBoss());
+		O.Comma().Key("tier").Int(Km->BossTier()).Comma().Key("home").Int(Km->BossHomeTier()).Comma().Key("next").Int(Km->BossNextTier()).Comma();
+		O.Key("left").Int(Km->BossAttemptsLeft()).Comma().Key("pool").Int(Km->BossPool()).Comma().Key("dmg").Int(Km->BossDamage()).Comma();
+		O.Key("fell").Int(Km->BossDefeatedAt()).Comma().Key("mine").Int(Km->BossMyDamage()).Comma().Key("mb").Int(Km->BossMyBattles()).Comma();
+		O.Key("best").Int(Km->BossMyBest()).Comma().Key("chest").Int(Km->BossChestClaimed() ? 1 : 0).Comma().Key("members").Raw("[");
+		const std::vector<dot::kingdom::BossMemberHits> Hits = Km->BossMembers();
+		const std::vector<dot::kingdom::AllianceMember> Who = Km->MyAlliance() >= 0 ? Km->Members(Km->MyAlliance()) : std::vector<dot::kingdom::AllianceMember>();
+		size_t M = 0;
+		for (const dot::kingdom::AllianceMember& A : Who)
+		{
+			if (A.name.empty())
+			{
+				continue; // the player
+			}
+			const dot::kingdom::BossMemberHits H = M < Hits.size() ? Hits[M] : dot::kingdom::BossMemberHits();
+			O.Raw(M ? ",[" : "[").Str(A.name).Comma().Int(H.dmg).Comma().Int(H.battles).Raw("]");
+			++M;
+		}
+		O.Raw("]},");
+	}
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1284,7 +1312,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Raw("]},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
-	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma();
+	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma().Key("pendingBoss").Int(Km->PendingBoss() ? 1 : 0).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1723,6 +1751,33 @@ EMSCRIPTEN_KEEPALIVE const char* dk_trial_rank()
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimTrialRank(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** A Raid Boss battle: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_boss_start(const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartBoss(ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends a Raid Boss battle with its stars and the boss's health lost in it (tenths of a percent). */
+EMSCRIPTEN_KEEPALIVE const char* dk_boss_finish(int Stars, int DamagePermille)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishBoss(Stars, DamagePermille, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_boss_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimBossChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** The own alliance's tier for the coming events (0: its league's). */
+EMSCRIPTEN_KEEPALIVE int dk_boss_tier(int Tier)
+{
+	return K() ? static_cast<int>(K()->ChooseBossTier(Tier)) : -1;
 }
 
 /** Claims a Warpath tier (0-based). */

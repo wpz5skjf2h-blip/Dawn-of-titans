@@ -338,6 +338,25 @@ function invariants(st, add) {
 		if (as.boons.length > as.stage) add('bad', 'Штурм: благословений ' + as.boons.length + ' за ' + as.stage + ' этапов');
 		if (as.run && !as.over && as.stage >= asr.stages.length) add('bad', 'Штурм пройден целиком, но не окончен');
 	}
+	// Raid Boss: the pool holds the members' damage and the player's; outside an alliance there is none.
+	const bsr = rules().raidBoss;
+	const bs = st.boss;
+	if (bsr && bs && bs.i >= 0) {
+		if (bs.i >= bsr.bosses.length) add('bad', 'Босс ' + bs.i + ' вне списка из ' + bsr.bosses.length);
+		if (st.ally.my < 0) {
+			if (bs.pool || bs.dmg || bs.tier || bs.members.length) add('bad', 'Вне альянса у рейдового босса запас ' + bs.pool + ', урон ' + bs.dmg + ', сложность ' + bs.tier);
+		} else {
+			const n = bsr.tiers.length;
+			if (!(bs.tier >= 1 && bs.tier <= n && bs.home >= 1 && bs.home <= n && bs.next >= 1 && bs.next <= n)) add('bad', 'Рейдовый босс: сложность ' + bs.tier + ', своя ' + bs.home + ', следующая ' + bs.next + ' из ' + n);
+			if (!(bs.pool > 0) || bs.dmg < 0 || bs.dmg > bs.pool) add('bad', 'Рейдовый босс: урон ' + bs.dmg + ' при запасе ' + bs.pool);
+			const sum = bs.members.reduce((x, m) => x + m[1], bs.mine);
+			if (bs.fell ? bs.dmg !== bs.pool || sum < bs.pool : sum !== bs.dmg) add('bad', 'Рейдовый босс: урон участников ' + sum + ', а в запасе ' + bs.dmg + ' из ' + bs.pool + (bs.fell ? ' (повержен)' : ''));
+			if (bs.members.some((m) => m[1] < 0 || m[2] < 0 || m[2] > bsr.attempts * bsr.days)) add('bad', 'Рейдовый босс: у участника боёв или урона вне границ');
+			if (bs.best > 1000 || bs.best > bs.mine || (bs.mb === 0 && (bs.mine || bs.best))) add('bad', 'Рейдовый босс: ваш урон ' + bs.mine + ', лучший бой ' + bs.best + ', боёв ' + bs.mb);
+		}
+		if (bs.left < 0 || bs.left > bsr.attempts) add('bad', 'Рейдовый босс: боёв сегодня ' + bs.left + ' из ' + bsr.attempts);
+		if (st.pendingBoss && !inBattle()) add('warn', 'Висит незавершённый бой с рейдовым боссом');
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -583,6 +602,27 @@ function runMonkey(steps, seed, keep) {
 			return code;
 		}],
 		['конец штурма', 1, () => (B.asEnd ? B.asEnd() : -1)],
+		['рейдовый босс', 3, (st) => {
+			if (!B.bossStart || !st.boss || st.boss.i < 0) return -1;
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = pick(st.titans.filter((x) => x.rec <= st.now));
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.bossStart(squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			if (!B.state().pendingBoss) throw new Error('бой с боссом начался, но не висит');
+			const err = B.bossFinish(Math.floor(r() * 2), Math.floor(r() * 1200)).err;
+			// Nothing is lost against the boss; the player's damage only grows within an event.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('бой с боссом забрал отряды или заклинания');
+			if (st2.pendingBoss) throw new Error('бой с боссом остался незавершённым');
+			if (st2.boss.no === st.boss.no && st2.ally.my === st.ally.my && (st2.boss.mine < st.boss.mine || st2.boss.mb !== st.boss.mb + 1)) throw new Error('урон по боссу ' + st.boss.mine + ' → ' + st2.boss.mine + ', боёв ' + st.boss.mb + ' → ' + st2.boss.mb);
+			return err;
+		}],
+		['сундук альянса', 1, () => (B.bossChest ? B.bossChest().err : -1)],
+		['сложность босса', 1, () => (B.bossTier ? B.bossTier(Math.floor(r() * 12) - 1) : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
