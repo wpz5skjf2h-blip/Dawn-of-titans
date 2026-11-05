@@ -415,6 +415,29 @@
     ]
   },
 
+  // Weekly quests (master prompt 13.5: "5 per week with a weekly chest"). The same shape and events as the daily ones;
+  // a week starts on Monday 00:00 UTC. Targets are three to five days of the daily ones at that Castle; one free swap a
+  // week. Gems: 5 a quest and 30 in the chest, 55 a week (about 8 a day). Rewards, like all quest, goal and calendar
+  // rewards, go on top of full vaults. Numbers are ours.
+  "weeklyQuests": {
+    "count": 5,
+    "rerolls": 1,
+    "chest": { "gems": 30, "stones": 12, "relic": [[1, 2], [12, 3]] },
+    "pool": [
+      { "id": "w_win",     "event": "win",         "name": "Победите в битвах за неделю: {n}",          "target": [[1, 8], [6, 12], [12, 16]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_stars",   "event": "threeStars",  "name": "Победите на 3 звезды за неделю: {n}",       "target": [[1, 4], [8, 8]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_raid",    "event": "raid",        "name": "Атакуйте земли мира за неделю: {n}",        "target": [[1, 8], [10, 12]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_gold",    "event": "collectGold", "name": "Соберите золото за неделю: {n}",            "target": [[1, 2000], [3, 6000], [5, 12000], [8, 30000], [12, 80000], [16, 120000], [20, 200000]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_food",    "event": "collectFood", "name": "Соберите еду за неделю: {n}",               "target": [[1, 2000], [3, 6000], [5, 12000], [8, 30000], [12, 80000], [16, 120000], [20, 200000]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_train",   "event": "train",       "name": "Обучите отряды за неделю: {n}",             "target": [[1, 12], [8, 20], [14, 24]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_upgrade", "event": "upgrade",     "name": "Начните улучшения за неделю: {n}",          "target": [[1, 6], [10, 8]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_stones",  "event": "stones",      "name": "Потратьте камни портала за неделю: {n}",    "target": [[1, 36], [8, 48], [14, 72]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_craft",   "event": "craft",       "name": "Создайте заклинания за неделю: {n}", "castle": 5, "needs": "spell_forge", "target": [[5, 8], [11, 12], [17, 16]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_site",    "event": "site",        "name": "Сразитесь у монументов и на аренах за неделю: {n}", "castle": 5, "target": [[5, 4], [12, 8]], "reward": { "gems": 5, "stones": 6 } },
+      { "id": "w_mission", "event": "mission",     "name": "Пройдите миссии кампании за неделю: {n}", "castle": 8, "needs": "adventurers_guild", "target": [[8, 8], [12, 12]], "reward": { "gems": 5, "stones": 6 } }
+    ]
+  },
+
   // The main line of goals (master prompt 9.4 and 13.5; the original starts with a step-by-step tutorial): one goal at a
   // time, from the first collected food to Castle 9, about the first week. "check" is a fact of the kingdom (castle,
   // build, level, army, troopLevel, lands, landLevel, guard, garrison, titans, titanLevel, relics, skills, spells,
