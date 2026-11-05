@@ -1199,6 +1199,21 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// Titan Spire: the floor reached, the next one (0: none this week), the fixed floors, the floor being fought, the
+	// state of the next floor (CheckSpire: error, Castle, seconds), when the top floors close again, the place and the
+	// lords' floors this week.
+	if (C.spire.castle > 0)
+	{
+		const dot::kingdom::Check Sp = Km->CheckSpire();
+		O.Key("spire").Raw("{").Key("top").Int(Km->SpireReached()).Comma().Key("next").Int(Km->SpireFloor()).Comma().Key("fixed").Int(Km->SpireFixed()).Comma();
+		O.Key("at").Int(Km->SpireBattleFloor()).Comma().Key("ck").Raw("{").Key("err").Int(static_cast<int>(Sp.error)).Comma().Key("c").Int(Sp.castle).Comma();
+		O.Key("t").Int(Sp.timeSec).Raw("},").Key("reset").Int(Km->SpireResetAt()).Comma().Key("rank").Int(Km->SpireRank()).Comma().Key("lords").Raw("[");
+		for (int I = 0; I < C.spire.bracket - 1; ++I)
+		{
+			O.Raw(I ? "," : "").Int(Km->SpireLordFloor(I));
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1841,6 +1856,20 @@ EMSCRIPTEN_KEEPALIVE const char* dk_divine_buy(int Altar, int Pick)
 	Out O(G().Text);
 	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("id").Int(Id).Raw("}");
 	return G().Text.c_str();
+}
+
+/** Fights the Titan Spire's next floor: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_spire_start(const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartSpire(ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends a Titan Spire battle with its stars: the floor's reward as for a battle. */
+EMSCRIPTEN_KEEPALIVE const char* dk_spire_finish(int Stars)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishSpire(Stars, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
 }
 
 /** Sweeps a campaign mission won on 3 stars with this titan (0: none): the reward as for a battle. */

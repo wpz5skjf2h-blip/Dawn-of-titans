@@ -345,6 +345,10 @@ const DotIcons = (() => {
 		'mission.siege': p('M5 44V14H8V10H11V14H14V10H17V14V44Z', K.stone) + p('M31 44V14H34V10H37V14H40V10H43V14V44Z', K.stone) +
 			r(16, 21, 16, 23, 1, K.stoneD) + p('M19 44V34C19 28.5 29 28.5 29 34V44Z', INK) + line('M21.5 31.5V44M24 30V44M26.5 31.5V44', K.steelD, 1.2) +
 			stick('M24 21V4', K.woodD, 1.6) + p('M25 4H36L33 8L36 12H25Z', K.red) + hi('M8 18V40M34 18V40'),
+		// The Titan Spire: stone tiers narrowing upward, lit windows, a blue spire with a star on top.
+		'mission.spire': p('M12 44L14.5 30H33.5L36 44Z', K.stone) + p('M16 30L17.5 19H30.5L32 30Z', K.stoneD) + p('M18 19L19.5 11H28.5L30 19Z', K.stone) +
+			p('M18.5 11L24 3L29.5 11Z', K.blue) + spark(24, 3.5, 3.4, K.fireY) + r(21, 36, 6, 8, 3, INK) + r(22.5, 23, 3, 4.5, 1.5, K.fireY) +
+			r(22.5, 13.5, 3, 3.5, 1.5, K.fireY) + line('M14.5 30H33.5M17.5 19H30.5', K.stoneD, 1.4) + hi('M16.5 40L18 32'),
 		'mission.boss': p('M11 20L14 6L20 13L24 4L28 13L34 6L37 20Z', K.gold) + c(14, 6, 1.6, K.red) + c(24, 4, 1.6, K.blue) + c(34, 6, 1.6, K.red) +
 			p('M12 22C12 15 36 15 36 22V31C36 34 33 35 31 35V41H17V35C15 35 12 34 12 31Z', K.bone) +
 			p('M16 25C16 22 22 22 22 25C22 28 16 28 16 25Z', INK) + p('M26 25C26 22 32 22 32 25C32 28 26 28 26 25Z', INK) +

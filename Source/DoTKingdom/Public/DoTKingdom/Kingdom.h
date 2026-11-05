@@ -743,18 +743,21 @@ public:
 	static constexpr int32_t DailyPending = -(MissionBase - 4);
 	/** The pending battle id of an Alliance War attack. */
 	static constexpr int32_t WarPending = -(MissionBase - 5);
+	/** The pending battle id of a Titan Spire floor. */
+	static constexpr int32_t SpirePending = -(MissionBase - 6);
 	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage, a
-	 *  Raid Boss battle, a Daily Trial, an Alliance War attack or there is none). */
+	 *  Raid Boss battle, a Daily Trial, an Alliance War attack, a Titan Spire floor or there is none). */
 	int PendingSite() const
 	{
 		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && Pending != DailyPending
-			&& Pending != WarPending && -Pending < MissionBase ? -Pending - 1 : -1;
+			&& Pending != WarPending && Pending != SpirePending && -Pending < MissionBase ? -Pending - 1 : -1;
 	}
 	bool PendingTrial() const { return Pending == TrialPending; }
 	bool PendingAssault() const { return Pending == AssaultPending; }
 	bool PendingBoss() const { return Pending == BossPending; }
 	bool PendingDaily() const { return Pending == DailyPending; }
 	bool PendingWar() const { return Pending == WarPending; }
+	bool PendingSpire() const { return Pending == SpirePending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -806,6 +809,36 @@ public:
 	Check CheckDivine(int Altar, int Pick) const;
 	/** Buys from an altar: the new titan's or relic's id in OutId. */
 	Error BuyDivine(int Altar, int Pick, int32_t* OutId = nullptr);
+
+	// --- Titan Spire (master prompt 10.7) ---
+	// A tower of floors fought one after another, harder every floor; nobody is lost in it and no spell is spent. A
+	// floor pays the first time it falls. The top floors close again every Monday 00:00 UTC and pay again; the floor
+	// reached in the week places the kingdom in a table of computer lords.
+	int SpireFloors() const { return C.spire.Floors(); }
+	/** Floors that stay won (below them nothing closes again). */
+	int SpireFixed() const { return C.spire.Floors() - C.spire.weekly; }
+	/** The highest floor won, this week's top floors counted only when won this week. */
+	int SpireReached() const;
+	/** The next floor to fight (0: none, every floor is won this week). */
+	int SpireFloor() const;
+	/** When the top floors close again (the next Monday 00:00 UTC). */
+	int64_t SpireResetAt() const { return ((WeekOf() + 1) * 7 - 3) * 86400; }
+	/** BadId (no spire), Locked (Castle too low), Busy (a battle is on), Nothing (every floor won this week; timeSec
+	 *  until the top floors close again). */
+	Check CheckSpire() const;
+	/** What a floor pays the first time it falls (gold and food before the Castle multiplies them). */
+	EventReward SpireReward(int Floor) const;
+	/** A computer lord's floor reached this week (as this week's table shows it). */
+	int SpireLordFloor(int Lord) const;
+	/** The kingdom's place in this week's table (ahead of the lords it ties). */
+	int SpireRank() const;
+	/** The pending battle's floor (0 without one). */
+	int SpireBattleFloor() const { return Pending == SpirePending ? SpireAt : 0; }
+	/** Fights the next floor with this army (as StartAttack, without stones or allies); the battle runs elsewhere. */
+	Error StartSpire(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a floor's battle: everyone comes back, no spell is spent; a win opens the next floor and pays the floor
+	 *  (a relic without room is lost). */
+	Error FinishSpire(int Stars, Reward* Out);
 
 	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
 	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
@@ -1446,6 +1479,11 @@ private:
 	// Divine gems held, and when the shrine began filling (0: no shrine built yet).
 	int64_t DivineCount = 0;
 	int64_t ShrineFrom = 0;
+	// Titan Spire: the fixed floors won, the week of the top floors won and the highest of them, the floor fought.
+	int SpireTop = 0;
+	int64_t SpireWeek = -1;
+	int SpireWeekTop = 0;
+	int SpireAt = 0;
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;

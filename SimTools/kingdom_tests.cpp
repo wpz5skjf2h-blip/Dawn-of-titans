@@ -1478,6 +1478,151 @@ void TestDivine()
 	KD_CHECK(Ct.assault.stages.back().reward.divine == 40 && Ct.assault.stages[4].reward.divine == 15 && Ct.assault.stages[0].reward.divine == 0);
 }
 
+void TestSpire()
+{
+	const KingdomContent& Ct = Content();
+	const SpireRules& S = Ct.spire;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	// Master prompt 10.7: 100 floors, the top 10 close again every week. Ours: bands of ten from Castle 6.
+	KD_CHECK(S.castle == 6 && S.perBand == 10 && S.weekly == 10 && S.bracket == 30 && S.bands.size() == 10 && S.Floors() == 100);
+	Kingdom K(Ct);
+	K.NewGame(T0, 113);
+	const uint64_t H0 = K.Hash();
+	KD_CHECK(K.SpireFloors() == 100 && K.SpireFixed() == 90 && K.SpireReached() == 0 && K.SpireFloor() == 1 && K.SpireBattleFloor() == 0);
+	// What the floors pay: gold on odd floors, food on even ones; the fifth adds gems, the tenth gems, divine gems and a relic.
+	EventReward P = K.SpireReward(1);
+	KD_CHECK(P.res[GoldI] == 300 && P.res[FoodI] == 0 && P.res[GemsI] == 0 && P.relic == 0 && P.divine == 0);
+	P = K.SpireReward(2);
+	KD_CHECK(P.res[GoldI] == 0 && P.res[FoodI] == 300);
+	P = K.SpireReward(5);
+	KD_CHECK(P.res[GoldI] == 300 && P.res[GemsI] == 10 && P.relic == 0);
+	P = K.SpireReward(10);
+	KD_CHECK(P.res[FoodI] == 300 && P.res[GemsI] == 10 && P.divine == 10 && P.relic == 1);
+	P = K.SpireReward(100);
+	KD_CHECK(P.res[FoodI] == 1200 && P.res[GemsI] == 15 && P.divine == 40 && P.relic == 4);
+	KD_CHECK(K.SpireReward(0).res[GoldI] == 0 && K.SpireReward(101).res[FoodI] == 0);
+	int64_t FixedGems = 0;
+	int64_t FixedDivine = 0;
+	int Relics = 0;
+	for (int F = 1; F <= 90; ++F)
+	{
+		FixedGems += K.SpireReward(F).res[GemsI];
+		FixedDivine += K.SpireReward(F).divine;
+		Relics += K.SpireReward(F).relic > 0 ? 1 : 0;
+	}
+	KD_CHECK(FixedGems == 340 && FixedDivine == 200 && Relics == 9);
+
+	// Below Castle 6 the spire is shut; nothing changes until a floor is fought.
+	KD_CHECK(K.CheckSpire().error == Error::Locked && K.CheckSpire().castle == 6 && K.StartSpire({}, 0, {}) == Error::Locked && K.Hash() == H0);
+	KD_CHECK(K.Save().find("\"spire\":{\"top\":0,\"week\":-1,\"weekTop\":0,\"at\":0}") != std::string::npos);
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6"), Error) && L.CastleLevel() == 6);
+	KD_CHECK(L.CheckSpire().error == Error::None && L.SpireRank() == 30);
+	// A floor's battle is free of stones and counts as a battle when it starts; it reloads as it was.
+	const int32_t Perun = L.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	const int64_t Army = L.ArmyCount(Militia);
+	const int64_t Stones = L.Amount(Res::Stones);
+	const int64_t Count = L.Lifetime(QuestEvent::Count);
+	KD_CHECK(Army >= 1 && L.StartSpire({Militia}, Perun, {}) == Error::None && L.PendingSpire() && L.PendingSite() == -1 && L.PendingMission() == -1);
+	KD_CHECK(L.SpireBattleFloor() == 1 && L.Amount(Res::Stones) == Stones && L.Lifetime(QuestEvent::Count) == Count);
+	KD_CHECK(L.StartSpire({}, 0, {}) == Error::Busy && L.FinishDaily(1, nullptr) == Error::NoAttack && L.FinishTrial(1, 100, nullptr) == Error::NoAttack);
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.PendingSpire() && M.SpireBattleFloor() == 1);
+	// A loss keeps the floor and pays nothing; nobody is lost and the titan gets no XP.
+	Reward R;
+	const int64_t Gold = L.Amount(Res::Gold);
+	KD_CHECK(L.FinishSpire(0, &R) == Error::None && !L.PendingSpire() && L.SpireBattleFloor() == 0 && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(L.SpireFloor() == 1 && L.Amount(Res::Gold) == Gold && L.ArmyCount(Militia) == Army && L.FinishSpire(1, nullptr) == Error::NoAttack);
+	// A win pays the floor (gold and food times the Castle) and opens the next.
+	const int64_t Wins = L.Lifetime(QuestEvent::Win);
+	KD_CHECK(L.StartSpire({Militia}, Perun, {}) == Error::None && L.FinishSpire(2, &R) == Error::None && R.res[GoldI] == 1800 && L.Amount(Res::Gold) == Gold + 1800);
+	KD_CHECK(L.SpireReached() == 1 && L.SpireFloor() == 2 && L.Lifetime(QuestEvent::Win) == Wins + 1 && L.SpireRank() <= 30);
+	// The first band: the fifth floor gives gems, the tenth gems, divine gems and a relic of one star.
+	const int64_t Divine = L.DivineGems();
+	const size_t Held = L.Relics().size();
+	int64_t Gems = 0;
+	for (int F = 2; F <= 10; ++F)
+	{
+		KD_CHECK(L.SpireFloor() == F && L.StartSpire({Militia}, 0, {}) == Error::None && L.FinishSpire(3, &R) == Error::None);
+		Gems += R.res[GemsI];
+	}
+	KD_CHECK(Gems == 20 && L.DivineGems() == Divine + 10 && R.divine == 10 && R.relics.size() == 1 && L.Relics().size() == Held + 1);
+	KD_CHECK(L.FindRelic(R.relics[0])->rarity == 1 && L.SpireReached() == 10);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.SpireReached() == 10 && M.SpireFloor() == 11);
+	KD_CHECK(L.Save().find("\"spire\":{\"top\":10,\"week\":-1,\"weekTop\":0,\"at\":0}") != std::string::npos);
+
+	// Up to the fixed floors' top, then into the weekly ones: they count this week only.
+	for (int F = 11; F <= 93; ++F)
+	{
+		KD_CHECK(L.StartSpire({Militia}, 0, {}) == Error::None && L.FinishSpire(1, &R) == Error::None);
+	}
+	const int64_t Week = (T0 / Day + 3) / 7;
+	const int64_t Monday = ((Week + 1) * 7 - 3) * Day;
+	KD_CHECK(L.SpireReached() == 93 && L.SpireFloor() == 94 && L.SpireResetAt() == Monday && Monday - T0 > 0 && Monday - T0 <= 7 * Day);
+	KD_CHECK(L.Save().find("\"spire\":{\"top\":90,\"week\":" + std::to_string(Week) + ",\"weekTop\":93,\"at\":0}") != std::string::npos);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.SpireReached() == 93);
+	// The week turns during a battle on a weekly floor: the win takes nothing.
+	KD_CHECK(L.StartSpire({Militia}, 0, {}) == Error::None && L.SpireBattleFloor() == 94);
+	L.Advance(Monday);
+	const int64_t Food = L.Amount(Res::Food);
+	KD_CHECK(L.SpireReached() == 90 && L.SpireFloor() == 91 && L.FinishSpire(3, &R) == Error::None && R.res[FoodI] == 0 && L.Amount(Res::Food) == Food);
+	KD_CHECK(L.SpireReached() == 90 && L.CheckSpire().error == Error::None);
+	// The weekly floors pay again, up to the top; then nothing until the next Monday.
+	KD_CHECK(L.StartSpire({Militia}, 0, {}) == Error::None && L.FinishSpire(1, &R) == Error::None && R.res[GoldI] == 1200 * 6 && L.SpireReached() == 91);
+	for (int F = 92; F <= 100; ++F)
+	{
+		KD_CHECK(L.StartSpire({Militia}, 0, {}) == Error::None && L.FinishSpire(1, &R) == Error::None);
+	}
+	KD_CHECK(R.divine == 40 && R.relics.size() == 1 && L.FindRelic(R.relics[0])->rarity == 4 && R.res[GemsI] == 15 && L.SpireReached() == 100 && L.SpireFloor() == 0);
+	KD_CHECK(L.CheckSpire().error == Error::Nothing && L.CheckSpire().timeSec == 7 * Day && L.StartSpire({}, 0, {}) == Error::Nothing && L.SpireRank() == 1);
+	L.Advance(Monday + 7 * Day + Hour);
+	KD_CHECK(L.SpireReached() == 90 && L.SpireFloor() == 91 && L.CheckSpire().error == Error::None);
+
+	// A floor with a relic waits for room in the relic store.
+	Kingdom N(Ct);
+	const std::string Shrine = "\"buildings\":[{\"id\":930,\"def\":\"eternal_shrine\",\"level\":1,\"x\":30,\"y\":36,\"upgrading\":false,\"startAt\":" + std::to_string(T0) +
+		",\"finishAt\":" + std::to_string(T0) + "},";
+	KD_CHECK(N.Load(Replace(Replace(Replace(M.Save(), "\"top\":90,", "\"top\":89,"), "\"divine\":{\"gems\":" + std::to_string(M.DivineGems()), "\"divine\":{\"gems\":1000000"),
+		"\"buildings\":[", Shrine), Error));
+	KD_CHECK(N.SpireFloor() == 90 && N.CheckSpire().error == Error::None);
+	while (N.CheckDivine(3, 0).error == Error::None)
+	{
+		KD_CHECK(N.BuyDivine(3, 0, nullptr) == Error::None);
+	}
+	KD_CHECK(N.CheckSpire().error == Error::InventoryFull && N.StartSpire({}, 0, {}) == Error::InventoryFull);
+
+	// What a load mends: floors past the spire, weekly floors without their week, a battle without its floor.
+	Kingdom O(Ct);
+	KD_CHECK(O.Load(Replace(K.Save(), "\"spire\":{\"top\":0,\"week\":-1,\"weekTop\":0", "\"spire\":{\"top\":500,\"week\":-1,\"weekTop\":95"), Error));
+	KD_CHECK(O.SpireReached() == 90 && O.SpireFloor() == 91);
+	KD_CHECK(O.Load(Replace(M.Save(), "\"pending\":0,", "\"pending\":-994,"), Error) && !O.PendingSpire() && O.SpireBattleFloor() == 0);
+	KD_CHECK(O.Load(Replace(Replace(M.Save(), "\"pending\":0,", "\"pending\":-994,"), "\"weekTop\":93,\"at\":0", "\"weekTop\":93,\"at\":94"), Error) && O.PendingSpire() && O.SpireBattleFloor() == 94);
+	KD_CHECK(O.Load(Replace(M.Save(), "\"weekTop\":93,\"at\":0", "\"weekTop\":93,\"at\":94"), Error) && !O.PendingSpire() && O.SpireBattleFloor() == 0 && O.Hash() == M.Hash());
+	// A save from before the spire: nothing climbed, and the hash of a kingdom that never fought stays as it was.
+	const std::string Saved = K.Save();
+	const size_t At = Saved.find("\"spire\":{");
+	const std::string Old = Saved.substr(0, At) + Saved.substr(Saved.find('}', At) + 2);
+	KD_CHECK(Old.find("\"spire\"") == std::string::npos && O.Load(Old, Error) && O.SpireReached() == 0 && O.Hash() == H0);
+
+	// The table: 29 computer lords, each holding a floor; some climb the weekly floors during the week.
+	int AtTop = 0;
+	int Weekly = 0;
+	L.Advance(Monday + 12 * Day);
+	for (int I = 0; I < 29; ++I)
+	{
+		const int F = L.SpireLordFloor(I);
+		KD_CHECK(F >= 4 && F <= 100);
+		AtTop += F >= 90 ? 1 : 0;
+		Weekly += F > 90 ? 1 : 0;
+	}
+	KD_CHECK(AtTop >= 3 && Weekly >= 1 && L.SpireLordFloor(-1) == 0 && L.SpireLordFloor(29) == 0);
+}
+
 void TestLoadouts()
 {
 	const KingdomContent& Ct = Content();
@@ -4506,6 +4651,7 @@ int main()
 		{"CampaignSweep", TestCampaignSweep},
 		{"Loadouts", TestLoadouts},
 		{"Divine", TestDivine},
+		{"Spire", TestSpire},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},

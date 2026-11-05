@@ -208,6 +208,10 @@ class KingdomBridge {
 		return this.M.ccall('dk_daily_start', 'number', ['number', 'number', 'string', 'number', 'string'], [trial, tier, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
 	}
 	dailyFinish(stars) { return JSON.parse(this.str(this.M._dk_daily_finish(stars))); }
+	spireStart(squads, titan, spells) {
+		return this.M.ccall('dk_spire_start', 'number', ['string', 'number', 'string'], [(squads || []).join(','), titan || 0, (spells || []).join(',')]);
+	}
+	spireFinish(stars) { return JSON.parse(this.str(this.M._dk_spire_finish(stars))); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
 	warStart(base, squads, titan, spells) {
 		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
@@ -2534,6 +2538,8 @@ function onAct(e) {
 	case 'site': startSite(id); break;
 	case 'trials': openTrials(); break;
 	case 'daily': openDaily(-1); break;
+	case 'spire': openSpire(); break;
+	case 'spire-go': startSpire(); break;
 	case 'war': openWar(); break;
 	case 'war-go': startWar(id); break;
 	case 'war-chest': claimWarChest(); break;
@@ -4221,6 +4227,199 @@ function dailyEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Titan Spire (master prompt 10.7): floors fought one after another, the enemy stronger every floor, and every band of
+// floors brings a modifier that stays up to the top. Nothing is lost there; a floor pays the first time it falls, and the
+// top floors close again every Monday. The land battle code fights a floor as a pseudo land { id, lv, spire: floor }.
+// ---------------------------------------------------------------------------------------------
+const SPIRE_ID = 990000;
+const spireRules = () => K.rules.spire;
+const spireOn = (st) => !!(spireRules() && st.spire);
+const spireFloors = () => spireRules().perBand * spireRules().bands.length;
+const spireBandIx = (f) => clamp(Math.floor((f - 1) / spireRules().perBand), 0, spireRules().bands.length - 1);
+const spireBand = (f) => spireRules().bands[spireBandIx(f)];
+const spireTarget = (f) => ({ id: SPIRE_ID + f, lv: Math.min(spireBand(f).level, K.rules.battles.length), spire: f });
+const spireField = (f) => siteField({ name: 'Башня титанов, этаж ' + f, map: spireRules().maps[(f - 1) % spireRules().maps.length] });
+/** A band's modifier (null for none). */
+function spireMod(b) {
+	const id = spireRules().bands[b].mod;
+	return id ? spireRules().mods.find((m) => m.id === id) || null : null;
+}
+/** The modifiers on a floor: its band's and those of every band below (they stack). */
+function spireMods(f) {
+	const out = [];
+	for (let b = 0; b <= spireBandIx(f); b++) {
+		const m = spireMod(b);
+		if (m) out.push(m);
+	}
+	return out;
+}
+/** What a floor changes in its battle: the squads' bonus (the band's, a step a floor, the modifiers'), the titan's,
+ *  the extra squads, the AI and the battle's length. */
+function spireKnobs(f) {
+	const band = spireBand(f);
+	const base = (band.bonus || 0) + (band.step || 0) * ((f - 1) % spireRules().perBand);
+	const k = { atk: base, hp: base, tAtk: 0, tHp: 0, squads: 0, ai: '', timerSec: 0 };
+	for (const m of spireMods(f)) {
+		k.atk += m.atkPct || 0;
+		k.hp += m.hpPct || 0;
+		k.tAtk += m.titanAtkPct || 0;
+		k.tHp += m.titanHpPct || 0;
+		k.squads += m.squads || 0;
+		if (m.ai) k.ai = m.ai;
+		if (m.timerSec) k.timerSec = m.timerSec;
+	}
+	return k;
+}
+/** The floor's titan: the titans of the band's rarity in turn, floor by floor, at the band's level. */
+function spireTitan(f) {
+	const band = spireBand(f);
+	const pool = K.army.titans.filter((t) => t.stars === band.titanStars);
+	if (!pool.length) return null;
+	const def = pool[(f - 1) % pool.length];
+	return { def, level: Math.min(band.titanLevel, 10 + 10 * def.stars), stars: def.stars };
+}
+/** The floor's squads: the battle level's, then the modifiers' extra ones from the same list. */
+function spireEnemy(f) {
+	const sq = K.rules.battles[spireTarget(f).lv - 1].squads;
+	return sq.concat(Array.from({ length: spireKnobs(f).squads }, (_, i) => sq[i % sq.length]));
+}
+function spireEnemyText(f) {
+	const k = spireKnobs(f);
+	const b = K.rules.battles[spireTarget(f).lv - 1];
+	const en = spireEnemy(f);
+	const et = spireTitan(f);
+	const kinds = en.filter((x, i) => en.indexOf(x) === i).map((x) => TROOP_RU[x] || x);
+	const parts = [AI_RU[k.ai || b.ai] || ''];
+	if (et) parts.push('титан ' + et.def.name + ' ур. ' + et.level + ' ' + '★'.repeat(et.stars) + (k.tHp ? ', здоровья +' + k.tHp + '%' : '') + (k.tAtk ? ', урона +' + k.tAtk + '%' : ''));
+	parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' + (k.hp ? ', здоровья +' + k.hp + '%' : '') + (k.atk ? ', урона +' + k.atk + '%' : ''));
+	if (k.timerSec) parts.push('на бой ' + fmtDur(k.timerSec));
+	return parts.filter(Boolean).join('; ');
+}
+/** What a floor pays the first time it falls, gold and food times the Castle (as Kingdom::SpireReward and PayEvent). */
+function spirePay(f, st) {
+	const R = spireRules();
+	const band = spireBand(f);
+	const step = ((f - 1) % R.perBand) + 1;
+	const r = { gold: 0, food: 0, gems: 0, stones: 0, shards: 0, vp: 0, divine: 0, relic: 0 };
+	r[f % 2 ? 'gold' : 'food'] = band.pay;
+	const add = (x) => {
+		if (!x) return;
+		for (const k of RES) r[k] += x[k] || 0;
+		r.divine += x.divine || 0;
+		r.relic = Math.max(r.relic, x.relic || 0);
+	};
+	if (step === Math.floor(R.perBand / 2)) add(band.middle);
+	if (step === R.perBand) add(band.top);
+	r.gold *= Math.max(1, st.castle);
+	r.food *= Math.max(1, st.castle);
+	return r;
+}
+function spireErrText(code, ck) {
+	switch (code) {
+	case E.Locked: return 'Башня открывается с Замка ' + ((ck && ck.c) || spireRules().castle);
+	case E.Nothing: return 'Все этажи взяты: верхние откроются снова через ' + fmtDur(ck && ck.t ? ck.t : 0);
+	case E.InventoryFull: return 'Склад реликвий полон, а этаж платит реликвией: освободите место';
+	case E.Busy: return 'Сначала закончите бой';
+	default: return errText(code, ck);
+	}
+}
+function spireKey(st) {
+	return spireOn(st) ? [st.spire.top, st.spire.next, st.spire.at, st.spire.ck.err, st.spire.rank, st.castle].join(':') : '';
+}
+function spireCard(st) {
+	if (!spireOn(st)) return '';
+	const R = spireRules();
+	const sp = st.spire;
+	const locked = st.castle < R.castle;
+	const sub = locked ? 'с Замка ' + R.castle : sp.next ? 'этаж ' + sp.next + ' из ' + spireFloors() + (sp.top ? ' · место ' + sp.rank + ' из ' + R.bracket : '') : 'вершина взята до понедельника · место ' + sp.rank;
+	return '<div class="landCard">' + icoHtml('mission.spire', (locked ? 'shards' : 'gold') + ' land') + '<div class="info"><b>Башня титанов</b><span>' + esc(sub) + '</span></div>' +
+		'<div class="row"><button class="btn' + (sp.ck.err === E.None ? ' primary' : '') + '" data-act="spire">Открыть</button></div></div>';
+}
+/** This week's table: the lords by floor with the kingdom before the lords it ties (as the kingdom counts its place). */
+function spireBoard(st) {
+	const rows = st.spire.lords.map((s, i) => ({ s, name: trialLordName(i) })).sort((a, b) => b.s - a.s);
+	const at = rows.findIndex((r) => r.s <= st.spire.top);
+	rows.splice(at < 0 ? rows.length : at, 0, { s: st.spire.top, name: 'Вы', me: true });
+	return rows;
+}
+function openSpire() {
+	if (!spireOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = spireRules();
+		const sp = st.spire;
+		const N = spireFloors();
+		const locked = st.castle < R.castle;
+		const can = sp.ck.err === E.None && !sp.at;
+		const half = Math.floor(R.perBand / 2);
+		let next;
+		if (sp.next) {
+			const field = spireField(sp.next);
+			const mods = spireMods(sp.next);
+			next = '<h3>Этаж ' + sp.next + (sp.next > sp.fixed ? ' · недельный' : '') + '</h3>' +
+				'<p class="fine">Противник: ' + esc(spireEnemyText(sp.next)) + '. Поле боя: ' + esc(field.field) + '.</p>' +
+				(mods.length ? '<p class="fine">Усиления врага: ' + mods.map((m) => '<b>' + esc(m.name) + '</b> (' + esc(m.text) + ')').join(', ') + '.</p>'
+					: '<p class="fine">Усилений пока нет: первое ждёт на ' + (R.perBand + 1) + '-м этаже.</p>') +
+				'<div class="costline"><span>Награда за этаж</span><b>' + eventPay(spirePay(sp.next, st)) + '</b><span>' + (sp.next > sp.fixed ? 'каждую неделю' : 'один раз') + '</span></div>' +
+				'<div class="actions"><button class="btn' + (can ? ' primary' : '') + '" data-act="spire-go"' + (can ? '' : ' disabled') + '>' + (can ? 'В бой · этаж ' + sp.next : esc(spireErrText(sp.ck.err, sp.ck))) + '</button></div>';
+		} else next = '<p><b>Вершина взята.</b> Верхние ' + R.weekly + ' этажей откроются снова в понедельник в 00:00 UTC.</p>';
+		const bands = R.bands.map((band, b) => {
+			const lo = b * R.perBand + 1;
+			const hi = (b + 1) * R.perBand;
+			const m = spireMod(b);
+			const cur = sp.next ? spireBandIx(sp.next) === b : b === R.bands.length - 1;
+			const done = sp.top >= hi;
+			return '<span class="pl' + (cur ? ' me' : '') + '">' + lo + '–' + hi + (done ? ' ✓' : '') + '</span><span class="nm' + (cur ? ' me' : '') + '">' +
+				(m ? '<b>' + esc(m.name) + '</b> · ' + esc(m.text) : 'без усилений') + (hi > sp.fixed ? ' · <i>каждую неделю</i>' : '') +
+				'<small>' + (lo + half - 1) + '-й этаж: ' + eventPay(band.middle || {}) + ' · ' + hi + '-й: ' + eventPay(band.top || {}) + '</small></span>';
+		}).join('');
+		const board = spireBoard(st);
+		const mine = board.findIndex((r) => r.me);
+		const shown = board.map((r, n) => [r, n]).filter(([, n]) => n < 5 || Math.abs(n - mine) <= 1);
+		let prev = -1;
+		const lines = shown.map(([r, n]) => {
+			const gap = n > prev + 1 ? '<span class="sep"></span>' : '';
+			prev = n;
+			return gap + '<span class="pl' + (r.me ? ' me' : '') + '">' + (n + 1) + '</span><span class="nm' + (r.me ? ' me' : '') + '">' + esc(r.name) + '</span>' +
+				'<span class="v' + (r.me ? ' me' : '') + '">' + (r.s > 0 ? 'этаж ' + r.s : '—') + '</span>';
+		}).join('');
+		const html = sheetTitle(icoHtml('mission.spire', 'gold land'), 'Башня титанов') +
+			'<p class="fine">' + N + ' этажей, и каждый труднее прошлого: враг крепнет с каждым этажом, а каждые ' + R.perBand + ' этажей приносят ему новое усиление, и оно остаётся до самой вершины. ' +
+			'Бои без камней портала и без счёта попыток; в башне никто не гибнет, заклинания не тратятся, опыта титан не получает. Этаж платит, когда взят впервые: золото или еда (×Замок), ' +
+			'а середина и вершина каждого десятка — самоцветы, божественные самоцветы и реликвию. Верхние ' + R.weekly + ' этажей закрываются каждый понедельник в 00:00 UTC и платят снова; по ним идёт недельная таблица лордов.</p>' +
+			(locked ? '<p>Башня открывается с Замка ' + R.castle + '. Пока можно посмотреть, что ждёт наверху.</p>' : '') +
+			'<div class="costline"><span>Взято этажей</span><b>' + sp.top + ' из ' + N + '</b><span>' + (sp.top ? 'место ' + sp.rank + ' из ' + R.bracket : 'вы ещё не поднимались') + '</span></div>' +
+			'<div class="progress thin"><i style="width:' + Math.round((100 * sp.top) / N) + '%"></i></div>' +
+			(R.weekly ? '<div class="costline"><span>Этажи ' + (sp.fixed + 1) + '–' + N + ' закроются через</span><b data-live="spire">' + fmtDur(Math.max(0, sp.reset - nowF())) + '</b></div>' : '') +
+			next + '<h3>Десятки этажей</h3><div class="spireBands">' + bands + '</div>' +
+			'<h3>Таблица недели</h3><div class="league">' + lines + '</div>' +
+			'<p class="fine">Пока нет сервера, соперники — лорды компьютера: каждый держит свой этаж, а самые сильные за неделю снова поднимаются на верхние.</p>' +
+			'<div class="actions"><button class="btn" data-act="world">Карта мира</button>' + closeBtn + '</div>';
+		return { key: ['spire', spireKey(st), sp.lords.join(), st.relics.length].join('|'), html,
+			live: (el) => live(el, 'spire', fmtDur(Math.max(0, K.st.spire.reset - nowF()))) };
+	});
+}
+function startSpire() {
+	const st = K.st;
+	if (!spireOn(st)) return;
+	if (st.spire.ck.err !== E.None) { toast(spireErrText(st.spire.ck.err, st.spire.ck), 'bad'); return; }
+	openPrepare(0, false, -1, null, false, false, false, false, null, null, st.spire.next);
+}
+function spireEnd(ctx, stars, retreat) {
+	const r = K.bridge.spireFinish(retreat ? 0 : stars);
+	persist();
+	refresh(true);
+	if (r.err !== E.None) return;
+	const parts = dailyRewardParts(r);
+	if (retreat || stars <= 0) toast((retreat ? 'Отступление' : 'Поражение') + ' на ' + ctx.spire + '-м этаже башни: этаж ждёт, попыток сколько угодно', 'bad');
+	else if (!parts.length) toast('Этаж ' + ctx.spire + ' взят, но неделя сменилась во время боя: верхние этажи закрылись снова', 'bad');
+	else toast('Башня титанов, этаж ' + ctx.spire + ' взят ' + '★'.repeat(stars) + ': ' + parts.join(', '), 'gold');
+	openSpire();
+}
+
+// ---------------------------------------------------------------------------------------------
 // Alliance War (master prompt 12.9): a weekly war of the alliance against a computer alliance of its league, a prep
 // day and two battle days. The land battle code fights a base of the rival's roster as a pseudo land
 // { id, lv, war: { base, tier } }.
@@ -5607,7 +5806,7 @@ function worldKey(st) {
 	return [st.res[3], st.cap[3], st.castle, st.lands.map((l) => l.id + ':' + l.lv + ':' + (l.st > 0)).join(), st.world.map((w) => w.id + ':' + w.lv).join(), st.landCap,
 		isArmed('refill'), isArmed('slot'), (st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join(),
 		(st.rivals || []).map((r) => r.castle + ':' + r.lands + ':' + r.back).join(), (st.rivalLands || []).map((w) => w.id + ':' + w.lv + ':' + (w.shield > nowF())).join(),
-		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st), warKey(st)].join('|');
+		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st), warKey(st), spireKey(st)].join('|');
 }
 
 function openWorld() {
@@ -5619,7 +5818,7 @@ function openWorld() {
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + practiceCard() +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + spireCard(st) + practiceCard() +
 			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
 			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
 				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
@@ -5758,7 +5957,7 @@ function openWorldMap() {
 			'<div class="mapLegend"><span><i style="border-color:var(--own)"></i>ваши земли ' + st.lands.length + ' / ' + st.landCap + '</span><span><i style="border-color:rgba(239,231,214,0.85)"></i>ничьи</span>' +
 			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
 			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
-			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) +
+			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + spireCard(st) +
 			'<div class="actions"><button class="btn" data-act="world-list">Списком</button><button class="btn" data-act="practice">Тренировка</button>' + closeBtn + '</div>';
 		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
@@ -5931,6 +6130,7 @@ const worldLand = (id) => K.st.world.find((x) => x.id === id) || (K.st.rivalLand
 /** The lord (name, realm) of a rival by its index in the state. */
 const lordOf = (i) => (K.st.rivals && K.st.rivals[i] ? K.rules.rivals.lords[K.st.rivals[i].lord] : null);
 function enemyTitan(w) {
+	if (w.spire > 0) return spireTitan(w.spire);
 	if (w.assault >= 0) return assaultTitan(w);
 	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m));
 	if (w.trial >= 0) return trialTitan(trialDef(w.trial), w.lv);
@@ -5961,9 +6161,11 @@ function landScenario(w, prep) {
 	const bd = w.boss >= 0 ? bossDef(w.boss) : null;
 	const dd = w.daily ? dailyDef(w.daily.trial) : null;
 	const wb = w.war ? w.war.base : -1;
-	const ty = wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
-	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	const spf = w.spire > 0 ? w.spire : 0;
+	const spk = spf ? spireKnobs(spf) : null;
+	const ty = spf ? spireField(spf) : wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
+	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && !spf && w.own >= 0 ? lordOf(w.own) : null;
+	sc.name = spf ? 'Башня титанов, этаж ' + spf : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -6002,17 +6204,17 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = wb >= 0 ? 'Застава «' + warBase(K.st, wb)[0] + '»' : dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
-	def.ai = (dd && dd.ai) || (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
+	def.name = spf ? 'Стражи башни' : wb >= 0 ? 'Застава «' + warBase(K.st, wb)[0] + '»' : dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
+	def.ai = (spk && spk.ai) || (dd && dd.ai) || (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
 	// An Assault stage adds its garrison behind the level's army.
-	const enemy = wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
+	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
 	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
-		const pos = asd && i >= b.squads.length ? [garrisonX[(i - b.squads.length) % garrisonX.length], 149] : slots[i % slots.length];
+		const pos = (asd || spf) && i >= b.squads.length ? [garrisonX[(i - b.squads.length) % garrisonX.length], 149] : slots[i % slots.length];
 		return { troop, tier: bd ? bossTierDef(w.tier).troopTier : md ? md.tier : b.tier, pos, facingDeg: 180, formation: CAVALRY.has(troop) ? 'Wedge' : 'Line' };
 	});
 	// Its walls: the defenders' squads have more health.
@@ -6028,6 +6230,12 @@ function landScenario(w, prep) {
 	if (et) def.titan = { id: et.def.id, level: et.level, stars: et.stars || et.def.stars, abilityLevels: [1, 1], pos: [120, 134], facingDeg: 180 };
 	else delete def.titan;
 	if (w.lv < 5) def.spells = [];
+	// A Titan Spire floor: the floor's and the modifiers' bonuses, a titan made stronger, its own length.
+	if (spk) {
+		if (spk.atk || spk.hp) def.troopBonus = { atkPct: spk.atk, hpPct: spk.hp };
+		if (def.titan && (spk.tAtk || spk.tHp)) def.titan.bonus = { atkPct: spk.tAtk, hpPct: spk.tHp };
+		if (spk.timerSec) sc.timerSec = spk.timerSec;
+	}
 	// The Raid Boss: a titan with more health and no spells, for a battle of its own length.
 	if (bd) {
 		if (def.titan) def.titan.bonus = { hpPct: bossRules().hpPct };
@@ -6068,7 +6276,8 @@ function launchAttack() {
 	const boss = p && p.boss;
 	const daily = p && p.daily;
 	const war = p && p.war;
-	let w = war ? warTarget(K.st, war.base) : daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
+	const spire = p && p.spire;
+	let w = spire ? spireTarget(spire) : war ? warTarget(K.st, war.base) : daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
@@ -6080,12 +6289,12 @@ function launchAttack() {
 	if (assault) {
 		if (!asRun) code = K.bridge.asStart(squads, p.titan);
 		if (code === E.None) code = K.bridge.asStage(spells);
-	} else code = practice ? E.None : war ? K.bridge.warStart(war.base, squads, p.titan, spells) : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
+	} else code = practice ? E.None : spire ? K.bridge.spireStart(squads, p.titan, spells) : war ? K.bridge.warStart(war.base, squads, p.titan, spells) : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
 		: site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
-	if (code !== E.None) { toast(war ? warErrText(code) : daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
+	if (code !== E.None) { toast(spire ? spireErrText(code) : war ? warErrText(code) : daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
 	if (!practice) persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
-	const reinf = practice || assault || boss || daily || war ? [] : K.bridge.state().ally.pend;
+	const reinf = practice || assault || boss || daily || war || spire ? [] : K.bridge.state().ally.pend;
 	let prep = { squads, titan: p.titan, spells, reinf };
 	if (assault) {
 		const st = K.bridge.state();
@@ -6107,6 +6316,7 @@ function launchAttack() {
 		: boss ? { kind: 'land', boss: true, level: w.lv, squads: squads.length, charges }
 		: daily ? { kind: 'land', daily: { trial: daily.trial, tier: daily.tier }, level: w.lv, squads: squads.length, charges }
 		: war ? { kind: 'land', war: { base: war.base }, level: w.lv, squads: squads.length, charges }
+		: spire ? { kind: 'land', spire, level: w.lv, squads: squads.length, charges }
 		: ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
 		: site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
 		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, own: w.own, squads: squads.length, charges });
@@ -6169,6 +6379,10 @@ function onBattleEnd(ctx, stars, retreat) {
 	}
 	if (ctx && ctx.kind === 'land' && ctx.war) {
 		warEnd(ctx, stars, retreat);
+		return;
+	}
+	if (ctx && ctx.kind === 'land' && ctx.spire) {
+		spireEnd(ctx, stars, retreat);
 		return;
 	}
 	if (ctx && ctx.kind === 'land' && ctx.practice) {
@@ -7039,7 +7253,7 @@ function openRaidLog(away) {
 }
 
 /** Before a land battle: pick the titan and the squads (up to the Army Camp's battle slots). */
-function openPrepare(wid, capture, site, mission, trial, practice, assault, boss, daily, war) {
+function openPrepare(wid, capture, site, mission, trial, practice, assault, boss, daily, war, spire) {
 	cancelPlace();
 	select(null);
 	const a = K.st.army;
@@ -7062,8 +7276,8 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, boss: !!boss, daily: daily || null, war: war || null, titan: ready.length ? ready[0].id : 0,
-		counts, spells, reinf: !td && !practice && !assault && !boss && !daily && !war, preset: -1 };
+	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, boss: !!boss, daily: daily || null, war: war || null, spire: spire || 0,
+		titan: ready.length ? ready[0].id : 0, counts, spells, reinf: !td && !practice && !assault && !boss && !daily && !war && !spire, preset: -1 };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
@@ -7076,7 +7290,8 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const bs = p.boss;
 		const dl = p.daily;
 		const wr = p.war;
-		const w = wr ? warTarget(st, wr.base) : dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
+		const sf = p.spire;
+		const w = sf ? spireTarget(sf) : wr ? warTarget(st, wr.base) : dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -7090,14 +7305,14 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + aa.lv[t] + '</b><span>' + (okTroop(t) ? 'в лагере ' + aa.n[t] : 'не по правилу испытания') + '</span></div>' +
 			'<div class="stepper"><button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="-1"' + (p.counts[t] > 0 ? '' : ' disabled') + '>−</button><b>' + p.counts[t] + '</b>' +
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots && okTroop(t) ? '' : ' disabled') + '>+</button></div></div>');
-		const ty = wr ? warField(st, wr.base) : dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
+		const ty = sf ? spireField(sf) : wr ? warField(st, wr.base) : dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
-		const cost = td || pr || as || bs || dd || wr ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
+		const cost = td || pr || as || bs || dd || wr || sf ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
 		// Allies' squads that have arrived in the Alliance Camp fight once and are gone (the original).
-		const arrived = td || pr || as || bs || dd || wr ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
+		const arrived = td || pr || as || bs || dd || wr || sf ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
 		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
@@ -7106,11 +7321,13 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
 		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
 			: prepLoadoutsHtml(st, p, used) + '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
-		const html = sheetTitle(wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
+		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
-			asNote + (wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +
+			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			asNote + (sf ? '<p class="fine">Награда за этаж: ' + eventPay(spirePay(sf, st)) + (sf > st.spire.fixed ? ' (верхние этажи платят каждую неделю)' : ' (один раз)') + '. Попыток сколько угодно, камни портала не нужны.' +
+				(spireMods(sf).length ? ' Усиления врага: ' + spireMods(sf).map((m) => esc(m.name.toLowerCase()) + ' — ' + esc(m.text)).join('; ') + '.' : '') + '</p>'
+				: wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +
 				warBase(st, wr.base)[2] + ' ' + plural(warBase(st, wr.base)[2], 'звезда', 'звезды', 'звёзд') + ': в счёт альянса идут только новые сверх них, а в ваш сундук — все звёзды атаки. Бой длится ' + Math.round(warRules().battleSec / 60) + ' мин.</p>'
 				: dd ? '<p class="fine">Попыток сегодня: ' + st.daily.list[dl.trial].left + '. Попытка засчитывается при начале боя, даже если отступить. Победа на любые звёзды: ' + dailyPayText(dl.trial, dl.tier) +
 				(dd.pay === 'shards' ? ' (на ' + dailyRules().lineageBonusPct + '% больше с титаном рода недели)' : dd.pay === 'titanXp' ? ' (титану, который бьётся)' : '') + '. Три звезды открывают зачистку уровня.</p>'
@@ -7120,12 +7337,12 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 				: md ? '<p class="fine">' + missionRewardText(p.mission.a, p.mission.m) + '</p>' : sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
 			armyHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
-			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd || wr ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : wr ? 'на войне' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
+			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd || wr || sf ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : wr ? 'на войне' : sf ? 'в башне' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
-			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr ? (wr ? 'На войне альянсов' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr || sf ? (wr ? 'На войне альянсов' : sf ? 'В башне' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
 			scoutHtml(st, p, w, arrived, td) +
-			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, as, bs, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join(), loKey(st), p.preset].join('|'), html };
+			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr || sf ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (sf ? 'spire' : wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
+		return { key: ['prep', pr, as, bs, sf, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join(), loKey(st), p.preset].join('|'), html };
 	});
 }
 
@@ -7178,7 +7395,7 @@ function scoutTips(st, p, prep, r, td) {
 	if (!prep.spells.length && sp.stock.some((n) => n > 0)) out.push('Возьмите заклинания из запаса.');
 	else if (!sp.stock.some((n) => n > 0) && ownsBuilding(st, 'spell_forge')) out.push('Создайте заклинания в Кузне.');
 	else if (!sp.stock.some((n) => n > 0) && canBuildNow(st, 'spell_forge')) out.push('Постройте Кузню заклинаний: заклинания помогают в бою.');
-	if (!fixed && !td && !p.practice && !p.mission && p.site < 0) out.push('Или выберите землю ниже уровнем.');
+	if (!fixed && !td && !p.practice && !p.mission && !p.spire && p.site < 0) out.push('Или выберите землю ниже уровнем.');
 	return out.slice(0, 4);
 }
 /** The scouting block of the prepare screen: both sides' start Power, the chance to win and tips when it is low. */
@@ -7227,6 +7444,7 @@ function battleKey(x, st) {
 	if (x.boss) return 'b' + st.boss.no;
 	if (x.daily) return 'd' + x.daily.trial + '.' + x.daily.tier;
 	if (x.war) return 'v' + st.war.no + '.' + x.war.base;
+	if (x.spire) return 'z' + x.spire;
 	if (x.mission) return 'm' + x.mission.a + '.' + x.mission.m;
 	if (x.site >= 0) return 's' + x.site;
 	return 'w' + (x.worldId !== undefined ? x.worldId : x.wid);
@@ -7737,6 +7955,10 @@ function init(app) {
 			// A Daily Trial battle: the attempt is spent, nothing is paid.
 			K.bridge.dailyFinish(0);
 			setTimeout(() => toast('Прерванный бой ежедневного испытания засчитан как отступление', 'bad'), 600);
+		} else if (st.spire && st.spire.at > 0) {
+			// A Titan Spire floor: lost, the floor waits.
+			K.bridge.spireFinish(0);
+			setTimeout(() => toast('Прерванный бой в башне засчитан как поражение: этаж ждёт', 'bad'), 600);
 		} else if (st.pendingWar >= 0) {
 			// An Alliance War attack: the attack is spent, no star counts.
 			K.bridge.warFinish(0);

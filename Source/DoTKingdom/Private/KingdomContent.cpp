@@ -1817,6 +1817,38 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			D = DivineRules();
 		}
 	}
+	if (const JsonValue* Sj = Rules.Find("spire"))
+	{
+		SpireRules& S = Out.spire;
+		S.castle = std::max(1, std::min(100, Sj->GetInt("castle", 1)));
+		S.perBand = std::max(2, std::min(50, Sj->GetInt("perBand", S.perBand)));
+		S.bracket = std::max(2, std::min(200, Sj->GetInt("bracket", S.bracket)));
+		const auto ReadPay = [](const JsonValue* J, EventReward& R) {
+			if (J)
+			{
+				ReadCost(J, R.res);
+				R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
+				R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
+			}
+		};
+		if (const JsonValue* B = Sj->Find("bands"))
+		{
+			for (size_t I = 0; I < B->Size() && I < 100; ++I)
+			{
+				const JsonValue& J = (*B)[I];
+				SpireBand Band;
+				Band.pay = std::max<int64_t>(0, J.GetInt64("pay", 0));
+				ReadPay(J.Find("middle"), Band.middle);
+				ReadPay(J.Find("top"), Band.top);
+				S.bands.push_back(Band);
+			}
+		}
+		S.weekly = std::max(0, std::min(S.Floors(), Sj->GetInt("weekly", S.weekly)));
+		if (S.bands.empty())
+		{
+			S = SpireRules();
+		}
+	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
 		AllianceHelpRules& H = Out.allianceHelp;

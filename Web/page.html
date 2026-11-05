@@ -500,6 +500,13 @@ ul.goalNext li .cost { white-space: nowrap; }
 .league .me { color: var(--valor); font-weight: 700; }
 .league .up { color: var(--good); } .league .down { color: #ffb4a6; }
 .league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
+/* Titan Spire: the bands of ten floors with their modifier and what the middle and top floors pay. */
+.spireBands { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 10px; font-size: 14px; align-items: baseline; }
+.spireBands .pl { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spireBands .nm { min-width: 0; }
+.spireBands .nm i { color: var(--dim); font-style: normal; }
+.spireBands .nm small { display: block; color: var(--dim); font-size: 12px; }
+.spireBands .me { color: var(--valor); }
 /* Alliance help: the player's timers, each with its state or the ask button. */
 .helpRows { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; font-size: 14px; align-items: center; }
 .helpRows .nm small { display: block; color: var(--dim); font-size: 12px; }

@@ -470,6 +470,25 @@ function invariants(st, add) {
 		}
 		dr.altars.forEach((a, i) => { if (dv.alt[i] === 0 && dv.g < a.price) add('bad', 'Алтарь «' + a.name + '» открыт при ' + dv.g + ' из ' + a.price); });
 	}
+	// Titan Spire: the floor reached within the spire and the next one right after it (none only at the top); the lords'
+	// floors within the spire and the place from them; the top floors closing within a week; the next floor shut only
+	// below its Castle, at the top or for want of relic room; a battle only on the next floor.
+	const spr = rules().spire;
+	if (spr && st.spire) {
+		const sp = st.spire;
+		const N = spr.perBand * spr.bands.length;
+		if (!(Number.isInteger(sp.top) && sp.top >= 0 && sp.top <= N)) add('bad', 'Башня: взято этажей ' + sp.top + ' из ' + N);
+		if (sp.next !== (sp.top < N ? sp.top + 1 : 0)) add('bad', 'Башня: взято ' + sp.top + ', а следующий этаж ' + sp.next);
+		if (sp.fixed !== N - spr.weekly) add('bad', 'Башня: постоянных этажей ' + sp.fixed + ' из ' + N);
+		if (sp.lords.length !== spr.bracket - 1 || sp.lords.some((f) => !(Number.isInteger(f) && f >= 1 && f <= N))) add('bad', 'Башня: этажи лордов ' + sp.lords.join());
+		const place = 1 + sp.lords.filter((f) => f > sp.top).length;
+		if (sp.rank !== place) add('bad', 'Башня: место ' + sp.rank + ', а по таблице ' + place);
+		if (!(sp.reset > st.now && sp.reset <= st.now + 7 * 86400)) add('bad', 'Башня: верхние этажи закроются через ' + (sp.reset - st.now) + ' с');
+		const want = st.castle < spr.castle ? [6] : !sp.next ? [13] : [0, 28];
+		if (!want.includes(sp.ck.err)) add('bad', 'Башня: Замок ' + st.castle + ', следующий этаж ' + sp.next + ', а отказ ' + sp.ck.err);
+		if (sp.at && sp.at !== sp.next) add('warn', 'Башня: бой на этаже ' + sp.at + ', а следующий ' + sp.next + ' (неделя сменилась во время боя?)');
+		if (sp.at && !inBattle()) add('warn', 'Висит незавершённый бой в башне');
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -929,6 +948,32 @@ function runMonkey(steps, seed, keep) {
 			} else if (st2.divine.g !== st.divine.g || st2.titans.length !== st.titans.length || st2.relics.length !== st.relics.length) throw new Error('отказ алтаря ' + res.err + ' всё же что-то изменил');
 			return res.err;
 		}],
+		['башня титанов', 3, (st) => {
+			if (!B.spireStart || !st.spire) return -1;
+			const sp = st.spire;
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.spireStart(squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			if (sp.ck.err !== 0) throw new Error('бой в башне начался при отказе ' + sp.ck.err);
+			const st1 = B.state();
+			if (st1.spire.at !== sp.next) throw new Error('бой в башне: висит этаж ' + st1.spire.at + ', а следующим был ' + sp.next);
+			// Mostly wins, to climb.
+			const stars = r() < 0.7 ? 1 + Math.floor(r() * 3) : 0;
+			const res = B.spireFinish(stars);
+			// Nothing is lost in the spire; a win takes the floor and pays it, a loss changes nothing.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('бой в башне забрал отряды или заклинания');
+			if (st2.spire.at) throw new Error('бой в башне остался незавершённым');
+			if (st2.spire.top !== (stars > 0 ? sp.next : sp.top)) throw new Error('башня: этаж ' + sp.next + ' на ' + stars + ' ★, взято ' + sp.top + ' → ' + st2.spire.top);
+			const band = rules().spire.bands[Math.floor((sp.next - 1) / rules().spire.perBand)];
+			if (res.err === 0 && (res.gold + res.food) !== (stars > 0 ? band.pay * Math.max(1, st.castle) : 0)) throw new Error('башня: этаж ' + sp.next + ' заплатил ' + res.gold + ' золота и ' + res.food + ' еды');
+			return res.err;
+		}],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -1251,6 +1296,11 @@ function renderTab(tab) {
 			h += row('Божественные самоцветы <b>' + fmt(st.divine.g) + '</b>', [100, 1000, 10000].map((n) => b('div-add', '+' + short(n), { n })).join('') + b('div-add', '0', { n: -1e15 }) +
 				'<input type="number" inputmode="numeric" min="0" placeholder="число" data-in="divine"' + typedAttr('divine') + '>' + b('div-set', '='), 'в святилище ' + st.divine.st);
 		}
+		if (st.spire) {
+			// Floors won: below the weekly ones they stay, the weekly ones count for this week.
+			h += row('Башня титанов: взято <b>' + st.spire.top + '</b>', [0, 9, 49, st.spire.fixed - 1, st.spire.fixed + 5].map((n) => b('spire-set', String(n), { n })).join(''),
+				'следующий этаж ' + (st.spire.next || '—'));
+		}
 		h += '</div><div class="actions">' + b('res-fill', 'Заполнить хранилища и камни') + b('res-rich', 'Богатое королевство') + '</div>';
 		h += '<p class="fine">«Богатое королевство»: полные хранилища и камни, +100 000 самоцветов, +5 000 осколков. Первая правка сохраняет копию королевства (вкладка «Сохранение»).</p>';
 		h += '<h3>Город</h3><div class="admList">' +
@@ -1499,6 +1549,11 @@ function act(a, el, n, id, i) {
 		break;
 	}
 	case 'div-add': edit((s) => { s.divine = s.divine || { gems: 0, from: 0 }; s.divine.gems = Math.max(0, (s.divine.gems || 0) + n); }, n < 0 ? 'Обнулено' : 'Добавлено'); break;
+	case 'spire-set': edit((s, st) => {
+		const fixed = st.spire.fixed;
+		const week = Math.floor((Math.floor(Math.max(0, st.now) / 86400) + 3) / 7);
+		s.spire = { top: Math.min(n, fixed), week: n > fixed ? week : -1, weekTop: n > fixed ? n : 0, at: 0 };
+	}, 'Башня: взято ' + n); break;
 	case 'div-set': {
 		const v = Math.floor(+inputVal('divine'));
 		if (!Number.isFinite(v) || v < 0) { toast('Введите число от 0', 'bad'); break; }

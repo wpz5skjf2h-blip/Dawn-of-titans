@@ -995,5 +995,56 @@
       { "id": "relic4", "name": "Алтарь редкой реликвии", "relic": 4, "price": 450 }
     ]
   },
+
+  // Titan Spire (master prompt 10.7; the original has none): `perBand` x bands floors fought one after another from
+  // Castle `castle`. Nobody is lost and no spell is spent (12.7), the titan gets no XP, no portal stones. A floor pays
+  // the first time it falls: `pay` gold on odd floors and food on even ones, times the Castle; the band's middle floor
+  // adds `middle`, its top floor `top`. The top `weekly` floors close again every Monday 00:00 UTC and pay again; the
+  // floor reached that week places the kingdom in a table of `bracket` lords. For the web client only, the battle:
+  // the band's battle `level` (its squads and AI), an enemy titan of `titanStars` at `titanLevel` (the titans of
+  // that rarity in turn, floor by floor), the squads `bonus` % stronger plus `step` % a floor within the band, and the
+  // `mods` of this band and every band below (the prompt's stacking modifiers). Our numbers: the fixed floors pay
+  // 340 gems, 200 divine gems and nine relics (R1-R4) once; the weekly floors 30 gems, 40 divine gems and an R4
+  // relic a week, near a Titan league alliance's divine gems.
+  "spire": {
+    "castle": 6,
+    "perBand": 10,
+    "weekly": 10,
+    "bracket": 30,
+    "maps": ["map.ruins_01", "map.mountain_01", "map.highvale_01", "map.lake_01", "map.forest_01"],
+    "mods": [
+      { "id": "walls",   "name": "Стены",         "text": "+10% здоровья отрядам врага",   "hpPct": 10 },
+      { "id": "colossus", "name": "Колосс",       "text": "+30% здоровья вражескому титану", "titanHpPct": 30 },
+      { "id": "fury",    "name": "Ярость",        "text": "+10% урона отрядам врага",      "atkPct": 10 },
+      { "id": "reserve", "name": "Резерв",        "text": "ещё один отряд у врага",        "squads": 1 },
+      { "id": "cunning", "name": "Коварство",     "text": "врагом командует «Кошмар»",     "ai": "nightmare" },
+      { "id": "haste",   "name": "Спешка",        "text": "на бой 2,5 минуты",             "timerSec": 150 },
+      { "id": "wrath",   "name": "Гнев титана",   "text": "+25% урона вражескому титану",  "titanAtkPct": 25 },
+      { "id": "stone",   "name": "Каменная кожа", "text": "+15% здоровья отрядам врага",   "hpPct": 15 },
+      { "id": "horde",   "name": "Орда",          "text": "ещё один отряд у врага",        "squads": 1 }
+    ],
+    "bands": [
+      { "level": 3, "titanLevel": 8,  "titanStars": 1, "bonus": 0,  "step": 2, "pay": 300,
+        "middle": { "gems": 10 }, "top": { "gems": 10, "divine": 10, "relic": 1 } },
+      { "level": 4, "titanLevel": 12, "titanStars": 1, "bonus": 0,  "step": 2, "mod": "walls", "pay": 400,
+        "middle": { "gems": 10 }, "top": { "gems": 10, "divine": 15, "relic": 2 } },
+      { "level": 5, "titanLevel": 16, "titanStars": 2, "bonus": 0,  "step": 2, "mod": "colossus", "pay": 500,
+        "middle": { "gems": 15 }, "top": { "gems": 15, "divine": 15, "relic": 2 } },
+      { "level": 6, "titanLevel": 22, "titanStars": 2, "bonus": 0,  "step": 2, "mod": "fury", "pay": 600,
+        "middle": { "gems": 15 }, "top": { "gems": 15, "divine": 20, "relic": 3 } },
+      { "level": 7, "titanLevel": 28, "titanStars": 3, "bonus": 0,  "step": 2, "mod": "reserve", "pay": 700,
+        "middle": { "gems": 20 }, "top": { "gems": 20, "divine": 20, "relic": 3 } },
+      { "level": 8, "titanLevel": 34, "titanStars": 3, "bonus": 0,  "step": 2, "mod": "cunning", "pay": 800,
+        "middle": { "gems": 20 }, "top": { "gems": 20, "divine": 25, "relic": 3 } },
+      { "level": 9, "titanLevel": 40, "titanStars": 4, "bonus": 0,  "step": 2, "mod": "haste", "pay": 900,
+        "middle": { "gems": 25 }, "top": { "gems": 25, "divine": 30, "relic": 4 } },
+      { "level": 9, "titanLevel": 45, "titanStars": 4, "bonus": 20, "step": 2, "mod": "wrath", "pay": 1000,
+        "middle": { "gems": 25 }, "top": { "gems": 25, "divine": 30, "relic": 4 } },
+      { "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 40, "step": 2, "mod": "stone", "pay": 1100,
+        "middle": { "gems": 30 }, "top": { "gems": 30, "divine": 35, "relic": 4 } },
+      { "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 60, "step": 3, "mod": "horde", "pay": 1200,
+        "middle": { "gems": 15 }, "top": { "gems": 15, "divine": 40, "relic": 4 } }
+    ]
+  },
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]
 }
