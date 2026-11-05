@@ -3831,6 +3831,8 @@ int64_t Kingdom::CheckValue(GoalCheck Check, int BuildingDef, int Troop, int64_t
 		return V;
 	case GoalCheck::Event:
 		return Events;
+	case GoalCheck::Power:
+		return KingdomPower().total;
 	case GoalCheck::Count:
 		break;
 	}

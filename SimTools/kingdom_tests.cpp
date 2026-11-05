@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1953,6 +1954,7 @@ void TestGoals()
 		return L >= 1 ? Ct.buildings[static_cast<size_t>(D)].levels[static_cast<size_t>(L - 1)].*Field : 0;
 	};
 	int64_t Gems = 0;
+	int64_t Titans = static_cast<int64_t>(Ct.startTitans.size());
 	std::vector<bool> Used(static_cast<size_t>(GoalCheck::Count), false);
 	for (const GoalDef& G : Line)
 	{
@@ -2020,8 +2022,60 @@ void TestGoals()
 		case GoalCheck::Missions:
 			bOk = Top(Def("adventurers_guild")) >= 1;
 			break;
+		case GoalCheck::Power:
+		{
+			// Not done by what the line asked for so far (its buildings, the titans at level 1), and within reach at
+			// this Castle (every building there at its top level, as many of the weakest titan at its top level).
+			const auto Each = [&](int D, int L) {
+				const int64_t V = static_cast<int64_t>(ISqrt64(static_cast<uint64_t>(Ct.power.building * Ct.power.building) * L * L * L));
+				return D == CastleDef ? V * Ct.power.castleMul : V;
+			};
+			int64_t Low = 0;
+			int64_t High = 0;
+			for (size_t D = 0; D < Ct.buildings.size(); ++D)
+			{
+				const BuildingDef& B = Ct.buildings[D];
+				for (int L : Levels[D])
+				{
+					Low += Each(static_cast<int>(D), L);
+				}
+				int Open = 0;
+				for (int L = 1; L <= B.MaxLevel() && B.unlockCastle <= Castle; ++L)
+				{
+					Open = B.levels[static_cast<size_t>(L - 1)].castle <= Castle ? L : Open;
+				}
+				High += Open ? Each(static_cast<int>(D), Open) * B.MaxCount(Castle) : 0;
+			}
+			int64_t Weakest = std::numeric_limits<int64_t>::max();
+			int64_t WeakestTop = std::numeric_limits<int64_t>::max();
+			for (const TitanType& T : Ct.titans)
+			{
+				TitanSetup S;
+				S.present = true;
+				S.titanId = T.id;
+				S.stars = T.stars;
+				S.level = 1;
+				Weakest = std::min(Weakest, TitanPower(Battle(), S) / 100);
+				S.level = 10 + 10 * T.stars;
+				WeakestTop = std::min(WeakestTop, TitanPower(Battle(), S) / 100);
+			}
+			const int64_t Count = std::min<int64_t>(Titans, Ct.power.titans);
+			Low += Count * Weakest;
+			High += Count * WeakestTop;
+			bOk = Low < G.n && G.n <= High;
+			if (!bOk)
+			{
+				std::printf("  (goal %s: Power %lld, at least %lld and at most %lld at Castle %d)\n", G.id.c_str(), static_cast<long long>(G.n),
+					static_cast<long long>(Low), static_cast<long long>(High), Castle);
+			}
+			break;
+		}
 		default:
 			break;
+		}
+		if (G.check == GoalCheck::Titans)
+		{
+			Titans = std::max<int64_t>(Titans, G.n);
 		}
 		if (!bOk)
 		{
@@ -2913,6 +2967,104 @@ std::string WithAssault(const std::string& Save, const std::string& As)
 	return P == std::string::npos || Q == std::string::npos ? Save : Save.substr(0, P) + "\"assault\":" + As + Save.substr(Q);
 }
 
+/** Kingdom Power (master prompt 7.7): buildings by level^1.5 (the Castle five times), the five strongest titans' battle
+ *  Power and every research level. */
+void TestKingdomPower()
+{
+	const KingdomContent& Ct = Content();
+	KD_CHECK(Ct.power.building == 10 && Ct.power.castleMul == 5 && Ct.power.titans == 5 && Ct.power.research == 25);
+	Kingdom K(Ct);
+	K.NewGame(T0, 7);
+	// Without the battle content: the Castle at level 1 is 10 × 5, the other start buildings 10 each, no research.
+	KingdomPowerInfo P = K.KingdomPower();
+	const int64_t StartBuildings = 50 + 10 * static_cast<int64_t>(Ct.startBuildings.size() - 1);
+	KD_CHECK(P.buildings == StartBuildings && P.titans == 0 && P.top.empty() && P.research == 0 && P.total == StartBuildings);
+	KD_CHECK(K.TitanPowerOf(K.Titans()[0].id) == 0);
+	const uint64_t Hash = K.Hash();
+	K.SetBattleContent(&Battle());
+	KD_CHECK(K.Hash() == Hash); // derived, not saved
+	// The start titans with their battle Power (the simulation's / 100), strongest first.
+	const auto Own = [&](const Kingdom& X, int32_t Id) {
+		const kingdom::TitanState* T = X.FindTitan(Id);
+		const TitanType& Type = Ct.titans[static_cast<size_t>(T->def)];
+		TitanSetup S;
+		S.present = true;
+		S.titanId = Type.id;
+		S.stars = Type.stars;
+		S.level = T->level;
+		S.ascended = T->ascended;
+		S.atkPct = static_cast<int>(X.TitanBonus(Id, RelicStat::Atk) / 10); // relics and skills, as in battle
+		S.hpPct = static_cast<int>(X.TitanBonus(Id, RelicStat::Hp) / 10);
+		S.armorPct = static_cast<int>(X.TitanBonus(Id, RelicStat::Armor) / 10);
+		S.critPct = static_cast<int>(X.TitanBonus(Id, RelicStat::Crit) / 10);
+		S.piercePct = static_cast<int>(X.TitanBonus(Id, RelicStat::Pierce) / 10);
+		return TitanPower(Battle(), S) / 100;
+	};
+	P = K.KingdomPower();
+	KD_CHECK(P.top.size() == K.Titans().size() && P.top.size() == Ct.startTitans.size() && P.top.size() >= 2);
+	int64_t Sum = 0;
+	for (size_t I = 0; I < P.top.size(); ++I)
+	{
+		KD_CHECK(P.top[I].second == Own(K, P.top[I].first) && P.top[I].second == K.TitanPowerOf(P.top[I].first) && P.top[I].second > 1000);
+		KD_CHECK(I == 0 || P.top[I - 1].second >= P.top[I].second);
+		Sum += P.top[I].second;
+	}
+	KD_CHECK(P.titans == Sum && P.total == StartBuildings + Sum && P.research == 0);
+	KD_CHECK(K.TitanPowerOf(-5) == 0);
+
+	// Levels count as L^1.5 rounded down (2 gives 28, 4 gives 80, 9 gives 270), the Castle five times.
+	std::string Error;
+	std::string S = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":4");
+	S = WithBuilding(WithBuilding(S, "gold_mine", 2, 30), "farm", 9, 33);
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(S, Error));
+	B.SetBattleContent(&Battle());
+	KD_CHECK(B.KingdomPower().buildings == StartBuildings - 50 + 400 + 28 + 270 && B.KingdomPower().titans == P.titans);
+
+	// Research: 25 for every level of a troop (Armoury) and a spell (Arcane Tower) above the first.
+	S = Replace(S, "\"levels\":{\"troop.militia\":1", "\"levels\":{\"troop.militia\":3");
+	S = Replace(S, "\"levels\":{\"" + Ct.spells[0].id + "\":1", "\"levels\":{\"" + Ct.spells[0].id + "\":4");
+	Kingdom R(Ct);
+	KD_CHECK(R.Load(S, Error) && R.TroopLevel(0) == 3 && R.SpellLevel(0) == 4);
+	R.SetBattleContent(&Battle());
+	KD_CHECK(R.KingdomPower().research == 125 && R.KingdomPower().total == B.KingdomPower().total + 125);
+
+	// Only the five strongest titans count; equal ones by id. A higher level counts more.
+	S = Replace(WithTitans(K.Save(), {{701, "titan.talos"}, {702, "titan.talos"}, {703, "titan.thor"}, {704, "titan.artemis"}, {705, "titan.cyclops"}, {706, "titan.surtr"}},
+					",\"skills\":[[\"vigor\",1]]"),
+		"\"id\":703,\"def\":\"titan.thor\",\"level\":1", "\"id\":703,\"def\":\"titan.thor\",\"level\":30");
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(S, Error) && M.Titans().size() == 8);
+	M.SetBattleContent(&Battle());
+	const KingdomPowerInfo Many = M.KingdomPower();
+	KD_CHECK(Many.top.size() == 5 && Many.top[0].first == 703 && Many.top[0].second == Own(M, 703));
+	Sum = 0;
+	for (size_t I = 0; I < Many.top.size(); ++I)
+	{
+		KD_CHECK(I == 0 || Many.top[I - 1].second >= Many.top[I].second);
+		Sum += Many.top[I].second;
+	}
+	KD_CHECK(Many.titans == Sum);
+	for (const kingdom::TitanState& T : M.Titans())
+	{
+		const bool bIn = std::any_of(Many.top.begin(), Many.top.end(), [&](const std::pair<int32_t, int64_t>& X) { return X.first == T.id; });
+		KD_CHECK(bIn || M.TitanPowerOf(T.id) <= Many.top.back().second);
+	}
+	// The two level-1 Talos are equal: if only one of them counts, it is the one with the lower id.
+	const bool b701 = std::any_of(Many.top.begin(), Many.top.end(), [](const std::pair<int32_t, int64_t>& X) { return X.first == 701; });
+	const bool b702 = std::any_of(Many.top.begin(), Many.top.end(), [](const std::pair<int32_t, int64_t>& X) { return X.first == 702; });
+	KD_CHECK(M.TitanPowerOf(701) == M.TitanPowerOf(702) && (b701 || !b702));
+	// Skills and relics add to a titan's Power as they do in battle.
+	KD_CHECK(M.TitanBonus(701, RelicStat::Hp) > 0 && Own(M, 701) == M.TitanPowerOf(701));
+
+	// The achievement and the goal check read it (with the battle content when there is one).
+	const int Ach = AchIx("ach_power");
+	KD_CHECK(Ach >= 0 && Ct.achievements[static_cast<size_t>(Ach)].check == GoalCheck::Power);
+	KD_CHECK(M.AchievementValue(Ach) == Many.total && K.AchievementValue(Ach) == P.total);
+	Kingdom NoBattle(Ct);
+	KD_CHECK(NoBattle.Load(S, Error) && NoBattle.AchievementValue(Ach) == Many.buildings + Many.research);
+}
+
 void TestAssault()
 {
 	const KingdomContent& Ct = Content();
@@ -3117,7 +3269,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower},
 	};
 	for (const auto& T : Tests)
 	{

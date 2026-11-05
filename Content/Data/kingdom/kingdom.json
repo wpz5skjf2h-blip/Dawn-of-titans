@@ -553,10 +553,17 @@
     ]
   },
 
+  // Kingdom Power (master prompt 7.7; the original has none, it ranks by victory points): a number on the lord's
+  // profile that sums the kingdom up. Each building gives building × L^1.5 (the Castle castleMul times that), the
+  // strongest `titans` titans their battle Power (sqrt(EHP × DPS × AoE), master prompt 5.10, with their relics), and
+  // every level researched (troops in the Armoury, spells in the Arcane Tower) `research`. The prompt's Codex bonus
+  // is left out: there is no Codex yet. The prompt's numbers.
+  "power": { "building": 10, "castleMul": 5, "titans": 5, "research": 25 },
+
   // The main line of goals (master prompt 9.4 and 13.5; the original starts with a step-by-step tutorial): one goal at a
   // time, from the first collected food to Castle 9, about the first week. "check" is a fact of the kingdom (castle,
   // build, level, army, troopLevel, lands, landLevel, guard, garrison, titans, titanLevel, relics, skills, spells,
-  // spellLevel, alliance, missions) or "event" (a daily-quest event counted while the goal is current). The order
+  // spellLevel, alliance, missions, power) or "event" (a daily-quest event counted while the goal is current). The order
   // follows the Castle's requirements; rewards are ours.
   "goals": [
     {"id": "first_food", "check": "event", "event": "collectFood", "n": 1, "name": "Соберите еду с фермы", "hint": "Нажмите на ферму: над ней копится еда. Добычу шахт и ферм собирают нажатием, как в оригинале.", "reward": {"gold": 300}},
@@ -619,6 +626,7 @@
     {"id": "hall_l2", "check": "level", "building": "hall_of_titans", "n": 2, "name": "Улучшите Зал титанов до 2-го уровня", "hint": "Зал 2-го уровня нужен для Замка 8 и вмещает больше титанов.", "reward": {"food": 12000}},
     {"id": "skill_2", "check": "skills", "n": 2, "name": "Откройте второй навык титана", "hint": "Зал титанов → «Слияние»: каждый слитый титан с шансом 35% открывает слот навыка.", "reward": {"gems": 15}},
     {"id": "titan_10", "check": "titanLevel", "n": 10, "name": "Поднимите титана до 10-го уровня", "hint": "Опыт дают бои, а слияние передаёт силу жертв выбранному титану.", "reward": {"gems": 10}},
+    {"id": "power_15k", "check": "power", "n": 15000, "name": "Нарастите силу королевства до {n}", "hint": "Сила складывается из построек, пяти сильнейших титанов (их уровня и реликвий) и исследований. Нажмите на «Замок» вверху: там видно, из чего она состоит.", "reward": {"gems": 10}},
     {"id": "castle_8", "check": "castle", "n": 8, "name": "Улучшите Замок до 8-го уровня", "hint": "Замок 8 открывает Гильдию искателей приключений и её кампании.", "reward": {"gems": 30}},
     {"id": "guild", "check": "build", "building": "adventurers_guild", "n": 1, "name": "Постройте Гильдию искателей приключений", "hint": "Гильдия открывает кампании Ильзы Рен.", "reward": {"gold": 15000}},
     {"id": "missions_3", "check": "missions", "n": 3, "name": "Пройдите миссии кампании: {n}", "hint": "Гильдия → «Кампании». Миссия стоит 2 камня портала, первая победа даёт самоцветы.", "reward": {"gems": 10}},
@@ -653,7 +661,8 @@
     {"id": "ach_guard", "check": "guard", "tiers": [[1, 5], [3, 10], [6, 25]], "name": "Пограничник", "desc": "Земли под охраной титанов"},
     {"id": "ach_garrison", "check": "garrison", "tiers": [[3, 5], [6, 10], [9, 25]], "name": "Твердыня", "desc": "Защитники в Гарнизоне: титан и отряды"},
     {"id": "ach_spell_lv", "check": "spellLevel", "tiers": [[3, 5], [8, 10], [15, 25]], "name": "Магистр", "desc": "Уровень лучшего заклинания"},
-    {"id": "ach_missions", "check": "missions", "tiers": [[5, 5], [13, 10], [26, 25]], "name": "Искатель приключений", "desc": "Пройденные миссии кампании"}
+    {"id": "ach_missions", "check": "missions", "tiers": [[5, 5], [13, 10], [26, 25]], "name": "Искатель приключений", "desc": "Пройденные миссии кампании"},
+    {"id": "ach_power", "check": "power", "tiers": [[20000, 5], [60000, 10], [120000, 25]], "name": "Могущество", "desc": "Сила королевства: постройки, пять сильнейших титанов и исследования"}
   ],
 
   // Login calendars (master prompt 13.6). A login is the first visit of a UTC day. "newcomer": day N opens on the N-th

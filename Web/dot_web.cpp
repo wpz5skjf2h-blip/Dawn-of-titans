@@ -1273,6 +1273,15 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->AchievementTier(I));
 	}
 	O.Raw("]},");
+	// Kingdom Power (master prompt 7.7): buildings, the strongest titans (id, Power), research, total.
+	const dot::kingdom::KingdomPowerInfo Pw = Km->KingdomPower();
+	O.Key("power").Raw("{").Key("b").Int(Pw.buildings).Comma().Key("t").Int(Pw.titans).Comma().Key("r").Int(Pw.research).Comma().Key("total").Int(Pw.total);
+	O.Comma().Key("top").Raw("[");
+	for (size_t I = 0; I < Pw.top.size(); ++I)
+	{
+		O.Raw(I ? ",[" : "[").Int(Pw.top[I].first).Comma().Int(Pw.top[I].second).Raw("]");
+	}
+	O.Raw("]},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
 	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma();
@@ -1332,6 +1341,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		WriteCheck(O, Km->CheckAscend(T.id));
 		O.Comma();
 		O.Key("rec").Int(T.recoverUntil).Comma().Key("skip").Int(Km->TitanSkipCost(T.id)).Comma().Key("slots").Int(Km->RelicSlots(T)).Comma();
+		O.Key("pw").Int(Km->TitanPowerOf(T.id)).Comma();
 		O.Key("relics").Raw("[");
 		for (size_t K = 0; K < T.relics.size(); ++K)
 		{

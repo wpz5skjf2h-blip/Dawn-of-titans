@@ -338,6 +338,21 @@ function invariants(st, add) {
 		if (as.boons.length > as.stage) add('bad', 'Штурм: благословений ' + as.boons.length + ' за ' + as.stage + ' этапов');
 		if (as.run && !as.over && as.stage >= asr.stages.length) add('bad', 'Штурм пройден целиком, но не окончен');
 	}
+	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
+	const pw = st.power;
+	if (pw) {
+		const most = (rules().power || {}).titans || 5;
+		if (![pw.b, pw.t, pw.r, pw.total].every((v) => Number.isFinite(v) && v >= 0) || pw.b + pw.t + pw.r !== pw.total) add('bad', 'Сила королевства: ' + pw.b + ' + ' + pw.t + ' + ' + pw.r + ' ≠ ' + pw.total);
+		if (pw.top.length > most || pw.top.some((x, i) => i > 0 && x[1] > pw.top[i - 1][1])) add('bad', 'Сила королевства: титаны не по убыванию или их больше ' + most);
+		if (pw.top.reduce((s, x) => s + x[1], 0) !== pw.t) add('bad', 'Сила королевства: титаны дают ' + pw.t + ', а их сумма ' + pw.top.reduce((s, x) => s + x[1], 0));
+		for (const [id, p] of pw.top) {
+			const t = st.titans.find((x) => x.id === id);
+			if (!t || t.pw !== p) add('bad', 'Сила королевства: титан #' + id + ' учтён с силой ' + p + ', а у него ' + (t ? t.pw : 'его нет'));
+		}
+		const cut = pw.top.length ? pw.top[pw.top.length - 1][1] : 0;
+		const left = st.titans.filter((t) => !pw.top.some((x) => x[0] === t.id));
+		if (pw.top.length && (left.some((t) => t.pw > cut) || (pw.top.length < most && left.length))) add('bad', 'Сила королевства: не учтён титан посильнее');
+	}
 }
 /** Returns [[level, text]] with level 'ok' | 'warn' | 'bad'; the kingdom is left as it was. */
 function runChecks() {
