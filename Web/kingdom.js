@@ -5419,7 +5419,7 @@ function calendarHtml(st) {
 		if (pick >= 0) {
 			const cards = R.newcomer[pick].choice.map((id, k) => {
 				const t = K.army.titans[titanIx(id)];
-				const ab = titanAbil(id).map((a) => a.name).filter(Boolean).join(', ');
+				const ab = titanAbil(id).filter(Boolean).join(', ');
 				return '<div class="landCard">' + icoHtml(DotIcons.has('class.' + t.class) ? 'class.' + t.class : 'class.Champion', 'titan') + '<div class="info"><b>' + esc(t.name) + ' ' + '★'.repeat(t.stars) + '</b><span>' +
 					esc(t.classRu || t.class) + (ab ? ' · ' + esc(ab) : '') + '</span></div><div class="row"><button class="btn primary" data-act="cal-new" data-id="' + pick + '" data-choice="' + k + '">Выбрать ' + esc(t.name) + '</button></div></div>';
 			}).join('');
@@ -6581,7 +6581,7 @@ function divPickOpt(a, i, on) {
 function divPickText(a, i) {
 	if (a.titan) {
 		const t = K.army.titans[i];
-		const ab = titanAbil(t.id).map((x) => x.name).filter(Boolean).join(', ');
+		const ab = titanAbil(t.id).filter(Boolean).join(', ');
 		return esc(t.name) + ' ' + '★'.repeat(t.stars) + ', ' + esc(t.classRu || t.class) + (ab ? ': ' + esc(ab) : '') + '. Придёт на 1-м уровне.';
 	}
 	const k = K.army.relics.kinds[i];
@@ -6601,7 +6601,7 @@ function buyDivine(alt, pick) {
 	refresh(true);
 	const t = a.titan ? K.st.titans.find((x) => x.id === r.id) : null;
 	const rl = a.titan ? null : K.st.relics.find((x) => x.id === r.id);
-	K.divGot = t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(K.army.titans[t.def].stars) : rl ? 'реликвия ' + relicName(rl) + ' ' + '★'.repeat(rl.r) : '';
+	K.divGot = t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(K.army.titans[t.def].stars) : rl ? relicName(rl) + ' ' + '★'.repeat(rl.r) : '';
 	toast('Алтарь: ' + K.divGot, 'gold');
 	refreshSheet(true);
 }
