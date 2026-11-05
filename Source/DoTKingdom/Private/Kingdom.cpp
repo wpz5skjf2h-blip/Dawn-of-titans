@@ -9186,10 +9186,12 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	}
 	// Alliance help (saves before it have asked for nothing).
 	ResetHelp();
-	if (const JsonValue* HelpJ = J.Find("help"); HelpJ && C.allianceHelp.on && AllianceIdx >= 0)
+	if (const JsonValue* HelpJ = J.Find("help"); HelpJ && C.allianceHelp.on)
 	{
+		// The helps given on a day stay with the player; the rest goes with the alliance.
 		const int Kinds = static_cast<int>(HelpKind::Count);
-		if (const JsonValue* AsksJ = HelpJ->Find("asks"); AsksJ && AsksJ->IsArray())
+		const bool bAlly = AllianceIdx >= 0;
+		if (const JsonValue* AsksJ = HelpJ->Find("asks"); AsksJ && AsksJ->IsArray() && bAlly)
 		{
 			for (size_t I = 0; I < AsksJ->Size() && AskList.size() < 64; ++I)
 			{
@@ -9213,7 +9215,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				AskList.push_back(A);
 			}
 		}
-		if (const JsonValue* LogJ = HelpJ->Find("log"); LogJ && LogJ->IsArray())
+		if (const JsonValue* LogJ = HelpJ->Find("log"); LogJ && LogJ->IsArray() && bAlly)
 		{
 			for (size_t I = 0; I < LogJ->Size() && HelpLogList.size() < HelpLogMax; ++I)
 			{
@@ -9231,7 +9233,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				HelpLogList.push_back(G);
 			}
 		}
-		if (const JsonValue* NosJ = HelpJ->Find("helped"); NosJ && NosJ->IsArray())
+		if (const JsonValue* NosJ = HelpJ->Find("helped"); NosJ && NosJ->IsArray() && bAlly)
 		{
 			for (size_t I = 0; I < NosJ->Size() && HelpedNos.size() < HelpedMax; ++I)
 			{

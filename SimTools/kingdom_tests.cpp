@@ -3759,6 +3759,11 @@ void TestAllianceHelp()
 	const int64_t MineEnd = K.Find(Mine)->finishAt;
 	K.Advance(K.Now() + 200);
 	KD_CHECK(K.Find(Mine)->finishAt == MineEnd && K.HelpLog().empty());
+	// The helps given today stay with the player (the admin's random play found them lost on a reload).
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Save() == K.Save() && L.Hash() == K.Hash() && L.HelpsGivenToday() == K.HelpsGivenToday() && K.HelpsGivenToday() > 0);
+	}
 	// An own alliance helps once it has recruits.
 	KD_CHECK(K.CreateAlliance("Дом Рассвета", "ДОМ") == Error::None && K.HelpLimit() == 0 && K.CheckAskHelp(HelpKind::Building, Mine).error == Error::NotAllowed);
 	KD_CHECK(K.AllyAsks().empty() && K.CheckGiveHelp().error == Error::Nothing);
