@@ -1160,6 +1160,24 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	// War Scrolls for campaign sweeps.
 	O.Raw("],").Key("scrolls").Int(Km->Scrolls()).Comma();
+	// Army loadouts: name, titan id, squads and spells (indices).
+	O.Key("loadouts").Raw("[");
+	for (size_t I = 0; I < Km->Loadouts().size(); ++I)
+	{
+		const dot::kingdom::Loadout& L = Km->Loadouts()[I];
+		O.Raw(I ? "," : "").Raw("{").Key("n").Str(L.name).Comma().Key("t").Int(L.titan).Comma().Key("s").Raw("[");
+		for (size_t K = 0; K < L.squads.size(); ++K)
+		{
+			O.Raw(K ? "," : "").Int(L.squads[K]);
+		}
+		O.Raw("],").Key("p").Raw("[");
+		for (size_t K = 0; K < L.spells.size(); ++K)
+		{
+			O.Raw(K ? "," : "").Int(L.spells[K]);
+		}
+		O.Raw("]}");
+	}
+	O.Raw("],");
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1762,6 +1780,26 @@ EMSCRIPTEN_KEEPALIVE const char* dk_mission_finish(int Act, int Mission, int Sta
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->FinishMission(Act, Mission, Stars, ParseInts(Survivors), ParseInts(SpellsUsed), &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** Saves an army loadout in a slot (their count: a new one); Squads and Spells are comma-separated indices. */
+EMSCRIPTEN_KEEPALIVE int dk_loadout_save(int Slot, const char* Name, int TitanId, const char* Squads, const char* Spells)
+{
+	if (!K())
+	{
+		return -1;
+	}
+	dot::kingdom::Loadout L;
+	L.name = Name ? Name : "";
+	L.titan = TitanId;
+	L.squads = ParseInts(Squads);
+	L.spells = ParseInts(Spells);
+	return static_cast<int>(K()->SaveLoadout(Slot, L));
+}
+
+EMSCRIPTEN_KEEPALIVE int dk_loadout_delete(int Slot)
+{
+	return K() ? static_cast<int>(K()->DeleteLoadout(Slot)) : -1;
 }
 
 /** Sweeps a campaign mission won on 3 stars with this titan (0: none): the reward as for a battle. */

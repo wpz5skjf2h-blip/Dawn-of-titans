@@ -1384,6 +1384,74 @@ void TestCampaignSweep()
 	KD_CHECK(A.Load(Rich, Error) && B.Load(Rich, Error) && A.SweepMission(0, 0, 0, nullptr) == Error::None && B.SweepMission(0, 0, 0, nullptr) == Error::None && A.Hash() == B.Hash());
 }
 
+void TestLoadouts()
+{
+	const KingdomContent& Ct = Content();
+	KD_CHECK(Ct.loadouts.max == 4 && Ct.spells.size() >= 3 && Ct.battleSpellKinds == 3);
+	Kingdom K(Ct);
+	K.NewGame(T0, 63);
+	KD_CHECK(K.Loadouts().empty() && K.MaxLoadouts() == 4);
+	const uint64_t Empty = K.Hash();
+	const int32_t Perun = K.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	const int Archers = Troop("troop.archers");
+	Loadout A;
+	A.name = "  Штурм  ";
+	A.titan = Perun;
+	A.squads = {Militia, Militia, Archers};
+	A.spells = {1, 0};
+	KD_CHECK(K.SaveLoadout(0, A) == Error::None && K.Loadouts().size() == 1);
+	const Loadout& Got = K.Loadouts()[0];
+	KD_CHECK(Got.name == "Штурм" && Got.titan == Perun && Got.squads == A.squads && Got.spells == A.spells && K.Hash() != Empty);
+	// Slots: no gaps; bad ids, a spell twice and bad names are refused, and so is more than a battle takes.
+	KD_CHECK(K.SaveLoadout(2, A) == Error::BadId && K.SaveLoadout(-1, A) == Error::BadId);
+	Loadout B = A;
+	B.titan = 999999;
+	KD_CHECK(K.SaveLoadout(1, B) == Error::BadId);
+	B = A;
+	B.squads.push_back(static_cast<int>(Ct.troops.size()));
+	KD_CHECK(K.SaveLoadout(1, B) == Error::BadId);
+	B = A;
+	B.spells = {2, 2};
+	KD_CHECK(K.SaveLoadout(1, B) == Error::BadId);
+	B = A;
+	B.name = "Ночь\nдень";
+	KD_CHECK(K.SaveLoadout(1, B) == Error::BadId);
+	B.name = std::string(49, 'x');
+	KD_CHECK(K.SaveLoadout(1, B) == Error::BadId);
+	B = A;
+	B.squads.assign(static_cast<size_t>(K.BattleSlots()) + 1, Militia);
+	KD_CHECK(K.SaveLoadout(1, B) == Error::TooManySquads);
+	B = A;
+	B.spells = {0, 1, 2, 3};
+	KD_CHECK(Ct.spells.size() < 4 ? true : K.SaveLoadout(1, B) == Error::TooManySquads);
+	KD_CHECK(K.Loadouts().size() == 1);
+	// A name of spaces is no name; no titan and no spells are fine; four at most.
+	B = Loadout();
+	B.name = "   ";
+	B.squads = {Archers};
+	KD_CHECK(K.SaveLoadout(1, B) == Error::None && K.Loadouts()[1].name.empty() && K.Loadouts()[1].titan == 0);
+	KD_CHECK(K.SaveLoadout(2, A) == Error::None && K.SaveLoadout(3, B) == Error::None && K.SaveLoadout(4, A) == Error::LimitReached);
+	// Overwriting a slot and deleting one (the rest move up).
+	B.name = "Лучники";
+	KD_CHECK(K.SaveLoadout(1, B) == Error::None && K.Loadouts()[1].name == "Лучники" && K.Loadouts().size() == 4);
+	KD_CHECK(K.DeleteLoadout(0) == Error::None && K.Loadouts().size() == 3 && K.Loadouts()[0].name == "Лучники" && K.DeleteLoadout(3) == Error::BadId);
+	// Saved by content ids; the hash covers them.
+	const std::string Save = K.Save();
+	KD_CHECK(Save.find("\"loadouts\":[{\"name\":\"Лучники\",\"titan\":0,\"squads\":[\"troop.archers\"],\"spells\":[]}") != std::string::npos);
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Save, Error) && L.Hash() == K.Hash() && L.Save() == Save && L.Loadouts().size() == 3 && L.Loadouts()[1].spells == A.spells);
+	// Saves before loadouts have none; unknown troops and spells are dropped, a fifth loadout too.
+	const size_t At = Save.find("\"loadouts\":[");
+	const size_t End = Save.find("]}],", At) + 3;
+	KD_CHECK(L.Load(Save.substr(0, At) + Save.substr(End + 1), Error) && L.Loadouts().empty());
+	const std::string Odd = "\"loadouts\":[{\"name\":\"a\\u0001\",\"titan\":5,\"squads\":[\"troop.gone\",\"troop.militia\"],\"spells\":[\"spell.gone\",\"" + Ct.spells[0].id + "\",\"" + Ct.spells[0].id +
+		"\"]},{},{},{},{\"name\":\"fifth\"}],";
+	KD_CHECK(L.Load(Save.substr(0, At) + Odd + Save.substr(End + 1), Error) && L.Loadouts().size() == 4 && L.Loadouts()[0].name.empty());
+	KD_CHECK(L.Loadouts()[0].titan == 5 && L.Loadouts()[0].squads == std::vector<int>{Militia} && L.Loadouts()[0].spells == std::vector<int>{0} && L.Loadouts()[3].squads.empty());
+}
+
 /** The save with its daily quests replaced (they are the last key of a save). */
 std::string WithQuests(const std::string& Save, const std::string& Quests)
 {
@@ -4337,6 +4405,7 @@ int main()
 		{"TitanMonumentsAndXpArenas", TestTitanMonumentsAndXpArenas},
 		{"Campaigns", TestCampaigns},
 		{"CampaignSweep", TestCampaignSweep},
+		{"Loadouts", TestLoadouts},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},

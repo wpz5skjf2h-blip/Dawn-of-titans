@@ -973,5 +973,7 @@
     { "ai": "nightmare", "tier": 3, "squads": ["troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"],
       "titan": { "id": "titan.talos", "level": 40, "stars": 4 } }
   ],
+  // Army loadouts (master prompt 4.6, S13): saved armies (a titan, squads, spells) the prepare screen fills in at a tap.
+  "loadouts": { "max": 4 },
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]
 }

@@ -1779,6 +1779,10 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Lj = Rules.Find("loadouts"))
+	{
+		Out.loadouts.max = std::max(0, std::min(20, Lj->GetInt("max", 0)));
+	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
 		AllianceHelpRules& H = Out.allianceHelp;

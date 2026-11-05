@@ -233,6 +233,15 @@ struct Reward
 	int64_t scrolls = 0; // War Scrolls a quest chest gave
 };
 
+/** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */
+struct Loadout
+{
+	std::string name; // empty: the client numbers it
+	int32_t titan = 0; // 0: none (a titan fused away later stays here and is left out when used)
+	std::vector<int> squads;
+	std::vector<int> spells;
+};
+
 /** A squad of an Assault run: its troop (index), its level when the run began and its share of men still standing. */
 struct AssaultSquad
 {
@@ -768,6 +777,18 @@ public:
 	Error ClaimChest(int Act, int Chest, Reward* Out);
 	/** The pending battle's mission as Act * 100 + Mission (-1 when it is not a mission). */
 	int PendingMission() const { return -Pending >= MissionBase ? -Pending - MissionBase : -1; }
+	// --- Army loadouts (master prompt 4.6, S13) ---
+	// Saved armies the prepare screen fills in at a tap; what the camp lacks then (squads, a resting titan, spells out
+	// of stock) stays out. Kept in the save; nothing else uses them.
+	const std::vector<Loadout>& Loadouts() const { return LoadoutList; }
+	int MaxLoadouts() const { return C.loadouts.max; }
+	/** Saves a loadout in a slot, or as a new one at the end (Slot = their count): BadId (no such slot, an unknown
+	 *  troop, spell or titan, a spell twice, a name with control characters or over 48 bytes), TooManySquads (more squads
+	 *  than a battle takes or spells than kinds), LimitReached (every slot taken). */
+	Error SaveLoadout(int Slot, const Loadout& L);
+	/** BadId when there is no such loadout; the ones after it move up. */
+	Error DeleteLoadout(int Slot);
+
 	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
 	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
 	// quests and the Warpath count it. Quest chests give the scrolls.
@@ -1400,6 +1421,8 @@ private:
 	// Campaigns: best stars by act and mission, opened star chests by act (bits).
 	std::vector<std::vector<uint8_t>> MissionStarList;
 	std::vector<uint32_t> ChestMask;
+	// Army loadouts.
+	std::vector<Loadout> LoadoutList;
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;

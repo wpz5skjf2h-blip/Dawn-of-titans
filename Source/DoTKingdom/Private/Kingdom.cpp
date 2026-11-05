@@ -129,6 +129,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ChestMask.assign(C.campaigns.acts.size(), 0);
 	ScrollCount = C.campaigns.scrollsStart;
 	LootRolls = 0;
+	LoadoutList.clear();
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
@@ -2884,6 +2885,72 @@ Error Kingdom::SweepMission(int Act, int Mission, int32_t TitanId, Reward* Out)
 	Food = std::max<int64_t>(0, Food - Ck.cost[static_cast<size_t>(ResIndex(Res::Food))]);
 	--ScrollCount;
 	return FinishMission(Act, Mission, 3, {}, {}, Out);
+}
+
+// --- Army loadouts ---------------------------------------------------------------------------------
+
+Error Kingdom::SaveLoadout(int Slot, const Loadout& L)
+{
+	const int Count = static_cast<int>(LoadoutList.size());
+	if (Slot < 0 || Slot > Count)
+	{
+		return Error::BadId;
+	}
+	if (Slot == Count && Count >= C.loadouts.max)
+	{
+		return Error::LimitReached;
+	}
+	Loadout Clean;
+	// A name of spaces only is no name: the client numbers the loadout.
+	if (L.name.find_first_not_of(' ') != std::string::npos && !CleanName(L.name, kMaxNameBytes, Clean.name))
+	{
+		return Error::BadId;
+	}
+	if (L.titan != 0 && !FindTitan(L.titan))
+	{
+		return Error::BadId;
+	}
+	for (const int T : L.squads)
+	{
+		if (T < 0 || T >= static_cast<int>(C.troops.size()))
+		{
+			return Error::BadId;
+		}
+	}
+	for (size_t I = 0; I < L.spells.size(); ++I)
+	{
+		const int Sp = L.spells[I];
+		if (Sp < 0 || Sp >= static_cast<int>(C.spells.size()) || std::find(L.spells.begin(), L.spells.begin() + static_cast<std::ptrdiff_t>(I), Sp) != L.spells.begin() + static_cast<std::ptrdiff_t>(I))
+		{
+			return Error::BadId;
+		}
+	}
+	if (static_cast<int>(L.squads.size()) > BattleSlots() || static_cast<int>(L.spells.size()) > C.battleSpellKinds)
+	{
+		return Error::TooManySquads;
+	}
+	Clean.titan = L.titan;
+	Clean.squads = L.squads;
+	Clean.spells = L.spells;
+	if (Slot == Count)
+	{
+		LoadoutList.push_back(Clean);
+	}
+	else
+	{
+		LoadoutList[static_cast<size_t>(Slot)] = Clean;
+	}
+	return Error::None;
+}
+
+Error Kingdom::DeleteLoadout(int Slot)
+{
+	if (Slot < 0 || Slot >= static_cast<int>(LoadoutList.size()))
+	{
+		return Error::BadId;
+	}
+	LoadoutList.erase(LoadoutList.begin() + Slot);
+	return Error::None;
 }
 
 // --- Daily quests ----------------------------------------------------------------------------------
@@ -8122,6 +8189,33 @@ std::string Kingdom::Save() const
 	W.Key("rolls");
 	W.Int(static_cast<int64_t>(LootRolls));
 	W.EndObject();
+	// Army loadouts (optional): name, titan id, squads and spells by content id.
+	W.Key("loadouts");
+	W.BeginArray();
+	for (const Loadout& L : LoadoutList)
+	{
+		W.BeginObject();
+		W.Key("name");
+		W.String(L.name);
+		W.Key("titan");
+		W.Int(L.titan);
+		W.Key("squads");
+		W.BeginArray();
+		for (const int T : L.squads)
+		{
+			W.String(C.troops[static_cast<size_t>(T)].id);
+		}
+		W.EndArray();
+		W.Key("spells");
+		W.BeginArray();
+		for (const int Sp : L.spells)
+		{
+			W.String(C.spells[static_cast<size_t>(Sp)].id);
+		}
+		W.EndArray();
+		W.EndObject();
+	}
+	W.EndArray();
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -9078,6 +9172,44 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		ScrollCount = std::max<int64_t>(0, std::min(C.campaigns.scrollsMax, SweepJ->GetInt64("scrolls", ScrollCount)));
 		LootRolls = static_cast<uint64_t>(std::max<int64_t>(0, SweepJ->GetInt64("rolls", 0)));
 	}
+	// Army loadouts (saves before them have none); troops and spells the content no longer has are dropped.
+	LoadoutList.clear();
+	if (const JsonValue* LoJ = J.Find("loadouts"))
+	{
+		for (size_t I = 0; I < LoJ->Size() && static_cast<int>(LoadoutList.size()) < C.loadouts.max; ++I)
+		{
+			const JsonValue& EJ = (*LoJ)[I];
+			Loadout L;
+			if (!CleanName(EJ.GetString("name"), kMaxNameBytes, L.name))
+			{
+				L.name.clear();
+			}
+			L.titan = static_cast<int32_t>(std::max<int64_t>(0, EJ.GetInt64("titan", 0)));
+			if (const JsonValue* SqJ = EJ.Find("squads"))
+			{
+				for (size_t K = 0; K < SqJ->Size() && L.squads.size() < 20; ++K)
+				{
+					const int T = C.FindTroop((*SqJ)[K].AsString());
+					if (T >= 0)
+					{
+						L.squads.push_back(T);
+					}
+				}
+			}
+			if (const JsonValue* SpJ = EJ.Find("spells"))
+			{
+				for (size_t K = 0; K < SpJ->Size() && static_cast<int>(L.spells.size()) < C.battleSpellKinds; ++K)
+				{
+					const int Sp = C.FindSpell((*SpJ)[K].AsString());
+					if (Sp >= 0 && std::find(L.spells.begin(), L.spells.end(), Sp) == L.spells.end())
+					{
+						L.spells.push_back(Sp);
+					}
+				}
+			}
+			LoadoutList.push_back(L);
+		}
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -9931,6 +10063,30 @@ uint64_t Kingdom::Hash() const
 		}
 		W.I64(GiveDay);
 		W.I32(GiveCount);
+	}
+	// And for loadouts: only once one is saved.
+	if (!LoadoutList.empty())
+	{
+		W.I32(static_cast<int32_t>(LoadoutList.size()));
+		for (const Loadout& L : LoadoutList)
+		{
+			W.I32(static_cast<int32_t>(L.name.size()));
+			for (const char Ch : L.name)
+			{
+				W.U8(static_cast<uint8_t>(Ch));
+			}
+			W.I32(L.titan);
+			W.I32(static_cast<int32_t>(L.squads.size()));
+			for (const int T : L.squads)
+			{
+				W.I32(T);
+			}
+			W.I32(static_cast<int32_t>(L.spells.size()));
+			for (const int Sp : L.spells)
+			{
+				W.I32(Sp);
+			}
+		}
 	}
 	// And for sweeps: only once a scroll was used or got, or the loot table rolled.
 	if (ScrollCount != C.campaigns.scrollsStart || LootRolls != 0)

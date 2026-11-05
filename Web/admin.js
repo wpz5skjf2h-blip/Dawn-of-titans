@@ -444,6 +444,18 @@ function invariants(st, add) {
 			}
 		}));
 	}
+	// Army loadouts: within the most a kingdom keeps, known troops and spells, a spell once, no more than a battle takes.
+	const lr = rules().loadouts;
+	if (lr && st.loadouts) {
+		if (st.loadouts.length > lr.max) add('bad', 'Наборов армии ' + st.loadouts.length + ' из ' + lr.max);
+		st.loadouts.forEach((lo, i) => {
+			const nm = 'Набор армии ' + (i + 1) + ': ';
+			if (lo.s.some((t) => !(t >= 0 && t < st.army.n.length)) || lo.p.some((x) => !(x >= 0 && x < st.spells.stock.length))) add('bad', nm + 'неизвестные отряды или заклинания');
+			if (new Set(lo.p).size !== lo.p.length || lo.p.length > st.spells.kinds) add('bad', nm + 'заклинания ' + lo.p.join(','));
+			if (lo.s.length > st.army.slots) add('bad', nm + 'отрядов ' + lo.s.length + ' при ' + st.army.slots + ' местах в бою');
+			if (new TextEncoder().encode(lo.n).length > 48 || lo.n !== lo.n.trim()) add('bad', nm + 'имя «' + lo.n + '»');
+		});
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -527,6 +539,7 @@ function rng(seed) {
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 }
+const loKeyOf = (st) => (st.loadouts || []).map((lo) => [lo.n, lo.t, lo.s.join('.'), lo.p.join('.')].join(':')).join('/');
 function runMonkey(steps, seed, keep) {
 	const d = kd();
 	const B = d.K.bridge;
@@ -841,6 +854,36 @@ function runMonkey(steps, seed, keep) {
 				if (st2.res[3] < st.res[3]) throw new Error('зачистка потратила камни портала');
 			}
 			return res.err;
+		}],
+		['набор армии', 2, (st) => {
+			if (!B.loadoutSave || !st.loadouts) return -1;
+			const n = st.loadouts.length;
+			// A slot that is there or the next one, now and then one past it; now and then a bad troop, spell or titan.
+			const slot = Math.floor(r() * (n + 2));
+			const squads = [];
+			const k = Math.floor(r() * (st.army.slots + (r() < 0.1 ? 2 : 1)));
+			for (let j = 0; j < k; j++) squads.push(r() < 0.03 ? st.army.n.length : Math.floor(r() * st.army.n.length));
+			const spells = [];
+			for (let j = 0; j < st.spells.stock.length && spells.length < st.spells.kinds + (r() < 0.1 ? 1 : 0); j++) if (r() < 0.4) spells.push(j);
+			const ti = r() < 0.7 ? pick(st.titans) : null;
+			const titan = ti ? ti.id : r() < 0.05 ? 999999 : 0;
+			const name = r() < 0.5 ? '' : pick(['Штурм', '  Лучники  ', 'Против конницы', 'x'.repeat(30), 'Ночной\nнабег']);
+			const code = B.loadoutSave(slot, name, titan, squads, spells);
+			const st2 = B.state();
+			if (code === 0) {
+				const lo = st2.loadouts[slot];
+				if (slot > n || !lo || lo.t !== titan || lo.s.join() !== squads.join() || lo.p.join() !== spells.join() || lo.n !== name.trim()) throw new Error('набор армии ' + slot + ' сохранён не так: ' + JSON.stringify(lo));
+				if (st2.loadouts.length !== (slot === n ? n + 1 : n)) throw new Error('наборов армии ' + n + ' → ' + st2.loadouts.length);
+			} else if (st2.loadouts.length !== n || loKeyOf(st2) !== loKeyOf(st)) throw new Error('отказ ' + code + ' всё же изменил наборы армии');
+			return code;
+		}],
+		['удалить набор', 1, (st) => {
+			if (!B.loadoutDelete || !st.loadouts) return -1;
+			const slot = Math.floor(r() * (st.loadouts.length + 1));
+			const code = B.loadoutDelete(slot);
+			const st2 = B.state();
+			if (code === 0 && (st2.loadouts.length !== st.loadouts.length - 1 || loKeyOf({ loadouts: st.loadouts.filter((x, j) => j !== slot) }) !== loKeyOf(st2))) throw new Error('удаление набора ' + slot + ' сдвинуло не те');
+			return code;
 		}],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];

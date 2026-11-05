@@ -253,6 +253,10 @@ class KingdomBridge {
 	alliances() { return JSON.parse(this.str(this.M._dk_alliances())); }
 	join(i) { return this.M._dk_join(i); }
 	create(name, tag) { return this.M.ccall('dk_create', 'number', ['string', 'string'], [name, tag]); }
+	loadoutSave(slot, name, titan, squads, spells) {
+		return this.M.ccall('dk_loadout_save', 'number', ['number', 'string', 'number', 'string', 'string'], [slot, name || '', titan || 0, (squads || []).join(','), (spells || []).join(',')]);
+	}
+	loadoutDelete(slot) { return this.M._dk_loadout_delete(slot); }
 	leave() { return this.M._dk_leave(); }
 	reinforce() { return this.M._dk_reinforce(); }
 	visit() { this.M._dk_visit(); }
@@ -2195,6 +2199,9 @@ function initHud() {
 		K.allyForm = K.allyForm || { name: '', tag: '' };
 		K.allyForm[e.target.id === 'allyName' ? 'name' : 'tag'] = e.target.value;
 	});
+	// A loadout's name is saved when the field is left (or Enter pressed).
+	$('kSheetPanel').addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.lo !== undefined) renameLoadout(+e.target.dataset.lo, e.target.value); });
+	$('kSheetPanel').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset && e.target.dataset.lo !== undefined) e.target.blur(); });
 	$('kCastle').addEventListener('click', () => openProfile());
 	$('kPlaceCancel').addEventListener('click', cancelPlace);
 	$('kPlaceOk').addEventListener('click', confirmPlace);
@@ -2701,6 +2708,13 @@ function onAct(e) {
 		break;
 	}
 	case 'prep-go': launchAttack(); break;
+	case 'prep-load': prepLoad(id); break;
+	case 'prep-save': prepSave(id); break;
+	case 'lo-del':
+		if (!isArmed('lo-del:' + id)) { arm('lo-del:' + id); break; }
+		K.armed = null;
+		deleteLoadout(id);
+		break;
 	case 'prep-plan': takeMarshalPlan(); break;
 	case 'forge': openForge(); break;
 	case 'arcane': openArcane(); break;
@@ -6290,8 +6304,11 @@ function openArmy() {
 			K.army.spells.map((d, i) => (K.st.spells.stock[i] ? '<span class="chip">' + mini(d.id) + esc(d.name) + ' ×' + K.st.spells.stock[i] + '</span>' : '')).join('') + '</div>' +
 			'<div class="actions"><button class="btn" data-act="forge">Кузня заклинаний</button><button class="btn" data-act="arcane">Магическая башня</button></div>' +
 			'<h3>Титаны: ' + K.st.titans.length + '</h3><div class="toggles">' + titans + '</div>' +
-			'<div class="actions"><button class="btn" data-act="titans">Зал титанов</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
-		return { key: ['army', a.n.join(), a.lv.join(), a.total, a.cap, a.queue.length, K.st.spells.stock.join(), K.st.titans.map((t) => t.id + ':' + t.lv).join()].join('|'), html };
+			'<div class="actions"><button class="btn" data-act="titans">Зал титанов</button><button class="btn" data-act="relics">Храм реликвий</button></div>' +
+			loadoutsHtml(K.st) +
+			'<div class="actions">' + closeBtn + '</div>';
+		return { key: ['army', a.n.join(), a.lv.join(), a.total, a.cap, a.queue.length, K.st.spells.stock.join(), K.st.titans.map((t) => t.id + ':' + t.lv + ':' + t.pw).join(), loKey(K.st),
+			(K.st.loadouts || []).map((lo, i) => isArmed('lo-del:' + i)).join()].join('|'), html };
 	});
 }
 /** One Barracks row: troop, level, time, note and the train button (also used by council screens). */
@@ -6918,7 +6935,7 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
 	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, boss: !!boss, daily: daily || null, war: war || null, titan: ready.length ? ready[0].id : 0,
-		counts, spells, reinf: !td && !practice && !assault && !boss && !daily && !war };
+		counts, spells, reinf: !td && !practice && !assault && !boss && !daily && !war, preset: -1 };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
@@ -6960,7 +6977,7 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const asNote = as ? '<p class="fine">Этап ' + (w.assault + 1) + ' из ' + asN + '. Победа: ' + asPay(asStage(w.assault).reward, st) + '. ' +
 			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
 		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
-			: '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
+			: prepLoadoutsHtml(st, p, used) + '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
 		const html = sheetTitle(wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
@@ -6980,7 +6997,7 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr ? (wr ? 'На войне альянсов' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
 			scoutHtml(st, p, w, arrived, td) +
 			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, as, bs, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join()].join('|'), html };
+		return { key: ['prep', pr, as, bs, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join(), loKey(st), p.preset].join('|'), html };
 	});
 }
 
@@ -7147,6 +7164,168 @@ function takeMarshalPlan() {
 	if (ti) p.titan = ti.id;
 	toast('Войско собрано по плану маршала: ' + planText(p.counts), 'gold');
 	refreshSheet(true);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Army loadouts (master prompt 4.6, S13): saved armies (a titan, squads, spells) the prepare screen fills in at a tap;
+// what the camp lacks then stays out. The Army sheet lists them with their Power and what they counter.
+// ---------------------------------------------------------------------------------------------
+const loMax = () => (K.rules.loadouts && K.rules.loadouts.max) || 0;
+const loName = (lo, i) => lo.n || 'Набор ' + (i + 1);
+const loKey = (st) => (st.loadouts || []).map((lo) => [lo.n, lo.t, lo.s.join('.'), lo.p.join('.')].join(':')).join('/');
+/** A loadout's squads as counts by troop. */
+function loCounts(lo) {
+	const c = K.army.troops.map(() => 0);
+	for (const t of lo.s) if (c[t] !== undefined) c[t]++;
+	return c;
+}
+const loTitan = (st, lo) => (lo.t ? st.titans.find((t) => t.id === lo.t) || null : null);
+/** "Перун · Копейщики ×2, Лучники · Огненный дождь" (HTML). */
+function loText(st, lo) {
+	const ti = loTitan(st, lo);
+	return [ti ? esc(titanName(ti)) : lo.t ? 'титана больше нет' : 'без титана', lo.s.length ? planText(loCounts(lo)) : 'без отрядов',
+		lo.p.length ? lo.p.map((i) => esc(K.army.spells[i].name)).join(', ') : ''].filter(Boolean).join(' · ');
+}
+const loShort = (st, lo) => {
+	const ti = loTitan(st, lo);
+	return (ti ? esc(titanName(ti)) : 'без титана') + ' · ' + lo.s.length + ' ' + plural(lo.s.length, 'отряд', 'отряда', 'отрядов') + (lo.p.length ? ' · ' + lo.p.length + ' закл.' : '');
+};
+const loIcon = (st, lo) => { const ti = loTitan(st, lo); return ti ? titanIcon(ti) : icoHtml('ui.army', 'troop'); };
+/** Whether the prepare screen's army is the loadout as saved. */
+function loSame(lo, p) {
+	const c = loCounts(lo);
+	return lo.t === p.titan && c.every((n, t) => n === p.counts[t]) && lo.p.length === p.spells.length && lo.p.every((x) => p.spells.includes(x));
+}
+/** The loadouts block of the prepare screen: one tap fills the army; save the army as a new loadout or update the one taken. */
+function prepLoadoutsHtml(st, p, used) {
+	const max = loMax();
+	if (!max) return '';
+	const los = st.loadouts || [];
+	const cur = p.preset >= 0 ? los[p.preset] : null;
+	const btns = [];
+	if (los.length < max) btns.push('<button class="btn" data-act="prep-save" data-id="-1"' + (used || p.titan ? '' : ' disabled') + '>Сохранить набором</button>');
+	if (cur && !loSame(cur, p)) btns.push('<button class="btn" data-act="prep-save" data-id="' + p.preset + '">Обновить «' + esc(loName(cur, p.preset)) + '»</button>');
+	return '<h3>Наборы армии: ' + los.length + ' из ' + max + '</h3>' +
+		(los.length ? '<div class="opts">' + los.map((lo, i) => '<button class="opt wi' + (p.preset === i ? ' on' : '') + '" data-act="prep-load" data-id="' + i + '">' + loIcon(st, lo) +
+			'<b>' + esc(loName(lo, i)) + '</b><span>' + loShort(st, lo) + '</span></button>').join('') + '</div>'
+			: '<p class="fine">Сохраните это войско набором: в следующий раз оно соберётся одним нажатием.</p>') +
+		(btns.length ? '<div class="actions">' + btns.join('') + '</div>' : '') +
+		(los.length >= max && !cur ? '<p class="fine">Все ' + max + ' набора заняты: возьмите набор, поменяйте войско и обновите его, или удалите лишний в окне «Армия».</p>' : '');
+}
+/** Fills the prepare screen from a loadout; what the camp lacks, a resting titan or one the rules bar stays out. */
+function prepLoad(i) {
+	const p = K.prep;
+	const st = K.st;
+	const lo = (st.loadouts || [])[i];
+	if (!p || !lo || (p.assault && st.assault.run)) return;
+	const td = p.trial ? trialDef(st.trial.i) : null;
+	const a = st.army;
+	const miss = [];
+	const ti = loTitan(st, lo);
+	const needTitan = !!p.daily && dailyDef(p.daily.trial).pay === 'titanXp';
+	if (!lo.t) { if (!needTitan) p.titan = 0; else miss.push('сюда нужен титан'); }
+	else if (!ti) miss.push('титана этого набора больше нет');
+	else if (td && !trialAllowsTitan(td, ti.def)) miss.push(titanName(ti) + ' не по правилу');
+	else if (!p.practice && ti.rec > nowF()) miss.push(titanName(ti) + ' отдыхает');
+	else p.titan = ti.id;
+	let left = a.slots;
+	p.counts = loCounts(lo).map((n, t) => {
+		const ok = !td || trialAllowsTroop(td, t);
+		const k = ok ? Math.max(0, Math.min(n, a.n[t], left)) : 0;
+		left -= k;
+		if (k < n) miss.push(K.army.troops[t].name + (ok ? ': в лагере ' + a.n[t] + ' из ' + n : ': не по правилу'));
+		return k;
+	});
+	p.spells = lo.p.filter((x) => st.spells.stock[x] > 0).slice(0, st.spells.kinds);
+	const out = lo.p.filter((x) => !(st.spells.stock[x] > 0));
+	if (out.length) miss.push('нет в запасе: ' + out.map((x) => K.army.spells[x].name).join(', '));
+	p.preset = i;
+	toast('Набор «' + loName(lo, i) + '»' + (miss.length ? ' собран не целиком: ' + miss.join('; ') : ' собран'), miss.length ? '' : 'gold');
+	refreshSheet(true);
+}
+/** Saves the prepare screen's army as a new loadout (slot -1) or over the one taken. */
+function prepSave(slot) {
+	const p = K.prep;
+	const st = K.st;
+	if (!p) return;
+	const los = st.loadouts || [];
+	const squads = [];
+	p.counts.forEach((n, t) => { for (let k = 0; k < n; k++) squads.push(t); });
+	const i = slot >= 0 ? slot : los.length;
+	const name = slot >= 0 && los[slot] ? los[slot].n : '';
+	const code = K.bridge.loadoutSave(i, name, p.titan, squads, p.spells);
+	if (code !== E.None) {
+		toast(code === E.LimitReached ? 'Все ' + loMax() + ' набора заняты: удалите лишний в окне «Армия»' : errText(code), 'bad');
+		return;
+	}
+	p.preset = i;
+	persist();
+	refresh(true);
+	toast((slot >= 0 ? 'Набор «' + loName({ n: name }, i) + '» обновлён' : 'Сохранён «Набор ' + (i + 1) + '»: имя можно дать в окне «Армия»'), 'gold');
+}
+function renameLoadout(i, name) {
+	const lo = (K.st.loadouts || [])[i];
+	if (!lo || name.trim() === lo.n) return;
+	const code = K.bridge.loadoutSave(i, name, lo.t, lo.s, lo.p);
+	if (code !== E.None) toast(code === E.BadId ? 'Такое имя не подходит: не больше 24 букв, без служебных знаков' : errText(code), 'bad');
+	else persist();
+	refresh(true);
+}
+function deleteLoadout(i) {
+	const lo = (K.st.loadouts || [])[i];
+	if (!lo) return;
+	if (K.bridge.loadoutDelete(i) !== E.None) return;
+	if (K.prep && K.prep.preset >= 0) K.prep.preset = K.prep.preset === i ? -1 : K.prep.preset > i ? K.prep.preset - 1 : K.prep.preset;
+	toast('Набор «' + loName(lo, i) + '» удалён', '');
+	persist();
+	refresh(true);
+}
+/** A loadout's start Power as the battle counts it (titan, squads by their men, spells), from the scouting set-up. */
+function loPower(st, lo) {
+	const ti = loTitan(st, lo);
+	const prep = { squads: lo.s, titan: ti ? ti.id : 0, spells: lo.p, reinf: [] };
+	if (!prep.squads.length && !prep.titan) return 0;
+	const w = { id: PRACTICE_ID, lv: Math.max(1, Math.min(st.castle, K.rules.battles.length)), type: practiceFields()[0].type, own: -1, practice: true, noTitan: true };
+	const key = [loKey({ loadouts: [lo] }), prep.titan, st.army.lv.join(), st.spells.lv.join(), ti ? ti.pw : 0].join('|');
+	K.loPw = K.loPw || {};
+	if (K.loPw[key] === undefined) {
+		try {
+			const r = K.bridge.scout(JSON.stringify(landScenario(w, prep)), loCounts(lo), -1);
+			K.loPw[key] = r && r.att ? r.att.t + r.att.s + r.att.sp : 0;
+		} catch (e) { K.loPw[key] = 0; }
+	}
+	return K.loPw[key];
+}
+/** What a loadout answers by the counter table: the enemy classes its best squad hits hardest, and those none answers. */
+function loCounters(lo) {
+	const tab = K.counters;
+	if (!tab || !lo.s.length) return '';
+	const best = tab.columns.map(() => 0);
+	for (const t of new Set(lo.s)) {
+		const row = tab.rows[K.army.troops[t].id.replace(/^troop\./, '')];
+		if (row) row.forEach((m, c) => { best[c] = Math.max(best[c], m); });
+	}
+	// Structures and priests are not what a land battle is about.
+	const cols = best.map((m, c) => [m, c]).filter((x) => x[1] !== 6 && x[1] !== 8);
+	const strong = cols.filter((x) => x[0] >= 1.5).sort((x, y) => y[0] - x[0]).slice(0, 3);
+	const weak = cols.filter((x) => x[0] < 1);
+	return (strong.length ? 'Сильнее всего против ' + strong.map((x) => FOE_GEN[x[1]] + ' (' + mulText(Math.round(x[0] * 100)) + ')').join(', ') : 'Явного перевеса ни над кем нет') +
+		(weak.length ? '; нечем ответить: ' + weak.map((x) => FOE_GEN[x[1]]).join(', ') : '') + '.';
+}
+function loadoutsHtml(st) {
+	const max = loMax();
+	if (!max) return '';
+	const los = st.loadouts || [];
+	const cards = los.map((lo, i) => {
+		const pw = loPower(st, lo);
+		const ct = loCounters(lo);
+		return '<div class="landCard">' + loIcon(st, lo) + '<div class="info"><b>' + esc(loName(lo, i)) + (pw ? ' · сила ' + fmt(pw) : '') + '</b><span>' + loText(st, lo) + '</span>' +
+			(ct ? '<span>' + ct + '</span>' : '') + '</div><div class="row loRow"><label class="field">Имя<input data-lo="' + i + '" maxlength="24" autocomplete="off" spellcheck="false" placeholder="' +
+			esc('Набор ' + (i + 1)) + '" value="' + esc(lo.n) + '"></label><button class="btn" data-act="lo-del" data-id="' + i + '">' + (isArmed('lo-del:' + i) ? 'Точно удалить?' : 'Удалить') + '</button></div></div>';
+	});
+	return '<h3>Наборы армии: ' + los.length + ' из ' + max + '</h3>' + cards.join('') +
+		'<p class="fine">' + (los.length ? 'Набор берётся в окне подготовки к бою одним нажатием; отряды, которых нет в лагере, отдыхающий титан и заклинания не из запаса остаются дома. ' +
+			'Сила — как её считает бой на старте, по таблице контр видно, кого набор бьёт.' : 'Наборов пока нет: соберите войско в окне подготовки к бою и нажмите «Сохранить набором».') + '</p>';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -7390,6 +7569,7 @@ function init(app) {
 		K.rules.castleIndex = K.defs.findIndex((d) => d.id === 'castle');
 		K.sandbox = JSON.parse(files['scenarios/m0_sandbox.json']);
 		K.army = JSON.parse(files['kingdom/army.json']);
+		try { K.counters = parseJsonc(files['counters.json']); } catch (e) { K.counters = null; }
 		// Men in a full squad by troop id (an Assault squad goes with its share of them).
 		K.squadSize = {};
 		for (const t of parseJsonc(files['troops.json']).troops) K.squadSize[t.id] = t.squadSize;
