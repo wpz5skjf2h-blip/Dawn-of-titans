@@ -382,6 +382,38 @@ struct CalendarRules
 	int catchUps = 3;
 };
 
+/** A reward of an event: resources and a relic of this rarity (0: none). */
+struct EventReward
+{
+	ResArray res{};
+	int relic = 0;
+};
+
+/** One Titan Trial (master prompt 10.4): a fixed rule for the player's side and a fixed enemy army. */
+struct TrialDef
+{
+	std::string id;
+	std::vector<int> titans; // titans allowed (indices); empty: any titan
+	bool noTitan = false; // the player goes without a titan
+	int maxStars = 0; // highest titan rarity allowed (0: any)
+	std::vector<int> troops; // the player's troops allowed (indices); empty: any
+	int levelOffset = 0; // the battle's level is the Castle's plus this
+	std::vector<int> enemy; // the enemy's troops (indices), repeated over its squads
+	int enemyTitan = -1; // the enemy's titan (index; -1: the battle level's own, if any)
+};
+
+/** Titan Trials (kingdom.json "trials"): a weekly solo event with a score, milestones and a computer bracket. */
+struct TrialRules
+{
+	int castle = 4; // Castle level they open at
+	int days = 3; // open from Monday for this many days
+	int attempts = 3; // battles a day
+	int bracket = 100; // players in a bracket, the kingdom included
+	std::vector<std::pair<int64_t, EventReward>> milestones; // (best score, reward), ascending
+	std::vector<std::pair<int, EventReward>> ranks; // (worst place that gets it, reward), ascending
+	std::vector<TrialDef> list; // one a week, in turn
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -593,6 +625,7 @@ struct KingdomContent
 	std::vector<GoalDef> goals; // the main line, in order
 	std::vector<AchievementDef> achievements;
 	CalendarRules calendar;
+	TrialRules trials;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

@@ -301,6 +301,9 @@ ul.skills li.fine { list-style: circle; }
 #kQuestBtn svg { width: 22px; height: 22px; }
 #kQuestBtn.ready { border-color: var(--bronze); color: var(--valor); }
 #kQuestBtn.ready::after { content: ''; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
+#kAttack { position: relative; }
+#kAttack.ready::after { content: ''; position: absolute; top: 4px; right: 4px; width: 11px; height: 11px; border-radius: 50%; background: #e04b3a; box-shadow: 0 0 0 2px rgba(10, 13, 16, 0.8); }
+.landCard.ready { border-color: var(--bronze); }
 /* The main line of goals: the current goal above the bottom buttons (left); gold when its reward waits. */
 #kGoal { position: absolute; left: var(--gut-l); bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 76px); width: min(300px, calc(100vw - var(--gut-l) - var(--gut-r)));
   display: flex; align-items: center; gap: 9px; padding: 6px 12px 7px 6px; border-radius: 14px; text-align: left; color: var(--parch);
@@ -452,6 +455,8 @@ ul.goalNext li .cost { white-space: nowrap; }
 .league .me { color: var(--valor); font-weight: 700; }
 .league .up { color: var(--good); } .league .down { color: #ffb4a6; }
 .league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
+.league.ranks { grid-template-columns: 64px 1fr auto; }
+.league.ranks .pl { text-align: left; white-space: nowrap; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); min-width: 0; }
 .field input { height: 42px; border-radius: 10px; border: 1px solid var(--hair); background: rgba(255, 255, 255, 0.06); color: var(--parch);
   padding: 0 12px; font: inherit; font-size: 16px; min-width: 0; }

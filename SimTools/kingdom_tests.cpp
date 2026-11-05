@@ -2308,6 +2308,126 @@ void TestWeeklyQuests()
 	KD_CHECK(Pre.WeeklyQuests().size() == 5 && Pre.WeeklyQuests()[0].def == Week0[0].def && Pre.Hash() != 0);
 }
 
+void TestTitanTrials()
+{
+	const KingdomContent& Ct = Content();
+	const TrialRules& T = Ct.trials;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const int64_t Day = 86400;
+	// Master prompt 10.4: Monday to Wednesday, brackets of 100, milestones and ranks. Ours: Castle 4, three battles a day,
+	// 30 gems for the milestones and 5 to 60 by place.
+	KD_CHECK(T.castle == 4 && T.days == 3 && T.attempts == 3 && T.bracket == 100 && T.list.size() == 6);
+	KD_CHECK(T.milestones.size() == 3 && T.ranks.size() == 6 && T.ranks.front().first == 1 && T.ranks.back().first == 100);
+	int64_t MilestoneGems = 0;
+	for (const auto& M : T.milestones)
+	{
+		MilestoneGems += M.second.res[GemsI];
+	}
+	KD_CHECK(MilestoneGems == 30 && T.ranks.front().second.res[GemsI] == 60 && T.ranks.front().second.relic == 3 && T.milestones[2].second.relic == 2);
+	KD_CHECK(T.list[0].id == "olympus" && T.list[0].titans.size() == 6 && T.list[3].noTitan && T.list[3].levelOffset == 1 && T.list[4].maxStars == 2);
+	KD_CHECK(T.list[5].troops.size() == 8 && T.list[1].enemy.size() == 4 && T.list[1].enemyTitan == Ct.FindTitan("titan.atlas") && T.list[3].enemyTitan == -1);
+
+	// T0 is a Thursday of week 2910 (olympus): a new kingdom is below Castle 4.
+	Kingdom K(Ct);
+	K.NewGame(T0, 71);
+	KD_CHECK(K.TrialCount() == 6 && K.TrialIndex() == 0 && K.CheckTrial().error == Error::Locked && K.CheckTrial().castle == 4);
+	KD_CHECK(K.StartTrial({}, 0, {}) == Error::Locked && K.TrialBest() == 0 && K.ClaimTrialRank(nullptr) == Error::Nothing);
+	const int64_t Monday = (2911 * 7 - 3) * Day;
+	KD_CHECK(K.TrialOpensAt() == Monday - 7 * Day && K.TrialClosesAt() == Monday - 4 * Day);
+	// At Castle 4 it is closed until Monday.
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":4"), Error) && L.CastleLevel() == 4);
+	KD_CHECK(L.CheckTrial().error == Error::NotReady && L.CheckTrial().timeSec == Monday - T0 && L.StartTrial({}, 0, {}) == Error::NotReady);
+	L.Advance(Monday + Hour);
+	// Week 2911: the aesir's trial. Perun (the first titan) may not go; without a titan the battle starts, free of stones.
+	const int32_t Perun = L.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	const int Knights = Troop("troop.knights");
+	KD_CHECK(L.TrialIndex() == 1 && L.CheckTrial().error == Error::None && L.TrialAttemptsLeft() == 3 && L.TrialLevel() == 4 && L.TrialClosesAt() == Monday + 3 * Day);
+	KD_CHECK(!L.TrialAllowsTitan(L.Titans()[0].def) && L.TrialAllowsTitan(Ct.FindTitan("titan.thor")) && L.TrialAllowsTroop(Knights));
+	KD_CHECK(L.StartTrial({Militia}, Perun, {}) == Error::NotAllowed && L.TrialAttemptsLeft() == 3 && L.PendingAttack() == 0);
+	const int64_t Stones = L.Amount(Res::Stones);
+	const int64_t Army = L.ArmyCount(Militia);
+	KD_CHECK(Army >= 1 && L.StartTrial({Militia}, 0, {}) == Error::None && L.PendingTrial() && L.PendingSite() == -1 && L.PendingMission() == -1);
+	KD_CHECK(L.Amount(Res::Stones) == Stones && L.TrialAttemptsLeft() == 2 && L.PendingSquads().size() == 1);
+	KD_CHECK(L.FinishSiteAttack(0, 3, {100}, {}, nullptr) == Error::NoAttack && L.FinishMission(0, 0, 3, {100}, {}, nullptr) == Error::NoAttack);
+	// A save in the middle of the battle loads to the same state.
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.PendingTrial());
+	// Nothing is lost; the score counts within what the stars allow; a win counts for quests.
+	const int64_t Wins = L.Lifetime(QuestEvent::Win);
+	Reward R;
+	KD_CHECK(L.FinishTrial(2, 3100, &R) == Error::None && !L.PendingTrial() && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(L.ArmyCount(Militia) == Army && L.TrialBest() == 3100 && L.Lifetime(QuestEvent::Win) == Wins + 1 && L.FinishTrial(3, 1, nullptr) == Error::NoAttack);
+	KD_CHECK(L.StartTrial({}, 0, {}) == Error::None && L.FinishTrial(1, 9000, nullptr) == Error::None && L.TrialBest() == 3500);
+	KD_CHECK(L.StartTrial({}, 0, {}) == Error::None && L.FinishTrial(0, 200, nullptr) == Error::None && L.TrialBest() == 3500);
+	KD_CHECK(L.CheckTrial().error == Error::LimitReached && L.CheckTrial().timeSec == Day - Hour && L.StartTrial({}, 0, {}) == Error::LimitReached);
+	// Milestones by the best score, paid on top of a full portal.
+	KD_CHECK(L.ClaimTrialMilestone(3, nullptr) == Error::BadId && L.ClaimTrialMilestone(2, nullptr) == Error::NotReady);
+	const int64_t Gems = L.Amount(Res::Gems);
+	L.RefillStones();
+	const int64_t Full = L.Amount(Res::Stones);
+	KD_CHECK(L.ClaimTrialMilestone(0, &R) == Error::None && R.res[GemsI] == 5 && R.res[StonesI] == 6 && L.Amount(Res::Stones) == Full + 6);
+	KD_CHECK(L.ClaimTrialMilestone(1, &R) == Error::None && L.Amount(Res::Gems) == Gems + 15 && L.ClaimTrialMilestone(0, nullptr) == Error::Nothing);
+	KD_CHECK(L.TrialMilestoneClaimed(0) && L.TrialMilestoneClaimed(1) && !L.TrialMilestoneClaimed(2));
+	// The next day brings three more battles.
+	L.Advance(Monday + Day + Hour);
+	KD_CHECK(L.TrialAttemptsLeft() == 3 && L.CheckTrial().error == Error::None && L.TrialBest() == 3500);
+	KD_CHECK(L.StartTrial({}, 0, {}) == Error::None && L.FinishTrial(3, 4300, nullptr) == Error::None);
+	const size_t Relics = L.Relics().size();
+	KD_CHECK(L.ClaimTrialMilestone(2, &R) == Error::None && R.res[GemsI] == 15 && R.relics.size() == 1 && L.Relics().size() == Relics + 1);
+	KD_CHECK(L.FindRelic(R.relics[0])->rarity == 2);
+	// The computer lords post their best during the open days: about a tenth never fight, none above 4800.
+	KD_CHECK(L.ClaimTrialRank(nullptr) == Error::NotReady && L.TrialLordScore(99) == 0 && L.TrialLordScore(-1) == 0);
+	L.Advance(Monday + 3 * Day + Hour);
+	int Zero = 0;
+	int Above = 0;
+	for (int I = 0; I < 99; ++I)
+	{
+		const int64_t S = L.TrialLordScore(I);
+		Zero += S == 0 ? 1 : 0;
+		Above += S > L.TrialBest() ? 1 : 0;
+		KD_CHECK(S == 0 || (S >= 1200 && S <= 4800));
+	}
+	KD_CHECK(Zero >= 3 && Zero <= 20 && L.TrialRank() == Above + 1 && L.CheckTrial().error == Error::NotReady);
+	KD_CHECK(L.CheckTrial().timeSec == 4 * Day - Hour);
+	// The same lords on every client.
+	Kingdom L2(Ct);
+	KD_CHECK(L2.Load(L.Save(), Error) && L2.Hash() == L.Hash() && L2.TrialRank() == L.TrialRank() && L2.TrialLordScore(7) == L.TrialLordScore(7));
+	// The rank reward once the trial is closed.
+	const int Pick = L.TrialRankReward(L.TrialRank());
+	KD_CHECK(Pick >= 0 && L.TrialRankReward(1) == 0 && L.TrialRankReward(2) == 1 && L.TrialRankReward(100) == 5 && L.TrialRankReward(101) == -1);
+	const int64_t Gems2 = L.Amount(Res::Gems);
+	KD_CHECK(L.ClaimTrialRank(&R) == Error::None && L.Amount(Res::Gems) == Gems2 + T.ranks[static_cast<size_t>(Pick)].second.res[GemsI]);
+	KD_CHECK(L.TrialRankClaimed() && L.ClaimTrialRank(nullptr) == Error::Nothing);
+	// Saving keeps the week; the next Monday brings the next trial with nothing claimed.
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(L.Save(), Error) && S.Hash() == L.Hash() && S.Save() == L.Save() && S.TrialRankClaimed() && S.TrialBest() == 4300);
+	S.Advance(Monday + 7 * Day + Hour);
+	KD_CHECK(S.TrialIndex() == 2 && S.TrialBest() == 0 && !S.TrialRankClaimed() && !S.TrialMilestoneClaimed(0) && S.TrialAttemptsLeft() == 3);
+	// Week 2912: Perun and Veles. Week 2913: no titan at all, one level up. 2914: up to two stars. 2915: no cavalry.
+	KD_CHECK(S.TrialAllowsTitan(Ct.FindTitan("titan.perun")) && S.TrialAllowsTitan(Ct.FindTitan("titan.veles")) && !S.TrialAllowsTitan(Ct.FindTitan("titan.talos")));
+	S.Advance(Monday + 14 * Day + Hour);
+	KD_CHECK(S.TrialIndex() == 3 && !S.TrialAllowsTitan(Ct.FindTitan("titan.perun")) && S.TrialLevel() == 5 && S.StartTrial({}, Perun, {}) == Error::NotAllowed);
+	S.Advance(Monday + 21 * Day + Hour);
+	KD_CHECK(S.TrialIndex() == 4 && S.TrialAllowsTitan(Ct.FindTitan("titan.perun")) && !S.TrialAllowsTitan(Ct.FindTitan("titan.thor")));
+	S.Advance(Monday + 28 * Day + Hour);
+	KD_CHECK(S.TrialIndex() == 5 && S.TrialAllowsTroop(Militia) && !S.TrialAllowsTroop(Knights) && !S.TrialAllowsTroop(Troop("troop.ballista")));
+	KD_CHECK(S.TrialAllowsTitan(Ct.FindTitan("titan.thor")) && S.StartTrial({Knights}, 0, {}) == Error::NotAllowed);
+	// Without a battle there is no rank reward.
+	S.Advance(Monday + 31 * Day + Hour);
+	KD_CHECK(S.TrialBest() == 0 && S.ClaimTrialRank(nullptr) == Error::Nothing);
+	// A save from before trials starts this week's on the next Advance.
+	const std::string Now = S.Save();
+	const size_t P0 = Now.find(",\"trials\":{");
+	Kingdom Pre(Ct);
+	KD_CHECK(P0 != std::string::npos && Pre.Load(Now.substr(0, P0) + Now.substr(Now.find(",\"calendar\":{")), Error) && Pre.TrialBest() == 0);
+	Pre.Advance(S.Now() + 60);
+	KD_CHECK(Pre.TrialIndex() == S.TrialIndex() && Pre.Hash() != 0);
+}
+
 void TestCalendars()
 {
 	const KingdomContent& Ct = Content();
@@ -2691,7 +2811,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials},
 	};
 	for (const auto& T : Tests)
 	{
