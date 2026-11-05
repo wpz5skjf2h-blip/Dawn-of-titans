@@ -1939,8 +1939,8 @@ function drawOverlay(t) {
 			pill(c, it.x, it.y, st.spells.qb ? 'Запас полон' : K.army.spells[st.spells.queue[0]].name + ' ' + fmtClock(st.spells.qf - nf), '', undefined, K.army.spells[st.spells.queue[0]].id);
 		} else if (d.id === 'barracks' && b.lv > 0 && st.army.queue.length) {
 			pill(c, it.x, it.y, st.army.qb ? 'Лагерь полон' : K.army.troops[st.army.queue[0]].name + ' ' + fmtClock(st.army.qf - nf), '', undefined, K.army.troops[st.army.queue[0]].id);
-		} else if (d.id === 'adventurers_guild' && b.lv > 0 && campaignOpen(st) >= 0) {
-			pill(c, it.x, it.y, 'Новая миссия', selected ? d.name : '', undefined, 'ui.campaign');
+		} else if (d.id === 'adventurers_guild' && b.lv > 0 && (campaignOpen(st) >= 0 || heroicOpen(st) >= 0)) {
+			pill(c, it.x, it.y, campaignOpen(st) >= 0 ? 'Новая миссия' : 'Героическая миссия', selected ? d.name : '', undefined, 'ui.campaign');
 		} else if (d.id === 'garrison' && b.lv > 0 && st.raids.shield > nf) {
 			pill(c, it.x, it.y, 'Щит ' + fmtDur(st.raids.shield - nf), selected ? d.name : '', undefined, 'building.' + d.id);
 		} else if (selected) {
@@ -2571,6 +2571,7 @@ function onAct(e) {
 	case 'trial-ms': claimTrial('ms', id); break;
 	case 'trial-rank': claimTrial('rank'); break;
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
+	case 'camp-mode': openCampaign(K.campAct | 0, id === 1); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
 	case 'mission-sweep': sweepMission(Math.floor(id / 100), id % 100); break;
 	case 'camp-titan': K.campTitan = id; refreshSheet(true); break;
@@ -3376,40 +3377,102 @@ function siteCards(st) {
 // ---------------------------------------------------------------------------------------------
 // Campaigns of the Adventurers' Guild: acts of missions in order, Ilsa Wren's briefings, star chests
 // ---------------------------------------------------------------------------------------------
-// The land battle code fights a mission as a pseudo land { id, lv, mission: { a, m } }.
+// The land battle code fights a mission as a pseudo land { id, lv, mission: { a, m } }. On Heroic (master prompt 10.2)
+// the mission number is HEROIC + m, as the kingdom numbers it.
 const MISSION_ID = 910001;
 const MISSION_TYPE = { field: 'Полевой бой', hunt: 'Охота на титана', elite: 'Элитный бой', boss: 'Босс акта' };
-const missionDef = (a, m) => K.rules.campaigns.acts[a].missions[m];
-const missionTarget = (a, m) => ({ id: MISSION_ID + a * 100 + m, lv: missionDef(a, m).level, mission: { a, m } });
-function missionTitan(md) {
+const HEROIC = 50;
+const missionDef = (a, m) => K.rules.campaigns.acts[a].missions[m >= HEROIC ? m - HEROIC : m];
+const heroicRules = () => (K.rules.campaigns && K.rules.campaigns.heroic) || null;
+/** Whether the kingdom has Heroic missions at all (the act's state carries them). */
+const heroicOn = (st) => !!(heroicRules() && heroicRules().castle > 0 && st.campaign && st.campaign.length && st.campaign[0].heroic);
+/** A mission's level: Heroic adds to it (as Kingdom::MissionLevel). */
+const missionLevel = (a, m) => (m >= HEROIC ? Math.min(K.rules.battles.length, missionDef(a, m).level + heroicRules().level) : missionDef(a, m).level);
+const missionTarget = (a, m) => ({ id: MISSION_ID + a * 100 + m, lv: missionLevel(a, m), mission: { a, m } });
+/** The act's state on a difficulty. */
+const campState = (st, a, m) => (m >= HEROIC ? st.campaign[a].heroic : st.campaign[a]);
+/** The mission's titan; on Heroic a few levels higher (at most its rarity's cap). */
+function missionTitan(md, heroic) {
 	const t = md && md.titan;
 	const def = t && K.army.titans.find((x) => x.id === t.id);
-	return def ? { def, level: t.level, stars: t.stars, name: t.name || '' } : null;
+	if (!def) return null;
+	const level = heroic ? Math.min(t.level + (heroicRules().titanLevel || 0), 10 + 10 * def.stars) : t.level;
+	return { def, level, stars: t.stars, name: t.name || '' };
 }
-function missionIcon(md) {
+/** A Heroic mission's Titan Spire modifier: the list's in turn over the act's missions (null: none). */
+function heroicMod(a, m) {
+	const ids = heroicRules().mods || [];
+	const mods = (K.rules.spire && K.rules.spire.mods) || [];
+	if (!ids.length) return null;
+	const n = K.rules.campaigns.acts[a].missions.length;
+	const id = ids[(a * n + (m % HEROIC)) % ids.length];
+	return mods.find((x) => x.id === id) || null;
+}
+/** What Heroic changes in a mission's battle (as spireKnobs): the squads' and the titan's bonuses, the AI, the
+ *  modifier's extra squads and the battle's length. */
+function heroicKnobs(a, m) {
+	const H = heroicRules();
+	const k = { atk: H.atkPct || 0, hp: H.hpPct || 0, tAtk: H.titanPct || 0, tHp: H.titanPct || 0, squads: 0, ai: H.ai || '', timerSec: 0 };
+	const mod = heroicMod(a, m);
+	if (mod) {
+		k.atk += mod.atkPct || 0;
+		k.hp += mod.hpPct || 0;
+		k.tAtk += mod.titanAtkPct || 0;
+		k.tHp += mod.titanHpPct || 0;
+		k.squads += mod.squads || 0;
+		if (mod.ai) k.ai = mod.ai;
+		if (mod.timerSec) k.timerSec = mod.timerSec;
+	}
+	return k;
+}
+/** A Heroic mission's enemy squads: the mission's, then the modifier's extra ones from the same list. */
+function heroicEnemy(a, m) {
+	const sq = missionDef(a, m).squads;
+	return sq.concat(Array.from({ length: heroicKnobs(a, m).squads }, (_, i) => sq[i % sq.length]));
+}
+function heroicEnemyText(a, m) {
+	const md = missionDef(a, m);
+	const k = heroicKnobs(a, m);
+	const et = missionTitan(md, true);
+	const n = heroicEnemy(a, m).length;
+	const parts = [AI_RU[k.ai || md.ai] || ''];
+	parts.push(n + ' ' + plural(n, 'отряд', 'отряда', 'отрядов') + (k.hp ? ', здоровья +' + k.hp + '%' : '') + (k.atk ? ', урона +' + k.atk + '%' : ''));
+	if (et) parts.push('титан ' + (et.name ? et.name + ' (' + et.def.name + ')' : et.def.name) + ' ур. ' + et.level + (k.tHp ? ', здоровья +' + k.tHp + '%' : '') + (k.tAtk ? ', урона +' + k.tAtk + '%' : ''));
+	if (k.timerSec) parts.push('на бой ' + fmtDur(k.timerSec));
+	const mod = heroicMod(a, m);
+	if (mod) parts.push('модификатор «' + mod.name + '»: ' + mod.text);
+	return parts.filter(Boolean).join('; ');
+}
+function missionIcon(md, lv) {
 	const glyph = md.type === 'field' ? 'ui.attack' : 'mission.' + md.type;
-	return '<div class="ico ' + (md.type === 'boss' || md.type === 'elite' ? 'gold' : 'shards') + ' land">' + DotIcons.svg(glyph) + '<i class="lvb">' + md.level + '</i></div>';
+	return '<div class="ico ' + (md.type === 'boss' || md.type === 'elite' ? 'gold' : 'shards') + ' land">' + DotIcons.svg(glyph) + '<i class="lvb">' + (lv || md.level) + '</i></div>';
 }
 const missionBrief = (md) => '<p class="fine brief"><b>Ильза Рен:</b> «' + esc(md.brief) + '»</p>';
 /** Resources as "+10 [gem] +5 000 [food]" (HTML). */
 function resPlus(r) {
 	return RES.map((k, i) => (r[i] > 0 ? '+' + fmt(r[i]) + ' ' + iconSvg(k) : '')).filter(Boolean).join(' ');
 }
-const firstRes = (md) => RES.map((k) => (md.first && md.first[k]) || 0);
+/** The first win's reward (on Heroic, the mission's times the Heroic percent, as the kingdom pays it). */
+const firstRes = (md, heroic) => RES.map((k) => Math.floor((((md.first && md.first[k]) || 0) * (heroic ? heroicRules().first : 100)) / 100));
 function missionRewardText(a, m) {
 	const md = missionDef(a, m);
-	const won = K.st.campaign[a].stars[m] > 0;
-	return (won ? 'Награда за первую победу уже получена; повтор даёт опыт титану и добычу.' : 'Первая победа: ' + resPlus(firstRes(md)) + '.') +
-		' Опыт титана как в бою за землю ' + md.level + '-го уровня. Миссию можно переигрывать ради звёзд.';
+	const h = m >= HEROIC;
+	const won = campState(K.st, a, m).stars[m % HEROIC] > 0;
+	return (won ? 'Награда за первую победу уже получена; повтор даёт опыт титану и добычу' + (h ? ' (на героической — вдвое больше).' : '.') : 'Первая победа: ' + resPlus(firstRes(md, h)) + '.') +
+		' Опыт титана как в бою за землю ' + missionLevel(a, m) + '-го уровня. Миссию можно переигрывать ради звёзд.';
 }
+const missionReady = (c) => !!c && c.stars[c.next] === 0 && (c.err[c.next] === E.None || c.err[c.next] === E.NeedStones);
 /** The act with a mission to play now (the golden statue on the Guild's tower in the original), or -1. */
 function campaignOpen(st) {
 	if (!st.campaign) return -1;
-	return st.campaign.findIndex((c) => c.stars[c.next] === 0 && (c.err[c.next] === E.None || c.err[c.next] === E.NeedStones));
+	return st.campaign.findIndex((c) => missionReady(c));
 }
+/** The act with a Heroic mission to play now, or -1. */
+const heroicOpen = (st) => (heroicOn(st) ? st.campaign.findIndex((c) => missionReady(c.heroic)) : -1);
 function campaignNote(st) {
 	const a = campaignOpen(st);
 	if (a >= 0) return 'новая миссия';
+	if (heroicOpen(st) >= 0) return 'героическая миссия';
 	const c = st.campaign && st.campaign[Math.max(0, campaignAct(st))];
 	return c ? '★ ' + c.total + ' из ' + c.stars.length * 3 : '';
 }
@@ -3429,20 +3492,21 @@ function chestText(ch) {
 	if (ch.titan) parts.push('титан ' + '★'.repeat(ch.titan) + ' (если в Зале титанов нет места — реликвия)');
 	return parts.join(', ');
 }
-function missionButton(c, a, m) {
+/** A mission's button; base is HEROIC on Heroic (c is then the act's Heroic state). */
+function missionButton(c, a, m, base) {
 	const err = c.err[m];
 	const won = c.stars[m] > 0;
 	const stones = K.rules.campaigns.stones;
 	if (err === E.NeedRequirement) return '<button class="btn" disabled>Нужна Гильдия искателей приключений</button>';
-	if (err === E.Locked) return '<button class="btn" disabled>' + (c.ck.c && m === c.next ? 'С Замка ' + c.ck.c : m > 0 ? 'Сначала миссия ' + m : 'Сначала пройдите прошлый акт') + '</button>';
-	return '<button class="btn' + (won ? '' : ' primary') + '" data-act="mission" data-id="' + (a * 100 + m) + '"' + (err === E.NeedStones ? ' disabled' : '') + '>' +
+	if (err === E.Locked) return '<button class="btn" disabled>' + (c.ck.c && m === c.next ? 'С Замка ' + c.ck.c : m > 0 ? 'Сначала миссия ' + m : base ? 'Сначала пройдите акт' : 'Сначала пройдите прошлый акт') + '</button>';
+	return '<button class="btn' + (won ? '' : ' primary') + '" data-act="mission" data-id="' + (a * 100 + base + m) + '"' + (err === E.NeedStones ? ' disabled' : '') + '>' +
 		(won ? 'Ещё раз' : 'В бой') + ' · ' + stones + ' ' + iconSvg('stones') + '</button>';
 }
 // Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food, as a
 // 3-star repeat win with no losses; the titan sent gets its XP and rests. Repeat wins and sweeps roll the loot table.
 const sweepRules = () => (K.rules.campaigns && K.rules.campaigns.sweep) || null;
 const sweepOn = () => !!(sweepRules() && sweepRules().food > 0);
-const sweepFood = (md) => sweepRules().food * md.level;
+const sweepFood = (a, m) => sweepRules().food * missionLevel(a, m);
 /** The titan a sweep sends: the one picked while it is rested, else the strongest rested one (null: none). */
 function sweepTitan(st) {
 	if (K.campTitan === 0) return null;
@@ -3461,11 +3525,11 @@ function sweepErrText(code) {
 	default: return errText(code);
 	}
 }
-function sweepButton(c, a, m) {
+function sweepButton(c, a, m, base) {
 	if (!sweepOn() || c.stars[m] < 3) return '';
 	const err = c.sw ? c.sw[m] : E.NotAllowed;
-	return '<button class="btn' + (err === E.None ? ' primary' : '') + '" data-act="mission-sweep" data-id="' + (a * 100 + m) + '"' +
-		(err === E.None ? '' : ' disabled title="' + esc(sweepErrText(err)) + '"') + '>Зачистка · 1 ' + iconSvg('scroll') + ' ' + fmtShort(sweepFood(missionDef(a, m))) + ' ' + iconSvg('food') + '</button>';
+	return '<button class="btn' + (err === E.None ? ' primary' : '') + '" data-act="mission-sweep" data-id="' + (a * 100 + base + m) + '"' +
+		(err === E.None ? '' : ' disabled title="' + esc(sweepErrText(err)) + '"') + '>Зачистка · 1 ' + iconSvg('scroll') + ' ' + fmtShort(sweepFood(a, base + m)) + ' ' + iconSvg('food') + '</button>';
 }
 /** A repeat win's or a sweep's loot for a toast (relics go in the army toast). */
 function lootText(r) {
@@ -3493,38 +3557,64 @@ function sweepMission(a, m) {
 		refresh(true);
 		return;
 	}
-	toast('Зачистка «' + md.name + '»: ★★★' + lootText(r), 'gold');
+	toast((m >= HEROIC ? 'Героическая зачистка «' : 'Зачистка «') + md.name + '»: ★★★' + lootText(r), 'gold');
 	armyToast(r, []);
 	persist();
 	refresh(true);
 }
-function openCampaign(act) {
+/** A star chest of the act as Heroic gives it: more resources, a relic or titan a star better (as Kingdom::ClaimChest). */
+function heroicChest(ch) {
+	const H = heroicRules();
+	const out = { stars: ch.stars };
+	for (const k of RES) if (ch[k]) out[k] = Math.floor((ch[k] * H.chest) / 100);
+	if (ch.relic) out.relic = Math.min(5, ch.relic + H.relicUp);
+	if (ch.titan) out.titan = Math.min(4, ch.titan + H.relicUp);
+	return out;
+}
+function openCampaign(act, heroic) {
 	if (!K.rules.campaigns) return;
 	cancelPlace();
 	select(null);
-	if (act !== undefined) K.campAct = act;
-	else K.campAct = campaignAct(K.st);
+	if (act !== undefined) {
+		K.campAct = act;
+		if (heroic !== undefined) K.campHero = !!heroic;
+	} else {
+		// A mission to play first; else a Heroic one; else the last open act on the difficulty shown before.
+		const ha = campaignOpen(K.st) < 0 ? heroicOpen(K.st) : -1;
+		K.campHero = ha >= 0;
+		K.campAct = ha >= 0 ? ha : campaignAct(K.st);
+	}
 	openSheet(() => {
 		const st = K.st;
 		const acts = K.rules.campaigns.acts;
 		const a = clamp(K.campAct | 0, 0, acts.length - 1);
 		const A = acts[a];
-		const c = st.campaign[a];
+		const hero = !!K.campHero && heroicOn(st);
+		const base = hero ? HEROIC : 0;
+		const c = hero ? st.campaign[a].heroic : st.campaign[a];
+		const H = heroicRules();
 		const max = A.missions.length * 3;
 		const tabs = acts.map((x, i) => {
-			const ci = st.campaign[i];
+			const ci = hero ? st.campaign[i].heroic : st.campaign[i];
 			const locked = ci.err[0] === E.Locked || ci.err[0] === E.NeedRequirement;
 			return '<button class="opt' + (i === a ? ' on' : '') + '" data-act="campaign" data-id="' + i + '"><b>' + esc(x.name) + '</b><span>' +
-				(locked && !ci.total ? (ci.err[0] === E.NeedRequirement ? 'нужна Гильдия' : 'с Замка ' + x.castle) : '★ ' + ci.total + ' из ' + x.missions.length * 3) + '</span></button>';
+				(locked && !ci.total ? (ci.err[0] === E.NeedRequirement ? 'нужна Гильдия' : hero ? 'после акта' : 'с Замка ' + x.castle) : '★ ' + ci.total + ' из ' + x.missions.length * 3) + '</span></button>';
 		});
-		const done = c.stars[A.missions.length - 1] > 0;
+		// Normal and Heroic, once the kingdom has Heroic at all.
+		const modes = heroicOn(st) ? '<div class="opts heroModes">' + [0, 1].map((h) => {
+			const tot = st.campaign.reduce((n, x) => n + (h ? x.heroic.total : x.total), 0);
+			return '<button class="opt' + (!!h === hero ? ' on' : '') + '" data-act="camp-mode" data-id="' + h + '"><b>' + (h ? 'Героическая' : 'Обычная') + '</b><span>' +
+				(h && !tot && st.campaign.every((x) => x.heroic.err[0] === E.Locked || x.heroic.err[0] === E.NeedRequirement) ? 'с Замка ' + H.castle + ', после акта' : '★ ' + tot) + '</span></button>';
+		}).join('') + '</div>' : '';
+		const done = st.campaign[a].stars[A.missions.length - 1] > 0;
 		const lockedAct = c.err[0] === E.Locked || c.err[0] === E.NeedRequirement;
-		const chests = A.chests.map((ch, i) => {
+		const chests = A.chests.map((ch0, i) => {
+			const ch = hero ? heroicChest(ch0) : ch0;
 			const open = c.chests[i] === 1;
 			const btn = open ? '<button class="btn" disabled>Открыт</button>'
-				: c.total >= ch.stars ? '<button class="btn primary" data-act="chest" data-id="' + (a * 100 + i) + '">Открыть</button>'
+				: c.total >= ch.stars ? '<button class="btn primary" data-act="chest" data-id="' + (a * 100 + base + i) + '">Открыть</button>'
 					: '<button class="btn" disabled>Ещё ' + (ch.stars - c.total) + ' ★</button>';
-			return '<div class="landCard">' + icoHtml('ui.chest', 'gold land') + '<div class="info"><b>Сундук за ' + ch.stars + ' ★</b><span>' + chestText(ch) + '</span></div>' +
+			return '<div class="landCard">' + icoHtml('ui.chest', 'gold land') + '<div class="info"><b>' + (hero ? 'Героический сундук' : 'Сундук') + ' за ' + ch.stars + ' ★</b><span>' + chestText(ch) + '</span></div>' +
 				'<div class="row">' + btn + '</div></div>';
 		});
 		// Fog of war (the master prompt): the missions won so far and the next one; the rest stay hidden.
@@ -3533,11 +3623,12 @@ function openCampaign(act) {
 		for (let m = 0; m < shown; m++) {
 			const md = A.missions[m];
 			const won = c.stars[m] > 0;
-			cards.push('<div class="landCard' + (won ? ' won' : '') + '">' + missionIcon(md) + '<div class="info"><b>' + (m + 1) + '. ' + esc(md.name) + ' · ур. ' + md.level + '</b>' +
-				'<span>' + MISSION_TYPE[md.type] + ' · ' + esc(enemyText(md.level, missionTitan(md), md.ai, md.squads.length)) + ' · поле боя: ' + esc(siteField(md).field) + '</span>' +
+			const enemy = hero ? heroicEnemyText(a, base + m) : enemyText(md.level, missionTitan(md), md.ai, md.squads.length);
+			cards.push('<div class="landCard' + (won ? ' won' : '') + (hero ? ' heroic' : '') + '">' + missionIcon(md, missionLevel(a, base + m)) + '<div class="info"><b>' + (m + 1) + '. ' + esc(md.name) + ' · ур. ' + missionLevel(a, base + m) + '</b>' +
+				'<span>' + MISSION_TYPE[md.type] + ' · ' + esc(enemy) + ' · поле боя: ' + esc(siteField(md).field) + '</span>' +
 				'<span>' + (won ? 'Лучший результат: <b class="gold">' + '★'.repeat(c.stars[m]) + '</b>' + '☆'.repeat(3 - c.stars[m]) + ' · повтор даёт опыт титану и добычу'
-					: 'Первая победа: ' + resPlus(firstRes(md))) + '</span></div>' +
-				(won ? '' : missionBrief(md)) + '<div class="row">' + missionButton(c, a, m) + sweepButton(c, a, m) + '</div></div>');
+					: 'Первая победа: ' + resPlus(firstRes(md, hero))) + '</span></div>' +
+				(won || hero ? '' : missionBrief(md)) + '<div class="row">' + missionButton(c, a, m, base) + sweepButton(c, a, m, base) + '</div></div>');
 		}
 		const hidden = A.missions.length - shown;
 		const sweepable = sweepOn() && c.stars.some((x) => x >= 3);
@@ -3545,27 +3636,34 @@ function openCampaign(act) {
 		const sweepHtml = sweepable ? '<h3>Зачистка</h3><p class="fine">Миссию, пройденную на 3 звезды, можно зачистить сразу, без боя: боевой свиток и еда на поход (' +
 			fmt(sweepRules().food) + ' за уровень миссии). Войска не гибнут, титан получает опыт победы на 3 звезды и уходит отдыхать. Свитки дают ежедневный и недельный сундуки заданий' +
 			(sweepRules().max ? ', держать можно до ' + sweepRules().max : '') + '. Кого послать:</p>' + sweepPicker(st, pick) : '';
+		const heroText = hero ? '<p class="fine">Героическая сложность (как в оригинальном замысле кампании): акт, пройденный до конца, открывается заново с Замка ' + H.castle +
+			'. Враг сильнее: «' + (AI_RU[H.ai] || H.ai) + '», отрядам и титану +' + H.atkPct + '% урона и здоровья, титан на ' + H.titanLevel + ' ' + plural(H.titanLevel, 'уровень', 'уровня', 'уровней') +
+			' выше, и у каждой миссии свой модификатор из Башни титанов. Уровень миссий на ' + H.level + ' выше, первая победа даёт в ' + H.first / 100 + ' раза больше, добыча повторов — в ' + H.loot / 100 +
+			' раза больше и реликвии на звезду лучше; героические звёзды открывают свои сундуки.</p>' : '';
 		const html = sheetTitle(icoHtml('ui.campaign', 'bld'), 'Кампании') +
 			'<p class="fine">Как в оригинале, кампании открывает Гильдия искателей приключений; новая миссия отмечена над Гильдией. Миссии идут по порядку. ' +
 			'Бой стоит ' + K.rules.campaigns.stones + ' камня портала и даёт титану опыт как бой за землю того же уровня, первая победа приносит награду миссии, а звёзды открывают сундуки акта. ' +
-			'Повторные победы приносят добычу: золото, еду, камни портала или реликвию.</p>' +
+			'Повторные победы приносят добычу: золото, еду, камни портала или реликвию.</p>' + modes + heroText +
 			(acts.length > 1 ? '<div class="opts">' + tabs.join('') + '</div>' : '') +
-			'<h3>' + esc(A.name) + '</h3><p><b>' + esc(A.region) + '.</b> ' + esc(done ? A.outro : A.intro) + '</p>' +
-			(lockedAct ? '<p class="fine">' + (c.err[0] === E.NeedRequirement ? 'Сначала постройте Гильдию искателей приключений.' : c.ck.c ? 'Акт откроется на Замке ' + c.ck.c + '.' : 'Акт откроется, когда будет пройден предыдущий.') + '</p>' : '') +
-			'<div class="costline"><span>Звёзды акта</span><b>★ ' + c.total + ' / ' + max + '</b><span>камни ' + iconSvg('stones') + st.res[3] + '</span>' +
+			'<h3>' + esc(A.name) + (hero ? ' · героическая' : '') + '</h3><p><b>' + esc(A.region) + '.</b> ' + esc(done ? A.outro : A.intro) + '</p>' +
+			(lockedAct ? '<p class="fine">' + (c.err[0] === E.NeedRequirement ? 'Сначала постройте Гильдию искателей приключений.' : c.ck.c ? (hero ? 'Героическая сложность откроется на Замке ' : 'Акт откроется на Замке ') + c.ck.c + '.'
+				: hero ? 'Героическая сложность откроется, когда акт будет пройден до последней миссии.' : 'Акт откроется, когда будет пройден предыдущий.') + '</p>' : '') +
+			'<div class="costline"><span>' + (hero ? 'Героические звёзды' : 'Звёзды акта') + '</span><b>★ ' + c.total + ' / ' + max + '</b><span>камни ' + iconSvg('stones') + st.res[3] + '</span>' +
 			(sweepOn() ? '<span>свитки ' + iconSvg('scroll') + (st.scrolls || 0) + '</span>' : '') + '</div>' +
 			'<h3>Миссии</h3>' + cards.join('') +
 			(hidden > 0 && !lockedAct ? '<p class="fine">Впереди ещё ' + hidden + ' ' + plural(hidden, 'миссия', 'миссии', 'миссий') + ': туман рассеивается по мере продвижения.</p>' : '') + sweepHtml +
-			'<h3>Сундуки за звёзды</h3>' + chests.join('') +
+			'<h3>' + (hero ? 'Героические сундуки' : 'Сундуки за звёзды') + '</h3>' + chests.join('') +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['camp', a, st.res[3] >= K.rules.campaigns.stones, st.campaign.map((x) => x.stars.join('') + ':' + x.err.join('.') + ':' + (x.sw || []).join('.') + ':' + x.chests.join('')).join('/'),
+		const actKey = (x) => x.stars.join('') + ':' + x.err.join('.') + ':' + (x.sw || []).join('.') + ':' + x.chests.join('');
+		return { key: ['camp', a, hero, st.res[3] >= K.rules.campaigns.stones, st.campaign.map((x) => actKey(x) + (x.heroic ? '+' + actKey(x.heroic) : '')).join('/'),
 			st.scrolls, pick ? pick.id : 0, sweepable ? st.titans.map((t) => t.id + ':' + t.lv + ':' + (t.rec > nowF())).join() : ''].join('|'), html };
 	});
 }
 function startMission(a, m) {
-	const c = K.st.campaign[a];
+	const c = K.st.campaign[a] && campState(K.st, a, m);
 	if (!c) return;
-	if (c.err[m] !== E.None) { toast(errText(c.err[m], c.err[m] === c.ck.err ? c.ck : null), 'bad'); return; }
+	const err = c.err[m % HEROIC];
+	if (err !== E.None) { toast(errText(err, err === c.ck.err ? c.ck : null), 'bad'); return; }
 	openPrepare(0, false, -1, { a, m });
 }
 function openChest(a, i) {
@@ -3583,7 +3681,7 @@ function openChest(a, i) {
 	if (t) parts.push('титан ' + K.army.titans[t.def].name + ' ' + '★'.repeat(K.army.titans[t.def].stars));
 	const got = (r.relics || []).map((rid) => st.relics.find((x) => x.id === rid)).filter(Boolean);
 	if (got.length) parts.push('реликвия ' + got.map((x) => relicName(x) + ' ' + '★'.repeat(x.r)).join(', '));
-	toast('Сундук открыт: ' + parts.join(', '), 'gold');
+	toast((i >= HEROIC ? 'Героический сундук открыт: ' : 'Сундук открыт: ') + parts.join(', '), 'gold');
 	persist();
 	refresh(true);
 }
@@ -3591,9 +3689,10 @@ function missionEnd(ctx, stars, retreat) {
 	const { a, m } = ctx.mission;
 	const used = spellsUsed(ctx);
 	const r = K.bridge.missionFinish(a, m, stars, survivorsFromBattle(ctx.squads || 0), used);
+	const hero = m >= HEROIC;
 	if (r.err === E.None) {
 		const A = K.rules.campaigns.acts[a];
-		const md = A.missions[m];
+		const md = missionDef(a, m);
 		if (stars <= 0) toast((retreat ? 'Отступление' : 'Поражение') + ': «' + md.name + '» можно переиграть', 'bad');
 		else if (r.first) {
 			const got = RES.map((k, i) => (i === 0 ? r.gold : i === 1 ? r.food : i === 2 ? r.gems : i === 3 ? r.stones : 0));
@@ -3601,11 +3700,12 @@ function missionEnd(ctx, stars, retreat) {
 		} else toast('«' + md.name + '»: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : '') + lootText(r), 'gold');
 		armyToast(r, used);
 		if (stars > 0 && r.first && m === A.missions.length - 1) setTimeout(() => toast(A.name + ' пройден! ' + A.outro, 'gold'), 900);
+		if (stars > 0 && r.first && hero && m === HEROIC + A.missions.length - 1) setTimeout(() => toast(A.name + ' пройден на героической сложности!', 'gold'), 900);
 	}
 	persist();
 	refresh(true);
 	// Back to the campaign to see the next mission.
-	if (r.err === E.None && stars > 0) openCampaign(a);
+	if (r.err === E.None && stars > 0) openCampaign(a, hero);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -6132,7 +6232,7 @@ const lordOf = (i) => (K.st.rivals && K.st.rivals[i] ? K.rules.rivals.lords[K.st
 function enemyTitan(w) {
 	if (w.spire > 0) return spireTitan(w.spire);
 	if (w.assault >= 0) return assaultTitan(w);
-	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m));
+	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m), w.mission.m >= HEROIC);
 	if (w.trial >= 0) return trialTitan(trialDef(w.trial), w.lv);
 	if (w.boss >= 0) return bossTitan(w);
 	if (w.daily) return dailyTitan(w.daily.trial, w.daily.tier, K.st);
@@ -6162,10 +6262,11 @@ function landScenario(w, prep) {
 	const dd = w.daily ? dailyDef(w.daily.trial) : null;
 	const wb = w.war ? w.war.base : -1;
 	const spf = w.spire > 0 ? w.spire : 0;
-	const spk = spf ? spireKnobs(spf) : null;
+	// A Titan Spire floor and a Heroic mission change the battle the same way.
+	const spk = spf ? spireKnobs(spf) : md && w.mission.m >= HEROIC ? heroicKnobs(w.mission.a, w.mission.m) : null;
 	const ty = spf ? spireField(spf) : wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
 	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && !spf && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = spf ? 'Башня титанов, этаж ' + spf : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	sc.name = spf ? 'Башня титанов, этаж ' + spf : md && spk ? md.name + ' (героическая)' : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -6210,11 +6311,12 @@ function landScenario(w, prep) {
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
 	// An Assault stage adds its garrison behind the level's army.
-	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
+	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md && spk ? heroicEnemy(w.mission.a, w.mission.m) : md ? md.squads : b.squads;
 	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
-		const pos = (asd || spf) && i >= b.squads.length ? [garrisonX[(i - b.squads.length) % garrisonX.length], 149] : slots[i % slots.length];
+		const fixed = md ? md.squads.length : b.squads.length;
+		const pos = (asd || spk) && i >= fixed ? [garrisonX[(i - fixed) % garrisonX.length], 149] : slots[i % slots.length];
 		return { troop, tier: bd ? bossTierDef(w.tier).troopTier : md ? md.tier : b.tier, pos, facingDeg: 180, formation: CAVALRY.has(troop) ? 'Wedge' : 'Line' };
 	});
 	// Its walls: the defenders' squads have more health.
@@ -7321,10 +7423,10 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
 		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
 			: prepLoadoutsHtml(st, p, used) + '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
-		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
+		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md, w.lv) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? (p.mission.m >= HEROIC ? 'Героическая миссия' : 'Миссия') : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : md && p.mission.m >= HEROIC ? heroicEnemyText(p.mission.a, p.mission.m) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
 			asNote + (sf ? '<p class="fine">Награда за этаж: ' + eventPay(spirePay(sf, st)) + (sf > st.spire.fixed ? ' (верхние этажи платят каждую неделю)' : ' (один раз)') + '. Попыток сколько угодно, камни портала не нужны.' +
 				(spireMods(sf).length ? ' Усиления врага: ' + spireMods(sf).map((m) => esc(m.name.toLowerCase()) + ' — ' + esc(m.text)).join('; ') + '.' : '') + '</p>'
 				: wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +

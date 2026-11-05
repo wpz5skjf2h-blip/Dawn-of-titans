@@ -767,11 +767,11 @@ public:
 	int MissionCount(int Act) const;
 	/** Best stars won in the mission (0 = not won yet). */
 	int MissionStars(int Act, int Mission) const;
-	/** Stars won in the act's missions. */
+	/** Stars won in the act's missions (not on Heroic). */
 	int ActStars(int Act) const;
 	bool ChestClaimed(int Act, int Chest) const;
-	/** NeedRequirement (no Adventurers' Guild), Locked (Castle too low, or the mission or act before is not won yet:
-	 *  castle 0), NeedStones; the cost is the portal stones. */
+	/** BadId, NeedRequirement (no Adventurers' Guild), Locked (Castle too low, or the mission or act before is not won
+	 *  yet, or on Heroic the act's last mission: castle 0), NeedStones; the cost is the portal stones. */
 	Check CheckMission(int Act, int Mission) const;
 	/** Spends portal stones for a mission battle with this army (as StartAttack); the battle runs elsewhere. */
 	Error StartMission(int Act, int Mission, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
@@ -782,6 +782,16 @@ public:
 	Error ClaimChest(int Act, int Chest, Reward* Out);
 	/** The pending battle's mission as Act * 100 + Mission (-1 when it is not a mission). */
 	int PendingMission() const { return -Pending >= MissionBase ? -Pending - MissionBase : -1; }
+	// Heroic difficulty (master prompt 10.2): once an act is won to its last mission and the Castle is high enough, its
+	// missions open again on Heroic, one after another. The enemy is stronger (the client's scenario) and the mission's
+	// level higher; the first win pays more, the loot table rolls more and better relics, and the act's star chests open
+	// again for its Heroic stars. Every campaign call above takes HeroicBase + M for mission (or chest) M on Heroic.
+	static constexpr int HeroicBase = 50;
+	bool HeroicOn() const { return C.campaigns.heroic.castle > 0; }
+	/** Stars won in the act's Heroic missions. */
+	int HeroicStars(int Act) const;
+	/** A mission's level for titan XP, loot and sweep food (Heroic adds to it; 0: no such mission). */
+	int MissionLevel(int Act, int Mission) const;
 	// --- Army loadouts (master prompt 4.6, S13) ---
 	// Saved armies the prepare screen fills in at a tap; what the camp lacks then (squads, a resting titan, spells out
 	// of stock) stays out. Kept in the save; nothing else uses them.
@@ -1474,6 +1484,8 @@ private:
 	// Campaigns: best stars by act and mission, opened star chests by act (bits).
 	std::vector<std::vector<uint8_t>> MissionStarList;
 	std::vector<uint32_t> ChestMask;
+	std::vector<std::vector<uint8_t>> HeroicStarList; // the same on Heroic
+	std::vector<uint32_t> HeroicChestMask;
 	// Army loadouts.
 	std::vector<Loadout> LoadoutList;
 	// Divine gems held, and when the shrine began filling (0: no shrine built yet).
@@ -1488,7 +1500,9 @@ private:
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;
 	/** Rolls the missions' loot table into R (gold and food by level and stars). */
-	void RollMissionLoot(int Level, int Stars, Reward& R);
+	void RollMissionLoot(int Level, int Stars, bool bHeroic, Reward& R);
+	/** Whether Mission (HeroicBase + M on Heroic) is a mission of the act. */
+	bool ValidMission(int Act, int Mission) const;
 	/** Adds War Scrolls up to the most a kingdom holds; returns how many went in. */
 	int64_t AddScrolls(int64_t N);
 	// Daily quests: the day they belong to (days since the epoch, UTC), the quests, rerolls used, the chest, and a counter

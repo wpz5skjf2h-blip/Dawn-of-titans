@@ -436,13 +436,34 @@ function invariants(st, add) {
 	}
 	// Campaign sweeps: War Scrolls within the most a kingdom holds; only a mission won on 3 stars can be swept, with a scroll.
 	const cr = rules().campaigns;
+	const her = cr && cr.heroic && cr.heroic.castle > 0 ? cr.heroic : null;
+	const mLevel = (a, m, h) => (h ? Math.min(rules().battles.length, cr.acts[a].missions[m].level + her.level) : cr.acts[a].missions[m].level);
 	if (cr && cr.sweep && st.campaign) {
 		if (!(st.scrolls >= 0 && st.scrolls <= cr.sweep.max)) add('bad', 'Боевых свитков ' + st.scrolls + ' из ' + cr.sweep.max);
-		st.campaign.forEach((c, a) => (c.sw || []).forEach((e, m) => {
-			if (e === 0 && (c.stars[m] < 3 || st.scrolls < 1 || st.res[1] < cr.sweep.food * cr.acts[a].missions[m].level)) {
-				add('bad', 'Зачистка миссии ' + (a + 1) + '.' + (m + 1) + ' открыта: звёзд ' + c.stars[m] + ', свитков ' + st.scrolls + ', еды ' + st.res[1]);
+		st.campaign.forEach((c0, a) => [c0, c0.heroic].forEach((c, h) => c && (c.sw || []).forEach((e, m) => {
+			if (e === 0 && (c.stars[m] < 3 || st.scrolls < 1 || st.res[1] < cr.sweep.food * mLevel(a, m, h))) {
+				add('bad', (h ? 'Героическая з' : 'З') + 'ачистка миссии ' + (a + 1) + '.' + (m + 1) + ' открыта: звёзд ' + c.stars[m] + ', свитков ' + st.scrolls + ', еды ' + st.res[1]);
 			}
-		}));
+		})));
+	}
+	// Heroic difficulty: open only for an act won to its end and from its Castle, in order; its stars count apart.
+	if (her && st.campaign) {
+		st.campaign.forEach((c, a) => {
+			const h = c.heroic;
+			const nm = 'Героическая сложность, акт ' + (a + 1) + ': ';
+			if (!h) { add('bad', nm + 'нет в состоянии'); return; }
+			if (h.total !== h.stars.reduce((x, y) => x + y, 0)) add('bad', nm + 'звёзд ' + h.total + ', а по миссиям ' + h.stars.join(''));
+			if (h.stars.length !== c.stars.length || h.chests.length !== c.chests.length) add('bad', nm + 'миссий или сундуков не столько, сколько в обычной');
+			const actDone = c.stars[c.stars.length - 1] > 0;
+			const castle = Math.max(cr.acts[a].castle, her.castle);
+			h.err.forEach((e, m) => {
+				const open = e === E.None || e === E.NeedStones;
+				if (open && (!actDone || st.castle < castle || (m > 0 && h.stars[m - 1] === 0))) add('bad', nm + 'миссия ' + (m + 1) + ' открыта: акт ' + (actDone ? 'пройден' : 'не пройден') + ', Замок ' + st.castle + ', прошлая ★' + (m ? h.stars[m - 1] : '-'));
+				if (h.stars[m] > 0 && m > 0 && h.stars[m - 1] === 0) add('bad', nm + 'миссия ' + (m + 1) + ' пройдена раньше ' + m + '-й');
+			});
+			if (h.total > 0 && !actDone) add('bad', nm + 'есть звёзды, а акт не пройден');
+			cr.acts[a].chests.forEach((ch, i) => { if (h.chests[i] && h.total < ch.stars) add('bad', nm + 'сундук за ' + ch.stars + ' ★ открыт при ' + h.total + ' ★'); });
+		});
 	}
 	// Army loadouts: within the most a kingdom keeps, known troops and spells, a spell once, no more than a battle takes.
 	const lr = rules().loadouts;
@@ -850,35 +871,44 @@ function runMonkey(steps, seed, keep) {
 		['бой миссии', 2, (st) => {
 			if (!st.campaign || !st.campaign.length) return -1;
 			const a = Math.floor(r() * st.campaign.length);
-			const c = st.campaign[a];
+			// Now and then on Heroic (mission numbers from 50 there).
+			const h = !!st.campaign[a].heroic && r() < 0.4;
+			const c = h ? st.campaign[a].heroic : st.campaign[a];
+			const base = h ? 50 : 0;
+			const nm = (h ? 'героической ' : '') + 'миссии ' + (a + 1) + '.';
 			// The next mission or one won before, now and then one past it.
 			const m = Math.min(c.stars.length - 1, Math.floor(r() * (c.next + 2)));
 			const squads = [];
 			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
 			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
-			const code = B.missionStart(a, m, squads, ti ? ti.id : 0, []);
+			const code = B.missionStart(a, base + m, squads, ti ? ti.id : 0, []);
 			if (code !== 0) return code;
-			if (c.err[m] !== 0 && c.err[m] !== undefined) throw new Error('бой миссии ' + (a + 1) + '.' + (m + 1) + ' начался при проверке ' + c.err[m]);
+			if (c.err[m] !== 0 && c.err[m] !== undefined) throw new Error('бой ' + nm + (m + 1) + ' начался при проверке ' + c.err[m]);
 			const stars = Math.floor(r() * 4);
-			const res = B.missionFinish(a, m, stars, squads.map(() => Math.floor(r() * 101)), []);
+			const res = B.missionFinish(a, base + m, stars, squads.map(() => Math.floor(r() * 101)), []);
 			const st2 = B.state();
-			if (st2.campaign[a].stars[m] !== Math.max(c.stars[m], stars)) throw new Error('звёзды миссии ' + (a + 1) + '.' + (m + 1) + ': ' + c.stars[m] + ' и бой на ' + stars + ' → ' + st2.campaign[a].stars[m]);
-			if (!!res.first !== (stars > 0 && c.stars[m] === 0)) throw new Error('миссия ' + (a + 1) + '.' + (m + 1) + ': награда за первую победу ' + res.first + ' при звёздах ' + c.stars[m] + ' → ' + stars);
+			const c2 = h ? st2.campaign[a].heroic : st2.campaign[a];
+			if (c2.stars[m] !== Math.max(c.stars[m], stars)) throw new Error('звёзды ' + nm + (m + 1) + ': ' + c.stars[m] + ' и бой на ' + stars + ' → ' + c2.stars[m]);
+			if (!!res.first !== (stars > 0 && c.stars[m] === 0)) throw new Error(nm + (m + 1) + ': награда за первую победу ' + res.first + ' при звёздах ' + c.stars[m] + ' → ' + stars);
+			if (h && st2.campaign[a].stars.join('') !== st.campaign[a].stars.join('')) throw new Error('героический бой изменил обычные звёзды акта ' + (a + 1));
 			return res.err;
 		}],
 		['зачистка миссии', 3, (st) => {
 			if (!B.missionSweep || !st.campaign || !st.campaign.length) return -1;
 			const a = Math.floor(r() * st.campaign.length);
-			const c = st.campaign[a];
+			const h = !!st.campaign[a].heroic && r() < 0.4;
+			const c = h ? st.campaign[a].heroic : st.campaign[a];
 			// Mostly a mission won on 3 stars.
 			const won = c.stars.map((x, k) => k).filter((k) => c.stars[k] >= 3);
 			const m = won.length && r() < 0.85 ? pick(won) : Math.floor(r() * c.stars.length);
 			const ti = r() < 0.8 ? pick(st.titans) : null;
 			const army = st.army.n.join();
-			const res = B.missionSweep(a, m, ti ? ti.id : 0);
+			const res = B.missionSweep(a, (h ? 50 : 0) + m, ti ? ti.id : 0);
 			if (res.err === 0) {
 				const st2 = B.state();
-				const food = rules().campaigns.sweep.food * rules().campaigns.acts[a].missions[m].level;
+				const cr = rules().campaigns;
+				const level = cr.acts[a].missions[m].level;
+				const food = cr.sweep.food * (h ? Math.min(rules().battles.length, level + cr.heroic.level) : level);
 				if (c.sw[m] !== 0 || c.stars[m] < 3) throw new Error('зачистка миссии ' + (a + 1) + '.' + (m + 1) + ' при проверке ' + c.sw[m] + ' и звёздах ' + c.stars[m]);
 				if (st2.scrolls !== st.scrolls - 1) throw new Error('зачистка: свитков ' + st.scrolls + ' → ' + st2.scrolls);
 				if (st2.army.n.join() !== army || res.lost) throw new Error('зачистка забрала отряды');

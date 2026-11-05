@@ -275,6 +275,14 @@
       { "weight": 15, "stones": 3 },
       { "weight": 5, "relic": 1 }
     ],
+    // Heroic difficulty (master prompt 10.2): an act won to its end opens again on Heroic from this Castle. The core
+    // reads castle, level (added to the mission's), first (first win, % of the mission's), loot (% of the loot table's
+    // resources), relicUp (stars added to the loot table's and the chests' relics and titans) and chest (% of the
+    // chests' resources); the client builds the stronger enemy from the rest: its AI, the squads' and the titan's
+    // bonuses, the titan's extra levels and one Titan Spire modifier per mission, in turn.
+    "heroic": { "castle": 16, "level": 3, "first": 200, "loot": 200, "relicUp": 1, "chest": 200,
+      "ai": "warlord", "atkPct": 25, "hpPct": 25, "titanPct": 25, "titanLevel": 8,
+      "mods": ["walls", "fury", "colossus", "reserve", "stone", "wrath", "haste", "horde"] },
     "acts": [
       { "id": "act1", "name": "Акт I. Хайвейл", "region": "Хайвейл: зелёные долины и пашни", "castle": 8,
         "intro": "Пустота Морвейн докатилась до Хайвейла. Глашатай Васк жжёт фермы, а его Бронзовый Пустой — осквернённый Талос — стоит над долиной. Верните родные земли.",

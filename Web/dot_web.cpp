@@ -1122,40 +1122,51 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	// Campaigns: best stars and each mission's check (error code) by act, opened chests, and the full check of the next
 	// mission to play (the first not won yet, else the last).
+	// On Heroic the same under "heroic" (mission and chest numbers there count from 0).
 	O.Raw("],").Key("campaign").Raw("[");
-	for (int A = 0; A < Km->ActCount(); ++A)
-	{
+	const auto WriteAct = [&](int A, int Base) {
 		const int N = Km->MissionCount(A);
 		int Next = N - 1;
 		for (int M = N - 1; M >= 0; --M)
 		{
-			if (Km->MissionStars(A, M) == 0)
+			if (Km->MissionStars(A, Base + M) == 0)
 			{
 				Next = M;
 			}
 		}
-		O.Raw(A ? "," : "").Raw("{").Key("stars").Raw("[");
+		O.Key("stars").Raw("[");
 		for (int M = 0; M < N; ++M)
 		{
-			O.Raw(M ? "," : "").Int(Km->MissionStars(A, M));
+			O.Raw(M ? "," : "").Int(Km->MissionStars(A, Base + M));
 		}
 		O.Raw("],").Key("err").Raw("[");
 		for (int M = 0; M < N; ++M)
 		{
-			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckMission(A, M).error));
+			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckMission(A, Base + M).error));
 		}
 		O.Raw("],").Key("sw").Raw("[");
 		for (int M = 0; M < N; ++M)
 		{
-			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckSweep(A, M).error));
+			O.Raw(M ? "," : "").Int(static_cast<int>(Km->CheckSweep(A, Base + M).error));
 		}
 		O.Raw("],").Key("chests").Raw("[");
 		for (size_t I = 0; I < C.campaigns.acts[static_cast<size_t>(A)].chests.size(); ++I)
 		{
-			O.Raw(I ? "," : "").Int(Km->ChestClaimed(A, static_cast<int>(I)) ? 1 : 0);
+			O.Raw(I ? "," : "").Int(Km->ChestClaimed(A, Base + static_cast<int>(I)) ? 1 : 0);
 		}
-		O.Raw("],").Key("total").Int(Km->ActStars(A)).Comma().Key("next").Int(Next).Comma().Key("ck");
-		WriteCheck(O, Km->CheckMission(A, Next));
+		O.Raw("],").Key("total").Int(Base ? Km->HeroicStars(A) : Km->ActStars(A)).Comma().Key("next").Int(Next).Comma().Key("ck");
+		WriteCheck(O, Km->CheckMission(A, Base + Next));
+	};
+	for (int A = 0; A < Km->ActCount(); ++A)
+	{
+		O.Raw(A ? "," : "").Raw("{");
+		WriteAct(A, 0);
+		if (Km->HeroicOn())
+		{
+			O.Comma().Key("heroic").Raw("{");
+			WriteAct(A, dot::kingdom::Kingdom::HeroicBase);
+			O.Raw("}");
+		}
 		O.Raw("}");
 	}
 	// War Scrolls for campaign sweeps.
