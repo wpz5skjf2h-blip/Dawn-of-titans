@@ -1320,6 +1320,68 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("},");
 	}
+	// Alliance help: helps a timer could get now, the asks of running timers as [kind, id, at, end, total, got, max, next,
+	// cut], every running timer as [kind, id, end, what asking would say], the helps got lately as [at, kind, id, member,
+	// cut], the members' open asks as [no, member, kind, at, until, helped], helps given today and what giving would say.
+	// Kinds: 0 building, 1 land, 2 Armoury research (id: troop), 3 Arcane Tower research (id: spell), 4 titan recovery.
+	{
+		using dot::kingdom::HelpKind;
+		O.Key("help").Raw("{").Key("lim").Int(Km->HelpLimit()).Comma().Key("asks").Raw("[");
+		bool bHelpFirst = true;
+		for (const dot::kingdom::HelpAsk& A : Km->HelpAsks())
+		{
+			O.Raw(bHelpFirst ? "[" : ",[").Int(static_cast<int>(A.kind)).Comma().Int(A.id).Comma().Int(A.at).Comma().Int(A.end).Comma().Int(A.total).Comma();
+			O.Int(A.got).Comma().Int(A.max).Comma().Int(A.next).Comma().Int(A.cut).Raw("]");
+			bHelpFirst = false;
+		}
+		O.Raw("],").Key("can").Raw("[");
+		bHelpFirst = true;
+		const auto Timer = [&](HelpKind Kind, int32_t Id, int64_t End) {
+			if (End <= Km->Now())
+			{
+				return;
+			}
+			O.Raw(bHelpFirst ? "[" : ",[").Int(static_cast<int>(Kind)).Comma().Int(Id).Comma().Int(End).Comma().Int(static_cast<int>(Km->CheckAskHelp(Kind, Id).error)).Raw("]");
+			bHelpFirst = false;
+		};
+		for (const Building& B : Km->Buildings())
+		{
+			Timer(HelpKind::Building, B.id, B.upgrading ? B.finishAt : 0);
+		}
+		for (const dot::kingdom::Land& L : Km->Lands())
+		{
+			Timer(HelpKind::Land, L.id, L.upgrading ? L.finishAt : 0);
+		}
+		if (Km->ResearchTroop() >= 0)
+		{
+			Timer(HelpKind::Troop, Km->ResearchTroop(), Km->ResearchFinish());
+		}
+		for (const SpellResearchSlot& Lab : Km->SpellResearch())
+		{
+			Timer(HelpKind::Spell, Lab.spell, Lab.until);
+		}
+		for (const TitanState& T : Km->Titans())
+		{
+			Timer(HelpKind::Titan, T.id, T.recoverUntil);
+		}
+		O.Raw("],").Key("log").Raw("[");
+		bHelpFirst = true;
+		for (const dot::kingdom::HelpGot& G : Km->HelpLog())
+		{
+			O.Raw(bHelpFirst ? "[" : ",[").Int(G.at).Comma().Int(static_cast<int>(G.kind)).Comma().Int(G.id).Comma().Int(G.member).Comma().Int(G.cut).Raw("]");
+			bHelpFirst = false;
+		}
+		O.Raw("],").Key("ally").Raw("[");
+		bHelpFirst = true;
+		for (const dot::kingdom::AllyAsk& A : Km->AllyAsks())
+		{
+			O.Raw(bHelpFirst ? "[" : ",[").Int(A.no).Comma().Int(A.member).Comma().Int(static_cast<int>(A.kind)).Comma().Int(A.at).Comma().Int(A.until).Comma().Int(A.helped ? 1 : 0).Raw("]");
+			bHelpFirst = false;
+		}
+		O.Raw("],").Key("today").Int(Km->HelpsGivenToday()).Comma().Key("gck");
+		WriteCheck(O, Km->CheckGiveHelp());
+		O.Raw("},");
+	}
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1868,6 +1930,25 @@ EMSCRIPTEN_KEEPALIVE const char* dk_war_chest()
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimWarChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Asks the alliance to help with a running timer (Kind: 0 building, 1 land, 2 Armoury research, 3 Arcane Tower
+ *  research, 4 titan recovery; Id: the building, land, troop, spell or titan). */
+EMSCRIPTEN_KEEPALIVE int dk_help_ask(int Kind, int Id)
+{
+	if (Kind < 0 || Kind >= static_cast<int>(dot::kingdom::HelpKind::Count))
+	{
+		return static_cast<int>(dot::kingdom::Error::BadId);
+	}
+	return K() ? static_cast<int>(K()->AskHelp(static_cast<dot::kingdom::HelpKind>(Kind), Id)) : -1;
+}
+
+/** Helps every open ask of the members (up to the day's limit). */
+EMSCRIPTEN_KEEPALIVE const char* dk_help_give()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->GiveHelp(nullptr, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

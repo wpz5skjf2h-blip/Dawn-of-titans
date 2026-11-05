@@ -5109,7 +5109,9 @@ std::vector<HelpAsk> Kingdom::HelpAsks() const
 	{
 		if (HelpLive(A, Time))
 		{
+			// The timer's end now: something else (a Daily Trial's study time) may have moved it too.
 			Out.push_back(A);
+			Out.back().end = HelpEnd(A.kind, A.id);
 		}
 	}
 	return Out;

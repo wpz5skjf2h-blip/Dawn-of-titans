@@ -309,7 +309,7 @@ struct HelpAsk
 	int32_t id = 0;
 	int64_t at = 0; // asked at
 	int64_t start = 0; // the timer's start (a titan's recovery: the ask)
-	int64_t end = 0; // its end as the helps have left it
+	int64_t end = 0; // its end now
 	int64_t total = 0; // the whole time each help takes its share of
 	int got = 0; // helps so far
 	int max = 0; // helps it can get
