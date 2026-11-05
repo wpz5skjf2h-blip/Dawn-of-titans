@@ -285,6 +285,249 @@ int64_t Kingdom::BattleWinPermille(int64_t AttackSquads, int64_t AttackTitans, i
 	return RaidWinPermille(OddsPower(AttackSquads, AttackTitans, std::string()), OddsPower(DefenseSquads, DefenseTitans, DefenseAi));
 }
 
+MarshalAdvice Kingdom::Marshal(const SideSetup& Enemy, const std::vector<int>& Taken, const std::vector<bool>& Allowed) const
+{
+	// The enemy's titan counts with its Power as the battle has it; a repeated squad of the plan is worth DecayPct % of the
+	// one before (a counter army still mixes troops); a class of squads is a threat with a quarter of the squads' Power; a
+	// troop hits it hard from GoodPct (the matrix has 1.3 for "strong against") and a class hits a squad hard from BadPct.
+	constexpr int64_t DecayPct = 90;
+	constexpr int64_t ThreatPct = 25;
+	constexpr int64_t GoodPct = 130;
+	constexpr int64_t BadPct = 150;
+	MarshalAdvice Out;
+	const size_t N = C.troops.size();
+	Out.plan.assign(N, 0);
+	if (!BattleContent)
+	{
+		return Out;
+	}
+	const SimContent& B = *BattleContent;
+	const auto Pct = [&B](int Row, int Cls) { return (B.counters.Get(Row, static_cast<DefenderClass>(Cls)) * 100).RoundToInt(); };
+	struct Foe
+	{
+		int cls = 0;
+		int row = -1;
+		int64_t w = 0;
+	};
+	std::vector<Foe> Foes;
+	for (const SquadSetup& Q : Enemy.squads)
+	{
+		const int I = B.FindTroop(Q.troopId);
+		if (I >= 0)
+		{
+			const TroopDef& D = B.troops[static_cast<size_t>(I)];
+			Foes.push_back({static_cast<int>(D.cls), D.counterRow, SquadPower(B, Q)});
+		}
+	}
+	if (Enemy.titan.present)
+	{
+		Foes.push_back({static_cast<int>(DefenderClass::Titan), B.titanCounterRow, TitanPower(B, Enemy.titan)});
+	}
+	int64_t W = 0;
+	int64_t ClassW[kDefenderClassCount] = {};
+	for (const Foe& F : Foes)
+	{
+		W += F.w;
+		ClassW[F.cls] += F.w;
+	}
+	if (W <= 0)
+	{
+		return Out;
+	}
+	// Each troop at its level: its Power times the multiplier it deals over the one it takes, both by the enemy's Power.
+	struct Mine
+	{
+		int cls = 0;
+		int row = -1;
+		int64_t power = 0;
+		int64_t value = 0;
+		bool open = false; // may be trained now and fights by the battle's rule
+		bool ok = false; // in the battle content and by the rule
+	};
+	std::vector<Mine> M(N);
+	for (size_t T = 0; T < N; ++T)
+	{
+		const TroopType& Tt = C.troops[T];
+		const int I = B.FindTroop(Tt.id);
+		if (I < 0 || Tt.levels.empty() || (T < Allowed.size() && !Allowed[T]))
+		{
+			continue;
+		}
+		const TroopDef& D = B.troops[static_cast<size_t>(I)];
+		const int Lv = std::min(static_cast<int>(Tt.levels.size()), std::max(1, TroopLevel(static_cast<int>(T))));
+		Mine& Me = M[T];
+		Me.cls = static_cast<int>(D.cls);
+		Me.row = D.counterRow;
+		Me.power = SquadPower(B, MakeSquad(Tt.id, Tt.levels[static_cast<size_t>(Lv - 1)].tier));
+		int64_t Deal = 0;
+		int64_t Take = 0;
+		for (const Foe& F : Foes)
+		{
+			Deal += F.w * Pct(Me.row, F.cls);
+			Take += F.w * Pct(F.row, Me.cls);
+		}
+		Me.value = Take > 0 ? Me.power * (Deal / W) / std::max<int64_t>(1, Take / W) : Me.power;
+		Me.ok = true;
+		Me.open = CastleLevel() >= Tt.unlockCastle && (Tt.council < 0 || CouncilLevel(static_cast<int>(T)) >= Tt.councilLevel);
+	}
+	// The plan: the best next squad from the camp, slot by slot (the best mix for a value that drops with each repeat).
+	const auto Marginal = [&M](size_t T, int Have) {
+		int64_t V = M[T].value;
+		for (int K = 0; K < Have; ++K)
+		{
+			V = V * DecayPct / 100;
+		}
+		return V;
+	};
+	for (int Slot = 0; Slot < BattleSlots(); ++Slot)
+	{
+		int Best = -1;
+		int64_t BestV = 0;
+		for (size_t T = 0; T < N; ++T)
+		{
+			if (M[T].ok && Out.plan[T] < ArmyCount(static_cast<int>(T)))
+			{
+				const int64_t V = Marginal(T, Out.plan[T]);
+				if (Best < 0 || V > BestV)
+				{
+					Best = static_cast<int>(T);
+					BestV = V;
+				}
+			}
+		}
+		if (Best < 0)
+		{
+			break;
+		}
+		++Out.plan[static_cast<size_t>(Best)];
+		Out.planScore += BestV;
+	}
+	for (size_t T = 0; T < N && T < Taken.size(); ++T)
+	{
+		for (int K = 0; K < Taken[T]; ++K)
+		{
+			Out.takenScore += M[T].ok ? Marginal(T, K) : 0;
+		}
+	}
+	// Tips: the threats, strongest first. A titan always is one; a class of squads with a quarter of the squads' Power is
+	// (the titan's own Power would hide every squad behind it).
+	const int TitanCls = static_cast<int>(DefenderClass::Titan);
+	const int64_t SquadW = W - ClassW[TitanCls];
+	const auto IsThreat = [&](int Cls) { return Cls == TitanCls ? ClassW[Cls] > 0 : SquadW > 0 && ClassW[Cls] * 100 >= SquadW * ThreatPct; };
+	std::vector<int> Threats;
+	for (int Cls = 0; Cls < kDefenderClassCount; ++Cls)
+	{
+		if (IsThreat(Cls))
+		{
+			Threats.push_back(Cls);
+		}
+	}
+	std::stable_sort(Threats.begin(), Threats.end(), [&ClassW](int A, int Bc) { return ClassW[A] > ClassW[Bc]; });
+	const auto TakenOf = [&Taken](size_t T) { return T < Taken.size() ? std::max(0, Taken[T]) : 0; };
+	// A counter is worth naming only when it would raise the army's score: a free slot, or more than the weakest squad
+	// taken is worth (so the tips never argue with the plan).
+	int TakenN = 0;
+	int64_t Weakest = -1;
+	for (size_t T = 0; T < N; ++T)
+	{
+		if (TakenOf(T) > 0)
+		{
+			TakenN += TakenOf(T);
+			const int64_t V = M[T].ok ? Marginal(T, TakenOf(T) - 1) : 0;
+			Weakest = Weakest < 0 ? V : std::min(Weakest, V);
+		}
+	}
+	const bool FreeSlot = TakenN < BattleSlots();
+	const auto Worth = [&](size_t T) { return FreeSlot || Marginal(T, TakenOf(T)) > Weakest; };
+	std::vector<MarshalTip> Counter;
+	for (const int Cls : Threats)
+	{
+		// The hardest hitter in the camp with a squad to spare, else the hardest one that can be trained; nothing if a squad
+		// taken hits nearly as hard.
+		int InCamp = -1;
+		int Trainable = -1;
+		int64_t Covered = 0;
+		for (size_t T = 0; T < N; ++T)
+		{
+			if (!M[T].ok)
+			{
+				continue;
+			}
+			const int64_t P = Pct(M[T].row, Cls);
+			if (TakenOf(T) > 0)
+			{
+				Covered = std::max(Covered, P);
+			}
+			if (P < GoodPct || !Worth(T))
+			{
+				continue;
+			}
+			const auto Better = [&](int Cur) {
+				if (Cur < 0)
+				{
+					return true;
+				}
+				const int64_t Q = Pct(M[static_cast<size_t>(Cur)].row, Cls);
+				return P > Q || (P == Q && M[T].value > M[static_cast<size_t>(Cur)].value);
+			};
+			if (ArmyCount(static_cast<int>(T)) > TakenOf(T) && Better(InCamp))
+			{
+				InCamp = static_cast<int>(T);
+			}
+			if (M[T].open && ArmyCount(static_cast<int>(T)) <= 0 && Better(Trainable))
+			{
+				Trainable = static_cast<int>(T);
+			}
+		}
+		const int Pick = InCamp >= 0 ? InCamp : Trainable;
+		if (Pick < 0)
+		{
+			continue;
+		}
+		const int64_t P = Pct(M[static_cast<size_t>(Pick)].row, Cls);
+		if (Covered >= GoodPct && Covered + 25 >= P)
+		{
+			continue;
+		}
+		Counter.push_back({InCamp >= 0 ? MarshalTipKind::Bring : MarshalTipKind::Train, Pick, Cls, static_cast<int>(P)});
+	}
+	// The squad taken that a threat hits hardest, of those the plan would take fewer of.
+	MarshalTip Weak;
+	Weak.troop = -1;
+	for (size_t T = 0; T < N; ++T)
+	{
+		if (!M[T].ok || TakenOf(T) <= Out.plan[T])
+		{
+			continue;
+		}
+		for (const Foe& F : Foes)
+		{
+			const int64_t P = Pct(F.row, M[T].cls);
+			if (IsThreat(F.cls) && P >= BadPct && (Weak.troop < 0 || P > Weak.pct))
+			{
+				Weak = {MarshalTipKind::Exposed, static_cast<int>(T), F.cls, static_cast<int>(P)};
+			}
+		}
+	}
+	for (size_t I = 0; I < Counter.size(); ++I)
+	{
+		Out.tips.push_back(Counter[I]);
+		if (I == 0 && Weak.troop >= 0)
+		{
+			Out.tips.push_back(Weak);
+		}
+	}
+	if (Counter.empty() && Weak.troop >= 0)
+	{
+		Out.tips.push_back(Weak);
+	}
+	if (Out.tips.size() > 3)
+	{
+		Out.tips.resize(3);
+	}
+	return Out;
+}
+
 int64_t Kingdom::DefensePower(const SideSetup& Defense, int32_t LandId) const
 {
 	return ArmyPower(Defense) * (100 + (LandId ? 0 : DefenseBonusPct())) / 100;

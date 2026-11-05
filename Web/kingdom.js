@@ -237,7 +237,7 @@ class KingdomBridge {
 	setGarrison(squads, titan) { return this.M.ccall('dk_set_garrison', 'number', ['string', 'number'], [(squads || []).join(','), titan || 0]); }
 	readRaids() { return this.M._dk_read_raids(); }
 	forecast(land) { return JSON.parse(this.str(this.M._dk_forecast(land || 0))); }
-	scout(text) { return JSON.parse(this.str(this.M.ccall('dk_scout', 'number', ['string'], [text]))); }
+	scout(text, taken, mask) { return JSON.parse(this.str(this.M.ccall('dk_scout', 'number', ['string', 'string', 'number'], [text, (taken || []).join(','), mask === undefined ? -1 : mask]))); }
 }
 
 /** kingdom.json carries // comments (the C++ reader allows them); strips them outside strings. */
@@ -2648,6 +2648,7 @@ function onAct(e) {
 		break;
 	}
 	case 'prep-go': launchAttack(); break;
+	case 'prep-plan': takeMarshalPlan(); break;
 	case 'forge': openForge(); break;
 	case 'arcane': openArcane(); break;
 	case 'craft': {
@@ -5141,6 +5142,7 @@ function armyToast(r, used) {
 }
 function onBattleEnd(ctx, stars, retreat) {
 	if (!K.ready) return;
+	noteBattle(ctx, stars);
 	let r = null;
 	if (ctx && ctx.kind === 'land' && ctx.mission) {
 		missionEnd(ctx, stars, retreat);
@@ -6044,10 +6046,12 @@ function scoutHtml(st, p, w, arrived, td) {
 	if (!prep.squads.length && !prep.titan) return '';
 	let text;
 	try { text = JSON.stringify(landScenario(w, prep)); } catch (e) { return ''; }
-	// One simulation set-up per army: the prepare screen redraws every second.
-	if (K.scoutText !== text) {
-		K.scoutText = text;
-		try { K.scoutRes = K.bridge.scout(text); } catch (e) { K.scoutRes = null; }
+	// One simulation set-up per army and camp: the prepare screen redraws every second.
+	const mask = td ? K.army.troops.reduce((m, tr, t) => (trialAllowsTroop(td, t) ? m | (1 << t) : m), 0) : -1;
+	const cacheKey = [text, p.counts.join(), st.army.n.join(), st.army.lv.join(), st.castle, mask].join('|');
+	if (K.scoutText !== cacheKey) {
+		K.scoutText = cacheKey;
+		try { K.scoutRes = K.bridge.scout(text, p.counts, mask); } catch (e) { K.scoutRes = null; }
 	}
 	const r = K.scoutRes;
 	if (!r || r.err || !r.att) return '';
@@ -6061,7 +6065,87 @@ function scoutHtml(st, p, w, arrived, td) {
 		'<div class="scBar" role="img" aria-label="Ваша доля сил ' + Math.round(share) + '%"><i style="width:' + share.toFixed(1) + '%"></i></div>' +
 		'<p class="scVerdict"><b>' + band[1] + '</b> · ' + (r.win >= 970 ? 'победа почти наверняка' : r.win <= 30 ? 'шансов почти нет' : 'шанс победы около ' + Math.round(r.win / 10) + '%') + '</p></div>' +
 		(tips.length ? '<p class="fine">Ваша армия слабее врага больше чем на пятую часть. Что поможет:</p><ul class="scTips">' + tips.map((x) => '<li>' + x + '</li>').join('') + '</ul>' : '') +
+		(p.assault && st.assault.run ? '' : marshalHtml(st, p, w, r)) +
 		'<p class="fine">Сила — как её считает бой на старте: титан, отряды по числу бойцов, заклинания по 40 за уровень (MasterPrompt 5.10). Шанс — оценка по тысячам боёв компьютера с компьютером, где титан весит больше отрядов; под вашим командованием армия может сыграть лучше. Бой разведка не запрещает.</p>';
+}
+
+// ---------------------------------------------------------------------------------------------
+// The Marshal (master prompt 4.6 and 9.3): advice from the counter matrix and, after two defeats in a row on the
+// same target, the Marshal's Plan, a counter army from the camp. The kingdom core picks both (Kingdom::Marshal).
+// ---------------------------------------------------------------------------------------------
+// The battle's defender classes (counters.json columns), in the genitive: "against the enemy's cavalry".
+const FOE_GEN = ['лёгкой пехоты врага', 'тяжёлой пехоты врага', 'копейщиков врага', 'стрелков врага', 'конницы врага', 'осадных машин врага', 'жрецов врага', 'вражеского титана', 'укреплений'];
+const LOSS_KEY = 'dot.kingdom.loss';
+const mulText = (pct) => '×' + (pct / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+/** The target of a battle, the same from the prepare screen (p) and from the battle's end (ctx). */
+function battleKey(x, st) {
+	if (x.assault) return 'a' + (x.stage !== undefined ? x.stage : st.assault.stage);
+	if (x.practice) return 'p' + (x.level !== undefined ? x.level : practiceTarget(st).lv);
+	if (x.trial) return 't' + st.trial.i;
+	if (x.mission) return 'm' + x.mission.a + '.' + x.mission.m;
+	if (x.site >= 0) return 's' + x.site;
+	return 'w' + (x.worldId !== undefined ? x.worldId : x.wid);
+}
+/** Defeats in a row on one target: {key, n}. A per-device note (it only offers a plan), kept in local storage. */
+function lossNote() {
+	if (!K.loss) {
+		K.loss = { key: '', n: 0 };
+		try { const v = JSON.parse(localStorage.getItem(LOSS_KEY) || 'null'); if (v && typeof v.key === 'string' && v.n > 0) K.loss = { key: v.key, n: Math.min(99, v.n | 0) }; } catch (e) { /* storage blocked */ }
+	}
+	return K.loss;
+}
+function noteBattle(ctx, stars) {
+	if (!ctx || ctx.kind !== 'land') return;
+	const key = battleKey(ctx, K.st);
+	const l = lossNote();
+	K.loss = stars > 0 ? { key: '', n: 0 } : { key, n: l.key === key ? l.n + 1 : 1 };
+	try { localStorage.setItem(LOSS_KEY, JSON.stringify(K.loss)); } catch (e) { /* storage blocked */ }
+}
+function marshalTip(t) {
+	const [kind, troop, cls, pct] = t;
+	const name = '«' + esc(K.army.troops[troop].name) + '»';
+	const foe = FOE_GEN[cls] || 'врага';
+	if (kind === 1) return 'Против ' + foe + ' возьмите ' + name + ': урон ' + mulText(pct) + '.';
+	if (kind === 2) return 'Против ' + foe + ' обучите в Казармах ' + name + ': урон ' + mulText(pct) + '.';
+	return name + ' — лёгкая цель для ' + foe + ': урон по ним ' + mulText(pct) + '.';
+}
+/** The squads of a plan as text: "Копейщики ×2, Мечники". */
+const planText = (plan) => plan.map((n, t) => (n > 0 ? esc(K.army.troops[t].name) + (n > 1 ? ' ×' + n : '') : '')).filter(Boolean).join(', ');
+/** The strongest titan that may go now (by its battle Power), for the plan. */
+function planTitan(st, p) {
+	const td = p.trial ? trialDef(st.trial.i) : null;
+	const ready = st.titans.filter((t) => (p.practice || t.rec <= nowF()) && (!td || trialAllowsTitan(td, t.def))).sort((x, y) => y.pw - x.pw || x.id - y.id);
+	return ready.length ? ready[0] : null;
+}
+function marshalHtml(st, p, w, r) {
+	const tips = (r.mt || []).map(marshalTip);
+	const lost = lossNote();
+	const n = lost.key === battleKey(p, st) ? lost.n : 0;
+	const plan = r.plan || [];
+	const planN = plan.reduce((x, y) => x + y, 0);
+	const same = plan.length === p.counts.length && plan.every((x, i) => x === p.counts[i]);
+	const ti = planTitan(st, p);
+	const offer = n >= 2 && planN > 0 && (!same || (ti && ti.id !== p.titan));
+	if (!tips.length && !offer) return '';
+	const gain = r.ts > 0 && r.ps > r.ts ? Math.round((100 * (r.ps - r.ts)) / r.ts) : 0;
+	return '<div class="marshal">' + icoHtml('ui.army', 'troop') + '<div><b>Маршал советует</b>' +
+		(tips.length ? '<ul>' + tips.map((x) => '<li>' + x + '</li>').join('') + '</ul>' : '') +
+		(offer ? '<p class="mPlan">Вы проиграли здесь ' + n + ' ' + plural(n, 'раз', 'раза', 'раз') + ' подряд. План маршала: ' + planText(plan) + (ti ? ', титан ' + esc(titanName(ti)) : '') +
+			(gain >= 5 ? ' — по таблице контр сильнее нынешнего войска на ' + gain + '%' : '') + '.</p><button class="btn" data-act="prep-plan">Взять план маршала</button>' : '') +
+		'</div></div>';
+}
+function takeMarshalPlan() {
+	const p = K.prep;
+	const r = K.scoutRes;
+	if (!p || !r || !r.plan) return;
+	const st = K.st;
+	const a = st.army;
+	let left = a.slots;
+	p.counts = p.counts.map((x, t) => { const n = Math.max(0, Math.min(r.plan[t] || 0, a.n[t], left)); left -= n; return n; });
+	const ti = planTitan(st, p);
+	if (ti) p.titan = ti.id;
+	toast('Войско собрано по плану маршала: ' + planText(p.counts), 'gold');
+	refreshSheet(true);
 }
 
 // ---------------------------------------------------------------------------------------------
