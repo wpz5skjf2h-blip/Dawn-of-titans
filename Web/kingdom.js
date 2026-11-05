@@ -3441,12 +3441,11 @@ function missionEnemy(a, m) {
 function missionEnemyText(a, m) {
 	const md = missionDef(a, m);
 	const k = missionKnobs(a, m);
-	if (m < HEROIC && !k.atk && !k.hp) return enemyText(md.level, missionTitan(md), md.ai, md.squads.length);
 	const et = missionTitan(md, m >= HEROIC);
 	const n = missionEnemy(a, m).length;
 	const parts = [AI_RU[k.ai || md.ai] || ''];
 	parts.push(n + ' ' + plural(n, 'отряд', 'отряда', 'отрядов') + (k.hp ? ', здоровья +' + k.hp + '%' : '') + (k.atk ? ', урона +' + k.atk + '%' : ''));
-	if (et) parts.push('титан ' + (et.name ? et.name + ' (' + et.def.name + ')' : et.def.name) + ' ур. ' + et.level + (k.tHp ? ', здоровья +' + k.tHp + '%' : '') + (k.tAtk ? ', урона +' + k.tAtk + '%' : ''));
+	parts.push(et ? 'титан ' + (et.name ? et.name + ' (' + et.def.name + ')' : et.def.name) + ' ур. ' + et.level + (k.tHp ? ', здоровья +' + k.tHp + '%' : '') + (k.tAtk ? ', урона +' + k.tAtk + '%' : '') : 'без титана');
 	if (k.timerSec) parts.push('на бой ' + fmtDur(k.timerSec));
 	if (md.fort) parts.push('из них +' + md.fort + '% здоровья дают стены');
 	const mod = m >= HEROIC ? heroicMod(a, m) : null;
@@ -3610,8 +3609,11 @@ function openCampaign(act, heroic) {
 		const tabs = acts.map((x, i) => {
 			const ci = hero ? st.campaign[i].heroic : st.campaign[i];
 			const locked = ci.err[0] === E.Locked || ci.err[0] === E.NeedRequirement;
+			// A locked act: the Guild, its Castle, or the act before (on Heroic, the act itself).
+			const castle = hero ? Math.max(x.castle, H.castle) : x.castle;
+			const why = ci.err[0] === E.NeedRequirement ? 'нужна Гильдия' : st.castle < castle ? 'с Замка ' + castle : hero ? 'после акта' : 'после прошлого акта';
 			return '<button class="opt' + (i === a ? ' on' : '') + '" data-act="campaign" data-id="' + i + '"><b>' + esc(x.name) + '</b><span>' +
-				(locked && !ci.total ? (ci.err[0] === E.NeedRequirement ? 'нужна Гильдия' : hero ? 'после акта' : 'с Замка ' + x.castle) : '★ ' + ci.total + ' из ' + x.missions.length * 3) + '</span></button>';
+				(locked && !ci.total ? why : '★ ' + ci.total + ' из ' + x.missions.length * 3) + '</span></button>';
 		});
 		// Normal and Heroic, once the kingdom has Heroic at all.
 		const modes = heroicOn(st) ? '<div class="opts heroModes">' + [0, 1].map((h) => {
