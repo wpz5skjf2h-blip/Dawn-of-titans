@@ -237,6 +237,7 @@ class KingdomBridge {
 	setGarrison(squads, titan) { return this.M.ccall('dk_set_garrison', 'number', ['string', 'number'], [(squads || []).join(','), titan || 0]); }
 	readRaids() { return this.M._dk_read_raids(); }
 	forecast(land) { return JSON.parse(this.str(this.M._dk_forecast(land || 0))); }
+	scout(text) { return JSON.parse(this.str(this.M.ccall('dk_scout', 'number', ['string'], [text]))); }
 }
 
 /** kingdom.json carries // comments (the C++ reader allows them); strips them outside strings. */
@@ -4178,6 +4179,8 @@ function fmtPower(n) {
 	return fmtShort(n);
 }
 const ownsBuilding = (st, id) => st.b.some((b) => b.def === defIndex(id) && b.lv >= 1);
+/** The Castle already allows this building (it may still need its own requirements). */
+const canBuildNow = (st, id) => { const d = K.defs[defIndex(id)]; return !!d && d.unlockCastle <= st.castle; };
 /** Shows the Castle on the island and its panel. */
 function showCastle() {
 	closeSheet();
@@ -5977,9 +5980,88 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault) {
 			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td ? 'Берутся все заряды выбранных заклинаний; в испытании они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
 			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td ? 'В испытании никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			scoutHtml(st, p, w, arrived, td) +
 			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan || asFixed ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, as, as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
+		return { key: ['prep', pr, as, as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join()].join('|'), html };
 	});
+}
+
+// ---------------------------------------------------------------------------------------------
+// Scouting before a battle (master prompt 9.3): both sides' Power, the chance and what would help
+// ---------------------------------------------------------------------------------------------
+/** The army the battle would get from the prepare screen as it stands (as launchAttack builds it). */
+function scoutPrep(st, p, arrived) {
+	const spells = p.spells.filter((i) => st.spells.stock[i] > 0);
+	if (p.assault && st.assault.run) {
+		const alive = asAlive(st);
+		const ti = asTitan(st);
+		return { squads: alive.map((q) => q[0]), levels: alive.map((q) => q[1]), shares: alive.map((q) => q[2]), titan: ti ? ti.id : 0, spells, reinf: [], bonus: st.assault.bonus };
+	}
+	const squads = [];
+	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
+	return { squads, titan: p.titan, spells, reinf: p.reinf ? arrived.map((r) => [r[0], r[1]]) : [] };
+}
+/** Concrete steps for an army a fifth or more weaker than the enemy (master prompt 9.3), from the kingdom as it is. */
+function scoutTips(st, p, prep, r, td) {
+	const out = [];
+	const a = st.army;
+	const fixed = p.assault && st.assault.run;
+	const okTroop = (t) => !td || trialAllowsTroop(td, t);
+	const okTitan = (t) => !td || trialAllowsTitan(td, t.def);
+	const mine = prep.titan ? st.titans.find((t) => t.id === prep.titan) : null;
+	if (!fixed) {
+		const used = p.counts.reduce((x, y) => x + y, 0);
+		const spare = a.n.reduce((s, n, t) => s + (okTroop(t) ? Math.max(0, n - p.counts[t]) : 0), 0);
+		if (used < a.slots && spare > 0) out.push('Возьмите ещё отряды: свободно мест ' + (a.slots - used) + ', в лагере ждут ' + spare + '.');
+		else if (used < a.slots && !td) out.push('Обучите отряды в Казармах: в бой можно взять ' + a.slots + ', сейчас ' + used + '.');
+		const ready = st.titans.filter((t) => (p.practice || t.rec <= nowF()) && okTitan(t)).sort((x, y) => y.pw - x.pw);
+		if (ready.length && (!mine || ready[0].pw * 10 > mine.pw * 11)) {
+			out.push((mine ? 'Возьмите титана посильнее: ' : 'Возьмите титана, в бою он весит больше отрядов: ') + esc(titanName(ready[0])) + ', сила ' + fmt(ready[0].pw) + '.');
+		}
+	}
+	if (mine && r.def.t > r.att.t) {
+		out.push('Вражеский титан сильнее (' + fmt(r.def.t) + ' против ' + fmt(r.att.t) + '): поднимайте ' + esc(titanName(mine)) + ' в боях и слиянием, наденьте реликвии' +
+			(mine.lv >= mine.max && !mine.asc ? ', возвысьте его' : '') + '.');
+	}
+	// The weakest troop of the army that the Armoury can still raise, as in the prompt's "Upgrade your Spearmen to Tier II".
+	const kinds = [...new Set(prep.squads)];
+	if (!fixed && kinds.length) {
+		const up = kinds.filter((t) => a.lv[t] < a.lvCap[t]).sort((x, y) => a.lv[x] - a.lv[y] || x - y);
+		if (up.length) out.push('Улучшите «' + esc(K.army.troops[up[0]].name) + '» в Арсенале до ур. ' + (a.lv[up[0]] + 1) + (a.rs.t === up[0] ? ' (уже идёт)' : '') + '.');
+		else if (!ownsBuilding(st, 'armoury') && canBuildNow(st, 'armoury')) out.push('Постройте Арсенал: он поднимает уровень войск.');
+		else if (kinds.some((t) => a.lv[t] < a.maxLv)) out.push('Улучшите Арсенал: он откроет войскам следующий уровень.');
+	}
+	const sp = st.spells;
+	if (!prep.spells.length && sp.stock.some((n) => n > 0)) out.push('Возьмите заклинания из запаса.');
+	else if (!sp.stock.some((n) => n > 0) && ownsBuilding(st, 'spell_forge')) out.push('Создайте заклинания в Кузне.');
+	else if (!sp.stock.some((n) => n > 0) && canBuildNow(st, 'spell_forge')) out.push('Постройте Кузню заклинаний: заклинания помогают в бою.');
+	if (!fixed && !td && !p.practice && !p.mission && p.site < 0) out.push('Или выберите землю ниже уровнем.');
+	return out.slice(0, 4);
+}
+/** The scouting block of the prepare screen: both sides' start Power, the chance to win and tips when it is low. */
+function scoutHtml(st, p, w, arrived, td) {
+	const prep = scoutPrep(st, p, arrived);
+	if (!prep.squads.length && !prep.titan) return '';
+	let text;
+	try { text = JSON.stringify(landScenario(w, prep)); } catch (e) { return ''; }
+	// One simulation set-up per army: the prepare screen redraws every second.
+	if (K.scoutText !== text) {
+		K.scoutText = text;
+		try { K.scoutRes = K.bridge.scout(text); } catch (e) { K.scoutRes = null; }
+	}
+	const r = K.scoutRes;
+	if (!r || r.err || !r.att) return '';
+	const sum = (x) => x.t + x.s + x.sp;
+	const band = r.win >= 700 ? ['good', 'Перевес за вами'] : r.win >= 400 ? ['even', 'Силы почти равны'] : r.win >= 200 ? ['hard', 'Враг сильнее'] : ['bad', 'Враг намного сильнее'];
+	const side = (nm, x, cls) => '<div class="scSide ' + cls + '"><span>' + nm + '</span><b>' + fmt(sum(x)) + '</b><small>титан ' + fmt(x.t) + ' · отряды ' + fmt(x.s) +
+		(x.sp ? ' · заклинания ' + fmt(x.sp) : '') + '</small></div>';
+	const share = r.att.odds + r.def.odds > 0 ? (100 * r.att.odds) / (r.att.odds + r.def.odds) : 50;
+	const tips = r.att.odds * 5 < r.def.odds * 4 ? scoutTips(st, p, prep, r, td) : [];
+	return '<h3>Разведка</h3><div class="scout ' + band[0] + '">' + side('Ваша армия', r.att, 'me') + '<span class="scVs">против</span>' + side('Противник', r.def, 'en') +
+		'<div class="scBar" role="img" aria-label="Ваша доля сил ' + Math.round(share) + '%"><i style="width:' + share.toFixed(1) + '%"></i></div>' +
+		'<p class="scVerdict"><b>' + band[1] + '</b> · ' + (r.win >= 970 ? 'победа почти наверняка' : r.win <= 30 ? 'шансов почти нет' : 'шанс победы около ' + Math.round(r.win / 10) + '%') + '</p></div>' +
+		(tips.length ? '<p class="fine">Ваша армия слабее врага больше чем на пятую часть. Что поможет:</p><ul class="scTips">' + tips.map((x) => '<li>' + x + '</li>').join('') + '</ul>' : '') +
+		'<p class="fine">Сила — как её считает бой на старте: титан, отряды по числу бойцов, заклинания по 40 за уровень (MasterPrompt 5.10). Шанс — оценка по тысячам боёв компьютера с компьютером, где титан весит больше отрядов; под вашим командованием армия может сыграть лучше. Бой разведка не запрещает.</p>';
 }
 
 // ---------------------------------------------------------------------------------------------

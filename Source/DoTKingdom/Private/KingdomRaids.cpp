@@ -267,6 +267,24 @@ int64_t Kingdom::ArmyPower(const SideSetup& Side) const
 	return Power;
 }
 
+int64_t Kingdom::OddsPower(int64_t Squads, int64_t Titans, const std::string& Ai) const
+{
+	const int64_t Power = Squads + Titans * C.raids.titanPct / 100;
+	for (const auto& A : C.raids.aiPct)
+	{
+		if (!Ai.empty() && A.first == Ai)
+		{
+			return Power * A.second / 100;
+		}
+	}
+	return Power;
+}
+
+int64_t Kingdom::BattleWinPermille(int64_t AttackSquads, int64_t AttackTitans, int64_t DefenseSquads, int64_t DefenseTitans, const std::string& DefenseAi) const
+{
+	return RaidWinPermille(OddsPower(AttackSquads, AttackTitans, std::string()), OddsPower(DefenseSquads, DefenseTitans, DefenseAi));
+}
+
 int64_t Kingdom::DefensePower(const SideSetup& Defense, int32_t LandId) const
 {
 	return ArmyPower(Defense) * (100 + (LandId ? 0 : DefenseBonusPct())) / 100;
