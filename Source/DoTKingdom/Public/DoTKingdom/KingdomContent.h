@@ -415,6 +415,29 @@ struct TrialRules
 	std::vector<TrialDef> list; // one a week, in turn
 };
 
+/** What a Daily Trial pays (its amount a tier). */
+enum class DailyPay : uint8_t { Gold, Food, TitanXp, Relic, Shards, Study };
+
+/** One Daily Trial (master prompt 10.3): its weekday and its reward by tier. */
+struct DailyTrialDef
+{
+	std::string id;
+	int day = 0; // 0 Monday ... 5 Saturday (every trial is open on Sunday)
+	DailyPay pay = DailyPay::Gold;
+	std::vector<int64_t> amounts; // one a tier: resources, titan XP, relic rarity or research minutes
+};
+
+/** Daily Trials (kingdom.json "dailyTrials"): a trial a weekday, all on Sunday, tiers opened one after another. */
+struct DailyTrialRules
+{
+	int castle = 3; // Castle level they open at
+	int attempts = 3; // battles and sweeps a day, each trial
+	int lineageBonusPct = 50; // more shards with a titan of the week's lineage
+	std::vector<int> tierCastle; // Castle level of each tier
+	std::vector<std::vector<int>> lineages; // titans (indices) of each lineage, one a week in turn
+	std::vector<DailyTrialDef> list;
+};
+
 /** Warpath (kingdom.json "warpath", master prompt 13.4): the free track of a pass over a few weeks. Quests, battles and
  *  events fill it with XP; each tier reached pays its reward (gold and food grow with the Castle). */
 struct WarpathRules
@@ -728,6 +751,7 @@ struct KingdomContent
 	std::vector<AchievementDef> achievements;
 	CalendarRules calendar;
 	TrialRules trials;
+	DailyTrialRules dailyTrials;
 	WarpathRules warpath;
 	AssaultRules assault;
 	RaidBossRules raidBoss;

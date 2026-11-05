@@ -357,6 +357,27 @@ function invariants(st, add) {
 		if (bs.left < 0 || bs.left > bsr.attempts) add('bad', 'Рейдовый босс: боёв сегодня ' + bs.left + ' из ' + bsr.attempts);
 		if (st.pendingBoss && !inBattle()) add('warn', 'Висит незавершённый бой с рейдовым боссом');
 	}
+	// Daily Trials: open on their day (all on Sunday), attempts within the day's, stars 0-3 won in order, and the
+	// highest open tier the one the Castle and the stars allow.
+	const dtr = rules().dailyTrials;
+	const dl = st.daily;
+	if (dtr && dl) {
+		if (dl.list.length !== dtr.list.length || dl.wd < 0 || dl.wd > 6) add('bad', 'Ежедневные испытания: ' + dl.list.length + ' из ' + dtr.list.length + ', день недели ' + dl.wd);
+		dl.list.forEach((x, i) => {
+			const d = dtr.list[i];
+			if (!d) return;
+			const nm = 'Испытание «' + d.name + '»: ';
+			if (x.left < 0 || x.left > dtr.attempts) add('bad', nm + 'попыток ' + x.left + ' из ' + dtr.attempts);
+			if (!!x.open !== (dl.wd === 6 || dl.wd === d.day)) add('bad', nm + (x.open ? 'открыто' : 'закрыто') + ' в день ' + dl.wd + ', а его день ' + d.day);
+			if (x.stars.length !== dtr.tiers.length || x.stars.some((v) => !(v >= 0 && v <= 3))) add('bad', nm + 'звёзды уровней ' + x.stars.join(''));
+			const gap = x.stars.indexOf(0);
+			if (gap >= 0 && x.stars.slice(gap).some((v) => v > 0)) add('bad', nm + 'пройден уровень после непройденного: ' + x.stars.join(''));
+			let top = 0;
+			while (st.castle >= dtr.castle && top < dtr.tiers.length && st.castle >= dtr.tiers[top].castle && (top === 0 || x.stars[top - 1] > 0)) top++;
+			if (x.top !== top) add('bad', nm + 'открыт уровень ' + x.top + ', а по Замку и звёздам ' + top);
+		});
+		if (st.pendingDaily && st.pendingDaily[0] >= 0 && !inBattle()) add('warn', 'Висит незавершённый бой ежедневного испытания');
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -454,7 +475,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -622,6 +643,46 @@ function runMonkey(steps, seed, keep) {
 			return err;
 		}],
 		['сундук альянса', 1, () => (B.bossChest ? B.bossChest().err : -1)],
+		['ежедневное испытание', 3, (st) => {
+			if (!B.dailyStart || !st.daily || !st.daily.list.length) return -1;
+			const i = Math.floor(r() * st.daily.list.length);
+			const x = st.daily.list[i];
+			// Now and then the tier past the open ones, which must be refused.
+			const tier = 1 + Math.floor(r() * (x.top + 1));
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.dailyStart(i, tier, squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			if (tier > x.top) throw new Error('бой испытания начался на закрытом уровне ' + tier + ' (открыт до ' + x.top + ')');
+			const st1 = B.state();
+			if (st1.pendingDaily[0] !== i || st1.pendingDaily[1] !== tier || st1.daily.list[i].left !== x.left - 1) throw new Error('бой испытания: висит ' + st1.pendingDaily.join(':') + ', попыток ' + x.left + ' → ' + st1.daily.list[i].left);
+			const stars = Math.floor(r() * 4);
+			const err = B.dailyFinish(stars).err;
+			// Nothing is lost in a trial; a win keeps its best stars.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('бой испытания забрал отряды или заклинания');
+			if (st2.pendingDaily[0] >= 0) throw new Error('бой испытания остался незавершённым');
+			if (st2.daily.list[i].stars[tier - 1] !== Math.max(x.stars[tier - 1], stars)) throw new Error('звёзды уровня ' + tier + ': ' + x.stars[tier - 1] + ' и бой на ' + stars + ' → ' + st2.daily.list[i].stars[tier - 1]);
+			return err;
+		}],
+		['зачистка испытания', 2, (st) => {
+			if (!B.dailySweep || !st.daily || !st.daily.list.length) return -1;
+			const i = Math.floor(r() * st.daily.list.length);
+			const x = st.daily.list[i];
+			const tier = 1 + Math.floor(r() * Math.max(1, x.top));
+			const ti = r() < 0.8 ? pick(st.titans) : null;
+			const res = B.dailySweep(i, tier, ti ? ti.id : 0);
+			if (res.err === 0) {
+				const st2 = B.state();
+				if (x.stars[tier - 1] < 3 || tier > x.top) throw new Error('зачистка уровня ' + tier + ' без трёх звёзд (' + x.stars[tier - 1] + ') или закрытого');
+				if (st2.daily.list[i].left !== x.left - 1) throw new Error('зачистка: попыток ' + x.left + ' → ' + st2.daily.list[i].left);
+			}
+			return res.err;
+		}],
 		['сложность босса', 1, () => (B.bossTier ? B.bossTier(Math.floor(r() * 12) - 1) : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];

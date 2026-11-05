@@ -229,6 +229,7 @@ struct Reward
 	int reinforcements = 0; // allies' squads that fought (they are gone now)
 	bool firstClear = false; // a campaign mission won for the first time (res holds its reward)
 	int32_t newTitan = 0; // a titan a star chest gave
+	int64_t studySec = 0; // research time a Daily Trial took off (each research running)
 };
 
 /** A squad of an Assault run: its troop (index), its level when the run began and its share of men still standing. */
@@ -643,16 +644,19 @@ public:
 	static constexpr int32_t AssaultPending = -(MissionBase - 2);
 	/** The pending battle id of a Raid Boss battle. */
 	static constexpr int32_t BossPending = -(MissionBase - 3);
+	/** The pending battle id of a Daily Trial battle. */
+	static constexpr int32_t DailyPending = -(MissionBase - 4);
 	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage, a
-	 *  Raid Boss battle or there is none). */
+	 *  Raid Boss battle, a Daily Trial or there is none). */
 	int PendingSite() const
 	{
-		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && -Pending < MissionBase
-			? -Pending - 1 : -1;
+		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && Pending != DailyPending
+			&& -Pending < MissionBase ? -Pending - 1 : -1;
 	}
 	bool PendingTrial() const { return Pending == TrialPending; }
 	bool PendingAssault() const { return Pending == AssaultPending; }
 	bool PendingBoss() const { return Pending == BossPending; }
+	bool PendingDaily() const { return Pending == DailyPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -749,6 +753,46 @@ public:
 	/** Pays the rank reward after the trial closes: NotReady (still open or a trial battle is on), Nothing (claimed or no
 	 *  reward for the place), InventoryFull. */
 	Error ClaimTrialRank(Reward* Out);
+
+	// --- Daily Trials (master prompt 10.3) ---
+	// Six trials from a Castle level, each open on its weekday (Monday to Saturday, UTC) and all of them on Sunday. Each
+	// has tiers that open one after another: at the tier's Castle level once the tier before it is won in that trial. A
+	// few battles or sweeps a day in each trial, free of stones; nothing is lost in a battle and the titan gets no battle
+	// XP. A win pays the tier's amount of the trial's reward whatever the stars; a tier once won on 3 stars can be swept:
+	// the reward at once, for an attempt. Essence Springs pays titan XP to the titan that fought (so it needs one), the
+	// Lineage Trial more shards with a titan of the week's lineage, Hall of Tomes minutes off every research running.
+	int DailyCount() const { return static_cast<int>(C.dailyTrials.list.size()); }
+	int DailyTiers() const { return static_cast<int>(C.dailyTrials.tierCastle.size()); }
+	/** Today's weekday (UTC): 0 Monday ... 6 Sunday. */
+	int DailyWeekday() const { return static_cast<int>((std::max<int64_t>(0, Time) / 86400 + 3) % 7); }
+	/** Whether a trial is open today (its day, or Sunday). */
+	bool DailyOpen(int Trial) const;
+	/** This week's lineage (index into the content's lineages; -1 without them). */
+	int DailyLineage() const;
+	/** Best stars won on a tier (1-based) of a trial: 0 (not won yet) to 3. */
+	int DailyStars(int Trial, int Tier) const;
+	/** The highest tier open to the player in a trial (0 when none is). */
+	int DailyTopTier(int Trial) const;
+	int DailyAttemptsLeft(int Trial) const;
+	/** BadId, Locked (Castle too low for the trials or the tier: castle), NeedRequirement (the tier before is not won),
+	 *  NotReady (not the trial's day: it opens in timeSec), LimitReached (no attempts left today: timeSec). */
+	Check CheckDaily(int Trial, int Tier) const;
+	/** The amount a win of a tier pays (titan XP, resources, relic rarity, research minutes; shards without the lineage
+	 *  bonus). */
+	int64_t DailyAmount(int Trial, int Tier) const;
+	/** The pending Daily Trial battle's trial and tier (-1 and 0 without one). */
+	int DailyBattleTrial() const { return Pending == DailyPending ? DailyAt : -1; }
+	int DailyBattleTier() const { return Pending == DailyPending ? DailyAtTier : 0; }
+	/** Starts a Daily Trial battle with this army (as StartAttack, without stones or allies); the battle runs elsewhere.
+	 *  NotAllowed: Essence Springs without a titan. InventoryFull: Forge Depths with no room for its relic. */
+	Error StartDaily(int Trial, int Tier, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a Daily Trial battle: everyone comes back, no spell is spent; a win pays the tier (a relic without room is
+	 *  lost) and keeps its best stars. */
+	Error FinishDaily(int Stars, Reward* Out);
+	/** Sweeps a tier won on 3 stars: its reward now, for an attempt. TitanId: the titan that gets Essence Springs' XP (it
+	 *  must be one; any titan, resting too) and, in the Lineage Trial, may bring the lineage bonus. NotReady (not won on 3
+	 *  stars), Busy (a Daily Trial battle is on), NotAllowed, InventoryFull. */
+	Error SweepDaily(int Trial, int Tier, int32_t TitanId, Reward* Out);
 
 	// --- Warpath (master prompt 13.4) ---
 	// The free track of a pass that lasts a few weeks from a Monday. Claimed daily and weekly quests, battles (up to a
@@ -1239,6 +1283,17 @@ private:
 	int BossPickOld = 0;
 	int BossPickNew = 0;
 	int64_t BossPickFrom = 0;
+	// Daily Trials: the day of the attempts, attempts by trial that day, best stars by trial (2 bits a tier), the
+	// pending battle's trial and tier
+	int64_t DailyDay = -1;
+	std::vector<int> DailyTries;
+	std::vector<uint32_t> DailyBest;
+	int DailyAt = -1;
+	int DailyAtTier = 0;
+	/** Pays a Daily Trial tier into R (TitanId: the titan for XP and the lineage); Pick tells relic rolls apart. */
+	Error PayDaily(int Trial, int Tier, int32_t TitanId, uint64_t Pick, Reward& R);
+	/** Counts an attempt of a trial today. */
+	void SpendDaily(int Trial);
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

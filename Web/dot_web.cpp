@@ -1274,6 +1274,24 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// Daily Trials: today's weekday (0 Monday ... 6 Sunday), this week's lineage (index into kingdom.json "dailyTrials"
+	// "lineages"), and for each trial whether it is open today, attempts left, the highest tier open (0: none), what
+	// starting its highest tier (or the first) would say, and the best stars of each tier.
+	O.Key("daily").Raw("{").Key("wd").Int(Km->DailyWeekday()).Comma().Key("line").Int(Km->DailyLineage()).Comma().Key("list").Raw("[");
+	for (int I = 0; I < Km->DailyCount(); ++I)
+	{
+		const int Top = Km->DailyTopTier(I);
+		O.Raw(I ? ",{" : "{").Key("open").Int(Km->DailyOpen(I) ? 1 : 0).Comma().Key("left").Int(Km->DailyAttemptsLeft(I)).Comma();
+		O.Key("top").Int(Top).Comma().Key("ck");
+		WriteCheck(O, Km->CheckDaily(I, std::max(1, Top)));
+		O.Comma().Key("stars").Raw("[");
+		for (int T = 1; T <= Km->DailyTiers(); ++T)
+		{
+			O.Raw(T > 1 ? "," : "").Int(Km->DailyStars(I, T));
+		}
+		O.Raw("]}");
+	}
+	O.Raw("]},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1313,6 +1331,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
 	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma().Key("pendingBoss").Int(Km->PendingBoss() ? 1 : 0).Comma();
+	O.Key("pendingDaily").Raw("[").Int(Km->DailyBattleTrial()).Comma().Int(Km->DailyBattleTier()).Raw("],");
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1598,7 +1617,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("broken").Int(R.relicsBroken).Comma().Key("relicsLost").Int(R.relicsLost).Comma().Key("reinf").Int(R.reinforcements).Comma();
 	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
-	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma();
+	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1778,6 +1797,28 @@ EMSCRIPTEN_KEEPALIVE const char* dk_boss_chest()
 EMSCRIPTEN_KEEPALIVE int dk_boss_tier(int Tier)
 {
 	return K() ? static_cast<int>(K()->ChooseBossTier(Tier)) : -1;
+}
+
+/** A Daily Trial battle on a tier (1-based) of a trial: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_daily_start(int Trial, int Tier, const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartDaily(Trial, Tier, ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends a Daily Trial battle with its stars. */
+EMSCRIPTEN_KEEPALIVE const char* dk_daily_finish(int Stars)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishDaily(Stars, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Sweeps a tier won on 3 stars (TitanId: the titan for Essence Springs' XP and the Lineage Trial's bonus, or 0). */
+EMSCRIPTEN_KEEPALIVE const char* dk_daily_sweep(int Trial, int Tier, int TitanId)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->SweepDaily(Trial, Tier, TitanId, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
 }
 
 /** Claims a Warpath tier (0-based). */
