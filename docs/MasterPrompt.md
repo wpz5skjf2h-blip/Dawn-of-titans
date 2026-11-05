@@ -1506,8 +1506,9 @@ Defender:      ±70% of the opposite change (defense losses are softened)
 
 > **Implemented now (7.0):** the original's weekly alliance leagues with AI alliances, joining from 1,000 VP, an own
 > alliance and reinforcements through the Alliance Camp; the Raid Boss (12.10) and the Alliance War (12.9) against
-> computer alliances, with computer members on both sides (docs/M0_Notes.md §6ц, §6ш). Chat, roles, help, donations,
-> tech, real players in wars and raids, and conquest below need the backend and stay as designed.
+> computer alliances, with computer members on both sides, and Help (12.4) from and to computer members, the Alliance
+> Camp standing for the Hall and gold and food for Honor (docs/M0_Notes.md §6ц, §6ш, §6щ). Chat, roles, donations,
+> tech, real players in help, wars and raids, and conquest below need the backend and stay as designed.
 
 ### 12.1 Alliance basics
 - **Create:** Keep 5 and 100 gems (free from Keep 8). Name, tag (3–4 characters), emblem (shape + icon + colors), description, language, type (Open / Request / Invite-only), requirements (minimum Kingdom Power and Keep level).
