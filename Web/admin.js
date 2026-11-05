@@ -398,7 +398,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -500,6 +500,18 @@ function runMonkey(steps, seed, keep) {
 		}],
 		['награда испытания', 1, (st) => (B.trialMilestone && st.trial && st.trial.i >= 0 ? B.trialMilestone(Math.floor(r() * 3)).err : -1)],
 		['место в испытании', 1, (st) => (B.trialRank && st.trial && st.trial.i >= 0 ? B.trialRank().err : -1)],
+		['путь войны', 2, (st) => {
+			const n = (rules().warpath && rules().warpath.tiers && rules().warpath.tiers.length) || 0;
+			return B.wpClaim && st.wp && st.wp.no >= 0 && n ? B.wpClaim(Math.floor(r() * (n + 1))).err : -1;
+		}],
+		['уровень пути', 1, (st) => {
+			if (!B.wpSkip || !st.wp || st.wp.no < 0) return -1;
+			const code = B.wpSkip();
+			const st2 = B.state();
+			if (code === 0 && (st2.res[2] !== st.res[2] - rules().warpath.skipGems || st2.wp.tier !== st.wp.tier + 1)) throw new Error('уровень пути: самоцветов ' + st.res[2] + ' → ' + st2.res[2] + ', уровень ' + st.wp.tier + ' → ' + st2.wp.tier);
+			return code;
+		}],
+		['сундук пути', 1, (st) => (B.wpBonus && st.wp && st.wp.no >= 0 ? B.wpBonus().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -529,7 +541,13 @@ function runMonkey(steps, seed, keep) {
 				};
 				invariants(st2, note);
 				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
-				resourceCaps(st, st2, note, REWARDS.has(act[0]));
+				// The end of a Warpath pass pays what was reached and not claimed, on top of full vaults too.
+				const wpPaid = !!(st.wp && st2.wp && st2.wp.paid.no !== st.wp.paid.no);
+				resourceCaps(st, st2, note, REWARDS.has(act[0]) || wpPaid);
+				if (st.wp && st2.wp && st2.wp.no === st.wp.no && (st2.wp.xp < st.wp.xp || st2.wp.got.replace(/0/g, '').length < st.wp.got.replace(/0/g, '').length)) {
+					note('bad', 'Путь войны откатился: опыт ' + st.wp.xp + ' → ' + st2.wp.xp);
+				}
+				if (st2.wp && rules().warpath && st2.wp.day > rules().warpath.xp.battleCap) note('bad', 'Опыт Пути войны за бои за день ' + st2.wp.day + ' больше предела');
 				// Only claiming the reward moves the main line on, one goal at a time.
 				if (st.goal && st2.goal && st2.goal.i !== st.goal.i && (act[0] !== 'цель' || st2.goal.i !== st.goal.i + 1)) {
 					note('bad', 'Цель сменилась с ' + (st.goal.i + 1) + ' на ' + (st2.goal.i + 1));

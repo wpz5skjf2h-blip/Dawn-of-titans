@@ -414,6 +414,23 @@ struct TrialRules
 	std::vector<TrialDef> list; // one a week, in turn
 };
 
+/** Warpath (kingdom.json "warpath", master prompt 13.4): the free track of a pass over a few weeks. Quests, battles and
+ *  events fill it with XP; each tier reached pays its reward (gold and food grow with the Castle). */
+struct WarpathRules
+{
+	int weeks = 4; // a pass lasts this many weeks from a Monday
+	int64_t tierXp = 1000;
+	int64_t dailyXp = 100; // a daily quest claimed
+	int64_t weeklyXp = 500; // a weekly quest claimed
+	int64_t battleXp = 10; // a battle fought
+	int64_t battleCap = 300; // battle XP a day
+	int64_t trialXp = 300; // a Titan Trial milestone claimed
+	int64_t skipGems = 150; // gems for the next tier
+	int64_t bonusXp = 2000; // past the last tier, a bonus chest per this much XP
+	EventReward bonus;
+	std::vector<EventReward> tiers; // at most 64
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -626,6 +643,7 @@ struct KingdomContent
 	std::vector<AchievementDef> achievements;
 	CalendarRules calendar;
 	TrialRules trials;
+	WarpathRules warpath;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

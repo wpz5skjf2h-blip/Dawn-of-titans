@@ -130,6 +130,15 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
+	WarpathNo = -1;
+	WpXp = 0;
+	WpMask = 0;
+	WpBonus = 0;
+	WpDay = -1;
+	WpDayXp = 0;
+	WpPaidNo = -1;
+	WpPaid.fill(0);
+	WpPaidRelics = 0;
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2333,6 +2342,7 @@ void Kingdom::EndBattle(int Level, int Stars, int64_t XpPct, const std::vector<i
 	// Reinforcements help in one battle only (the original).
 	R.reinforcements = static_cast<int>(PendingReinforce.size());
 	PendingReinforce.clear();
+	AddWarpathXp(C.warpath.battleXp, true);
 }
 
 Error Kingdom::FinishAttack(int32_t WorldId, bool Capture, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
@@ -2787,6 +2797,7 @@ void Kingdom::RollQuests()
 		TrialMask = 0;
 		bTrialRank = false;
 	}
+	RollWarpath();
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -2852,6 +2863,7 @@ Error Kingdom::ClaimQuestIn(const QuestRules& Rules, std::vector<DailyQuest>& Li
 	Reward R;
 	PayGift(Rules.pool[static_cast<size_t>(Q.def)].reward, R);
 	Q.claimed = true;
+	AddWarpathXp(&Rules == &C.weekly ? C.warpath.weeklyXp : C.warpath.dailyXp, false);
 	if (Out)
 	{
 		*Out = R;
@@ -2948,13 +2960,19 @@ Error Kingdom::RerollWeekly(int Slot) { return RerollQuestIn(C.weekly, WeekList,
 
 Error Kingdom::ClaimWeeklyChest(Reward* Out) { return ClaimChestIn(C.weekly, WeekList, bWeekChest, 0x7763686573ULL, WeekNo, Out); }
 
-Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R)
+Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R, bool Scale)
 {
 	if (Pay.relic > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
 	{
 		return Error::InventoryFull;
 	}
-	PayGift(Pay.res, R);
+	ResArray Res = Pay.res;
+	if (Scale)
+	{
+		Res[static_cast<size_t>(ResIndex(Res::Gold))] *= std::max(1, CastleLevel());
+		Res[static_cast<size_t>(ResIndex(Res::Food))] *= std::max(1, CastleLevel());
+	}
+	PayGift(Res, R);
 	if (Pay.relic > 0)
 	{
 		const uint64_t H = Mix(Seed ^ Salt, Pick);
@@ -3147,6 +3165,7 @@ Error Kingdom::FinishTrial(int Stars, int64_t Score, Reward* Out)
 	{
 		TrialScore = std::max(TrialScore, Fair);
 	}
+	AddWarpathXp(C.warpath.battleXp, true);
 	if (Out)
 	{
 		*Out = R;
@@ -3175,6 +3194,7 @@ Error Kingdom::ClaimTrialMilestone(int I, Reward* Out)
 		return E;
 	}
 	TrialMask |= 1u << I;
+	AddWarpathXp(C.warpath.trialXp, false);
 	if (Out)
 	{
 		*Out = R;
@@ -3208,6 +3228,191 @@ Error Kingdom::ClaimTrialRank(Reward* Out)
 		return E;
 	}
 	bTrialRank = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Warpath --------------------------------------------------------------------------------------------
+
+namespace
+{
+constexpr uint64_t WarpathSalt = 0x7761727061ULL;
+constexpr uint64_t WarpathBonusSalt = 0x7770626f6eULL;
+}
+
+int64_t Kingdom::WarpathEnd() const
+{
+	return ((std::max<int64_t>(0, WarpathNo) + 1) * std::max(1, C.warpath.weeks) * 7 - 3) * 86400;
+}
+
+int Kingdom::WarpathTier() const
+{
+	const int64_t Tiers = static_cast<int64_t>(C.warpath.tiers.size());
+	return static_cast<int>(std::min(Tiers, WpXp / std::max<int64_t>(1, C.warpath.tierXp)));
+}
+
+int Kingdom::WarpathBonusReady() const
+{
+	const int64_t Over = WpXp - static_cast<int64_t>(C.warpath.tiers.size()) * std::max<int64_t>(1, C.warpath.tierXp);
+	if (C.warpath.tiers.empty() || Over <= 0)
+	{
+		return 0;
+	}
+	return static_cast<int>(std::max<int64_t>(0, std::min<int64_t>(1000000, Over / std::max<int64_t>(1, C.warpath.bonusXp)) - WpBonus));
+}
+
+int64_t Kingdom::WarpathBattleXpToday() const
+{
+	return WpDay == std::max<int64_t>(0, Time) / 86400 ? WpDayXp : 0;
+}
+
+void Kingdom::AddWarpathXp(int64_t Xp, bool Battle)
+{
+	if (WarpathNo < 0 || C.warpath.tiers.empty() || Xp <= 0)
+	{
+		return;
+	}
+	if (Battle)
+	{
+		const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+		if (WpDay != Day)
+		{
+			WpDay = Day;
+			WpDayXp = 0;
+		}
+		Xp = std::min(Xp, std::max<int64_t>(0, C.warpath.battleCap - WpDayXp));
+		WpDayXp += Xp;
+	}
+	WpXp += Xp;
+}
+
+void Kingdom::RollWarpath()
+{
+	const WarpathRules& P = C.warpath;
+	if (P.tiers.empty())
+	{
+		return;
+	}
+	const int64_t No = WeekOf() / std::max(1, P.weeks);
+	if (No == WarpathNo)
+	{
+		return;
+	}
+	if (WarpathNo >= 0)
+	{
+		// The pass is over: tiers reached and chests filled are paid now, so nothing earned is lost (a relic without
+		// room in the inventory is the only thing that can be; its resources still come).
+		Reward R;
+		const int Reached = WarpathTier();
+		for (int T = 0; T < Reached; ++T)
+		{
+			if (WarpathClaimed(T))
+			{
+				continue;
+			}
+			EventReward Pay = P.tiers[static_cast<size_t>(T)];
+			const uint64_t Pick = static_cast<uint64_t>(WarpathNo) * 64 + static_cast<uint64_t>(T);
+			if (PayEvent(Pay, WarpathSalt, Pick, R, true) != Error::None)
+			{
+				Pay.relic = 0;
+				PayEvent(Pay, WarpathSalt, Pick, R, true);
+			}
+			WpMask |= uint64_t{1} << T;
+		}
+		for (int B = WarpathBonusReady(); B > 0; --B)
+		{
+			EventReward Pay = P.bonus;
+			const uint64_t Pick = static_cast<uint64_t>(WarpathNo) * 1000003 + static_cast<uint64_t>(WpBonus);
+			if (PayEvent(Pay, WarpathBonusSalt, Pick, R, true) != Error::None)
+			{
+				Pay.relic = 0;
+				PayEvent(Pay, WarpathBonusSalt, Pick, R, true);
+			}
+			++WpBonus;
+		}
+		bool bAny = !R.relics.empty();
+		for (const int64_t X : R.res)
+		{
+			bAny = bAny || X > 0;
+		}
+		if (bAny)
+		{
+			WpPaidNo = WarpathNo;
+			WpPaid = R.res;
+			WpPaidRelics = static_cast<int>(R.relics.size());
+		}
+	}
+	WarpathNo = No;
+	WpXp = 0;
+	WpMask = 0;
+	WpBonus = 0;
+}
+
+Error Kingdom::ClaimWarpath(int Tier, Reward* Out)
+{
+	if (WarpathNo < 0 || Tier < 0 || Tier >= static_cast<int>(C.warpath.tiers.size()) || Tier >= 64)
+	{
+		return Error::BadId;
+	}
+	if (WarpathClaimed(Tier))
+	{
+		return Error::Nothing;
+	}
+	if (Tier >= WarpathTier())
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const Error E = PayEvent(C.warpath.tiers[static_cast<size_t>(Tier)], WarpathSalt, static_cast<uint64_t>(WarpathNo) * 64 + static_cast<uint64_t>(Tier), R, true);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	WpMask |= uint64_t{1} << Tier;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::BuyWarpathTier()
+{
+	if (WarpathNo < 0 || C.warpath.tiers.empty())
+	{
+		return Error::BadId;
+	}
+	const int Tier = WarpathTier();
+	if (Tier >= static_cast<int>(C.warpath.tiers.size()))
+	{
+		return Error::LimitReached;
+	}
+	int64_t& Gems = Res_[static_cast<size_t>(ResIndex(Res::Gems))];
+	if (Gems < C.warpath.skipGems)
+	{
+		return Error::NotEnough;
+	}
+	Gems -= C.warpath.skipGems;
+	WpXp = static_cast<int64_t>(Tier + 1) * std::max<int64_t>(1, C.warpath.tierXp);
+	return Error::None;
+}
+
+Error Kingdom::ClaimWarpathBonus(Reward* Out)
+{
+	if (WarpathBonusReady() <= 0)
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const Error E = PayEvent(C.warpath.bonus, WarpathBonusSalt, static_cast<uint64_t>(WarpathNo) * 1000003 + static_cast<uint64_t>(WpBonus), R, true);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	++WpBonus;
 	if (Out)
 	{
 		*Out = R;
@@ -5940,6 +6145,36 @@ std::string Kingdom::Save() const
 	W.Key("rank");
 	W.Bool(bTrialRank);
 	W.EndObject();
+	// Warpath (optional): this pass and what the end of the last one paid.
+	W.Key("warpath");
+	W.BeginObject();
+	W.Key("no");
+	W.Int(WarpathNo);
+	W.Key("xp");
+	W.Int(WpXp);
+	W.Key("mask");
+	W.Int(static_cast<int64_t>(WpMask));
+	W.Key("bonus");
+	W.Int(WpBonus);
+	W.Key("day");
+	W.Int(WpDay);
+	W.Key("dayXp");
+	W.Int(WpDayXp);
+	W.Key("paid");
+	W.BeginObject();
+	W.Key("no");
+	W.Int(WpPaidNo);
+	W.Key("res");
+	W.BeginArray();
+	for (const int64_t X : WpPaid)
+	{
+		W.Int(X);
+	}
+	W.EndArray();
+	W.Key("relics");
+	W.Int(WpPaidRelics);
+	W.EndObject();
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -6683,6 +6918,38 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		TrialMask = static_cast<uint32_t>(TrialJ->GetInt64("milestones", 0));
 		bTrialRank = TrialJ->GetBool("rank", false);
 	}
+	// Warpath (saves before it start this pass on the next Advance).
+	WarpathNo = -1;
+	WpXp = 0;
+	WpMask = 0;
+	WpBonus = 0;
+	WpDay = -1;
+	WpDayXp = 0;
+	WpPaidNo = -1;
+	WpPaid.fill(0);
+	WpPaidRelics = 0;
+	if (const JsonValue* WpJ = J.Find("warpath"))
+	{
+		const int Tiers = std::min(64, static_cast<int>(C.warpath.tiers.size()));
+		WarpathNo = std::max<int64_t>(-1, WpJ->GetInt64("no", -1));
+		WpXp = std::max<int64_t>(0, WpJ->GetInt64("xp", 0));
+		WpMask = static_cast<uint64_t>(WpJ->GetInt64("mask", 0)) & (Tiers >= 64 ? ~uint64_t{0} : ((uint64_t{1} << Tiers) - 1));
+		WpBonus = std::max(0, WpJ->GetInt("bonus", 0));
+		WpDay = std::max<int64_t>(-1, WpJ->GetInt64("day", -1));
+		WpDayXp = std::max<int64_t>(0, WpJ->GetInt64("dayXp", 0));
+		if (const JsonValue* PaidJ = WpJ->Find("paid"))
+		{
+			WpPaidNo = std::max<int64_t>(-1, PaidJ->GetInt64("no", -1));
+			if (const JsonValue* ResJ = PaidJ->Find("res"); ResJ && ResJ->IsArray())
+			{
+				for (size_t I = 0; I < WpPaid.size() && I < ResJ->Size(); ++I)
+				{
+					WpPaid[I] = std::max<int64_t>(0, (*ResJ)[I].AsInt64(0));
+				}
+			}
+			WpPaidRelics = std::max(0, PaidJ->GetInt("relics", 0));
+		}
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -7046,6 +7313,22 @@ uint64_t Kingdom::Hash() const
 		W.I64(TrialScore);
 		W.U32(TrialMask);
 		W.U32(bTrialRank ? 1u : 0u);
+	}
+	// The same for the Warpath: only once a pass has started.
+	if (WarpathNo >= 0)
+	{
+		W.I64(WarpathNo);
+		W.I64(WpXp);
+		W.U64(WpMask);
+		W.I32(WpBonus);
+		W.I64(WpDay);
+		W.I64(WpDayXp);
+		W.I64(WpPaidNo);
+		for (const int64_t X : WpPaid)
+		{
+			W.I64(X);
+		}
+		W.I32(WpPaidRelics);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)

@@ -1195,6 +1195,21 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->TrialLordScore(I));
 	}
 	O.Raw("]},");
+	// Warpath: the pass (-1 before the first), when it ends, XP, tiers reached, tiers claimed (a '0'/'1' string, one a
+	// tier), bonus chests ready, battle XP today, and what the end of the last pass paid (its pass, resources, relics).
+	O.Key("wp").Raw("{").Key("no").Int(Km->WarpathSeason()).Comma().Key("end").Int(Km->WarpathEnd()).Comma().Key("xp").Int(Km->WarpathXp()).Comma();
+	O.Key("tier").Int(Km->WarpathTier()).Comma().Key("got").Raw("\"");
+	for (int I = 0; I < static_cast<int>(C.warpath.tiers.size()) && I < 64; ++I)
+	{
+		O.Raw(Km->WarpathClaimed(I) ? "1" : "0");
+	}
+	O.Raw("\",").Key("bonus").Int(Km->WarpathBonusReady()).Comma().Key("day").Int(Km->WarpathBattleXpToday()).Comma();
+	O.Key("paid").Raw("{").Key("no").Int(Km->WarpathPaidSeason()).Comma().Key("res").Raw("[");
+	for (size_t I = 0; I < Km->WarpathPaid().size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->WarpathPaid()[I]);
+	}
+	O.Raw("],").Key("relics").Int(Km->WarpathPaidRelics()).Raw("}},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1660,6 +1675,28 @@ EMSCRIPTEN_KEEPALIVE const char* dk_trial_rank()
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimTrialRank(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims a Warpath tier (0-based). */
+EMSCRIPTEN_KEEPALIVE const char* dk_wp_claim(int Tier)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimWarpath(Tier, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Buys the next Warpath tier with gems. */
+EMSCRIPTEN_KEEPALIVE int dk_wp_skip()
+{
+	return K() ? static_cast<int>(K()->BuyWarpathTier()) : -1;
+}
+
+/** Opens a Warpath bonus chest. */
+EMSCRIPTEN_KEEPALIVE const char* dk_wp_bonus()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimWarpathBonus(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

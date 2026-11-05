@@ -484,6 +484,33 @@
     ]
   },
 
+  // Warpath (master prompt 13.4: a pass per 4-week season, 50 tiers of 1 000 XP; XP 100 a daily quest, 500 a weekly
+  // challenge, 10 a battle up to 300 a day, and events; the free track pays 300 gems with Sigils and the like; a tier
+  // costs 150 gems; past tier 50 a bonus chest every 2 000 XP). Only the free track: no premium, no payments. Passes run
+  // four weeks from a Monday. Trial milestones are the events (300 XP each). An engaged player reaches about tier 30
+  // (about 4 gems a day); the free track pays 200 gems in all, under the 300 of the prompt, to keep the day within 40.
+  // Gold and food grow with the Castle (x Castle level). Tiers reached and not claimed are paid when the pass ends.
+  "warpath": {
+    "weeks": 4,
+    "tierXp": 1000,
+    "xp": { "daily": 100, "weekly": 500, "battle": 10, "battleCap": 300, "trial": 300 },
+    "skipGems": 150,
+    "bonusXp": 2000,
+    "bonus": { "gems": 5, "stones": 6 },
+    "tiers": [
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 10, "shards": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 20, "relic": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 10, "shards": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 20, "relic": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 10, "shards": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 20, "relic": 3 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 10, "shards": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 20, "relic": 3 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 10, "shards": 2 },
+      { "gold": 1000 }, { "gems": 5, "stones": 6 }, { "food": 1000 }, { "stones": 9 }, { "gems": 20, "relic": 4 }
+    ]
+  },
+
   // The main line of goals (master prompt 9.4 and 13.5; the original starts with a step-by-step tutorial): one goal at a
   // time, from the first collected food to Castle 9, about the first week. "check" is a fact of the kingdom (castle,
   // build, level, army, troopLevel, lands, landLevel, guard, garrison, titans, titanLevel, relics, skills, spells,
