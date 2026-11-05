@@ -181,6 +181,7 @@ struct AllianceLeagueDef
 	/** First place's reward to every member; each lower place gets placeStepPct less (down to minPlacePct). */
 	int64_t gems = 0;
 	int64_t stones = 0;
+	int64_t divine = 0; // divine gems (the original pays them in its top leagues)
 	/** Rarity of the crystal every member gets (a relic, or a titan by chance). */
 	int crystal = 1;
 	/** The crystal's titan chance in percent at first and at last place (linear between). */
@@ -402,6 +403,7 @@ struct EventReward
 {
 	ResArray res{};
 	int relic = 0;
+	int64_t divine = 0; // divine gems
 };
 
 /** One Titan Trial (master prompt 10.4): a fixed rule for the player's side and a fixed enemy army. */
@@ -573,14 +575,35 @@ struct AllianceWarRules
 	EventReward star; // for each star of the player's attacks (gold and food times the Castle)
 };
 
-/** Alliance help (kingdom.json "allianceHelp", master prompt 12.4): allies take time off the player's timers one help
- *  at a time, and the player helps theirs for a small reward. */
 /** Army loadouts (kingdom.json "loadouts"): how many a kingdom keeps (0: none). */
 struct LoadoutRules
 {
 	int max = 0;
 };
 
+/** A Divine Shrine altar (kingdom.json "divine"): a titan of the player's choice among those of its stars, or a relic of
+ *  the player's choice of kind at its rarity, for divine gems. */
+struct DivineAltar
+{
+	std::string id;
+	std::string name;
+	int titanStars = 0; // 1-4: a titan of this rarity, or
+	int relicRarity = 0; // 1-5: a relic of this rarity
+	int64_t price = 0;
+};
+
+/** Divine gems (kingdom.json "divine", the original's Eternal Shrine): the shrine makes perDay a day and keeps up to
+ *  cap until they are collected; its altars sell for them. */
+struct DivineRules
+{
+	int building = -1; // the shrine (a building def; -1: no divine gems)
+	int64_t perDay = 0;
+	int64_t cap = 0;
+	std::vector<DivineAltar> altars;
+};
+
+/** Alliance help (kingdom.json "allianceHelp", master prompt 12.4): allies take time off the player's timers one help
+ *  at a time, and the player helps theirs for a small reward. */
 struct AllianceHelpRules
 {
 	bool on = false; // the block is in the content
@@ -825,6 +848,7 @@ struct KingdomContent
 	AllianceWarRules allianceWar;
 	AllianceHelpRules allianceHelp;
 	LoadoutRules loadouts;
+	DivineRules divine;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

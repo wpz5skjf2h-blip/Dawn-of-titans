@@ -93,6 +93,9 @@ const ICONS = {
 	// A War Scroll for campaign sweeps: parchment between two rods, with a red seal.
 	scroll: [['p', 'M6 5.5h12v13H6z', '#f0dfae', '#7a5a2a', 1.3], ['p', 'M4 3.5h16v3H4zM4 17.5h16v3H4z', '#c99a55', '#6a4a1e', 1.3],
 		['p', 'M8.5 9.5h7M8.5 12.5h4.5', 'none', '#8a6a3a', 1.3], ['c', 15.5, 14.2, 1.9, '#c0392b', '#7a1a10', 1]],
+	// A divine gem (the Eternal Shrine): a rose crystal in a golden halo.
+	divine: [['c', 12, 12, 10, 'none', '#f2d15a', 1.3], ['p', 'M12 3.2l6 8.8-6 8.8-6-8.8z', '#f7a8d8', '#8a2a6a', 1.4],
+		['p', 'M6 12h12M12 3.2v17.6', 'none', '#fff0fa', 0.9]],
 };
 function iconSvg(kind) {
 	const parts = ICONS[kind].map((p) => p[0] === 'c'
@@ -257,6 +260,8 @@ class KingdomBridge {
 		return this.M.ccall('dk_loadout_save', 'number', ['number', 'string', 'number', 'string', 'string'], [slot, name || '', titan || 0, (squads || []).join(','), (spells || []).join(',')]);
 	}
 	loadoutDelete(slot) { return this.M._dk_loadout_delete(slot); }
+	shrineCollect() { return JSON.parse(this.str(this.M._dk_shrine_collect())); }
+	divineBuy(altar, pick) { return JSON.parse(this.str(this.M._dk_divine_buy(altar, pick))); }
 	leave() { return this.M._dk_leave(); }
 	reinforce() { return this.M._dk_reinforce(); }
 	visit() { this.M._dk_visit(); }
@@ -1924,6 +1929,8 @@ function drawOverlay(t) {
 			bubble(c, it.x, it.y, d.resource, b.st / b.sc, t / 1000, () => collect(b.id, true));
 		} else if (d.id === 'relic_temple' && b.lv > 0 && st.relicAt <= nf) {
 			bubble(c, it.x, it.y, 'gems', 0.99, t / 1000, openRelics); // the daily relic is ready
+		} else if (K.rules.divine && d.id === K.rules.divine.building && b.lv > 0 && st.divine && st.divine.st >= K.rules.divine.perDay) {
+			bubble(c, it.x, it.y, 'divine', st.divine.st / K.rules.divine.cap, t / 1000, collectShrine); // a day's divine gems
 		} else if (d.id === 'spell_forge' && b.lv > 0 && st.spells.queue.length) {
 			pill(c, it.x, it.y, st.spells.qb ? 'Запас полон' : K.army.spells[st.spells.queue[0]].name + ' ' + fmtClock(st.spells.qf - nf), '', undefined, K.army.spells[st.spells.queue[0]].id);
 		} else if (d.id === 'barracks' && b.lv > 0 && st.army.queue.length) {
@@ -2106,6 +2113,7 @@ function announceSeason(st) {
 		const got = crystalGot(last, st);
 		toast('Сезон завершён: альянс' + (last.aname ? ' «' + last.aname + '»' : '') + ' на ' + last.place + ' месте из ' + last.size + ' в лиге «' + alg.name + '»' +
 			(last.move > 0 ? ', повышение!' : last.move < 0 ? ', понижение' : '') + ' · +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ', +' + last.stones + ' камней' : '') +
+			(last.divine ? ', +' + last.divine + ' божественных' : '') +
 			(got ? ' · из кристалла: ' + got : ''), 'gold');
 		return;
 	}
@@ -2340,7 +2348,7 @@ const gemSpan = (n) => '<span class="cost">' + iconSvg('gems') + fmt(n) + '</spa
 /** Buildings with their own screen: data-act and button label. */
 const BUILDING_ACT = { barracks: ['barracks', 'Обучить'], army_camp: ['army', 'Армия'], armoury: ['armoury', 'Войска'], hall_of_titans: ['titans', 'Титаны'],
 	relic_temple: ['relics', 'Реликвии'], medical_school: ['army', 'Армия'], spell_forge: ['forge', 'Заклинания'], arcane_tower: ['arcane', 'Улучшения'],
-	alliance_camp: ['alliance-camp', 'Подкрепления'], garrison: ['defense', 'Защита'], adventurers_guild: ['campaign', 'Кампании'] };
+	alliance_camp: ['alliance-camp', 'Подкрепления'], garrison: ['defense', 'Защита'], adventurers_guild: ['campaign', 'Кампании'], eternal_shrine: ['divine', 'Алтари'] };
 function buildingPanel(id) {
 	const st = K.st;
 	const b = st.b.find((x) => x.id === id);
@@ -2355,7 +2363,7 @@ function buildingPanel(id) {
 	const key = ['b', id, b.lv, b.up, b.st > 0, armedSkip, brl ? brl.id + ':' + (brl.dur > 0) + ':' + brl.v.join('.') : '', gf ? [gf.on, gf.hold, gf.titan, gf.sq, st.raids.slots, shielded].join() : '',
 		d.role === 'storage' || d.role === 'castle' || d.role === 'portal' || d.role === 'builders' ? st.res.join() + st.busy + st.builders : '',
 		BUILDING_ACT[d.id] ? [st.army.queue.length, st.army.total, st.army.cap, st.army.rs.t, st.titans.length, st.army.surv, st.spells.total, st.spells.queue.length, st.spells.labs.length,
-			st.ally.my, st.ally.reinf.length].join() : '', b.up ? helpBtnKey(st, 0, id) : ''].join('|');
+			st.ally.my, st.ally.reinf.length, d.id === 'eternal_shrine' && st.divine ? st.divine.g + ':' + (st.divine.st > 0) : ''].join() : '', b.up ? helpBtnKey(st, 0, id) : ''].join('|');
 	const stats = [];
 	if (!cur) stats.push(esc(d.description));
 	else if (d.role === 'producer') {
@@ -2378,6 +2386,7 @@ function buildingPanel(id) {
 	else if (d.id === 'medical_school') stats.push('Возвращаются отряды, сохранившие <b>≥ ' + st.army.surv + '%</b>');
 	else if (d.id === 'hall_of_titans') stats.push('Титанов <b>' + st.titans.length + ' / ' + st.tcap + '</b>');
 	else if (d.id === 'relic_temple') stats.push('Бесплатная реликвия: <b data-live="relic"></b>');
+	else if (d.id === 'eternal_shrine' && st.divine && K.rules.divine) stats.push('Божественные самоцветы <b>' + iconSvg('divine') + fmt(st.divine.g) + '</b>', 'В святилище <b data-live="dv"></b>', '<b>' + K.rules.divine.perDay + '</b> в день');
 	else if (d.id === 'spell_forge') stats.push('Запас <b>' + st.spells.total + ' / ' + st.spells.cap + '</b>', 'Очередь <b>' + st.spells.queue.length + ' / ' + st.spells.qcap + '</b>');
 	else if (d.id === 'arcane_tower') stats.push('Улучшений сразу <b>' + st.spells.slots + '</b>', 'Предел уровня <b>' + st.spells.maxLv + '</b>');
 	else if (d.id === 'alliance_camp') stats.push('Подкреплений <b>' + st.ally.reinf.length + ' / ' + cur.reinforcements + '</b>', st.ally.my >= 0 ? 'альянс <b>[' + esc(st.ally.tag) + ']</b>' : 'вы не в альянсе');
@@ -2395,6 +2404,7 @@ function buildingPanel(id) {
 		if (hb) btn.push(hb);
 	} else {
 		if (d.role === 'producer') btn.push('<button class="btn tall" data-act="collect" data-id="' + id + '"' + (b.st > 0 ? '' : ' disabled') + '>Собрать<span class="sub" data-live="stc"></span></button>');
+		if (d.id === 'eternal_shrine' && b.lv > 0 && st.divine) btn.push('<button class="btn tall" data-act="shrine-collect"' + (st.divine.st > 0 ? '' : ' disabled') + '>Собрать<span class="sub" data-live="dvc"></span></button>');
 		if (nx) btn.push('<button class="btn tall primary" data-act="upgrade" data-id="' + id + '">' + (d.role === 'builders' ? 'Нанять строителя' : 'Улучшить') + '<span class="sub">до уровня ' + (b.lv + 1) + '</span></button>');
 		else btn.push('<button class="btn tall" disabled>Макс. уровень<span class="sub">' + b.lv + ' из ' + d.levels.length + '</span></button>');
 	}
@@ -2428,6 +2438,11 @@ function buildingPanel(id) {
 			} else if (dd.id === 'barracks') live(el, 'extra', aa.queue.length ? (aa.qb ? 'лагерь полон' : 'следующий ' + fmtClock(aa.qf - now)) : 'очередь пуста');
 			else if (dd.id === 'armoury') live(el, 'extra', aa.rs.t >= 0 ? fmtDur(aa.rs.f - now) : 'улучшить');
 			else if (dd.id === 'hall_of_titans') live(el, 'extra', K.st.titans.length + ' титанов');
+			else if (dd.id === 'eternal_shrine' && K.st.divine) {
+				live(el, 'extra', fmt(K.st.divine.g) + ' божественных');
+				live(el, 'dv', shrineNote(K.st, now));
+				live(el, 'dvc', K.st.divine.st > 0 ? '+' + K.st.divine.st : 'пусто');
+			}
 			else if (dd.id === 'adventurers_guild') live(el, 'extra', campaignNote(K.st));
 			else if (dd.id === 'army_camp' || dd.id === 'medical_school') live(el, 'extra', aa.total + ' / ' + aa.cap);
 			else if (dd.id === 'spell_forge') live(el, 'extra', K.st.spells.queue.length ? 'следующее ' + fmtClock(K.st.spells.qf - now) : 'запас ' + K.st.spells.total);
@@ -2618,6 +2633,11 @@ function onAct(e) {
 		break;
 	}
 	case 'relics': openRelics(); break;
+	case 'divine': openDivine(); break;
+	case 'shrine-collect': collectShrine(); break;
+	case 'div-alt': K.divAlt = id; K.armed = null; refreshSheet(true); break;
+	case 'div-pick': K.divPick = K.divPick || {}; K.divPick[K.divAlt || 0] = id; K.armed = null; refreshSheet(true); break;
+	case 'div-buy': buyDivine(id, +el.dataset.pick); break;
 	case 'train': {
 		const code = K.bridge.train(id);
 		if (code !== E.None) toast(errText(code, K.st.army.train[id]), 'bad');
@@ -3638,7 +3658,7 @@ function trialReady(st) {
 	K.rules.trials.milestones.forEach((m, i) => { if (!((tr.ms >> i) & 1) && tr.best >= m.score) n++; });
 	return n + (trialRankReady(st) ? 1 : 0);
 }
-const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
+const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
 /** The bracket: the lords by score with the kingdom before the lords it ties (as the kingdom counts its place). */
 function trialBoard(st) {
 	const rows = st.trial.lords.map((s, i) => ({ s, name: trialLordName(i) })).sort((a, b) => b.s - a.s);
@@ -4862,6 +4882,7 @@ function rewardParts(r) {
 	if (r.gems) parts.push('+' + fmt(r.gems) + ' самоцветов');
 	if (r.stones) parts.push('+' + fmt(r.stones) + ' камней портала');
 	if (r.scrolls) parts.push('+' + r.scrolls + ' ' + plural(r.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
+	if (r.divine) parts.push('+' + fmt(r.divine) + ' ' + plural(r.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
 	return parts;
 }
 /** A toast for every quest that got done since the last state (same day, same week). */
@@ -5399,7 +5420,7 @@ function calendarHtml(st) {
 		if (pick >= 0) {
 			const cards = R.newcomer[pick].choice.map((id, k) => {
 				const t = K.army.titans[titanIx(id)];
-				const ab = titanAbil(id).map((a) => a.name).filter(Boolean).join(', ');
+				const ab = titanAbil(id).filter(Boolean).join(', ');
 				return '<div class="landCard">' + icoHtml(DotIcons.has('class.' + t.class) ? 'class.' + t.class : 'class.Champion', 'titan') + '<div class="info"><b>' + esc(t.name) + ' ' + '★'.repeat(t.stars) + '</b><span>' +
 					esc(t.classRu || t.class) + (ab ? ' · ' + esc(ab) : '') + '</span></div><div class="row"><button class="btn primary" data-act="cal-new" data-id="' + pick + '" data-choice="' + k + '">Выбрать ' + esc(t.name) + '</button></div></div>';
 			}).join('');
@@ -5771,7 +5792,7 @@ function openSeason() {
 			'<span>' + esc(K.rules.alliances.leagues[al.tier].name) + ', место ' + al.place + ' из ' + al.size + '. Награду сезона даёт лига альянса.</span></div>' +
 			'<div class="row"><button class="btn primary" data-act="alliance">Альянс</button></div></div>'
 			: '<p class="fine">С ' + fmt(K.rules.alliances.joinVp) + ' ОП можно вступить в альянс: тогда награду сезона даёт лига альянса, как в оригинале.</p>';
-		const paid = 'получено +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ' и +' + last.stones + ' камней' : '');
+		const paid = 'получено +' + fmt(last.gems) + ' самоцветов' + (last.stones ? ' и +' + last.stones + ' камней' : '') + (last.divine ? ' и +' + last.divine + ' божественных' : '');
 		const got = last.al >= 0 ? crystalGot(last, st) : '';
 		const lastText = last.no < 0 ? '' : last.al >= 0
 			? 'Прошлый сезон: ' + fmt(last.vp) + ' ОП, альянс на ' + last.place + ' месте из ' + last.size + ' в лиге «' + esc(K.rules.alliances.leagues[last.tier].name) + '», ' + paid + (got ? ', из кристалла: ' + esc(got) : '') + '.'
@@ -6513,6 +6534,113 @@ function openRelics() {
 		return {
 			key: ['relics', st.altars.map((c) => c.err).join(), K.lastSummon, K.lastRelic, K.army.altars.map((a, i) => isArmed('altar:' + i)).join(), st.titans.length].join('|'), html,
 			live(el) { K.st.altars.forEach((c, i) => { if (c.err === E.NotReady) live(el, 'relic' + i, fmtDur(K.st.relicAt - nowF())); }); },
+		};
+	});
+}
+// ---------------------------------------------------------------------------------------------
+// Divine gems (the original's Eternal Shrine)
+// ---------------------------------------------------------------------------------------------
+// The shrine fills with divine gems every day and keeps them up to a cap until collected; the top three alliance
+// leagues pay some too. Its altars sell a titan of the player's choice (by stars) or a relic of the chosen kind.
+const divSpan = (n) => '<span class="cost">' + iconSvg('divine') + fmt(n) + '</span>';
+function shrineBuilt(st) {
+	const r = K.rules.divine;
+	return !!r && st.b.some((b) => K.defs[b.def].id === r.building && b.lv > 0);
+}
+/** "12 из 77 · ещё через 1:42:10" for the shrine's store. */
+function shrineNote(st, now) {
+	const r = K.rules.divine;
+	const d = st.divine;
+	if (!r || !d || !shrineBuilt(st)) return 'святилище не построено';
+	if (d.st >= r.cap) return d.st + ' из ' + r.cap + ', полно';
+	return d.st + ' из ' + r.cap + (d.nx ? ' · ещё через ' + fmtDur(d.nx - now) : '');
+}
+function collectShrine() {
+	const r = K.bridge.shrineCollect();
+	if (r.err !== E.None) { toast(errText(r.err), 'bad'); refresh(true); return; }
+	toast('Вечное святилище: +' + r.gems + ' божественных самоцветов', 'gold');
+	persist();
+	refresh(true);
+}
+/** What an altar offers: titan types of its stars, or every relic kind (combat ones first, as the content lists them). */
+function divPicks(a) {
+	if (a.titan) return K.army.titans.map((t, i) => i).filter((i) => K.army.titans[i].stars === a.titan);
+	return K.army.relics.kinds.map((k, i) => i);
+}
+function divPickOpt(a, i, on) {
+	if (a.titan) {
+		const t = K.army.titans[i];
+		const have = K.st.titans.filter((x) => x.def === i).length;
+		return '<button class="opt wi' + (on ? ' on' : '') + '" data-act="div-pick" data-id="' + i + '">' + icoHtml(DotIcons.has('class.' + t.class) ? 'class.' + t.class : 'class.Champion', 'titan') +
+			'<b>' + esc(t.name) + '</b><span>' + esc(t.classRu || t.class) + (have ? ' · есть ' + have : '') + '</span></button>';
+	}
+	const k = K.army.relics.kinds[i];
+	return '<button class="opt wi' + (on ? ' on' : '') + '" data-act="div-pick" data-id="' + i + '">' + icoHtml('relic.' + k.id, 'relic') +
+		'<b>' + esc(k.name) + '</b><span>' + (k.type === 'economy' ? 'для построек' : 'для титана') + '</span></button>';
+}
+/** The picked titan's abilities, or the relic kind's effects and how many a new one of this rarity has open. */
+function divPickText(a, i) {
+	if (a.titan) {
+		const t = K.army.titans[i];
+		const ab = titanAbil(t.id).filter(Boolean).join(', ');
+		return esc(t.name) + ' ' + '★'.repeat(t.stars) + ', ' + esc(t.classRu || t.class) + (ab ? ': ' + esc(ab) : '') + '. Придёт на 1-м уровне.';
+	}
+	const k = K.army.relics.kinds[i];
+	const R = K.army.relics;
+	const names = k.effects.map((id) => (R.effects.find((e) => e.id === id) || {}).name || id);
+	const open = Math.min(names.length, (R.startEffects || [])[a.relic - 1] || 1);
+	return esc(k.name) + ' ' + '★'.repeat(a.relic) + ': ' + esc(names.join(', ')) + ' (открыто ' + open + ' из ' + names.length + ').';
+}
+function buyDivine(alt, pick) {
+	const a = K.rules.divine.altars[alt];
+	const key = 'div:' + alt + ':' + pick;
+	if (!isArmed(key)) { arm(key); return; }
+	K.armed = null;
+	const r = K.bridge.divineBuy(alt, pick);
+	if (r.err !== E.None) { toast(errText(r.err), 'bad'); refresh(true); return; }
+	persist();
+	refresh(true);
+	const t = a.titan ? K.st.titans.find((x) => x.id === r.id) : null;
+	const rl = a.titan ? null : K.st.relics.find((x) => x.id === r.id);
+	K.divGot = t ? 'титан ' + titanName(t) + ' ' + '★'.repeat(K.army.titans[t.def].stars) : rl ? (/^реликвия/i.test(relicName(rl)) ? '' : 'реликвия ') + relicName(rl) + ' ' + '★'.repeat(rl.r) : '';
+	toast('Алтарь: ' + K.divGot, 'gold');
+	refreshSheet(true);
+}
+function openDivine() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const r = K.rules.divine;
+		const d = st.divine;
+		const built = shrineBuilt(st);
+		const ai = Math.max(0, Math.min(r.altars.length - 1, K.divAlt || 0));
+		const a = r.altars[ai];
+		const picks = divPicks(a);
+		const want = (K.divPick || {})[ai];
+		const pick = picks.includes(want) ? want : picks[0];
+		const err = d.alt[ai];
+		const armed = isArmed('div:' + ai + ':' + pick);
+		const tabs = r.altars.map((x, i) => '<button class="opt' + (i === ai ? ' on' : '') + '" data-act="div-alt" data-id="' + i + '"><b>' + esc(x.name) + '</b><span>' +
+			(x.titan ? 'титан ' + '★'.repeat(x.titan) : 'реликвия ' + '★'.repeat(x.relic)) + ' · ' + divSpan(x.price) + '</span></button>').join('');
+		let buy;
+		if (err === E.None || err === E.NotEnough) buy = '<button class="btn primary" data-act="div-buy" data-id="' + ai + '" data-pick="' + pick + '"' + (d.g < a.price ? ' disabled' : '') + '>' +
+			(armed ? 'Подтвердить ' : 'Купить ') + divSpan(a.price) + '</button>';
+		else buy = '<button class="btn" disabled>' + esc(err === E.NeedRequirement ? 'Постройте Вечное святилище' : errText(err)) + '</button>';
+		const html = sheetTitle(buildingIconById(r.building), 'Вечное святилище') +
+			'<p class="fine">Как в оригинале, святилище каждый день даёт ' + r.perDay + ' божественных самоцветов, а его алтари продают реликвии ★5 и божественных титанов; в оригинале их платили и высшие лиги. ' +
+			'Здесь святилище копит до ' + r.cap + ', ещё их платят три высшие лиги альянсов, а титана и вид реликвии вы выбираете сами. Цены наши.</p>' +
+			'<div class="costline"><span>Божественные самоцветы</span><b>' + divSpan(d.g) + '</b><span data-live="dv">' + esc(shrineNote(st, nowF())) + '</span>' +
+			(built ? '<button class="btn" data-act="shrine-collect"' + (d.st > 0 ? '' : ' disabled') + '>Собрать</button>' : '') + '</div>' +
+			(K.divGot ? '<div class="costline"><span>Получено</span><b>' + esc(K.divGot) + '</b></div>' : '') +
+			'<h3>Алтари</h3><div class="opts">' + tabs + '</div>' +
+			'<h3>' + esc(a.name) + ': ' + (a.titan ? 'выберите титана' : 'выберите вид реликвии') + '</h3>' +
+			'<div class="opts">' + picks.map((i) => divPickOpt(a, i, i === pick)).join('') + '</div>' +
+			'<p class="fine">' + divPickText(a, pick) + (a.titan ? ' Титанов в Зале: ' + st.titans.length + ' из ' + st.tcap + '.' : ' Реликвий: ' + st.relics.length + ' из ' + K.army.relics.maxRelics + '.') + '</p>' +
+			'<div class="actions">' + buy + '<button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
+		return {
+			key: ['divine', d.g, d.st > 0, d.alt.join(), ai, pick, armed, K.divGot || '', built, st.titans.length, st.relics.length].join('|'), html,
+			live(el) { live(el, 'dv', shrineNote(K.st, nowF())); },
 		};
 	});
 }
@@ -7335,7 +7463,8 @@ const ROLE_RU = ['лидер', 'офицер', 'участник'];
 const allyLeague = (tier) => K.rules.alliances.leagues[tier];
 const embHtml = (tag, emb) => '<div class="emb e' + (emb % 12) + '" aria-hidden="true">' + esc(tag) + '</div>';
 /** A league place's reward: [gems, stones, crystal rarity, titan chance %]. */
-const payHtml = (p) => '+' + fmt(p[0]) + ' ' + iconSvg('gems') + ' +' + p[1] + ' ' + iconSvg('stones') + (p[2] ? ' + ' + mini('ui.crystal') + '★'.repeat(p[2]) : '');
+const payHtml = (p) => '+' + fmt(p[0]) + ' ' + iconSvg('gems') + ' +' + p[1] + ' ' + iconSvg('stones') + (p[4] ? ' +' + p[4] + ' ' + iconSvg('divine') : '') +
+	(p[2] ? ' + ' + mini('ui.crystal') + '★'.repeat(p[2]) : '');
 const crystalNote = (p) => (p[2] ? 'Кристалл ' + '★'.repeat(p[2]) + ': титан этой редкости с шансом ' + p[3] + '%, иначе реликвия.' : '');
 /** The member who sent a squad (index into the alliance's member list). */
 function senderName(data, from) {
@@ -7410,7 +7539,7 @@ function allianceMine(st, data) {
 	const view = K.allyView || 'league';
 	const zone = (place, size) => (place <= A.promote && al.tier < top ? 'up' : place > size - A.promote && al.tier > 0 ? 'down' : '');
 	const myZone = zone(al.place, al.size);
-	const pay = data.pay[al.place - 1] || [0, 0, 0, 0];
+	const pay = data.pay[al.place - 1] || [0, 0, 0, 0, 0];
 	const late = al.since > st.season.end - A.memberHours * 3600;
 	const views = [['league', 'Лига'], ['members', 'Участники'], ['pay', 'Награды'], ['reinf', 'Подкрепления']];
 	let body = '';
@@ -7433,7 +7562,7 @@ function allianceMine(st, data) {
 	} else if (view === 'pay') {
 		body = '<div class="cmp">' + data.pay.map((p, n) => '<span class="k' + (n + 1 === al.place ? ' on' : '') + '">' + (n + 1) + ' место</span><span class="v">' + payHtml(p) + '</span>' +
 			'<span class="n">' + (p[2] ? 'титан ' + p[3] + '%' : '') + '</span>').join('') + '</div>' +
-			'<p class="fine">Как в оригинале: награда каждому участнику — самоцветы, камни портала и кристалл. Кристалл выше в лигах повыше, ★★★★ — только в высшей; чем выше место, тем больше шанс, что в нём титан. Сами числа наши.</p>';
+			'<p class="fine">Как в оригинале: награда каждому участнику — самоцветы, камни портала и кристалл, в трёх высших лигах ещё и божественные самоцветы для алтарей Вечного святилища. Кристалл выше в лигах повыше, ★★★★ — только в высшей; чем выше место, тем больше шанс, что в нём титан. Сами числа наши.</p>';
 		key = data.pay.map((p) => p.join(':')).join();
 	} else {
 		body = reinforceHtml(st, data);

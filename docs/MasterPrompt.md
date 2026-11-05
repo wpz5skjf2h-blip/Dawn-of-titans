@@ -1275,6 +1275,10 @@ Computed tables for key levels are in Section 20.4.
 | Conquest Marks / Event Tokens | event currency | Conquest / events | Event shops | Expire after the event shop closes (shown clearly) |
 | Warpath XP, Lord XP | progress | Almost everything | — | — |
 
+> **Implemented now (original):** the original's divine gems: the Eternal Shrine makes 11 a day (kept up to 77), the top
+> three alliance leagues and the events pay some, and the shrine's altars sell a titan of the player's choice (4 or 3 stars) or a relic
+> of the chosen kind (rarity 5 or 4) for them (docs/M0_Notes.md §6ь).
+
 ### 8.2 Economy principles
 1. Every source has a sink. Model the economy before tuning: a spreadsheet plus a Python simulation of player cohorts (casual, engaged, spender) that projects balances and time-to-Keep-level.
 2. Storage caps limit hoarding and give raids a purpose.

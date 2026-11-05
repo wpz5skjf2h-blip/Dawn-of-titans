@@ -170,6 +170,7 @@ struct SeasonResult
 	int league = -1;
 	int64_t gems = 0;
 	int64_t stones = 0;
+	int64_t divine = 0; // divine gems (the top alliance leagues)
 	int alliance = -1; // the alliance that paid (-1: the personal league did)
 	int allianceTier = -1; // its league during the season
 	int place = 0; // 1 = first
@@ -231,6 +232,7 @@ struct Reward
 	int32_t newTitan = 0; // a titan a star chest gave
 	int64_t studySec = 0; // research time a Daily Trial took off (each research running)
 	int64_t scrolls = 0; // War Scrolls a quest chest gave
+	int64_t divine = 0; // divine gems an event paid
 };
 
 /** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */
@@ -789,6 +791,22 @@ public:
 	/** BadId when there is no such loadout; the ones after it move up. */
 	Error DeleteLoadout(int Slot);
 
+	// --- Divine gems (the original's Eternal Shrine) ---
+	// The shrine makes divine gems every day and keeps them up to a cap until they are collected; the top alliance
+	// leagues pay some too. The shrine's altars sell a titan or a relic of the player's choice for them.
+	int64_t DivineGems() const { return DivineCount; }
+	/** Divine gems waiting in the shrine (0 without one). */
+	int64_t ShrineStored() const;
+	/** When the shrine holds one more (0: none built, or it is full). */
+	int64_t ShrineNextAt() const;
+	/** Collects the shrine: NeedRequirement (not built), Nothing (empty). */
+	Error CollectShrine(int64_t* OutGems = nullptr);
+	/** Whether an altar sells this pick (a titan type of the altar's stars, or a relic kind): BadId, NeedRequirement (no
+	 *  shrine), RosterFull (the Hall of Titans), InventoryFull (relics), NotEnough (divine gems; cost is not used). */
+	Check CheckDivine(int Altar, int Pick) const;
+	/** Buys from an altar: the new titan's or relic's id in OutId. */
+	Error BuyDivine(int Altar, int Pick, int32_t* OutId = nullptr);
+
 	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
 	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
 	// quests and the Warpath count it. Quest chests give the scrolls.
@@ -1229,6 +1247,8 @@ private:
 	int64_t DefRelicBonus(int Def, RelicStat Stat) const;
 	int64_t CapBonus(RelicStat Stat, int64_t Value) const;
 	int32_t SummonTitan(int Stars, uint64_t Pick);
+	/** Adds a titan of this type to the Hall (its start skills set). */
+	int32_t AddTitanOf(int Def);
 	int BaseAlliances() const { return static_cast<int>(C.alliances.names.size()); }
 	bool HasOwnAlliance() const { return AllianceIdx >= 0 && AllianceIdx == BaseAlliances(); }
 	void ResetAlliances();
@@ -1423,6 +1443,9 @@ private:
 	std::vector<uint32_t> ChestMask;
 	// Army loadouts.
 	std::vector<Loadout> LoadoutList;
+	// Divine gems held, and when the shrine began filling (0: no shrine built yet).
+	int64_t DivineCount = 0;
+	int64_t ShrineFrom = 0;
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;
