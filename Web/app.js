@@ -2733,6 +2733,10 @@ Object.defineProperties(app, Object.getOwnPropertyDescriptors({
 	renderer,
 	isTouch,
 	settings,
+	// Training battles and titan names, for the admin mode's battle picker (Web/admin.js).
+	scenarios: SCENARIOS,
+	titanIds: TITANS,
+	titanNames: RU.titan,
 	get sim() { return game.sim; },
 	get viewW() { return viewW; },
 	get viewH() { return viewH; },

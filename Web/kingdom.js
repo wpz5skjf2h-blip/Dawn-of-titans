@@ -5506,9 +5506,9 @@ function init(app) {
 		try { welcomed = !!localStorage.getItem(HINT_KEY); } catch (e) { /* ignore */ }
 		if (!welcomed && !loaded) openWelcome();
 		else setTimeout(maybeShowCalendar, 1200);
-		// Debug and test hooks (used by the automated browser tests).
+		// Debug and test hooks (used by the automated browser tests and the admin mode, Web/admin.js).
 		window.dotKingdomDebug = {
-			K, world, view, clock, refresh, persist, cloud,
+			K, world, view, clock, refresh, persist, cloud, nowSec, toast, adopt, findSpot, openPrepare,
 			screenOf(id) { const v = world.views.get(id) || world.lands.get(id); return v ? project(new T.Vector3(v.anchor.x, v.anchor.y * 0.5, v.anchor.z)) : null; },
 		};
 		return true;
