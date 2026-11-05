@@ -1181,8 +1181,10 @@ void TestCampaigns()
 	const CampaignRules& G = Ct.campaigns;
 	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
 	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
-	KD_CHECK(G.stones == 2 && G.guild == Def("adventurers_guild") && G.acts.size() == 2);
+	// The master prompt's launch campaign: Acts 1-4 (Highvale, Mistmoor, Sunreach, Jade Peaks).
+	KD_CHECK(G.stones == 2 && G.guild == Def("adventurers_guild") && G.acts.size() == 4);
 	KD_CHECK(G.acts[0].id == "act1" && G.acts[0].castle == 8 && G.acts[1].id == "act2" && G.acts[1].castle == 12);
+	KD_CHECK(G.acts[2].id == "act3" && G.acts[2].castle == 16 && G.acts[3].id == "act4" && G.acts[3].castle == 20);
 	const MissionDef& First = G.acts[0].missions[0];
 	KD_CHECK(First.id == "a1m1" && First.level == 3 && First.first[GemsI] == 10 && First.first[FoodI] == 5000);
 	KD_CHECK(G.acts[0].chests[2].stars == 36 && G.acts[0].chests[2].titan == 2 && G.acts[0].chests[2].res[GemsI] == 150 && G.acts[0].chests[1].relic == 3);
@@ -1192,14 +1194,14 @@ void TestCampaigns()
 		KD_CHECK(A.missions.size() == 13 && A.chests.size() == 3 && A.chests[0].stars == 12 && A.chests[1].stars == 24 && A.chests[2].stars == 36);
 		for (size_t M = 0; M < A.missions.size(); ++M)
 		{
-			KD_CHECK(A.missions[M].first[GemsI] >= 10 && A.missions[M].first[GemsI] <= 40);
+			KD_CHECK(A.missions[M].first[GemsI] >= 10 && A.missions[M].first[GemsI] <= 50);
 			KD_CHECK(M == 0 || A.missions[M].level >= A.missions[M - 1].level);
 		}
 	}
 
 	Kingdom K(Content());
 	K.NewGame(T0, 61);
-	KD_CHECK(K.ActCount() == 2 && K.MissionCount(0) == 13 && K.MissionCount(2) == 0 && K.ActStars(0) == 0 && !K.ChestClaimed(0, 0));
+	KD_CHECK(K.ActCount() == 4 && K.MissionCount(0) == 13 && K.MissionCount(3) == 13 && K.MissionCount(4) == 0 && K.ActStars(0) == 0 && !K.ChestClaimed(0, 0));
 	// Without the Adventurers' Guild nothing opens.
 	const Check NoGuild = K.CheckMission(0, 0);
 	KD_CHECK(NoGuild.error == Error::NeedRequirement && NoGuild.missing.building == G.guild && NoGuild.missing.level == 1);
@@ -1269,6 +1271,22 @@ void TestCampaigns()
 	Kingdom O(Content());
 	const std::string Old = Replace(AtCastle(8), "\"campaigns\":{}", "\"x\":0");
 	KD_CHECK(Old != AtCastle(8) && O.Load(Old, Error) && O.ActStars(0) == 0 && O.CheckMission(0, 0).error == Error::None);
+	// Acts III and IV: each waits for the act before it and for its Castle.
+	const std::string Won = "\"stars\":\"3333333333333\",\"chests\":0}";
+	const auto Acts = [&](int Castle, int Done) {
+		std::string Camp = "\"campaigns\":{";
+		for (int A = 0; A < Done; ++A)
+		{
+			Camp += std::string(A ? "," : "") + "\"act" + std::to_string(A + 1) + "\":{" + Won;
+		}
+		return Replace(AtCastle(Castle), "\"campaigns\":{}", Camp + "}");
+	};
+	KD_CHECK(O.Load(Acts(20, 1), Error) && O.ActStars(0) == 39 && O.CheckMission(1, 0).error == Error::None && O.CheckMission(2, 0).error == Error::Locked && O.CheckMission(2, 0).castle == 0);
+	KD_CHECK(O.Load(Acts(15, 2), Error) && O.ActStars(1) == 39 && O.CheckMission(2, 0).error == Error::Locked && O.CheckMission(2, 0).castle == 16);
+	KD_CHECK(O.Load(Acts(16, 2), Error) && O.CheckMission(2, 0).error == Error::None && O.CheckMission(3, 0).error == Error::Locked && O.CheckMission(3, 0).castle == 20);
+	KD_CHECK(O.Load(Acts(19, 3), Error) && O.ActStars(2) == 39 && O.CheckMission(3, 0).error == Error::Locked && O.CheckMission(3, 0).castle == 20);
+	KD_CHECK(O.Load(Acts(20, 3), Error) && O.CheckMission(3, 0).error == Error::None && O.MissionLevel(3, 0) == 9 && O.MissionLevel(2, 0) == 8);
+	KD_CHECK(O.Load(Acts(20, 4), Error) && O.ActStars(3) == 39 && O.ClaimChest(3, 1, &R) == Error::None && R.relics.size() == 1 && O.FindRelic(R.relics[0])->rarity == 5);
 }
 
 void TestCampaignSweep()
@@ -1495,7 +1513,7 @@ void TestHeroic()
 	KD_CHECK(K.HeroicOn() && K.HeroicStars(0) == 0 && K.MissionStars(0, HB) == 0 && !K.ChestClaimed(0, HB));
 	// Mission numbers: HeroicBase + M is mission M on Heroic; nothing else is a mission.
 	KD_CHECK(K.CheckMission(0, HB + 13).error == Error::BadId && K.CheckMission(0, 13).error == Error::BadId && K.CheckMission(0, HB - 1).error == Error::BadId);
-	KD_CHECK(K.CheckMission(0, -1).error == Error::BadId && K.CheckMission(2, HB).error == Error::BadId && K.CheckSweep(0, HB + 13).error == Error::BadId);
+	KD_CHECK(K.CheckMission(0, -1).error == Error::BadId && K.CheckMission(4, HB).error == Error::BadId && K.CheckSweep(0, HB + 13).error == Error::BadId);
 	KD_CHECK(K.MissionLevel(0, 0) == 3 && K.MissionLevel(0, HB) == 6 && K.MissionLevel(0, HB + 12) == 9 && K.MissionLevel(1, HB + 12) == 9 && K.MissionLevel(0, HB + 13) == 0);
 	KD_CHECK(K.CheckMission(0, HB).error == Error::NeedRequirement && K.ClaimChest(0, HB + 3, nullptr) == Error::BadId && K.ClaimChest(0, HB, nullptr) == Error::NotEnough);
 	// With vaults big enough for twice the loot.

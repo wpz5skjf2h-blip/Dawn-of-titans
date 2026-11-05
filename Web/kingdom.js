@@ -3380,7 +3380,7 @@ function siteCards(st) {
 // The land battle code fights a mission as a pseudo land { id, lv, mission: { a, m } }. On Heroic (master prompt 10.2)
 // the mission number is HEROIC + m, as the kingdom numbers it.
 const MISSION_ID = 910001;
-const MISSION_TYPE = { field: 'Полевой бой', hunt: 'Охота на титана', elite: 'Элитный бой', boss: 'Босс акта' };
+const MISSION_TYPE = { field: 'Полевой бой', siege: 'Осада', hunt: 'Охота на титана', elite: 'Элитный бой', boss: 'Босс акта' };
 const HEROIC = 50;
 const missionDef = (a, m) => K.rules.campaigns.acts[a].missions[m >= HEROIC ? m - HEROIC : m];
 const heroicRules = () => (K.rules.campaigns && K.rules.campaigns.heroic) || null;
@@ -3408,11 +3408,19 @@ function heroicMod(a, m) {
 	const id = ids[(a * n + (m % HEROIC)) % ids.length];
 	return mods.find((x) => x.id === id) || null;
 }
-/** What Heroic changes in a mission's battle (as spireKnobs): the squads' and the titan's bonuses, the AI, the
- *  modifier's extra squads and the battle's length. */
-function heroicKnobs(a, m) {
+/** What a mission changes in its battle (as spireKnobs): its own bonus to the squads (power, and fort for the health
+ *  behind a siege's walls), and on Heroic the squads' and the titan's bonuses, the AI, the modifier's extra squads and
+ *  the battle's length. */
+function missionKnobs(a, m) {
+	const md = missionDef(a, m);
+	const k = { atk: md.power || 0, hp: (md.power || 0) + (md.fort || 0), tAtk: 0, tHp: 0, squads: 0, ai: '', timerSec: 0 };
+	if (m < HEROIC) return k;
 	const H = heroicRules();
-	const k = { atk: H.atkPct || 0, hp: H.hpPct || 0, tAtk: H.titanPct || 0, tHp: H.titanPct || 0, squads: 0, ai: H.ai || '', timerSec: 0 };
+	k.atk += H.atkPct || 0;
+	k.hp += H.hpPct || 0;
+	k.tAtk += H.titanPct || 0;
+	k.tHp += H.titanPct || 0;
+	k.ai = H.ai || '';
 	const mod = heroicMod(a, m);
 	if (mod) {
 		k.atk += mod.atkPct || 0;
@@ -3425,21 +3433,23 @@ function heroicKnobs(a, m) {
 	}
 	return k;
 }
-/** A Heroic mission's enemy squads: the mission's, then the modifier's extra ones from the same list. */
-function heroicEnemy(a, m) {
+/** A mission's enemy squads: its own, then a Heroic modifier's extra ones from the same list. */
+function missionEnemy(a, m) {
 	const sq = missionDef(a, m).squads;
-	return sq.concat(Array.from({ length: heroicKnobs(a, m).squads }, (_, i) => sq[i % sq.length]));
+	return sq.concat(Array.from({ length: missionKnobs(a, m).squads }, (_, i) => sq[i % sq.length]));
 }
-function heroicEnemyText(a, m) {
+function missionEnemyText(a, m) {
 	const md = missionDef(a, m);
-	const k = heroicKnobs(a, m);
-	const et = missionTitan(md, true);
-	const n = heroicEnemy(a, m).length;
+	const k = missionKnobs(a, m);
+	if (m < HEROIC && !k.atk && !k.hp) return enemyText(md.level, missionTitan(md), md.ai, md.squads.length);
+	const et = missionTitan(md, m >= HEROIC);
+	const n = missionEnemy(a, m).length;
 	const parts = [AI_RU[k.ai || md.ai] || ''];
 	parts.push(n + ' ' + plural(n, 'отряд', 'отряда', 'отрядов') + (k.hp ? ', здоровья +' + k.hp + '%' : '') + (k.atk ? ', урона +' + k.atk + '%' : ''));
 	if (et) parts.push('титан ' + (et.name ? et.name + ' (' + et.def.name + ')' : et.def.name) + ' ур. ' + et.level + (k.tHp ? ', здоровья +' + k.tHp + '%' : '') + (k.tAtk ? ', урона +' + k.tAtk + '%' : ''));
 	if (k.timerSec) parts.push('на бой ' + fmtDur(k.timerSec));
-	const mod = heroicMod(a, m);
+	if (md.fort) parts.push('из них +' + md.fort + '% здоровья дают стены');
+	const mod = m >= HEROIC ? heroicMod(a, m) : null;
 	if (mod) parts.push('модификатор «' + mod.name + '»: ' + mod.text);
 	return parts.filter(Boolean).join('; ');
 }
@@ -3626,7 +3636,7 @@ function openCampaign(act, heroic) {
 		for (let m = 0; m < shown; m++) {
 			const md = A.missions[m];
 			const won = c.stars[m] > 0;
-			const enemy = hero ? heroicEnemyText(a, base + m) : enemyText(md.level, missionTitan(md), md.ai, md.squads.length);
+			const enemy = missionEnemyText(a, base + m);
 			cards.push('<div class="landCard' + (won ? ' won' : '') + (hero ? ' heroic' : '') + '">' + missionIcon(md, missionLevel(a, base + m)) + '<div class="info"><b>' + (m + 1) + '. ' + esc(md.name) + ' · ур. ' + missionLevel(a, base + m) + '</b>' +
 				'<span>' + MISSION_TYPE[md.type] + ' · ' + esc(enemy) + ' · поле боя: ' + esc(siteField(md).field) + '</span>' +
 				'<span>' + (won ? 'Лучший результат: <b class="gold">' + '★'.repeat(c.stars[m]) + '</b>' + '☆'.repeat(3 - c.stars[m]) + ' · повтор даёт опыт титану и добычу'
@@ -6266,10 +6276,10 @@ function landScenario(w, prep) {
 	const wb = w.war ? w.war.base : -1;
 	const spf = w.spire > 0 ? w.spire : 0;
 	// A Titan Spire floor and a Heroic mission change the battle the same way.
-	const spk = spf ? spireKnobs(spf) : md && w.mission.m >= HEROIC ? heroicKnobs(w.mission.a, w.mission.m) : null;
+	const spk = spf ? spireKnobs(spf) : md ? missionKnobs(w.mission.a, w.mission.m) : null;
 	const ty = spf ? spireField(spf) : wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
 	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && !spf && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = spf ? 'Башня титанов, этаж ' + spf : md && spk ? md.name + ' (героическая)' : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	sc.name = spf ? 'Башня титанов, этаж ' + spf : md && w.mission.m >= HEROIC ? md.name + ' (героическая)' : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -6314,7 +6324,7 @@ function landScenario(w, prep) {
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
 	// An Assault stage adds its garrison behind the level's army.
-	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md && spk ? heroicEnemy(w.mission.a, w.mission.m) : md ? md.squads : b.squads;
+	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? missionEnemy(w.mission.a, w.mission.m) : b.squads;
 	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
@@ -7429,7 +7439,7 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md, w.lv) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? (p.mission.m >= HEROIC ? 'Героическая миссия' : 'Миссия') : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : md && p.mission.m >= HEROIC ? heroicEnemyText(p.mission.a, p.mission.m) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : md ? missionEnemyText(p.mission.a, p.mission.m) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
 			asNote + (sf ? '<p class="fine">Награда за этаж: ' + eventPay(spirePay(sf, st)) + (sf > st.spire.fixed ? ' (верхние этажи платят каждую неделю)' : ' (один раз)') + '. Попыток сколько угодно, камни портала не нужны.' +
 				(spireMods(sf).length ? ' Усиления врага: ' + spireMods(sf).map((m) => esc(m.name.toLowerCase()) + ' — ' + esc(m.text)).join('; ') + '.' : '') + '</p>'
 				: wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +

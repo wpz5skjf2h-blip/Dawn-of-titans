@@ -215,6 +215,10 @@ You are the last heir of the House of Highvale (the player names their house). O
 - Each Act has an intro and an outro told in 3–6 illustrated story panels (voice optional).
 - After Act 6: Heroic difficulty for all Acts, plus the endless **Titan Spire** tower mode [POST].
 
+> **Implemented now (Acts 1–4):** Highvale (Keep 8), Mistmoor (Keep 12), Sunreach (Keep 16, with siege missions whose
+> defenders fight behind walls) and Jade Peaks (Keep 20), each 12 missions and a boss with Ilsa Wren's briefings and
+> star chests (docs/M0_Notes.md §6д, §6я).
+
 ### 2.6 Narrative delivery
 - Comic-style story panels with 2.5D parallax before and after each Act; short barks during battle; mission briefings.
 - Every titan has a lore card (150–250 words), unlocked when it is bound. The **Lore Codex** collects them and grants rewards for completed sets.
