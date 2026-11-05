@@ -1225,6 +1225,8 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// The comeback gift waiting: the absence that earned it and when it began (0: none).
+	O.Key("comeback").Raw("{").Key("away").Int(Km->ComebackAway()).Comma().Key("since").Int(Km->ComebackSince()).Raw("},");
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1880,6 +1882,14 @@ EMSCRIPTEN_KEEPALIVE const char* dk_spire_finish(int Stars)
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->FinishSpire(Stars, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Claims the comeback gift: the reward as for an event (gems, stones, scrolls, relics, relicsLost). */
+EMSCRIPTEN_KEEPALIVE const char* dk_comeback_claim()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimComeback(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

@@ -1860,6 +1860,16 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			S = SpireRules();
 		}
 	}
+	if (const JsonValue* Cj = Rules.Find("comeback"))
+	{
+		ComebackRules& Cb = Out.comeback;
+		Cb.days = std::max(0, std::min(365, Cj->GetInt("days", 0)));
+		Cb.castle = std::max(1, std::min(100, Cj->GetInt("castle", 1)));
+		ReadCost(Cj, Cb.gift.res);
+		Cb.gift.relic = std::max(0, std::min(5, Cj->GetInt("relic", 0)));
+		Cb.gift.divine = std::max<int64_t>(0, Cj->GetInt64("divine", 0));
+		Cb.scrolls = std::max<int64_t>(0, Cj->GetInt64("scrolls", 0));
+	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
 		AllianceHelpRules& H = Out.allianceHelp;

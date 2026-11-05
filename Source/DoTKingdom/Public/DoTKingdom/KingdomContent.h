@@ -614,6 +614,15 @@ struct DivineRules
 	std::vector<DivineAltar> altars;
 };
 
+/** The comeback gift (master prompt 9.5): a kingdom left alone for so many days finds a gift on return. */
+struct ComebackRules
+{
+	int days = 0; // days away that earn it (0: no gift)
+	int castle = 1; // from this Castle
+	EventReward gift; // gold and food are times the Castle
+	int64_t scrolls = 0; // War Scrolls
+};
+
 /** Ten floors of the Titan Spire (kingdom.json "spire" bands): every floor pays `pay` gold (odd floors) or food (even
  *  floors) times the Castle the first time it falls, the middle floor adds `middle`, the top floor `top`. The battle
  *  itself (its level, titan, bonuses and the band's modifier) is the client's. */
@@ -884,6 +893,7 @@ struct KingdomContent
 	LoadoutRules loadouts;
 	DivineRules divine;
 	SpireRules spire;
+	ComebackRules comeback;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

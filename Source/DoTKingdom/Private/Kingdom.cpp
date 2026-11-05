@@ -138,6 +138,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	SpireWeek = -1;
 	SpireWeekTop = 0;
 	SpireAt = 0;
+	ComebackSec = 0;
+	ComebackAt = 0;
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
@@ -3316,6 +3318,34 @@ Error Kingdom::FinishSpire(int Stars, Reward* Out)
 		}
 	}
 	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Comeback gift (master prompt 9.5) -------------------------------------------------------------
+
+Error Kingdom::ClaimComeback(Reward* Out)
+{
+	if (ComebackSec <= 0)
+	{
+		return Error::Nothing;
+	}
+	Reward R;
+	EventReward Gift = C.comeback.gift;
+	const uint64_t Salt = 0x636f6d656261636bULL;
+	if (PayEvent(Gift, Salt, static_cast<uint64_t>(ComebackAt), R, true) == Error::InventoryFull)
+	{
+		// The rest is paid; the relic is lost.
+		Gift.relic = 0;
+		PayEvent(Gift, Salt, static_cast<uint64_t>(ComebackAt), R, true);
+		++R.relicsLost;
+	}
+	R.scrolls = AddScrolls(C.comeback.scrolls);
+	ComebackSec = 0;
+	ComebackAt = 0;
 	if (Out)
 	{
 		*Out = R;
@@ -8630,6 +8660,17 @@ std::string Kingdom::Save() const
 	W.Key("at");
 	W.Int(SpireAt);
 	W.EndObject();
+	// The comeback gift waiting (optional): the absence that earned it and when it ended.
+	if (ComebackSec > 0)
+	{
+		W.Key("comeback");
+		W.BeginObject();
+		W.Key("away");
+		W.Int(ComebackSec);
+		W.Key("at");
+		W.Int(ComebackAt);
+		W.EndObject();
+	}
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -9663,6 +9704,14 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		}
 		SpireAt = std::max(0, std::min(SpireFloors(), SpJ->GetInt("at", 0)));
 	}
+	// The comeback gift (saves before it have none waiting).
+	ComebackSec = 0;
+	ComebackAt = 0;
+	if (const JsonValue* CbJ = J.Find("comeback"))
+	{
+		ComebackSec = C.comeback.days > 0 ? std::max<int64_t>(0, CbJ->GetInt64("away", 0)) : 0;
+		ComebackAt = ComebackSec > 0 ? std::max<int64_t>(ComebackSec, CbJ->GetInt64("at", 0)) : 0;
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -10566,6 +10615,12 @@ uint64_t Kingdom::Hash() const
 		W.I64(SpireWeek);
 		W.I32(SpireWeekTop);
 		W.I32(SpireAt);
+	}
+	// And for the comeback gift: only while one waits.
+	if (ComebackSec > 0)
+	{
+		W.I64(ComebackSec);
+		W.I64(ComebackAt);
 	}
 	// And for Heroic missions: only once one is won or a Heroic chest opened.
 	for (size_t A = 0; A < HeroicStarList.size() || A < HeroicChestMask.size(); ++A)

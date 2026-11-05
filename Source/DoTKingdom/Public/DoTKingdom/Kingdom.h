@@ -850,6 +850,16 @@ public:
 	 *  (a relic without room is lost). */
 	Error FinishSpire(int Stars, Reward* Out);
 
+	// --- Comeback gift (master prompt 9.5) ---
+	// A kingdom not visited for a week or more (Visit) finds a gift on return: gold and food by the Castle, gems, portal stones,
+	// War Scrolls and a relic. A longer absence replaces a gift not claimed yet; the client tells what is new since.
+	/** Seconds away that earned the gift waiting (0: none). */
+	int64_t ComebackAway() const { return ComebackSec; }
+	/** When that absence began (0: no gift). */
+	int64_t ComebackSince() const { return ComebackSec > 0 ? ComebackAt - ComebackSec : 0; }
+	/** Claims the gift: Nothing when none waits; a relic without room in the inventory is lost. */
+	Error ClaimComeback(Reward* Out);
+
 	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
 	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
 	// quests and the Warpath count it. Quest chests give the scrolls.
@@ -1496,6 +1506,8 @@ private:
 	int64_t SpireWeek = -1;
 	int SpireWeekTop = 0;
 	int SpireAt = 0;
+	int64_t ComebackSec = 0; // the absence that earned the gift waiting (0: none)
+	int64_t ComebackAt = 0; // when it ended
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;

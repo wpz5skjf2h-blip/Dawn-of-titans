@@ -1620,6 +1620,75 @@ void TestHeroic()
 	KD_CHECK(S.CheckMission(1, HB).error == Error::Locked && S.CheckMission(1, 0).error == Error::None);
 }
 
+void TestComeback()
+{
+	const KingdomContent& Ct = Content();
+	const ComebackRules& Cb = Ct.comeback;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const int64_t Day = 86400;
+	// Master prompt 9.5: after 7+ days away, resources, speed-ups and a Silver Sigil (ours: War Scrolls and a relic).
+	KD_CHECK(Cb.days == 7 && Cb.castle == 2 && Cb.gift.res[GoldI] == 3000 && Cb.gift.res[GemsI] == 50 && Cb.gift.res[StonesI] == 10 && Cb.scrolls == 3 && Cb.gift.relic == 3);
+	Kingdom K(Ct);
+	K.NewGame(T0, 131);
+	const uint64_t H0 = K.Hash();
+	// Not at Castle 1, and not for less than a week since the last visit.
+	K.Advance(T0 + 8 * Day);
+	K.Visit();
+	KD_CHECK(K.ComebackAway() == 0 && K.ComebackSince() == 0 && K.ClaimComeback(nullptr) == Error::Nothing);
+	std::string Error;
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5"), Error) && P.CastleLevel() == 5);
+	const int64_t T1 = P.Now();
+	P.Advance(T1 + 7 * Day - 1);
+	P.Visit();
+	KD_CHECK(P.ComebackAway() == 0 && P.LastVisit() == T1 + 7 * Day - 1);
+	// Time alone gives nothing; the visit after a week does.
+	P.Advance(T1 + 15 * Day);
+	KD_CHECK(P.ComebackAway() == 0);
+	const uint64_t H1 = P.Hash();
+	P.Visit();
+	KD_CHECK(P.ComebackAway() == 8 * Day + 1 && P.ComebackSince() == T1 + 7 * Day - 1 && P.Hash() != H1 && H1 != H0);
+	// A shorter absence later keeps the gift as it is; a longer one replaces it.
+	P.Advance(T1 + 23 * Day);
+	P.Visit();
+	KD_CHECK(P.ComebackAway() == 8 * Day + 1);
+	P.Advance(T1 + 33 * Day);
+	P.Visit();
+	KD_CHECK(P.ComebackAway() == 10 * Day && P.ComebackSince() == T1 + 23 * Day);
+	// Saved and hashed while it waits.
+	const std::string Base = P.Save();
+	Kingdom S(Ct);
+	KD_CHECK(Base.find("\"comeback\":{\"away\":864000,\"at\":") != std::string::npos && S.Load(Base, Error) && S.Hash() == P.Hash() && S.Save() == Base && S.ComebackAway() == 10 * Day);
+	// The gift: gold and food times the Castle, gems, stones, War Scrolls and a relic; then it is gone.
+	const int64_t Gems = P.Amount(Res::Gems);
+	const int64_t Scrolls = P.Scrolls();
+	const size_t Relics = P.Relics().size();
+	Reward R;
+	KD_CHECK(P.ClaimComeback(&R) == Error::None && R.res[GemsI] == 50 && P.Amount(Res::Gems) == Gems + 50);
+	KD_CHECK(R.res[GoldI] == std::min<int64_t>(3000 * 5, R.res[GoldI]) && R.res[GoldI] > 0 && R.scrolls == std::min<int64_t>(3, Ct.campaigns.scrollsMax - Scrolls) && P.Scrolls() == Scrolls + R.scrolls);
+	KD_CHECK(R.relics.size() == 1 && P.Relics().size() == Relics + 1 && P.FindRelic(R.relics[0])->rarity == 3 && R.relicsLost == 0);
+	KD_CHECK(P.ComebackAway() == 0 && P.ClaimComeback(&R) == Error::Nothing && P.Save().find("\"comeback\"") == std::string::npos);
+	// The same gift on every client.
+	Kingdom A(Ct);
+	KD_CHECK(A.Load(Base, Error) && A.ClaimComeback(nullptr) == Error::None && A.Hash() == P.Hash());
+	// A full inventory: the rest is paid, the relic is lost.
+	std::string Many = RelicJson(1000, "atk", 1, 20, "[1]");
+	for (int I = 1; I < Ct.maxRelics; ++I)
+	{
+		Many += "," + RelicJson(1000 + I, "atk", 1, 20, "[1]");
+	}
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(Replace(Base, "\"relics\":[],\"relicAt\"", "\"relics\":[" + Many + "],\"relicAt\""), Error) && static_cast<int>(F.Relics().size()) == Ct.maxRelics);
+	const int64_t FGems = F.Amount(Res::Gems);
+	KD_CHECK(F.ClaimComeback(&R) == Error::None && R.relics.empty() && R.relicsLost == 1 && F.Amount(Res::Gems) == FGems + 50 && F.ComebackAway() == 0);
+	// A save before the gift has none waiting.
+	const size_t At = Base.find(",\"comeback\":{");
+	const std::string Old = Base.substr(0, At) + Base.substr(Base.find('}', At) + 1);
+	KD_CHECK(Old.find("comeback") == std::string::npos && S.Load(Old, Error) && S.ComebackAway() == 0 && S.ClaimComeback(nullptr) == Error::Nothing);
+}
+
 void TestSpire()
 {
 	const KingdomContent& Ct = Content();
@@ -4795,6 +4864,7 @@ int main()
 		{"Divine", TestDivine},
 		{"Spire", TestSpire},
 		{"Heroic", TestHeroic},
+		{"Comeback", TestComeback},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
