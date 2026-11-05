@@ -84,7 +84,7 @@ const char* ToString(Error E)
 	static const char* const Names[] = {"none", "bad_id", "max_level", "castle_too_low", "need_requirement", "need_expansion", "locked",
 		"limit_reached", "no_builder", "not_enough", "bad_placement", "busy", "not_busy", "nothing", "storage_full", "need_stones",
 		"no_land_slot", "no_attack", "queue_full", "researching", "too_many_squads", "no_troops", "titan_recovering", "not_ready",
-		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full", "need_vp", "alliance_full", "in_alliance", "no_alliance"};
+		"roster_full", "not_max_level", "wrong_relic", "same_relic", "inventory_full", "need_vp", "alliance_full", "in_alliance", "no_alliance", "not_allowed"};
 	const int I = static_cast<int>(E);
 	return I >= 0 && I < static_cast<int>(Error::Count) ? Names[I] : "?";
 }
@@ -129,6 +129,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ChestMask.assign(C.campaigns.acts.size(), 0);
 	QuestDay = -1;
 	WeekNo = -1;
+	TrialWeek = -1;
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2247,7 +2248,7 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 		}
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
-	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission : QuestEvent::Site, 1);
+	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission : Target == TrialPending ? QuestEvent::Count : QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -2777,6 +2778,15 @@ void Kingdom::RollQuests()
 		WeekRerolls = 0;
 		bWeekChest = false;
 	}
+	if (Week != TrialWeek && !C.trials.list.empty())
+	{
+		TrialWeek = Week;
+		TrialDay = -1;
+		TrialTries = 0;
+		TrialScore = 0;
+		TrialMask = 0;
+		bTrialRank = false;
+	}
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -2937,6 +2947,273 @@ Error Kingdom::ClaimWeekly(int Slot, Reward* Out) { return ClaimQuestIn(C.weekly
 Error Kingdom::RerollWeekly(int Slot) { return RerollQuestIn(C.weekly, WeekList, WeekRerolls, 0x77726f6c6cULL, Slot); }
 
 Error Kingdom::ClaimWeeklyChest(Reward* Out) { return ClaimChestIn(C.weekly, WeekList, bWeekChest, 0x7763686573ULL, WeekNo, Out); }
+
+Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R)
+{
+	if (Pay.relic > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	PayGift(Pay.res, R);
+	if (Pay.relic > 0)
+	{
+		const uint64_t H = Mix(Seed ^ Salt, Pick);
+		const int32_t Id = AddRelic(RollRelicKind(H >> 32), Pay.relic);
+		if (Id != 0)
+		{
+			R.relics.push_back(Id);
+		}
+	}
+	return Error::None;
+}
+
+// --- Titan Trials ------------------------------------------------------------------------------------
+
+int Kingdom::TrialIndex() const
+{
+	return C.trials.list.empty() ? -1 : static_cast<int>(WeekOf() % static_cast<int64_t>(C.trials.list.size()));
+}
+
+int64_t Kingdom::TrialOpensAt() const { return (WeekOf() * 7 - 3) * 86400; }
+
+int64_t Kingdom::TrialClosesAt() const { return TrialOpensAt() + static_cast<int64_t>(C.trials.days) * 86400; }
+
+int Kingdom::TrialAttemptsLeft() const
+{
+	return std::max(0, C.trials.attempts - (TrialDay == std::max<int64_t>(0, Time) / 86400 ? TrialTries : 0));
+}
+
+Check Kingdom::CheckTrial() const
+{
+	Check Out;
+	if (C.trials.list.empty())
+	{
+		Out.error = Error::BadId;
+	}
+	else if (CastleLevel() < C.trials.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.trials.castle;
+	}
+	else if (Time < TrialOpensAt() || Time >= TrialClosesAt())
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = TrialOpensAt() + 7 * 86400 - Time;
+	}
+	else if (TrialAttemptsLeft() <= 0)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (std::max<int64_t>(0, Time) / 86400 + 1) * 86400 - Time;
+	}
+	return Out;
+}
+
+int64_t Kingdom::TrialBest() const { return TrialWeek == WeekOf() ? TrialScore : 0; }
+
+int Kingdom::TrialLevel() const
+{
+	const int I = TrialIndex();
+	const int Top = std::max(1, static_cast<int>(C.battles.size()));
+	return std::max(1, std::min(Top, CastleLevel() + (I >= 0 ? C.trials.list[static_cast<size_t>(I)].levelOffset : 0)));
+}
+
+bool Kingdom::TrialAllowsTitan(int Def) const
+{
+	const int I = TrialIndex();
+	if (I < 0 || Def < 0 || Def >= static_cast<int>(C.titans.size()))
+	{
+		return false;
+	}
+	const TrialDef& D = C.trials.list[static_cast<size_t>(I)];
+	if (D.noTitan || (D.maxStars > 0 && C.titans[static_cast<size_t>(Def)].stars > D.maxStars))
+	{
+		return false;
+	}
+	return D.titans.empty() || std::find(D.titans.begin(), D.titans.end(), Def) != D.titans.end();
+}
+
+bool Kingdom::TrialAllowsTroop(int Troop) const
+{
+	const int I = TrialIndex();
+	if (I < 0 || Troop < 0 || Troop >= static_cast<int>(C.troops.size()))
+	{
+		return false;
+	}
+	const TrialDef& D = C.trials.list[static_cast<size_t>(I)];
+	return D.troops.empty() || std::find(D.troops.begin(), D.troops.end(), Troop) != D.troops.end();
+}
+
+int64_t Kingdom::TrialLordScore(int Lord) const
+{
+	if (C.trials.list.empty() || Lord < 0 || Lord >= C.trials.bracket - 1)
+	{
+		return 0;
+	}
+	// Ours: a tenth of the lords never fight, the rest win one, two or three stars (scores like the simulation's). Each
+	// posts its best at a moment of the open days.
+	const uint64_t H = Mix(Seed ^ 0x747269616cULL, static_cast<uint64_t>(WeekOf()) * 128 + static_cast<uint64_t>(Lord));
+	const int64_t At = TrialOpensAt() + static_cast<int64_t>((H >> 40) % static_cast<uint64_t>(C.trials.days * 86400));
+	if (Time < At)
+	{
+		return 0;
+	}
+	const uint64_t Roll = H % 100;
+	const uint64_t Spread = H >> 8;
+	return Roll < 10 ? 0 : Roll < 30 ? 1200 + static_cast<int64_t>(Spread % 1101) : Roll < 65 ? 2200 + static_cast<int64_t>(Spread % 1101) : 3300 + static_cast<int64_t>(Spread % 1501);
+}
+
+int Kingdom::TrialRank() const
+{
+	const int64_t Best = TrialBest();
+	int Place = 1;
+	for (int L = 0; L < C.trials.bracket - 1; ++L)
+	{
+		Place += TrialLordScore(L) > Best ? 1 : 0;
+	}
+	return Place;
+}
+
+int Kingdom::TrialRankReward(int Place) const
+{
+	for (size_t I = 0; I < C.trials.ranks.size(); ++I)
+	{
+		if (Place >= 1 && Place <= C.trials.ranks[I].first)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+Error Kingdom::StartTrial(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	const Check Ck = CheckTrial();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	for (const int T : Squads)
+	{
+		if (T >= 0 && T < static_cast<int>(C.troops.size()) && !TrialAllowsTroop(T))
+		{
+			return Error::NotAllowed;
+		}
+	}
+	const TitanState* Titan = TitanId != 0 ? FindTitan(TitanId) : nullptr;
+	if (Titan && !TrialAllowsTitan(Titan->def))
+	{
+		return Error::NotAllowed;
+	}
+	const Error E = BeginBattle(TrialPending, false, 0, Squads, TitanId, Spells, false);
+	if (E == Error::None)
+	{
+		// A battle counts when it starts, whatever its end (a retreat too), as at the sites.
+		const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+		if (TrialDay != Day)
+		{
+			TrialDay = Day;
+			TrialTries = 0;
+		}
+		++TrialTries;
+	}
+	return E;
+}
+
+Error Kingdom::FinishTrial(int Stars, int64_t Score, Reward* Out)
+{
+	if (Pending != TrialPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// A trial is a contest: every squad, spell and the titan come back as they went.
+	Reward R;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	// The simulation's score: 1000 a star, the rest for damage, time and survivors (at most 2500 over the stars).
+	const int64_t Fair = std::max<int64_t>(0, std::min<int64_t>(Score, 1000 * Stars + 2500));
+	if (TrialWeek == WeekOf())
+	{
+		TrialScore = std::max(TrialScore, Fair);
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimTrialMilestone(int I, Reward* Out)
+{
+	if (I < 0 || I >= static_cast<int>(C.trials.milestones.size()) || I >= 32)
+	{
+		return Error::BadId;
+	}
+	if (TrialMilestoneClaimed(I))
+	{
+		return Error::Nothing;
+	}
+	if (TrialBest() < C.trials.milestones[static_cast<size_t>(I)].first)
+	{
+		return Error::NotReady;
+	}
+	Reward R;
+	const Error E = PayEvent(C.trials.milestones[static_cast<size_t>(I)].second, 0x746d696c65ULL, static_cast<uint64_t>(WeekOf()) * 32 + static_cast<uint64_t>(I), R);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	TrialMask |= 1u << I;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimTrialRank(Reward* Out)
+{
+	if (C.trials.list.empty())
+	{
+		return Error::BadId;
+	}
+	if (bTrialRank)
+	{
+		return Error::Nothing;
+	}
+	if (Time < TrialClosesAt() || Pending == TrialPending)
+	{
+		return Error::NotReady;
+	}
+	const int Pick = TrialBest() > 0 ? TrialRankReward(TrialRank()) : -1;
+	if (Pick < 0)
+	{
+		return Error::Nothing;
+	}
+	Reward R;
+	const Error E = PayEvent(C.trials.ranks[static_cast<size_t>(Pick)].second, 0x7472616e6bULL, static_cast<uint64_t>(WeekOf()), R);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	bTrialRank = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
 
 // --- Main line of goals ------------------------------------------------------------------------------
 
@@ -5647,6 +5924,22 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Titan Trials (optional): this week's state.
+	W.Key("trials");
+	W.BeginObject();
+	W.Key("week");
+	W.Int(TrialWeek);
+	W.Key("day");
+	W.Int(TrialDay);
+	W.Key("tries");
+	W.Int(TrialTries);
+	W.Key("best");
+	W.Int(TrialScore);
+	W.Key("milestones");
+	W.Int(static_cast<int64_t>(TrialMask));
+	W.Key("rank");
+	W.Bool(bTrialRank);
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -6374,6 +6667,22 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Titan Trials (saves before them start this week's on the next Advance).
+	TrialWeek = -1;
+	TrialDay = -1;
+	TrialTries = 0;
+	TrialScore = 0;
+	TrialMask = 0;
+	bTrialRank = false;
+	if (const JsonValue* TrialJ = J.Find("trials"))
+	{
+		TrialWeek = TrialJ->GetInt64("week", -1);
+		TrialDay = TrialJ->GetInt64("day", -1);
+		TrialTries = std::max(0, TrialJ->GetInt("tries", 0));
+		TrialScore = std::max<int64_t>(0, TrialJ->GetInt64("best", 0));
+		TrialMask = static_cast<uint32_t>(TrialJ->GetInt64("milestones", 0));
+		bTrialRank = TrialJ->GetBool("rank", false);
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -6429,9 +6738,10 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	}
 	if (Pending < 0)
 	{
-		// A site or mission the content no longer has.
+		// A site, mission or trial the content no longer has.
 		const int Mission = PendingMission();
-		if (Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
+		if (Pending == TrialPending ? C.trials.list.empty()
+				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
 			Pending = 0;
 		}
@@ -6726,6 +7036,16 @@ uint64_t Kingdom::Hash() const
 			W.I64(Q.progress);
 			W.U32(Q.claimed ? 1u : 0u);
 		}
+	}
+	// Only once trials came, so that hashes of kingdoms from before them stay the same.
+	if (TrialWeek >= 0)
+	{
+		W.I64(TrialWeek);
+		W.I64(TrialDay);
+		W.I32(TrialTries);
+		W.I64(TrialScore);
+		W.U32(TrialMask);
+		W.U32(bTrialRank ? 1u : 0u);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)

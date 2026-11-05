@@ -55,6 +55,7 @@ enum class Error : uint8_t
 	AllianceFull,
 	InAlliance, // leave the current alliance first
 	NoAlliance, // join an alliance first
+	NotAllowed, // the event's rule does not let this titan or troop in
 	Count
 };
 DOTKINGDOM_API const char* ToString(Error E);
@@ -575,8 +576,11 @@ public:
 	Error FinishSiteAttack(int Site, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out);
 	/** Pending battle ids from here down are campaign missions: -(MissionBase + Act * 100 + Mission). */
 	static constexpr int32_t MissionBase = 1000;
-	/** The pending battle's site (-1 when the pending battle is on a world land, a mission or there is none). */
-	int PendingSite() const { return Pending < 0 && -Pending < MissionBase ? -Pending - 1 : -1; }
+	/** The pending battle id of a Titan Trial. */
+	static constexpr int32_t TrialPending = -(MissionBase - 1);
+	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial or there is none). */
+	int PendingSite() const { return Pending < 0 && Pending != TrialPending && -Pending < MissionBase ? -Pending - 1 : -1; }
+	bool PendingTrial() const { return Pending == TrialPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -632,6 +636,47 @@ public:
 	Error ClaimWeekly(int Slot, Reward* Out);
 	Error RerollWeekly(int Slot);
 	Error ClaimWeeklyChest(Reward* Out);
+
+	// --- Titan Trials (master prompt 10.4) ---
+	// A weekly solo event, open from Monday 00:00 UTC for a few days from a Castle level. Each week brings the next trial
+	// of the list: a rule for the player's side (which titans and troops may go) and a fixed enemy army. A few battles a
+	// day, free of stones; nothing is lost in them and the titan gets no XP. The best battle score of the week counts:
+	// it opens milestone rewards, and once the trial closes its place among a bracket of computer lords pays a rank
+	// reward until the week ends.
+	int TrialCount() const { return static_cast<int>(C.trials.list.size()); }
+	/** This week's trial (index into the content's trials; -1 without trials). */
+	int TrialIndex() const;
+	int64_t TrialOpensAt() const;
+	int64_t TrialClosesAt() const;
+	/** Locked (Castle too low: castle), NotReady (closed until timeSec), LimitReached (no battles left today). */
+	Check CheckTrial() const;
+	int TrialAttemptsLeft() const;
+	/** The week's best score (0 before the first battle). */
+	int64_t TrialBest() const;
+	/** The level of the trial's battle: the Castle's moved by the trial's offset, within the battle table. */
+	int TrialLevel() const;
+	/** Whether a titan (index) or troop (index) may go to this week's trial. */
+	bool TrialAllowsTitan(int Def) const;
+	bool TrialAllowsTroop(int Troop) const;
+	/** A computer lord's best score this week (0 up to the bracket's size - 2); it grows while the trial is open. */
+	int64_t TrialLordScore(int Lord) const;
+	/** The kingdom's place in the bracket by the best score (ties go to the kingdom). */
+	int TrialRank() const;
+	/** The rank reward for a place (index into the content's ranks; -1 for none). */
+	int TrialRankReward(int Place) const;
+	bool TrialMilestoneClaimed(int I) const { return I >= 0 && I < 32 && ((TrialMask >> I) & 1u) != 0; }
+	bool TrialRankClaimed() const { return bTrialRank; }
+	/** Starts a trial battle with this army (as StartAttack, without stones or allies); the battle runs elsewhere.
+	 *  NotAllowed: a titan or troop the rule keeps out. */
+	Error StartTrial(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a trial battle: everyone comes back, no spell is spent, the score (within what the stars allow) may be the
+	 *  week's best. */
+	Error FinishTrial(int Stars, int64_t Score, Reward* Out);
+	/** Pays a milestone: BadId, Nothing (claimed), NotReady (best score too low), InventoryFull (no room for its relic). */
+	Error ClaimTrialMilestone(int I, Reward* Out);
+	/** Pays the rank reward after the trial closes: NotReady (still open or a trial battle is on), Nothing (claimed or no
+	 *  reward for the place), InventoryFull. */
+	Error ClaimTrialRank(Reward* Out);
 
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
@@ -802,6 +847,10 @@ private:
 	Error ClaimChestIn(const QuestRules& Rules, const std::vector<DailyQuest>& List, bool& bOpened, uint64_t Salt, int64_t Period, Reward* Out);
 	/** Pays a reward on top of full vaults (a gift is never lost; the vaults then collect nothing until it is spent). */
 	void PayGift(const ResArray& Pay, Reward& R);
+	/** The same with an event's relic (InventoryFull when it has no room, and nothing is paid). */
+	Error PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R);
+	/** Weeks since the Monday before the epoch, for Time. */
+	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -895,6 +944,14 @@ private:
 	std::vector<DailyQuest> WeekList;
 	int WeekRerolls = 0;
 	bool bWeekChest = false;
+	// Titan Trials: the week the state belongs to, battles fought on a day, the best score, milestones paid (bits), the
+	// rank reward
+	int64_t TrialWeek = -1;
+	int64_t TrialDay = -1;
+	int TrialTries = 0;
+	int64_t TrialScore = 0;
+	uint32_t TrialMask = 0;
+	bool bTrialRank = false;
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

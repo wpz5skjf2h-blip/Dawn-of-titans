@@ -1361,6 +1361,84 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			Cr.catchUps = std::max(0, Monthly->GetInt("catchUps", Cr.catchUps));
 		}
 	}
+	if (const JsonValue* Tj = Rules.Find("trials"))
+	{
+		TrialRules& T = Out.trials;
+		T.castle = std::max(1, Tj->GetInt("castle", T.castle));
+		T.days = std::max(1, std::min(7, Tj->GetInt("days", T.days)));
+		T.attempts = std::max(1, Tj->GetInt("attempts", T.attempts));
+		T.bracket = std::max(2, Tj->GetInt("bracket", T.bracket));
+		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
+			ReadCost(&J, R.res);
+			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+		};
+		bool bOk = true;
+		for (const char* Key : {"milestones", "ranks"})
+		{
+			const JsonValue* Rows = Tj->Find(Key);
+			for (size_t I = 0; Rows && I < Rows->Size(); ++I)
+			{
+				const JsonValue& J = (*Rows)[I];
+				EventReward R;
+				ReadReward(J, R);
+				if (Key[0] == 'm')
+				{
+					const int64_t Score = J.GetInt64("score", 0);
+					bOk = bOk && Score > 0 && (T.milestones.empty() || Score > T.milestones.back().first);
+					T.milestones.emplace_back(Score, R);
+				}
+				else
+				{
+					const int Place = J.GetInt("place", 0);
+					bOk = bOk && Place > 0 && Place <= T.bracket && (T.ranks.empty() || Place > T.ranks.back().first);
+					T.ranks.emplace_back(Place, R);
+				}
+			}
+		}
+		const JsonValue* Trials = Tj->Find("list");
+		for (size_t I = 0; Trials && I < Trials->Size(); ++I)
+		{
+			const JsonValue& J = (*Trials)[I];
+			TrialDef D;
+			D.id = J.GetString("id");
+			D.noTitan = J.GetBool("noTitan", false);
+			D.maxStars = std::max(0, J.GetInt("maxStars", 0));
+			D.levelOffset = J.GetInt("levelOffset", 0);
+			bOk = bOk && !D.id.empty() && J.Find("enemy") && J.Find("enemy")->Size() > 0;
+			if (const JsonValue* Ts = J.Find("titans"))
+			{
+				for (size_t K = 0; K < Ts->Size(); ++K)
+				{
+					const int X = Out.FindTitan((*Ts)[K].AsString());
+					bOk = bOk && X >= 0;
+					D.titans.push_back(X);
+				}
+			}
+			if (const JsonValue* Tr = J.Find("troops"))
+			{
+				for (size_t K = 0; K < Tr->Size(); ++K)
+				{
+					const int X = Out.FindTroop((*Tr)[K].AsString());
+					bOk = bOk && X >= 0;
+					D.troops.push_back(X);
+				}
+			}
+			for (size_t K = 0; bOk && K < J.Find("enemy")->Size(); ++K)
+			{
+				D.enemy.push_back(Out.FindTroop((*J.Find("enemy"))[K].AsString()));
+				bOk = D.enemy.back() >= 0;
+			}
+			const std::string EnemyTitan = J.GetString("enemyTitan");
+			D.enemyTitan = EnemyTitan.empty() ? -1 : Out.FindTitan(EnemyTitan);
+			bOk = bOk && (EnemyTitan.empty() || D.enemyTitan >= 0);
+			T.list.push_back(D);
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: a trial needs an id, known titans and troops, an enemy army, and rewards in order";
+			return false;
+		}
+	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;
 }

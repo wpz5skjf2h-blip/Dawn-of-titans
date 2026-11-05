@@ -1173,6 +1173,28 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	O.Raw("],").Key("rerolls").Int(Km->WeeklyRerollsLeft()).Comma().Key("chest").Int(Km->WeeklyChestClaimed() ? 1 : 0).Comma();
 	O.Key("end").Int(Km->WeekEnd()).Raw("},");
+	// Titan Trials: this week's trial (index into kingdom.json "trials" "list"; -1 without), its battle level, battles left
+	// today, the best score, the place, when it opens and closes, milestones paid (bits), the rank reward paid, what
+	// starting a battle now would say, and the computer lords' best scores.
+	O.Key("trial").Raw("{").Key("i").Int(Km->TrialIndex()).Comma().Key("lv").Int(Km->TrialLevel()).Comma().Key("left").Int(Km->TrialAttemptsLeft()).Comma();
+	O.Key("best").Int(Km->TrialBest()).Comma().Key("rank").Int(Km->TrialRank()).Comma().Key("opens").Int(Km->TrialOpensAt()).Comma();
+	O.Key("closes").Int(Km->TrialClosesAt()).Comma();
+	{
+		int64_t Mask = 0;
+		for (int I = 0; I < static_cast<int>(C.trials.milestones.size()) && I < 32; ++I)
+		{
+			Mask |= Km->TrialMilestoneClaimed(I) ? (int64_t{1} << I) : 0;
+		}
+		O.Key("ms").Int(Mask).Comma();
+	}
+	O.Key("rk").Int(Km->TrialRankClaimed() ? 1 : 0).Comma().Key("ck");
+	WriteCheck(O, Km->CheckTrial());
+	O.Comma().Key("lords").Raw("[");
+	for (int I = 0; Km->TrialCount() > 0 && I < C.trials.bracket - 1; ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->TrialLordScore(I));
+	}
+	O.Raw("]},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1201,7 +1223,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	}
 	O.Raw("]},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
-	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma();
+	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1610,6 +1632,34 @@ EMSCRIPTEN_KEEPALIVE const char* dk_week_chest()
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimWeeklyChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** A Titan Trial battle: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_trial_start(const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartTrial(ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends a Titan Trial battle with its stars and the simulation's battle score. */
+EMSCRIPTEN_KEEPALIVE const char* dk_trial_finish(int Stars, int Score)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishTrial(Stars, Score, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_trial_milestone(int I)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimTrialMilestone(I, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_trial_rank()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimTrialRank(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

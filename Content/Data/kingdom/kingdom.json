@@ -438,6 +438,52 @@
     ]
   },
 
+  // Titan Trials (master prompt 10.4: a weekly solo event Monday to Wednesday with fixed rules, score = battle score,
+  // milestone and rank rewards in brackets of 100). One trial a week, in this order; from Castle 4; three battles a day,
+  // free of stones, and nothing is lost in them (no casualties, spells or titan XP). The best score of the week counts.
+  // The bracket is the kingdom and 99 computer lords. "titans": allowed titans (empty: any); "noTitan": without one;
+  // "maxStars": highest rarity; "troops": allowed troops (empty: any); "enemy": its troops, repeated over the squads of
+  // the battle level (the Castle's plus "levelOffset"); "enemyTitan": its titan (level from the battle table, else
+  // 2 x level + 2). "map", "ai", "name" and "rule" are for the web client. Gems: 30 for all milestones, 5 to 60 by
+  // place, about 6 a day for an average player. Numbers and trials are ours.
+  "trials": {
+    "castle": 4,
+    "days": 3,
+    "attempts": 3,
+    "bracket": 100,
+    "milestones": [
+      { "score": 1500, "gems": 5,  "stones": 6 },
+      { "score": 3000, "gems": 10, "stones": 9 },
+      { "score": 4000, "gems": 15, "relic": 2 }
+    ],
+    "ranks": [
+      { "place": 1,   "gems": 60, "relic": 3 },
+      { "place": 3,   "gems": 40, "relic": 3 },
+      { "place": 10,  "gems": 25, "relic": 2 },
+      { "place": 25,  "gems": 15, "stones": 12 },
+      { "place": 50,  "gems": 10, "stones": 9 },
+      { "place": 100, "gems": 5,  "stones": 6 }
+    ],
+    "list": [
+      { "id": "olympus",  "name": "Сила Олимпа",  "rule": "Только титаны Олимпа",
+        "titans": ["titan.talos", "titan.minotaur", "titan.cyclops", "titan.atlas", "titan.hecate", "titan.artemis"],
+        "enemy": ["troop.spearmen", "troop.archers", "troop.militia", "troop.archers"], "enemyTitan": "titan.minotaur" },
+      { "id": "aesir",    "name": "Сага асов",    "rule": "Только титаны асов. Враг выводит рыцарей", "map": "map.mountain_01", "ai": "warlord",
+        "titans": ["titan.ymir", "titan.surtr", "titan.thor", "titan.loki", "titan.tyr"],
+        "enemy": ["troop.knights", "troop.outriders", "troop.swordsmen", "troop.knights"], "enemyTitan": "titan.atlas" },
+      { "id": "nav",      "name": "Навь и Правь", "rule": "Только славянские титаны. Враг ведёт голиафов за пикинерами", "map": "map.forest_01",
+        "titans": ["titan.perun", "titan.veles"],
+        "enemy": ["troop.pikemen", "troop.goliaths", "troop.archers", "troop.pikemen"], "enemyTitan": "titan.cyclops" },
+      { "id": "no_titan", "name": "Без титана",   "rule": "Титаны остаются дома: бьются только отряды", "map": "map.ruins_01", "noTitan": true, "levelOffset": 1,
+        "enemy": ["troop.militia", "troop.swordsmen", "troop.archers", "troop.spearmen"] },
+      { "id": "small",    "name": "Малые титаны", "rule": "Титаны не выше двух звёзд. Враг шлёт пантер и цепеломов", "map": "map.lake_01", "maxStars": 2,
+        "enemy": ["troop.panthers", "troop.chainbreakers", "troop.archers", "troop.panthers"], "enemyTitan": "titan.talos" },
+      { "id": "shields",  "name": "Стена щитов",  "rule": "Только пехота и стрелки, без конницы, зверей и машин. Враг идёт конницей", "ai": "warlord",
+        "troops": ["troop.militia", "troop.archers", "troop.spearmen", "troop.swordsmen", "troop.grenadiers", "troop.priests", "troop.chainbreakers", "troop.pikemen"],
+        "enemy": ["troop.knights", "troop.outriders", "troop.knights", "troop.archers"] }
+    ]
+  },
+
   // The main line of goals (master prompt 9.4 and 13.5; the original starts with a step-by-step tutorial): one goal at a
   // time, from the first collected food to Castle 9, about the first week. "check" is a fact of the kingdom (castle,
   // build, level, army, troopLevel, lands, landLevel, guard, garrison, titans, titanLevel, relics, skills, spells,
