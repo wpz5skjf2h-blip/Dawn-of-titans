@@ -3357,6 +3357,245 @@ void TestDailyTrials()
 }
 
 /** A kingdom with VP to join any alliance, at Castle 5. */
+Kingdom WarKingdom(uint64_t Seed)
+{
+	Kingdom K = WithVp(Seed, 8000);
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6"), Error) && L.CastleLevel() == 6);
+	return L;
+}
+
+void TestAllianceWar()
+{
+	const KingdomContent& Ct = Content();
+	const AllianceWarRules& W = Ct.allianceWar;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	// Master prompt 12.9: Thursday prep, Friday and Saturday battles, 2 attacks a member, rosters of 10-30 in steps of 5,
+	// at least 10 members. Ours: from Castle 6, ten tiers, a chest for each alliance league, fewer gems for a loss.
+	KD_CHECK(W.castle == 6 && W.minMembers == 10 && W.rosterStep == 5 && W.rosterMax == 30 && W.prepDay == 3 && W.battleDays == 2 && W.attacks == 2);
+	KD_CHECK(W.tiers == 10 && W.leagueTier.size() == Ct.alliances.leagues.size() && W.chests.size() == W.leagueTier.size());
+	for (size_t I = 0; I < W.chests.size(); ++I)
+	{
+		const WarChest& Ch = W.chests[I];
+		KD_CHECK(Ch.win.res[GemsI] > Ch.draw.res[GemsI] && Ch.draw.res[GemsI] > Ch.lose.res[GemsI] && Ch.lose.res[GemsI] > 0 && Ch.win.res[GemsI] <= 25);
+		KD_CHECK(Ch.win.relic >= 1 && Ch.win.relic <= 4 && Ch.draw.relic == 0 && Ch.lose.relic == 0);
+		KD_CHECK(I == 0 || (Ch.win.res[GemsI] > W.chests[I - 1].win.res[GemsI] && W.leagueTier[I] > W.leagueTier[I - 1]));
+	}
+	KD_CHECK(W.star.res[GoldI] == 150 && W.star.res[FoodI] == 150 && W.star.res[GemsI] == 0);
+
+	// T0 is a Thursday: the prep day of a war. Outside an alliance there is none.
+	const int64_t Prep = T0 / Day * Day;
+	KD_CHECK((T0 / Day + 3) % 7 == 3);
+	Kingdom N(Ct);
+	N.NewGame(T0, 101);
+	WarInfo I0 = N.War();
+	KD_CHECK(!I0.on && I0.phase == 0 && I0.prepAt == Prep && I0.battleAt == Prep + Day && I0.endAt == Prep + 3 * Day && I0.nextAt == Prep + 7 * Day);
+	KD_CHECK(I0.members == 0 && I0.attacksLeft == 2 && I0.ours.empty() && I0.theirs.empty());
+	KD_CHECK(N.CheckWar(-1).error == Error::NoAlliance && N.StartWar(0, {}, 0, {}) == Error::NoAlliance && N.StartWar(-1, {}, 0, {}) == Error::BadId);
+	KD_CHECK(N.ClaimWarChest(nullptr) == Error::NotReady && !N.WarChestClaimed() && N.WarBattleBase() == -1);
+	// Below Castle 6 the alliance fights without the player.
+	Kingdom Low = WithVp(101, 8000);
+
+	// Alliances of 10 members or more go to war (the player included); a smaller one does not.
+	Kingdom Base = WarKingdom(102);
+	int Big = -1;
+	int Small = -1;
+	for (int A = 0; A < Base.AllianceCount(); ++A)
+	{
+		if (Base.CheckJoin(A).error != Error::None)
+		{
+			continue;
+		}
+		const int Size = static_cast<int>(Base.Members(A).size()) + 1;
+		if (Size >= 18 && Big < 0)
+		{
+			Big = A;
+		}
+		if (Size < 10 && Small < 0)
+		{
+			Small = A;
+		}
+	}
+	KD_CHECK(Big >= 0 && Small >= 0);
+	std::string Error;
+	{
+		Kingdom S(Ct);
+		KD_CHECK(S.Load(Base.Save(), Error) && S.JoinAlliance(Small) == Error::None);
+		const WarInfo Si = S.War();
+		KD_CHECK(!Si.on && Si.members == static_cast<int>(S.Members(Small).size()) && Si.members < 10 && S.CheckWar(-1).error == Error::NotAllowed);
+		KD_CHECK(Low.JoinAlliance(Big) == Error::None && Low.War().on && Low.CheckWar(-1).error == Error::Locked && Low.CheckWar(-1).castle == 6);
+	}
+	Kingdom K(Ct);
+	KD_CHECK(K.Load(Base.Save(), Error) && K.JoinAlliance(Big) == Error::None);
+	WarInfo I1 = K.War();
+	const int Members = static_cast<int>(K.Members(Big).size());
+	const int Roster = std::min(30, Members / 5 * 5);
+	KD_CHECK(I1.on && I1.phase == 0 && I1.members == Members && I1.roster == Roster && I1.me == Roster / 2 && I1.league == K.Alliance(Big).tier);
+	KD_CHECK(I1.opponent >= 0 && I1.opponent != Big && I1.opponent < K.AllianceCount() && static_cast<int>(K.Members(I1.opponent).size()) >= Roster);
+	KD_CHECK(static_cast<int>(I1.ours.size()) == Roster && static_cast<int>(I1.theirs.size()) == Roster && I1.ours[static_cast<size_t>(I1.me)].name.empty());
+	const int Mid = W.leagueTier[static_cast<size_t>(I1.league)];
+	for (int P = 0; P < Roster; ++P)
+	{
+		const WarMember& O = I1.ours[static_cast<size_t>(P)];
+		const WarMember& T = I1.theirs[static_cast<size_t>(P)];
+		KD_CHECK(O.tier == T.tier && O.tier == Mid + 1 - (3 * P) / Roster && !T.name.empty() && (P == I1.me || !O.name.empty()));
+		KD_CHECK(O.stars == 0 && T.stars == 0 && O.attacks == 0 && T.attacks == 0 && O.by == -1);
+	}
+	KD_CHECK(I1.ourStars == 0 && I1.theirStars == 0 && I1.result == 0 && I1.attacksLeft == 2 && I1.myStars == 0);
+	KD_CHECK(K.CheckWar(0).error == Error::NotReady && K.CheckWar(0).timeSec == Prep + Day - T0 && K.StartWar(0, {}, 0, {}) == Error::NotReady);
+	Kingdom K2(Ct);
+	KD_CHECK(K2.Load(K.Save(), Error) && K2.Hash() == K.Hash() && K2.War().opponent == I1.opponent);
+
+	// Friday: attacks open, free of stones; nothing is lost and the titan gets no XP.
+	K.Advance(Prep + Day + Hour);
+	const int Militia = Troop("troop.militia");
+	const int64_t Army = K.ArmyCount(Militia);
+	const int64_t Stones = K.Amount(Res::Stones);
+	KD_CHECK(K.CheckWar(-1).error == Error::None && K.CheckWar(Roster).error == Error::BadId && K.StartWar(Roster, {}, 0, {}) == Error::BadId);
+	int First = -1;
+	for (int P = Roster - 1; P >= 0 && First < 0; --P)
+	{
+		if (K.War().theirs[static_cast<size_t>(P)].stars == 0)
+		{
+			First = P;
+		}
+	}
+	KD_CHECK(First >= 0 && Army >= 1 && K.StartWar(First, {Militia}, 0, {}) == Error::None && K.PendingWar() && K.PendingSite() == -1 && K.PendingMission() == -1);
+	KD_CHECK(K.WarBattleBase() == First && K.Amount(Res::Stones) == Stones && K.War().attacksLeft == 1 && K.StartWar(First, {}, 0, {}) == Error::Busy);
+	KD_CHECK(K.FinishBoss(0, 10, nullptr) == Error::NoAttack && K.FinishDaily(1, nullptr) == Error::NoAttack && K.ClaimWarChest(nullptr) == Error::NotReady);
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(K.Save(), Error) && M.Hash() == K.Hash() && M.Save() == K.Save() && M.PendingWar() && M.WarBattleBase() == First);
+	Reward R;
+	KD_CHECK(K.FinishWar(3, &R) == Error::None && !K.PendingWar() && K.WarBattleBase() == -1 && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(K.ArmyCount(Militia) == Army && K.FinishWar(3, nullptr) == Error::NoAttack);
+	WarInfo I2 = K.War();
+	KD_CHECK(I2.theirs[static_cast<size_t>(First)].stars == 3 && I2.theirs[static_cast<size_t>(First)].by == I2.me && I2.myStars == 3);
+	KD_CHECK(I2.ours[static_cast<size_t>(I2.me)].attacks == 1 && I2.ours[static_cast<size_t>(I2.me)].won == 3 && K.CheckWar(First).error == Error::Nothing);
+	// A second attack on another base; then none is left until the next war's battle days.
+	int Second = -1;
+	for (int P = 0; P < Roster && Second < 0; ++P)
+	{
+		if (I2.theirs[static_cast<size_t>(P)].stars < 3)
+		{
+			Second = P;
+		}
+	}
+	const int Before = I2.theirs[static_cast<size_t>(Second)].stars;
+	KD_CHECK(Second >= 0 && K.StartWar(Second, {}, 0, {}) == Error::None && K.FinishWar(1, nullptr) == Error::None);
+	WarInfo I3 = K.War();
+	KD_CHECK(I3.myStars == 4 && I3.attacksLeft == 0 && I3.theirs[static_cast<size_t>(Second)].stars == std::max(1, Before));
+	KD_CHECK(I3.ours[static_cast<size_t>(I3.me)].won == 3 + std::max(0, 1 - Before) && I3.ours[static_cast<size_t>(I3.me)].attacks == 2);
+	KD_CHECK(K.CheckWar(-1).error == Error::LimitReached && K.CheckWar(-1).timeSec == Prep + 8 * Day - (Prep + Day + Hour) && K.StartWar(0, {}, 0, {}) == Error::LimitReached);
+	// The stars add up; the members' attacks are the same on every client.
+	int Ours = 0;
+	int Theirs = 0;
+	for (int P = 0; P < Roster; ++P)
+	{
+		Ours += I3.theirs[static_cast<size_t>(P)].stars;
+		Theirs += I3.ours[static_cast<size_t>(P)].stars;
+	}
+	KD_CHECK(Ours == I3.ourStars && Theirs == I3.theirStars);
+	Kingdom K3(Ct);
+	KD_CHECK(K3.Load(K.Save(), Error) && K3.Hash() == K.Hash() && K3.War().ourStars == I3.ourStars && K3.War().theirStars == I3.theirStars);
+
+	// Saturday night the war is over: every computer member made 0 to 2 attacks, the result follows the stars.
+	K.Advance(Prep + 3 * Day + Hour);
+	WarInfo I4 = K.War();
+	KD_CHECK(I4.phase == 2 && I4.myStars == 4 && I4.ourStars >= I3.ourStars && I4.theirStars >= I3.theirStars);
+	KD_CHECK(I4.result == (I4.ourStars > I4.theirStars ? 1 : I4.ourStars < I4.theirStars ? -1 : 0));
+	int Made = 0;
+	for (int P = 0; P < Roster; ++P)
+	{
+		KD_CHECK(I4.ours[static_cast<size_t>(P)].attacks <= 2 && I4.theirs[static_cast<size_t>(P)].attacks <= 2);
+		Made += I4.theirs[static_cast<size_t>(P)].attacks;
+	}
+	KD_CHECK(Made > Roster && Made < 2 * Roster);
+	KD_CHECK(K.CheckWar(-1).error == Error::NotReady && K.CheckWar(-1).timeSec == Prep + 8 * Day - (Prep + 3 * Day + Hour));
+	// The chest: the league's by the result, and 150 gold and food a star of the player's attacks, times the Castle.
+	const WarChest& Ch = W.chests[static_cast<size_t>(I4.league)];
+	const EventReward& Want = I4.result > 0 ? Ch.win : I4.result < 0 ? Ch.lose : Ch.draw;
+	const int64_t Gems = K.Amount(Res::Gems);
+	Reward Got;
+	KD_CHECK(K.ClaimWarChest(&Got) == Error::None && K.WarChestClaimed() && K.ClaimWarChest(nullptr) == Error::Nothing);
+	KD_CHECK(Got.res[GemsI] == Want.res[GemsI] && K.Amount(Res::Gems) == Gems + Want.res[GemsI] && Got.res[GoldI] == (Want.res[GoldI] + 150 * 4) * 6 && Got.res[FoodI] == 600 * 6);
+	KD_CHECK(static_cast<int>(Got.relics.size()) == (Want.relic > 0 ? 1 : 0));
+	Kingdom K4(Ct);
+	KD_CHECK(K4.Load(K.Save(), Error) && K4.Hash() == K.Hash() && K4.WarChestClaimed());
+	// Next Thursday a new war: the chest and the attacks come back.
+	K.Advance(Prep + 7 * Day + Hour);
+	const WarInfo I5 = K.War();
+	KD_CHECK(I5.no == I4.no + 1 && I5.phase == 0 && I5.attacksLeft == 2 && I5.myStars == 0 && I5.ourStars == 0 && !K.WarChestClaimed() && K.ClaimWarChest(nullptr) == Error::NotReady);
+
+	// A member who did not attack gets no chest; a member who left keeps the attacks spent.
+	Kingdom Q(Ct);
+	KD_CHECK(Q.Load(K2.Save(), Error));
+	Q.Advance(Prep + 3 * Day + Hour);
+	KD_CHECK(Q.War().phase == 2 && Q.ClaimWarChest(nullptr) == Error::NotAllowed);
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(K2.Save(), Error));
+	L.Advance(Prep + Day + Hour);
+	KD_CHECK(L.StartWar(0, {}, 0, {}) == Error::None && L.FinishWar(2, nullptr) == Error::None && L.War().myStars == 2 && L.LeaveAlliance() == Error::None);
+	KD_CHECK(!L.War().on && L.War().attacksLeft == 1);
+	int Other = -1;
+	for (int A = 0; A < L.AllianceCount() && Other < 0; ++A)
+	{
+		if (A != Big && L.CheckJoin(A).error == Error::None && static_cast<int>(L.Members(A).size()) >= 10)
+		{
+			Other = A;
+		}
+	}
+	KD_CHECK(Other >= 0 && L.JoinAlliance(Other) == Error::None && L.War().on && L.War().attacksLeft == 1 && L.War().myStars == 0);
+	KD_CHECK(L.LeaveAlliance() == Error::None && L.JoinAlliance(Big) == Error::None && L.War().attacksLeft == 1 && L.War().myStars == 2);
+
+	// Without the player the wars are close: over many alliances each side wins some; two 3-star attacks win more.
+	int Wins = 0;
+	int Losses = 0;
+	int Helped = 0;
+	int Wars = 0;
+	for (uint64_t S = 0; S < 6; ++S)
+	{
+		Kingdom B = WarKingdom(110 + S);
+		for (int A = 0; A < B.AllianceCount(); A += 3)
+		{
+			Kingdom X(Ct);
+			KD_CHECK(X.Load(B.Save(), Error));
+			if (X.JoinAlliance(A) != Error::None || !X.War().on)
+			{
+				continue;
+			}
+			Kingdom Y(Ct);
+			KD_CHECK(Y.Load(X.Save(), Error));
+			X.Advance(Prep + 3 * Day + Hour);
+			const WarInfo Xi = X.War();
+			++Wars;
+			Wins += Xi.result > 0 ? 1 : 0;
+			Losses += Xi.result < 0 ? 1 : 0;
+			Y.Advance(Prep + Day + 1);
+			for (int J = 0; J < 2; ++J)
+			{
+				const WarInfo Yi = Y.War();
+				int T = -1;
+				for (int P = 0; P < Yi.roster && T < 0; ++P)
+				{
+					if (Yi.theirs[static_cast<size_t>(P)].stars == 0)
+					{
+						T = P;
+					}
+				}
+				KD_CHECK(T >= 0 && Y.StartWar(T, {}, 0, {}) == Error::None && Y.FinishWar(3, nullptr) == Error::None);
+			}
+			Y.Advance(Prep + 3 * Day + Hour);
+			Helped += Y.War().result > 0 ? 1 : 0;
+		}
+	}
+	std::printf("  alliance wars: %d, won %d, lost %d alone; won %d with two 3-star attacks\n", Wars, Wins, Losses, Helped);
+	KD_CHECK(Wars >= 20 && Wins * 5 >= Wars && Losses * 5 >= Wars && Helped > Wins);
+}
+
 Kingdom BossKingdom(uint64_t Seed)
 {
 	Kingdom K = WithVp(Seed, 8000);
@@ -3794,7 +4033,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar},
 	};
 	for (const auto& T : Tests)
 	{

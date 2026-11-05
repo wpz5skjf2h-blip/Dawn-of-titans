@@ -256,6 +256,41 @@ struct BossMemberHits
 	int battles = 0;
 };
 
+/** A member of an Alliance War roster: their base and their attacks on the other side. */
+struct WarMember
+{
+	std::string name; // empty for the player
+	int tier = 1; // the base's tier (its army) and the member's strength
+	int stars = 0; // the best stars the other side has taken from the base so far
+	int by = -1; // who took them (an index into the other side's roster; -1: nobody)
+	int attacks = 0; // attacks made so far
+	int won = 0; // stars these attacks added to the side
+};
+
+/** An Alliance War as it stands at Time (master prompt 12.9). */
+struct WarInfo
+{
+	int64_t no = 0; // the war: the last prep day that came by Time
+	int phase = 0; // 0 prep day, 1 battle days, 2 over (until the next prep day)
+	int64_t prepAt = 0;
+	int64_t battleAt = 0;
+	int64_t endAt = 0;
+	int64_t nextAt = 0; // the next war's prep day
+	bool on = false; // the player's alliance is at war (the fields below are filled)
+	int members = 0; // the alliance's members, the player included (0 outside one)
+	int opponent = -1; // the computer alliance fought
+	int league = 0;
+	int roster = 0;
+	int me = -1; // the player's place in the roster
+	std::vector<WarMember> ours;
+	std::vector<WarMember> theirs;
+	int ourStars = 0; // taken from their bases
+	int theirStars = 0; // taken from ours
+	int result = 0; // once over: 1 won, 0 a draw, -1 lost
+	int attacksLeft = 0;
+	int myStars = 0; // the stars of the player's attacks, each counted in full
+};
+
 /** Kingdom Power (master prompt 7.7) and where it comes from. */
 struct KingdomPowerInfo
 {
@@ -646,17 +681,20 @@ public:
 	static constexpr int32_t BossPending = -(MissionBase - 3);
 	/** The pending battle id of a Daily Trial battle. */
 	static constexpr int32_t DailyPending = -(MissionBase - 4);
+	/** The pending battle id of an Alliance War attack. */
+	static constexpr int32_t WarPending = -(MissionBase - 5);
 	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage, a
-	 *  Raid Boss battle, a Daily Trial or there is none). */
+	 *  Raid Boss battle, a Daily Trial, an Alliance War attack or there is none). */
 	int PendingSite() const
 	{
 		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && Pending != DailyPending
-			&& -Pending < MissionBase ? -Pending - 1 : -1;
+			&& Pending != WarPending && -Pending < MissionBase ? -Pending - 1 : -1;
 	}
 	bool PendingTrial() const { return Pending == TrialPending; }
 	bool PendingAssault() const { return Pending == AssaultPending; }
 	bool PendingBoss() const { return Pending == BossPending; }
 	bool PendingDaily() const { return Pending == DailyPending; }
+	bool PendingWar() const { return Pending == WarPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -917,6 +955,31 @@ public:
 	 *  this boss in this alliance), Nothing (opened), InventoryFull. */
 	Error ClaimBossChest(Reward* Out);
 
+	// --- Alliance War (master prompt 12.9) ---
+	// A weekly war of the player's alliance (enough members) against a computer alliance of its league with a roster of
+	// the same size: a prep day, then battle days. Each member of a roster has a base whose tier follows their place
+	// (the strongest first) and a few attacks on the other side's bases; a base gives up to 3 stars and an attack only
+	// adds the stars over its best so far. Computer members attack at moments of the battle days: the strongest base
+	// they can match that still has stars to give, with chances by the tiers. The side with more stars wins; after the
+	// battle days every member who attacked opens the war chest of the league and the result until the next prep day.
+	/** The war as it stands for the player's alliance (without one only its days). */
+	WarInfo War() const;
+	/** BadId (no war in the content, or Base out of the roster), NoAlliance, NotAllowed (the alliance has too few
+	 *  members, or there is no rival), Locked (Castle too low: castle), NotReady (not the battle days: they come in
+	 *  timeSec), LimitReached (no attacks left), Nothing (the base has given all its stars). Base -1 checks the rest. */
+	Check CheckWar(int Base) const;
+	/** Starts an attack on a base with this army (as StartAttack, without stones or allies; Busy while a battle is on);
+	 *  the battle runs elsewhere. */
+	Error StartWar(int Base, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a war attack: everyone comes back, no spell is spent; the stars count for the base. */
+	Error FinishWar(int Stars, Reward* Out);
+	/** Opens the war chest: NotReady (the war is not over, or a war battle is on), NotAllowed (the player did not attack
+	 *  in this war in this alliance), Nothing (opened), InventoryFull. */
+	Error ClaimWarChest(Reward* Out);
+	bool WarChestClaimed() const { return bWarChest && WarNo == WarNoNow(); }
+	/** The base the pending war attack is on (-1: none). */
+	int WarBattleBase() const { return Pending == WarPending ? WarAt : -1; }
+
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
 	// state counts what is there now; an event goal counts actions done while it is the current goal.
@@ -1144,6 +1207,29 @@ private:
 	BossTally TallyBoss() const;
 	void RollBoss();
 	void ResetBoss();
+	/** The Alliance War of an alliance: the alliance (BossKey), the rival, the roster, the league and the player's place. */
+	struct WarSnap
+	{
+		int64_t key = -1;
+		int opp = -1;
+		int roster = 0;
+		int league = 0;
+		int me = -1;
+	};
+	/** The last war whose prep day came by Time, and a war's prep day. */
+	int64_t WarNoNow() const;
+	int64_t WarPrepDay(int64_t No) const { return No * 7 + C.allianceWar.prepDay - 3; }
+	bool WarContent() const { return C.allianceWar.tiers > 0; }
+	/** The war of the alliance the player is in now (key -1: none, or too few members, or no rival). */
+	WarSnap WarSnapNow(int64_t No) const;
+	/** The saved snapshot when it is this war's and the alliance's, else the alliance as it is now. */
+	WarSnap WarSnapOf() const;
+	/** Whether the player's attacks saved belong to this war and the alliance the player is in. */
+	bool WarMine() const;
+	/** The tier of a roster place. */
+	int WarTier(int League, int Place, int Roster) const;
+	void RollWar();
+	void ResetWar();
 	/** Weeks since the Monday before the epoch, for Time. */
 	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
 	// Raids (KingdomRaids.cpp)
@@ -1283,6 +1369,21 @@ private:
 	int BossPickOld = 0;
 	int BossPickNew = 0;
 	int64_t BossPickFrom = 0;
+	// Alliance War: the war and the alliance it was rolled for, the player's attacks (time, base, stars), the chest, the
+	// war of the attacks spent and how many, the pending attack's base
+	struct WarHit
+	{
+		int64_t at = 0;
+		int base = 0;
+		int stars = 0;
+	};
+	int64_t WarNo = -1;
+	WarSnap WarSaved;
+	std::vector<WarHit> WarHits;
+	bool bWarChest = false;
+	int64_t WarUsedNo = -1;
+	int WarUsed = 0;
+	int WarAt = -1;
 	// Daily Trials: the day of the attempts, attempts by trial that day, best stars by trial (2 bits a tier), the
 	// pending battle's trial and tier
 	int64_t DailyDay = -1;

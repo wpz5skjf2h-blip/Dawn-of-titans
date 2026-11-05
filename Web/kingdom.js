@@ -202,6 +202,11 @@ class KingdomBridge {
 	}
 	dailyFinish(stars) { return JSON.parse(this.str(this.M._dk_daily_finish(stars))); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
+	warStart(base, squads, titan, spells) {
+		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
+	}
+	warFinish(stars) { return JSON.parse(this.str(this.M._dk_war_finish(stars))); }
+	warChest() { return JSON.parse(this.str(this.M._dk_war_chest())); }
 	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
 	wpSkip() { return this.M._dk_wp_skip(); }
 	wpBonus() { return JSON.parse(this.str(this.M._dk_wp_bonus())); }
@@ -2065,6 +2070,7 @@ function refresh(force) {
 	if (prev) announceTrial(prev, K.st);
 	if (prev) announceAssault(prev, K.st);
 	if (prev) announceBoss(prev, K.st);
+	if (prev) announceWar(prev, K.st);
 	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
 	announceSeason(K.st);
@@ -2247,9 +2253,11 @@ function updateHud() {
 	const asN = assaultReady(st);
 	const bossN = bossReady(st);
 	const dailyN = dailyReady(st);
-	$('kAttack').classList.toggle('ready', trialN + asN + bossN + dailyN > 0);
+	const warN = warReady(st);
+	$('kAttack').classList.toggle('ready', trialN + asN + bossN + dailyN + warN > 0);
 	$('kAttack').title = trialN > 0 ? 'Атака. Испытание титанов: ' + (trialOpen(st) && st.trial.left > 0 ? 'есть бои' : 'есть награда') : asN > 0 ? 'Атака. Идёт Штурм'
-		: bossN > 0 ? 'Атака. Рейдовый босс: ' + (st.boss.ck.err === E.None ? 'есть бои' : 'сундук альянса') : dailyN > 0 ? 'Атака. Ежедневные испытания: есть попытки' : 'Атака';
+		: bossN > 0 ? 'Атака. Рейдовый босс: ' + (st.boss.ck.err === E.None ? 'есть бои' : 'сундук альянса') : dailyN > 0 ? 'Атака. Ежедневные испытания: есть попытки'
+		: warN > 0 ? 'Атака. Война альянсов: ' + (st.war.ck.err === E.None ? 'есть атаки' : 'сундук войны') : 'Атака';
 	$('kArmySub').textContent = st.army.total + ' / ' + st.army.cap + ' · ' + st.titans.length + ' ' + plural(st.titans.length, 'титан', 'титана', 'титанов');
 	updateGoal();
 }
@@ -2492,6 +2500,9 @@ function onAct(e) {
 	case 'site': startSite(id); break;
 	case 'trials': openTrials(); break;
 	case 'daily': openDaily(-1); break;
+	case 'war': openWar(); break;
+	case 'war-go': startWar(id); break;
+	case 'war-chest': claimWarChest(); break;
 	case 'daily-trial': openDaily(id); break;
 	case 'daily-go': startDaily(id, +el.dataset.t || 1); break;
 	case 'daily-sweep': sweepDaily(id, +el.dataset.t || 1); break;
@@ -4090,6 +4101,208 @@ function dailyEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Alliance War (master prompt 12.9): a weekly war of the alliance against a computer alliance of its league, a prep
+// day and two battle days. The land battle code fights a base of the rival's roster as a pseudo land
+// { id, lv, war: { base, tier } }.
+// ---------------------------------------------------------------------------------------------
+const WAR_ID = 980000;
+const warRules = () => K.rules.allianceWar;
+const warOn = (st) => !!(warRules() && st.war);
+const warTierDef = (t) => warRules().tiers[Math.max(1, Math.min(t, warRules().tiers.length)) - 1];
+/** A member of a roster: [name, tier, best stars taken from the base, by whom (-1 nobody), attacks, stars won]. */
+const warBase = (st, i) => st.war.them[i];
+/** What picks a base's army, titan and field: the war, the base and the rival, the same on every client. */
+const warPick = (st, i, n, salt) => (((st.war.no * 7 + i * 13 + st.war.opp * 3 + salt * 5) % n) + n) % n;
+const warLevel = (tier) => Math.min(warTierDef(tier).level, K.rules.battles.length);
+const warTarget = (st, i) => ({ id: WAR_ID + i * 1000 + (((st.war.no % 1000) + 1000) % 1000), lv: warLevel(warBase(st, i)[1]), war: { base: i, tier: warBase(st, i)[1] } });
+const warStarsHtml = (n) => '<span class="wst">' + '★'.repeat(n) + '<i>' + '★'.repeat(Math.max(0, 3 - n)) + '</i></span>';
+const WAR_PHASE = ['подготовка', 'идут бои', 'окончена'];
+function warField(st, i) {
+	const R = warRules();
+	return siteField({ name: 'База «' + warBase(st, i)[0] + '»', map: R.maps[warPick(st, i, R.maps.length, 1)] });
+}
+function warTitan(st, i) {
+	const R = warRules();
+	const t = warTierDef(warBase(st, i)[1]);
+	const pool = R.titans[Math.max(1, Math.min(t.titanStars, R.titans.length)) - 1] || [];
+	const def = pool.length ? K.army.titans.find((x) => x.id === pool[warPick(st, i, pool.length, 2)]) : null;
+	return def ? { def, level: Math.min(t.titanLevel, 10 + 10 * def.stars), stars: def.stars } : null;
+}
+/** A base's squads: one of the armies, repeated over the squads of its tier's battle level. */
+function warEnemy(st, i) {
+	const R = warRules();
+	const b = K.rules.battles[warLevel(warBase(st, i)[1]) - 1];
+	const army = R.armies[warPick(st, i, R.armies.length, 0)];
+	return Array.from({ length: b.squads.length }, (_, k) => army[k % army.length]);
+}
+function warEnemyText(st, i) {
+	const t = warTierDef(warBase(st, i)[1]);
+	const et = warTitan(st, i);
+	const en = warEnemy(st, i);
+	const parts = [];
+	if (et) parts.push(et.def.name + ' ур. ' + et.level + ' ' + '★'.repeat(et.stars));
+	if (en.length) {
+		const kinds = en.filter((x, k) => en.indexOf(x) === k).map((x) => TROOP_RU[x] || x);
+		parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' + (t.bonus ? ', здоровья и урона +' + t.bonus + '%' : ''));
+	}
+	return parts.join('; ') || 'никого';
+}
+const warMeIn = (st) => warOn(st) && st.war.on && st.war.me >= 0 && st.war.us[st.war.me];
+const warChestReady = (st) => warOn(st) && st.war.on && st.war.ph === 2 && !st.war.chest && st.pendingWar < 0 && warMeIn(st) && st.war.us[st.war.me][4] > 0;
+/** Attacks to make, and the chest. */
+function warReady(st) {
+	if (!warOn(st) || st.ally.my < 0) return 0;
+	return (st.war.ck.err === E.None ? st.war.left : 0) + (warChestReady(st) ? 1 : 0);
+}
+function warKey(st) {
+	const w = st.war;
+	return warOn(st) ? [w.no, w.ph, w.on, w.opp, w.roster, w.ck.err, w.left, w.mine, w.ours, w.theirs, w.res, w.chest, st.ally.my, st.castle, st.pendingWar,
+		w.them.map((x) => x[2] + ':' + x[3]).join(''), w.us.map((x) => x[2] + ':' + x[4]).join('')].join('|') : '';
+}
+/** The chest's pay for a result, with the stars of the player's attacks (gold and food times the Castle). */
+function warChestPay(st, res, stars) {
+	const R = warRules();
+	const ch = R.chests[Math.max(0, Math.min(st.war.league, R.chests.length - 1))];
+	const base = res > 0 ? ch.win : res < 0 ? ch.lose : ch.draw;
+	const pay = {};
+	for (const k of RES) pay[k] = (base[k] || 0) + (R.star[k] || 0) * stars;
+	pay.gold *= st.castle;
+	pay.food *= st.castle;
+	pay.relic = base.relic || 0;
+	return eventPay(pay);
+}
+const warResultText = (r) => (r > 0 ? 'победа' : r < 0 ? 'поражение' : 'ничья');
+/** When the phase on screen ends: the battle days start, the battle days end, the next prep day. */
+const warPhaseEnd = (w) => (w.ph === 0 ? w.battle : w.ph === 1 ? w.end : w.next);
+function warCard(st) {
+	if (!warOn(st)) return '';
+	const w = st.war;
+	const R = warRules();
+	const n = warReady(st);
+	const sub = st.ally.my < 0 ? 'для участников альянса'
+		: !w.on ? 'в альянсе нужно ' + R.minMembers + ' участников, сейчас ' + w.members
+			: (w.ph === 2 ? warResultText(w.res) + ' ' + w.ours + ' : ' + w.theirs + (warChestReady(st) ? ', сундук ждёт' : '') : 'против «' + w.oppName + '» · ' + WAR_PHASE[w.ph] + ' · ' + w.ours + ' : ' + w.theirs) +
+				(w.ph === 1 && st.castle >= R.castle ? ' · атак ' + w.left : st.castle < R.castle ? ' · атаки с Замка ' + R.castle : '');
+	return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml('ui.alliance', (st.ally.my < 0 || !w.on || st.castle < R.castle ? 'shards' : 'gold') + ' land') + '<div class="info"><b>Война альянсов</b><span>' + esc(sub) + '</span></div>' +
+		'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="war">' + (n ? 'Открыть · ' + n : 'Открыть') + '</button></div></div>';
+}
+function warErrText(code, ck) {
+	switch (code) {
+	case E.NotAllowed: return 'Для войны в альянсе нужно ' + warRules().minMembers + ' участников';
+	case E.Locked: return 'Атаки на войне — с Замка ' + warRules().castle;
+	case E.NotReady: return ck && ck.t ? 'Бои начнутся через ' + fmtDur(ck.t) : 'Сейчас не дни боёв';
+	case E.LimitReached: return 'Атаки в этой войне кончились';
+	case E.Nothing: return 'С этой базы взяты все три звезды';
+	case E.Busy: return 'Сначала закончите бой';
+	default: return errText(code, ck);
+	}
+}
+function openWar() {
+	if (!warOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = warRules();
+		const w = st.war;
+		const inAlly = st.ally.my >= 0;
+		const days = R.battleDays + ' ' + plural(R.battleDays, 'день', 'дня', 'дней');
+		const intro = '<p class="fine">Каждую неделю альянс воюет с альянсом своей лиги: ' + WEEKDAYS[R.prepDay] + ' — подготовка, затем ' + days + ' боёв с 00:00 UTC. ' +
+			'У каждого участника своя база и ' + R.attacks + ' ' + plural(R.attacks, 'атака', 'атаки', 'атак') + ' на базы соперника. С базы можно взять до трёх звёзд; новая атака добавляет только звёзды сверх лучшей. ' +
+			'Побеждает альянс, у которого больше звёзд. Атаки без камней портала, в них никто не гибнет и заклинания не тратятся.</p>';
+		let body;
+		let key = '';
+		if (!inAlly) {
+			body = '<p>Война альянсов — для участников альянса. Вступите в альянс или основайте свой.</p><div class="actions"><button class="btn primary" data-act="alliance">Альянсы</button></div>';
+		} else if (!w.on) {
+			body = '<p>Для войны в альянсе нужно ' + R.minMembers + ' участников вместе с вами, сейчас ' + w.members + '. ' + (st.ally.own ? 'Новобранцы приходят в ваш альянс со временем.' : '') + '</p>';
+		} else {
+			const al = st.ally;
+			const ph = w.ph;
+			const timerLabel = ph === 0 ? 'Подготовка, бои начнутся через' : ph === 1 ? 'Бои идут ещё' : 'Война окончена, следующая через';
+			const score = '<div class="costline"><span>' + esc(al.name || 'Ваш альянс') + '</span><b class="wscore">★ ' + w.ours + ' : ' + w.theirs + ' ★</b><span>' + esc(w.oppName) + ' [' + esc(w.oppTag) + ']</span></div>' +
+				(ph === 2 ? '<p class="' + (w.res > 0 ? 'fine' : 'note') + '">Итог: ' + warResultText(w.res) + ' (' + w.ours + ' : ' + w.theirs + ').</p>' : '');
+			const timer = '<div class="costline"><span>' + timerLabel + '</span><b data-live="war">' + fmtDur(Math.max(0, warPhaseEnd(w) - nowF())) + '</b></div>';
+			const locked = st.castle < R.castle;
+			const me = w.us[w.me];
+			const mine = '<div class="costline"><span>Ваши атаки</span><b>' + (locked ? 'с Замка ' + R.castle : w.left + ' из ' + R.attacks) + '</b><span>' + (me[4] ? me[4] + ' ' + plural(me[4], 'атака', 'атаки', 'атак') + ', ' + w.mine + ' ★' : 'вы ещё не атаковали') + '</span></div>';
+			const chestBtn = w.chest ? '<button class="btn" disabled>Сундук открыт</button>'
+				: warChestReady(st) ? '<button class="btn primary" data-act="war-chest">Открыть сундук войны</button>'
+					: '<button class="btn" disabled>' + (ph < 2 ? 'Сундук — после боёв' : 'Сундук — тем, кто атаковал') + '</button>';
+			const chest = '<h3>Сундук войны</h3><div class="cmp">' + [1, 0, -1].map((r) => '<span class="k' + (ph === 2 && w.res === r ? ' on' : '') + '">' + warResultText(r).replace(/^./, (c) => c.toUpperCase()) + '</span><span class="v">' + warChestPay(st, r, w.mine) + '</span><span class="n"></span>').join('') + '</div>' +
+				'<p class="fine">Сундук — по итогу войны и лиге альянса, плюс ' + eventPay({ gold: R.star.gold * st.castle, food: R.star.food * st.castle }) + ' за каждую звезду ваших атак. Его открывает каждый, кто атаковал, до следующей подготовки.</p><div class="actions">' + chestBtn + '</div>';
+			const can = w.ck.err === E.None && st.pendingWar < 0;
+			const bases = w.them.map((x, i) => {
+				const by = x[3] >= 0 ? (x[3] === w.me ? 'вы' : w.us[x[3]][0]) : '';
+				const t = warTierDef(x[1]);
+				return '<span class="pl">' + (i + 1) + '</span><span class="nm">' + esc(x[0]) + '<small>ур. ' + warLevel(x[1]) + (t.titanStars ? ' · титан ' + '★'.repeat(t.titanStars) : '') + (by ? ' · ' + esc(by) : '') + '</small></span>' +
+					'<span class="v">' + warStarsHtml(x[2]) + '</span>' +
+					(ph === 1 ? '<button class="btn slim" data-act="war-go" data-id="' + i + '"' + (can && x[2] < 3 ? '' : ' disabled') + '>' + (x[2] >= 3 ? 'Разбита' : 'Атака') + '</button>' : '<span></span>');
+			}).join('');
+			const ours = w.us.map((x, i) => {
+				const isMe = i === w.me;
+				const by = x[3] >= 0 ? w.them[x[3]][0] : '';
+				return '<span class="pl' + (isMe ? ' me' : '') + '">' + (i + 1) + '</span><span class="nm' + (isMe ? ' me' : '') + '">' + esc(isMe ? 'Вы' : x[0]) + '<small>' + (x[4] ? x[4] + ' ' + plural(x[4], 'атака', 'атаки', 'атак') + ', +' + x[5] + ' ★' : ph === 0 ? 'ур. ' + warLevel(x[1]) : 'не атаковал' + (isMe ? 'и' : '')) + '</small></span>' +
+					'<span class="v">' + warStarsHtml(x[2]) + '</span><span class="fine wby">' + (by ? esc(by) : '') + '</span>';
+			}).join('');
+			body = score + timer + mine +
+				(locked ? '<p class="fine">Атаки на войне открываются с Замка ' + R.castle + '. Альянс воюет и без вас.</p>' : '') +
+				'<h3>Базы «' + esc(w.oppName) + '»</h3><div class="warBases">' + bases + '</div>' +
+				'<p class="fine">Базы идут от сильных к слабым: первая треть на ступень сильнее, последняя на ступень слабее. Звёзды — лучший результат по базе, рядом с уровнем — кто его взял.</p>' +
+				chest +
+				'<h3>Ваш альянс: атаки и базы</h3><div class="warBases us">' + ours + '</div>' +
+				'<p class="fine">Звёзды у баз вашего альянса — что взял соперник. Справа — кто из соперников взял больше всего.</p>';
+			key = warKey(st);
+		}
+		const html = sheetTitle(icoHtml('ui.alliance', 'gold land'), 'Война альянсов') + intro + body +
+			'<p class="fine">Пока нет сервера, участники обоих альянсов — компьютер: каждый делает до ' + R.attacks + ' атак в разные моменты дней боёв и бьёт самую сильную базу, которую может взять. Награды ложатся и сверх склада.</p>' +
+			'<div class="actions"><button class="btn" data-act="world">Карта мира</button>' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return { key: ['war', key, inAlly, w.on, w.members].join('|'), html, live: (el) => live(el, 'war', fmtDur(Math.max(0, warPhaseEnd(K.st.war) - nowF()))) };
+	});
+}
+/** A toast when the battle days begin while the game is on, and when the war ends. */
+function announceWar(prev, st) {
+	if (!warOn(st) || !prev.war || st.ally.my < 0 || !st.war.on || prev.war.no !== st.war.no) return;
+	if (prev.war.ph === 0 && st.war.ph === 1) toast('Война альянсов: начались бои с «' + st.war.oppName + '»' + (st.castle >= warRules().castle ? ', у вас ' + st.war.left + ' ' + plural(st.war.left, 'атака', 'атаки', 'атак') : ''), 'gold');
+	else if (prev.war.ph === 1 && st.war.ph === 2) toast('Война альянсов окончена: ' + warResultText(st.war.res) + ' ' + st.war.ours + ' : ' + st.war.theirs + (warChestReady(st) ? '. Откройте сундук войны' : ''), st.war.res >= 0 ? 'gold' : 'bad');
+}
+function startWar(i) {
+	const st = K.st;
+	if (!warOn(st)) return;
+	const base = st.war.them[i];
+	if (st.war.ck.err !== E.None || !base || base[2] >= 3) { toast(warErrText(!base ? E.BadId : st.war.ck.err !== E.None ? st.war.ck.err : E.Nothing, st.war.ck), 'bad'); return; }
+	openPrepare(0, false, -1, null, false, false, false, false, null, { base: i });
+}
+function claimWarChest() {
+	const r = K.bridge.warChest();
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Сундук откроется после боёв' : r.err === E.Nothing ? 'Сундук уже открыт' : r.err === E.NotAllowed ? 'Сундук — тем, кто атаковал в этой войне' : r.err === E.InventoryFull ? 'Нет места для реликвии' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	const parts = rewardParts(r);
+	const st = K.bridge.state();
+	for (const x of (r.relics || []).map((rid) => st.relics.find((y) => y.id === rid)).filter(Boolean)) parts.push((/^реликвия/i.test(relicName(x)) ? '' : 'реликвия ') + relicName(x) + ' ' + '★'.repeat(x.r));
+	toast('Сундук войны: ' + parts.join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+function warEnd(ctx, stars, retreat) {
+	const i = ctx.war.base;
+	const before = K.st.war.them[i] ? K.st.war.them[i][2] : 0;
+	const name = K.st.war.them[i] ? K.st.war.them[i][0] : '';
+	const got = retreat ? 0 : stars;
+	const r = K.bridge.warFinish(got);
+	persist();
+	refresh(true);
+	if (r.err !== E.None) return;
+	const gain = Math.max(0, got - before);
+	if (got <= 0) toast((retreat ? 'Отступление' : 'Поражение') + ' у базы «' + name + '»: атака потрачена', 'bad');
+	else toast('База «' + name + '»: ' + '★'.repeat(got) + (gain ? ', альянсу +' + gain + ' ' + plural(gain, 'звезда', 'звезды', 'звёзд') : ', но столько звёзд с неё уже взяли'), gain ? 'gold' : 'bad');
+	openWar();
+}
+
+// ---------------------------------------------------------------------------------------------
 // Practice (master prompt 10.6): the player's own army against a land battle of any level opened so far, on any
 // battlefield. Nothing is spent or lost and nothing is won; the kingdom is not told about the battle at all
 // ---------------------------------------------------------------------------------------------
@@ -5087,7 +5300,7 @@ function worldKey(st) {
 	return [st.res[3], st.cap[3], st.castle, st.lands.map((l) => l.id + ':' + l.lv + ':' + (l.st > 0)).join(), st.world.map((w) => w.id + ':' + w.lv).join(), st.landCap,
 		isArmed('refill'), isArmed('slot'), (st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join(),
 		(st.rivals || []).map((r) => r.castle + ':' + r.lands + ':' + r.back).join(), (st.rivalLands || []).map((w) => w.id + ':' + w.lv + ':' + (w.shield > nowF())).join(),
-		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st)].join('|');
+		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st), warKey(st)].join('|');
 }
 
 function openWorld() {
@@ -5099,7 +5312,7 @@ function openWorld() {
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + practiceCard() +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + practiceCard() +
 			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
 			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
 				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
@@ -5238,7 +5451,7 @@ function openWorldMap() {
 			'<div class="mapLegend"><span><i style="border-color:var(--own)"></i>ваши земли ' + st.lands.length + ' / ' + st.landCap + '</span><span><i style="border-color:rgba(239,231,214,0.85)"></i>ничьи</span>' +
 			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
 			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
-			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) +
+			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) +
 			'<div class="actions"><button class="btn" data-act="world-list">Списком</button><button class="btn" data-act="practice">Тренировка</button>' + closeBtn + '</div>';
 		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
@@ -5413,6 +5626,7 @@ function enemyTitan(w) {
 	if (w.trial >= 0) return trialTitan(trialDef(w.trial), w.lv);
 	if (w.boss >= 0) return bossTitan(w);
 	if (w.daily) return dailyTitan(w.daily.trial, w.daily.tier, K.st);
+	if (w.war) return warTitan(K.st, w.war.base);
 	if (w.practice && w.noTitan) return null;
 	// A lord's titan guards every one of its lands.
 	if (w.own >= 0) return { def: K.army.titans[w.tdef], level: w.tlv };
@@ -5436,9 +5650,10 @@ function landScenario(w, prep) {
 	const asd = w.assault >= 0 ? asStage(w.assault) : null;
 	const bd = w.boss >= 0 ? bossDef(w.boss) : null;
 	const dd = w.daily ? dailyDef(w.daily.trial) : null;
-	const ty = dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
-	const lord = !md && !site && !td && !asd && !bd && !dd && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	const wb = w.war ? w.war.base : -1;
+	const ty = wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
+	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && w.own >= 0 ? lordOf(w.own) : null;
+	sc.name = wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -5477,13 +5692,13 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
+	def.name = wb >= 0 ? 'Застава «' + warBase(K.st, wb)[0] + '»' : dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
 	def.ai = (dd && dd.ai) || (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
 	// An Assault stage adds its garrison behind the level's army.
-	const enemy = dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
+	const enemy = wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
 	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
@@ -5492,6 +5707,8 @@ function landScenario(w, prep) {
 	});
 	// Its walls: the defenders' squads have more health.
 	if (asd && asd.fort) def.troopBonus = { atkPct: 0, hpPct: asd.fort };
+	// A war base's high tiers make its squads stronger.
+	if (wb >= 0 && warTierDef(w.war.tier).bonus) def.troopBonus = { atkPct: warTierDef(w.war.tier).bonus, hpPct: warTierDef(w.war.tier).bonus };
 	// A Daily Trial's high tiers make its squads stronger; walls give them more health.
 	if (dd) {
 		const bonus = (dailyTierDef(w.daily.tier).bonus || 0) + (dd.power || 0);
@@ -5507,6 +5724,8 @@ function landScenario(w, prep) {
 		def.spells = [];
 		sc.timerSec = bossRules().battleSec;
 	}
+	// An Alliance War attack has its own length.
+	if (wb >= 0 && warRules().battleSec) sc.timerSec = warRules().battleSec;
 	// A Daily Trial's titan may have more health, and a trial its own length.
 	if (dd) {
 		if (def.titan && dd.hpPct) def.titan.bonus = { hpPct: dd.hpPct };
@@ -5538,7 +5757,8 @@ function launchAttack() {
 	const assault = p && p.assault;
 	const boss = p && p.boss;
 	const daily = p && p.daily;
-	let w = daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
+	const war = p && p.war;
+	let w = war ? warTarget(K.st, war.base) : daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
@@ -5550,12 +5770,12 @@ function launchAttack() {
 	if (assault) {
 		if (!asRun) code = K.bridge.asStart(squads, p.titan);
 		if (code === E.None) code = K.bridge.asStage(spells);
-	} else code = practice ? E.None : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
+	} else code = practice ? E.None : war ? K.bridge.warStart(war.base, squads, p.titan, spells) : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
 		: site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
-	if (code !== E.None) { toast(daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
+	if (code !== E.None) { toast(war ? warErrText(code) : daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
 	if (!practice) persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
-	const reinf = practice || assault || boss || daily ? [] : K.bridge.state().ally.pend;
+	const reinf = practice || assault || boss || daily || war ? [] : K.bridge.state().ally.pend;
 	let prep = { squads, titan: p.titan, spells, reinf };
 	if (assault) {
 		const st = K.bridge.state();
@@ -5576,6 +5796,7 @@ function launchAttack() {
 		: trial ? { kind: 'land', trial: true, level: w.lv, squads: squads.length, charges }
 		: boss ? { kind: 'land', boss: true, level: w.lv, squads: squads.length, charges }
 		: daily ? { kind: 'land', daily: { trial: daily.trial, tier: daily.tier }, level: w.lv, squads: squads.length, charges }
+		: war ? { kind: 'land', war: { base: war.base }, level: w.lv, squads: squads.length, charges }
 		: ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
 		: site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
 		: { kind: 'land', worldId: p.wid, capture: p.capture, type: w.type, level: w.lv, own: w.own, squads: squads.length, charges });
@@ -5634,6 +5855,10 @@ function onBattleEnd(ctx, stars, retreat) {
 	}
 	if (ctx && ctx.kind === 'land' && ctx.daily) {
 		dailyEnd(ctx, stars, retreat);
+		return;
+	}
+	if (ctx && ctx.kind === 'land' && ctx.war) {
+		warEnd(ctx, stars, retreat);
 		return;
 	}
 	if (ctx && ctx.kind === 'land' && ctx.practice) {
@@ -6394,7 +6619,7 @@ function openRaidLog(away) {
 }
 
 /** Before a land battle: pick the titan and the squads (up to the Army Camp's battle slots). */
-function openPrepare(wid, capture, site, mission, trial, practice, assault, boss, daily) {
+function openPrepare(wid, capture, site, mission, trial, practice, assault, boss, daily, war) {
 	cancelPlace();
 	select(null);
 	const a = K.st.army;
@@ -6417,8 +6642,8 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, boss: !!boss, daily: daily || null, titan: ready.length ? ready[0].id : 0, counts, spells,
-		reinf: !td && !practice && !assault && !boss && !daily };
+	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, boss: !!boss, daily: daily || null, war: war || null, titan: ready.length ? ready[0].id : 0,
+		counts, spells, reinf: !td && !practice && !assault && !boss && !daily && !war };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
@@ -6430,7 +6655,8 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const asFixed = as && st.assault.run;
 		const bs = p.boss;
 		const dl = p.daily;
-		const w = dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
+		const wr = p.war;
+		const w = wr ? warTarget(st, wr.base) : dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -6444,14 +6670,14 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + aa.lv[t] + '</b><span>' + (okTroop(t) ? 'в лагере ' + aa.n[t] : 'не по правилу испытания') + '</span></div>' +
 			'<div class="stepper"><button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="-1"' + (p.counts[t] > 0 ? '' : ' disabled') + '>−</button><b>' + p.counts[t] + '</b>' +
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots && okTroop(t) ? '' : ' disabled') + '>+</button></div></div>');
-		const ty = dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
+		const ty = wr ? warField(st, wr.base) : dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
-		const cost = td || pr || as || bs || dd ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
+		const cost = td || pr || as || bs || dd || wr ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
 		// Allies' squads that have arrived in the Alliance Camp fight once and are gone (the original).
-		const arrived = td || pr || as || bs || dd ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
+		const arrived = td || pr || as || bs || dd || wr ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
 		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
@@ -6460,11 +6686,13 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
 		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
 			: '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
-		const html = sheetTitle(dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
-			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
+		const html = sheetTitle(wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
+			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
-			asNote + (dd ? '<p class="fine">Попыток сегодня: ' + st.daily.list[dl.trial].left + '. Попытка засчитывается при начале боя, даже если отступить. Победа на любые звёзды: ' + dailyPayText(dl.trial, dl.tier) +
+			'<p>Противник: ' + esc(wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			asNote + (wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +
+				warBase(st, wr.base)[2] + ' ' + plural(warBase(st, wr.base)[2], 'звезда', 'звезды', 'звёзд') + ': в счёт альянса идут только новые сверх них, а в ваш сундук — все звёзды атаки. Бой длится ' + Math.round(warRules().battleSec / 60) + ' мин.</p>'
+				: dd ? '<p class="fine">Попыток сегодня: ' + st.daily.list[dl.trial].left + '. Попытка засчитывается при начале боя, даже если отступить. Победа на любые звёзды: ' + dailyPayText(dl.trial, dl.tier) +
 				(dd.pay === 'shards' ? ' (на ' + dailyRules().lineageBonusPct + '% больше с титаном рода недели)' : dd.pay === 'titanXp' ? ' (титану, который бьётся)' : '') + '. Три звезды открывают зачистку уровня.</p>'
 				: bs ? '<p class="fine">Попыток сегодня: ' + st.boss.left + '. Попытка засчитывается при начале боя, даже если отступить; урон засчитывается и при отступлении. Бой длится ' +
 				Math.round(bossRules().battleSec / 60) + ' мин. Награды за бой: ' + bossRules().milestones.map((m) => pctOf(m.dmg) + ' — ' + bossMilestonePay(m, st)).join('; ') + '.</p>'
@@ -6472,12 +6700,12 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 				: md ? '<p class="fine">' + missionRewardText(p.mission.a, p.mission.m) + '</p>' : sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
 			armyHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
-			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
+			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd || wr ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : wr ? 'на войне' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
-			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd ? 'В ' + (bs ? 'бою с боссом' : 'испытании') + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr ? (wr ? 'На войне альянсов' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
 			scoutHtml(st, p, w, arrived, td) +
-			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, as, bs, dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join()].join('|'), html };
+			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
+		return { key: ['prep', pr, as, bs, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join()].join('|'), html };
 	});
 }
 
@@ -6578,6 +6806,7 @@ function battleKey(x, st) {
 	if (x.trial) return 't' + st.trial.i;
 	if (x.boss) return 'b' + st.boss.no;
 	if (x.daily) return 'd' + x.daily.trial + '.' + x.daily.tier;
+	if (x.war) return 'v' + st.war.no + '.' + x.war.base;
 	if (x.mission) return 'm' + x.mission.a + '.' + x.mission.m;
 	if (x.site >= 0) return 's' + x.site;
 	return 'w' + (x.worldId !== undefined ? x.worldId : x.wid);
@@ -6763,12 +6992,12 @@ function allianceMine(st, data) {
 		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
 		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
 		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
-		bossCard(st) +
+		bossCard(st) + warCard(st) +
 		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
 		body +
 		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
 	return {
-		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st)].join('|'), html,
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st)].join('|'), html,
 		live(el) {
 			const d = K.allyData || data;
 			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));
@@ -6924,6 +7153,10 @@ function init(app) {
 			// A Daily Trial battle: the attempt is spent, nothing is paid.
 			K.bridge.dailyFinish(0);
 			setTimeout(() => toast('Прерванный бой ежедневного испытания засчитан как отступление', 'bad'), 600);
+		} else if (st.pendingWar >= 0) {
+			// An Alliance War attack: the attack is spent, no star counts.
+			K.bridge.warFinish(0);
+			setTimeout(() => toast('Прерванная атака на войне засчитана без звёзд', 'bad'), 600);
 		} else if (st.pendingBoss) {
 			// A boss battle: the attempt is spent, no damage counts.
 			K.bridge.bossFinish(0, 0);

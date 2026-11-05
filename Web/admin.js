@@ -378,6 +378,38 @@ function invariants(st, add) {
 		});
 		if (st.pendingDaily && st.pendingDaily[0] >= 0 && !inBattle()) add('warn', 'Висит незавершённый бой ежедневного испытания');
 	}
+	// Alliance War: rosters of the same size, tiers by place, stars 0-3 a base taken by someone of the other side, the
+	// scores the bases' sums, attacks within the rules, the result by the scores.
+	const wr = rules().allianceWar;
+	const wa = st.war;
+	if (wr && wa) {
+		if (!(wa.ph >= 0 && wa.ph <= 2) || wa.battle !== wa.prep + 86400 || wa.end !== wa.battle + wr.battleDays * 86400 || wa.next !== wa.prep + 7 * 86400) add('bad', 'Война альянсов: фаза ' + wa.ph + ', дни ' + [wa.prep, wa.battle, wa.end, wa.next].join(' / '));
+		if (wa.left < 0 || wa.left > wr.attacks) add('bad', 'Война альянсов: атак осталось ' + wa.left + ' из ' + wr.attacks);
+		if (st.ally.my < 0 && (wa.on || wa.members)) add('bad', 'Вне альянса идёт война альянсов');
+		if (wa.on) {
+			const n = wa.roster;
+			if (n < wr.minMembers || n > wr.rosterMax || n % wr.rosterStep || wa.us.length !== n || wa.them.length !== n || wa.members < n || wa.me < 0 || wa.me >= n) add('bad', 'Война альянсов: состав ' + n + ', баз ' + wa.us.length + ' и ' + wa.them.length + ', участников ' + wa.members + ', ваше место ' + wa.me);
+			if (wa.opp < 0 || wa.opp === st.ally.my) add('bad', 'Война альянсов: соперник ' + wa.opp);
+			let ours = 0;
+			let theirs = 0;
+			[[wa.us, wa.them], [wa.them, wa.us]].forEach(([side, other], s) => side.forEach((x, i) => {
+				const nm = 'Война альянсов, ' + (s ? 'база соперника ' : 'наша база ') + (i + 1) + ': ';
+				if (!(x[1] >= 1 && x[1] <= wr.tiers.length)) add('bad', nm + 'ступень ' + x[1]);
+				if (i > 0 && x[1] > side[i - 1][1]) add('bad', nm + 'сильнее предыдущей');
+				if (!(x[2] >= 0 && x[2] <= 3) || (x[2] > 0) !== (x[3] >= 0) || x[3] >= n) add('bad', nm + 'звёзд ' + x[2] + ', взял ' + x[3]);
+				if (x[4] < 0 || x[4] > wr.attacks || x[5] < 0 || x[5] > 3 * x[4]) add('bad', nm + 'атак ' + x[4] + ', звёзд ' + x[5]);
+				if (wa.ph === 0 && (x[2] || x[4])) add('bad', nm + 'в день подготовки уже есть атаки');
+				if (s) ours += x[2];
+				else theirs += x[2];
+			}));
+			if (ours !== wa.ours || theirs !== wa.theirs) add('bad', 'Война альянсов: счёт ' + wa.ours + ' : ' + wa.theirs + ', а по базам ' + ours + ' : ' + theirs);
+			const won = wa.them.reduce((x, y) => x + y[5], 0);
+			if (wa.us.reduce((x, y) => x + y[5], 0) !== wa.ours || won !== wa.theirs) add('bad', 'Война альянсов: звёзды атак не сходятся со счётом');
+			if (wa.ph === 2 && wa.res !== Math.sign(wa.ours - wa.theirs)) add('bad', 'Война альянсов: итог ' + wa.res + ' при счёте ' + wa.ours + ' : ' + wa.theirs);
+			if (wa.mine < 0 || wa.mine > 3 * wr.attacks || wa.mine < wa.us[wa.me][5]) add('bad', 'Война альянсов: ваших звёзд ' + wa.mine + ', в счёт ' + wa.us[wa.me][5]);
+		}
+		if (st.pendingWar >= 0 && !inBattle()) add('warn', 'Висит незавершённая атака на войне альянсов');
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -475,7 +507,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -684,6 +716,32 @@ function runMonkey(steps, seed, keep) {
 			return res.err;
 		}],
 		['сложность босса', 1, () => (B.bossTier ? B.bossTier(Math.floor(r() * 12) - 1) : -1)],
+		['атака на войне', 3, (st) => {
+			if (!B.warStart || !st.war) return -1;
+			// Now and then a base past the roster, which must be refused.
+			const i = Math.floor(r() * (st.war.roster + 1));
+			const base = st.war.them[i];
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.warStart(i, squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			if (!base || base[2] >= 3 || st.war.ph !== 1 || st.war.left <= 0) throw new Error('атака на войне началась: база ' + i + (base ? ' (' + base[2] + ' ★)' : ' вне состава') + ', фаза ' + st.war.ph + ', атак ' + st.war.left);
+			const st1 = B.state();
+			if (st1.pendingWar !== i || st1.war.left !== st.war.left - 1) throw new Error('атака на войне: висит ' + st1.pendingWar + ', атак ' + st.war.left + ' → ' + st1.war.left);
+			const stars = Math.floor(r() * 4);
+			const err = B.warFinish(stars).err;
+			// Nothing is lost at war; the base keeps its best stars.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('атака на войне забрала отряды или заклинания');
+			if (st2.pendingWar >= 0) throw new Error('атака на войне осталась незавершённой');
+			if (st2.war.no === st.war.no && st2.war.on && st2.war.them[i][2] < Math.max(base[2], stars)) throw new Error('звёзды базы ' + i + ': ' + base[2] + ' и атака на ' + stars + ' → ' + st2.war.them[i][2]);
+			return err;
+		}],
+		['сундук войны', 1, () => (B.warChest ? B.warChest().err : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);

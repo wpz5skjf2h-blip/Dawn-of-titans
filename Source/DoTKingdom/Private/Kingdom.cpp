@@ -141,6 +141,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	WpPaidRelics = 0;
 	ResetAssault();
 	ResetBoss();
+	ResetWar();
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2260,7 +2261,7 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
 	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
-			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending ? QuestEvent::Count
+			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending || Target == WarPending ? QuestEvent::Count
 			: QuestEvent::Site, 1);
 	return Error::None;
 }
@@ -2804,6 +2805,7 @@ void Kingdom::RollQuests()
 	RollWarpath();
 	RollAssault();
 	RollBoss();
+	RollWar();
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -4448,6 +4450,431 @@ Error Kingdom::ClaimBossChest(Reward* Out)
 	if (Out)
 	{
 		*Out = R;
+	}
+	return Error::None;
+}
+
+// --- Alliance War --------------------------------------------------------------------------------------
+
+int64_t Kingdom::WarNoNow() const
+{
+	// The epoch's day 0 was a Thursday (weekday 3 counted from Monday).
+	return FloorDiv(std::max<int64_t>(0, Time) / 86400 - (C.allianceWar.prepDay - 3), 7);
+}
+
+int Kingdom::WarTier(int League, int Place, int Roster) const
+{
+	const AllianceWarRules& R = C.allianceWar;
+	if (R.leagueTier.empty() || Roster <= 0)
+	{
+		return 1;
+	}
+	const int Mid = R.leagueTier[static_cast<size_t>(std::max(0, std::min(League, static_cast<int>(R.leagueTier.size()) - 1)))];
+	// The first third of the roster a tier over the league's, the last third one under.
+	return std::max(1, std::min(R.tiers, Mid + 1 - (3 * Place) / Roster));
+}
+
+Kingdom::WarSnap Kingdom::WarSnapNow(int64_t No) const
+{
+	WarSnap S;
+	const AllianceWarRules& R = C.allianceWar;
+	if (!WarContent() || AllianceIdx < 0)
+	{
+		return S;
+	}
+	const int Members = AllianceSize(AllianceIdx) + 1;
+	if (Members < R.minMembers)
+	{
+		return S;
+	}
+	const int Roster = std::min(R.rosterMax, Members / R.rosterStep * R.rosterStep);
+	const int League = AllianceTier(AllianceIdx);
+	// The rival: a computer alliance with enough members, of the league or the nearest one, picked by the seed.
+	std::vector<int> Best;
+	int BestDist = 1 << 20;
+	for (int I = 0; I < BaseAlliances(); ++I)
+	{
+		if (I == AllianceIdx || AllianceSize(I) < Roster)
+		{
+			continue;
+		}
+		const int Dist = std::abs(AllianceTier(I) - League);
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best.clear();
+		}
+		if (Dist == BestDist)
+		{
+			Best.push_back(I);
+		}
+	}
+	if (Best.empty())
+	{
+		return S;
+	}
+	S.key = BossKey();
+	S.roster = Roster;
+	S.league = League;
+	S.opp = Best[static_cast<size_t>(Mix(Mix(Seed ^ 0x7761726f7070ULL, static_cast<uint64_t>(S.key)), static_cast<uint64_t>(No)) % Best.size())];
+	S.me = Roster / 2;
+	return S;
+}
+
+Kingdom::WarSnap Kingdom::WarSnapOf() const
+{
+	const int64_t No = WarNoNow();
+	if (WarNo == No && WarSaved.key >= 0 && WarSaved.key == BossKey())
+	{
+		return WarSaved;
+	}
+	return WarSnapNow(No);
+}
+
+bool Kingdom::WarMine() const
+{
+	return WarNo == WarNoNow() && WarSaved.key >= 0 && WarSaved.key == BossKey();
+}
+
+WarInfo Kingdom::War() const
+{
+	WarInfo W;
+	const AllianceWarRules& R = C.allianceWar;
+	W.no = WarNoNow();
+	const int64_t Prep = WarPrepDay(W.no);
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	W.phase = Day == Prep ? 0 : Day <= Prep + R.battleDays ? 1 : 2;
+	W.prepAt = Prep * 86400;
+	W.battleAt = W.prepAt + 86400;
+	W.endAt = W.battleAt + static_cast<int64_t>(R.battleDays) * 86400;
+	W.nextAt = W.prepAt + 7 * 86400;
+	W.members = AllianceIdx >= 0 ? AllianceSize(AllianceIdx) + 1 : 0;
+	W.attacksLeft = std::max(0, R.attacks - (WarUsedNo == W.no ? WarUsed : 0));
+	const WarSnap S = WarSnapOf();
+	if (!WarContent() || S.key < 0)
+	{
+		return W;
+	}
+	W.on = true;
+	W.opponent = S.opp;
+	W.league = S.league;
+	W.roster = S.roster;
+	W.me = S.me;
+	const int N = S.roster;
+	// The rosters: the strongest members first, the player in the middle of theirs.
+	W.ours.resize(static_cast<size_t>(N));
+	W.theirs.resize(static_cast<size_t>(N));
+	std::vector<std::string> OurNames;
+	for (const AllianceMember& M : Members(AllianceIdx))
+	{
+		if (!M.name.empty())
+		{
+			OurNames.push_back(M.name);
+		}
+	}
+	const std::vector<AllianceMember> TheirMembers = Members(S.opp);
+	for (int P = 0, Next = 0; P < N; ++P)
+	{
+		WarMember& O = W.ours[static_cast<size_t>(P)];
+		O.tier = WarTier(S.league, P, N);
+		if (P != S.me)
+		{
+			O.name = Next < static_cast<int>(OurNames.size()) ? OurNames[static_cast<size_t>(Next)] : "?";
+			++Next;
+		}
+		WarMember& T = W.theirs[static_cast<size_t>(P)];
+		T.tier = O.tier;
+		T.name = P < static_cast<int>(TheirMembers.size()) ? TheirMembers[static_cast<size_t>(P)].name : "?";
+	}
+	struct Ev
+	{
+		int64_t at;
+		int side; // 0: ours attack theirs, 1: theirs attack ours
+		int who; // the attacker's place (-1 with the player's own stars below)
+		int stars; // the player's (a computer attack rolls its own)
+		int base;
+		uint64_t roll;
+	};
+	std::vector<Ev> List;
+	const int64_t Len = std::max<int64_t>(1, W.endAt - W.battleAt);
+	const uint64_t Base = Mix(Mix(Seed ^ 0x77617261747461ULL, static_cast<uint64_t>(S.key)), static_cast<uint64_t>(S.opp));
+	for (int Side = 0; Side < 2; ++Side)
+	{
+		for (int P = 0; P < N; ++P)
+		{
+			if (Side == 0 && P == S.me)
+			{
+				continue;
+			}
+			const uint64_t H = Mix(Base, (static_cast<uint64_t>(W.no) * 2 + static_cast<uint64_t>(Side)) * 64 + static_cast<uint64_t>(P));
+			const int Pct = static_cast<int>(H % 100);
+			const int Count = Pct < R.idlePct ? 0 : Pct < R.idlePct + R.onePct ? std::min(1, R.attacks) : R.attacks;
+			for (int J = 0; J < Count; ++J)
+			{
+				const uint64_t Hj = Mix(H, static_cast<uint64_t>(J) + 1);
+				List.push_back({W.battleAt + static_cast<int64_t>(Hj % static_cast<uint64_t>(Len)), Side, P, 0, -1, (Hj >> 32) % 100});
+			}
+		}
+	}
+	if (WarMine())
+	{
+		for (const WarHit& X : WarHits)
+		{
+			List.push_back({X.at, 0, S.me, X.stars, X.base, 0});
+			W.myStars += X.stars;
+		}
+	}
+	std::sort(List.begin(), List.end(), [](const Ev& X, const Ev& Y) {
+		return X.at != Y.at ? X.at < Y.at : X.side != Y.side ? X.side < Y.side : X.who < Y.who;
+	});
+	for (const Ev& X : List)
+	{
+		const bool bMine = X.base >= 0;
+		if (!bMine && X.at > Time)
+		{
+			continue;
+		}
+		std::vector<WarMember>& Atk = X.side == 0 ? W.ours : W.theirs;
+		std::vector<WarMember>& Def = X.side == 0 ? W.theirs : W.ours;
+		WarMember& A = Atk[static_cast<size_t>(X.who)];
+		int Target = bMine ? X.base : -1;
+		int Stars = X.stars;
+		if (!bMine)
+		{
+			// The strongest base the attacker can match that still has stars to give, else the weakest such base.
+			for (int P = 0; P < N && Target < 0; ++P)
+			{
+				if (Def[static_cast<size_t>(P)].stars < 3 && Def[static_cast<size_t>(P)].tier <= A.tier)
+				{
+					Target = P;
+				}
+			}
+			for (int P = N - 1; P >= 0 && Target < 0; --P)
+			{
+				if (Def[static_cast<size_t>(P)].stars < 3)
+				{
+					Target = P;
+				}
+			}
+			if (Target < 0)
+			{
+				continue;
+			}
+			const int D = std::max(-3, std::min(3, A.tier - Def[static_cast<size_t>(Target)].tier));
+			const auto Chance = [&R, D](int I) { return std::max(0, std::min(100, R.starPct[static_cast<size_t>(I)] + R.starPct[static_cast<size_t>(I + 1)] * D)); };
+			const int Roll = static_cast<int>(X.roll);
+			Stars = Roll < Chance(0) ? 3 : Roll < Chance(2) ? 2 : Roll < Chance(4) ? 1 : 0;
+		}
+		if (Target < 0 || Target >= N)
+		{
+			continue;
+		}
+		WarMember& B = Def[static_cast<size_t>(Target)];
+		++A.attacks;
+		if (Stars > B.stars)
+		{
+			A.won += Stars - B.stars;
+			B.stars = Stars;
+			B.by = X.who;
+		}
+	}
+	for (int P = 0; P < N; ++P)
+	{
+		W.ourStars += W.theirs[static_cast<size_t>(P)].stars;
+		W.theirStars += W.ours[static_cast<size_t>(P)].stars;
+	}
+	W.result = W.phase < 2 ? 0 : W.ourStars > W.theirStars ? 1 : W.ourStars < W.theirStars ? -1 : 0;
+	return W;
+}
+
+Check Kingdom::CheckWar(int Base) const
+{
+	Check Out;
+	if (!WarContent())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+		return Out;
+	}
+	const WarInfo W = War();
+	if (!W.on)
+	{
+		Out.error = Error::NotAllowed;
+	}
+	else if (CastleLevel() < C.allianceWar.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.allianceWar.castle;
+	}
+	else if (W.phase != 1)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = (W.phase == 0 ? W.battleAt : W.nextAt + 86400) - Time;
+	}
+	else if (W.attacksLeft <= 0)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = W.nextAt + 86400 - Time;
+	}
+	else if (Base >= W.roster)
+	{
+		Out.error = Error::BadId;
+	}
+	else if (Base >= 0 && W.theirs[static_cast<size_t>(Base)].stars >= 3)
+	{
+		Out.error = Error::Nothing;
+	}
+	return Out;
+}
+
+void Kingdom::ResetWar()
+{
+	WarNo = -1;
+	WarSaved = WarSnap();
+	WarHits.clear();
+	bWarChest = false;
+	WarUsedNo = -1;
+	WarUsed = 0;
+	WarAt = -1;
+}
+
+void Kingdom::RollWar()
+{
+	if (!WarContent())
+	{
+		return;
+	}
+	const int64_t No = WarNoNow();
+	// An attack still on keeps its war until it is finished.
+	if (No == WarNo || Pending == WarPending)
+	{
+		return;
+	}
+	WarNo = No;
+	WarHits.clear();
+	bWarChest = false;
+	// The alliance as the war begins: its roster, rival and league hold for the war.
+	WarSaved = WarSnapNow(No);
+}
+
+Error Kingdom::StartWar(int Base, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	if (Base < 0)
+	{
+		return Error::BadId;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	const Check Ck = CheckWar(Base);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const Error E = BeginBattle(WarPending, false, 0, Squads, TitanId, Spells, false);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	const int64_t No = WarNoNow();
+	if (!WarMine())
+	{
+		// The player's first attack of the war in this alliance (it was joined after the prep day, or another one): the
+		// alliance as it is now, and attacks made elsewhere stay there.
+		WarNo = No;
+		WarSaved = WarSnapNow(No);
+		WarHits.clear();
+		bWarChest = false;
+	}
+	// An attack counts when it starts, whatever its end (a retreat too), in whatever alliance.
+	if (WarUsedNo != No)
+	{
+		WarUsedNo = No;
+		WarUsed = 0;
+	}
+	++WarUsed;
+	WarAt = Base;
+	return Error::None;
+}
+
+Error Kingdom::FinishWar(int Stars, Reward* Out)
+{
+	if (Pending != WarPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// As in a boss battle every squad, spell and the titan come back as they went (master prompt 12.7).
+	Reward R;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	// The attack counts in the war it began in, for the alliance it began in (the player may have left it since).
+	const int64_t End = (WarPrepDay(WarNo) + 1 + C.allianceWar.battleDays) * 86400;
+	if (WarMine() && WarAt >= 0 && WarAt < WarSaved.roster && WarHits.size() < 16)
+	{
+		WarHits.push_back({std::min(Time, End - 1), WarAt, Stars});
+	}
+	WarAt = -1;
+	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimWarChest(Reward* Out)
+{
+	const AllianceWarRules& R = C.allianceWar;
+	if (!WarContent())
+	{
+		return Error::BadId;
+	}
+	if (WarChestClaimed())
+	{
+		return Error::Nothing;
+	}
+	const WarInfo W = War();
+	if (Pending == WarPending || W.phase != 2)
+	{
+		return Error::NotReady;
+	}
+	if (!WarMine() || WarHits.empty() || !W.on)
+	{
+		return Error::NotAllowed;
+	}
+	const WarChest& Ch = R.chests[static_cast<size_t>(std::max(0, std::min(W.league, static_cast<int>(R.chests.size()) - 1)))];
+	EventReward Prize = W.result > 0 ? Ch.win : W.result < 0 ? Ch.lose : Ch.draw;
+	for (size_t I = 0; I < Prize.res.size(); ++I)
+	{
+		Prize.res[I] += R.star.res[I] * W.myStars;
+	}
+	Reward Got;
+	const Error E = PayEvent(Prize, 0x77617263686573ULL, static_cast<uint64_t>(WarNo), Got, true);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	bWarChest = true;
+	if (Out)
+	{
+		*Out = Got;
 	}
 	return Error::None;
 }
@@ -7312,6 +7739,41 @@ std::string Kingdom::Save() const
 	W.Key("tier");
 	W.Int(DailyAtTier);
 	W.EndObject();
+	// Alliance War (optional): the war's alliance, the player's attacks as [time, base, stars], the attacks spent.
+	W.Key("war");
+	W.BeginObject();
+	W.Key("no");
+	W.Int(WarNo);
+	W.Key("key");
+	W.Int(WarSaved.key);
+	W.Key("opp");
+	W.Int(WarSaved.opp);
+	W.Key("roster");
+	W.Int(WarSaved.roster);
+	W.Key("league");
+	W.Int(WarSaved.league);
+	W.Key("me");
+	W.Int(WarSaved.me);
+	W.Key("hits");
+	W.BeginArray();
+	for (const WarHit& X : WarHits)
+	{
+		W.BeginArray();
+		W.Int(X.at);
+		W.Int(X.base);
+		W.Int(X.stars);
+		W.EndArray();
+	}
+	W.EndArray();
+	W.Key("chest");
+	W.Bool(bWarChest);
+	W.Key("usedNo");
+	W.Int(WarUsedNo);
+	W.Key("used");
+	W.Int(WarUsed);
+	W.Key("at");
+	W.Int(WarAt);
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -8196,6 +8658,42 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		DailyAt = std::max(-1, std::min(static_cast<int>(N) - 1, DailyJ->GetInt("at", -1)));
 		DailyAtTier = std::max(0, std::min(DailyTiers(), DailyJ->GetInt("tier", 0)));
 	}
+	// Alliance War (saves before it start this war's state on the next Advance).
+	ResetWar();
+	if (const JsonValue* WarJ = J.Find("war"); WarJ && WarContent())
+	{
+		const AllianceWarRules& WR = C.allianceWar;
+		WarNo = WarJ->GetInt64("no", -1);
+		WarSaved.key = std::max<int64_t>(-1, WarJ->GetInt64("key", -1));
+		WarSaved.opp = WarJ->GetInt("opp", -1);
+		WarSaved.roster = WarJ->GetInt("roster", 0);
+		WarSaved.league = WarJ->GetInt("league", 0);
+		WarSaved.me = WarJ->GetInt("me", -1);
+		if (WarSaved.key >= 0 && (WarSaved.opp < 0 || WarSaved.opp >= BaseAlliances() || WarSaved.roster < WR.minMembers || WarSaved.roster > WR.rosterMax
+				|| WarSaved.league < 0 || WarSaved.league >= std::max<int>(1, static_cast<int>(C.alliances.leagues.size())) || WarSaved.me < 0 || WarSaved.me >= WarSaved.roster))
+		{
+			WarSaved = WarSnap();
+		}
+		if (WarSaved.key < 0)
+		{
+			WarSaved = WarSnap();
+		}
+		if (const JsonValue* HitsJ = WarJ->Find("hits"); HitsJ && HitsJ->IsArray() && WarSaved.key >= 0)
+		{
+			for (size_t I = 0; I < HitsJ->Size() && WarHits.size() < 16; ++I)
+			{
+				const JsonValue& H = (*HitsJ)[I];
+				if (H.IsArray() && H.Size() == 3 && H[1].AsInt(-1) >= 0 && H[1].AsInt(-1) < WarSaved.roster)
+				{
+					WarHits.push_back({H[0].AsInt64(0), H[1].AsInt(0), std::max(0, std::min(3, H[2].AsInt(0)))});
+				}
+			}
+		}
+		bWarChest = WarJ->GetBool("chest", false);
+		WarUsedNo = std::max<int64_t>(-1, WarJ->GetInt64("usedNo", -1));
+		WarUsed = std::max(0, std::min(WR.attacks, WarJ->GetInt("used", 0)));
+		WarAt = std::max(-1, std::min(WR.rosterMax - 1, WarJ->GetInt("at", -1)));
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -8256,6 +8754,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		if (Pending == TrialPending ? C.trials.list.empty()
 				: Pending == BossPending ? C.raidBoss.bosses.empty()
 				: Pending == DailyPending ? DailyAt < 0 || DailyAt >= DailyCount() || DailyAtTier < 1 || DailyAtTier > DailyTiers()
+				: Pending == WarPending ? !WarContent() || WarAt < 0
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
@@ -8643,6 +9142,27 @@ uint64_t Kingdom::Hash() const
 		}
 		W.I32(DailyAt);
 		W.I32(DailyAtTier);
+	}
+	// The same for the Alliance War: only once a war has rolled or the player has attacked.
+	if (WarNo >= 0 || WarUsedNo >= 0)
+	{
+		W.I64(WarNo);
+		W.I64(WarSaved.key);
+		W.I32(WarSaved.opp);
+		W.I32(WarSaved.roster);
+		W.I32(WarSaved.league);
+		W.I32(WarSaved.me);
+		W.I32(static_cast<int32_t>(WarHits.size()));
+		for (const WarHit& X : WarHits)
+		{
+			W.I64(X.at);
+			W.I32(X.base);
+			W.I32(X.stars);
+		}
+		W.U32(bWarChest ? 1u : 0u);
+		W.I64(WarUsedNo);
+		W.I32(WarUsed);
+		W.I32(WarAt);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)
