@@ -565,7 +565,9 @@
   // down to each of `phases` (‰ of it left), one more squad of `husk` comes to the boss's side (the prompt's husk
   // spawns). A battle pays its `milestones` (share of the boss's health taken in it, gold and food times the Castle);
   // when the pool runs out every member who fought opens the tier's chest until the next boss comes. Our numbers: a
-  // boss with 300% more health loses about 28% in two minutes to an army of its level (simulated).
+  // boss with 300% more health loses about 28% in two minutes to an army of its level (simulated). Few gems (2-12 a
+  // chest, under 2 a day), mostly portal stones and relics: the day's gems from quests, the calendar, trials, the
+  // Warpath and the Assault are near the 40 of 8.6 already.
   "raidBoss": {
     "castle": 5,
     "days": 2,
@@ -589,21 +591,21 @@
         "note": "Сурт в пепле и углях: земля под ним горит, гренадеры бросают огонь" }
     ],
     "tiers": [
-      { "level": 10, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 10, "stones": 4 } },
-      { "level": 15, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 15, "stones": 5 } },
-      { "level": 20, "stars": 2, "escort": 1, "troopTier": 1, "chest": { "gems": 20, "stones": 6 } },
-      { "level": 25, "stars": 2, "escort": 2, "troopTier": 2, "chest": { "gems": 25, "relic": 2 } },
-      { "level": 30, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 30, "stones": 8 } },
-      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 35, "relic": 3 } },
-      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 40, "stones": 10 } },
-      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 45, "relic": 3 } },
-      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 50, "stones": 12 } },
-      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 60, "relic": 4 } }
+      { "level": 10, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 2, "stones": 4 } },
+      { "level": 15, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 3, "stones": 5 } },
+      { "level": 20, "stars": 2, "escort": 1, "troopTier": 1, "chest": { "gems": 4, "stones": 6 } },
+      { "level": 25, "stars": 2, "escort": 2, "troopTier": 2, "chest": { "gems": 5, "stones": 6, "relic": 2 } },
+      { "level": 30, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 6, "stones": 8 } },
+      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 7, "stones": 8, "relic": 3 } },
+      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 8, "stones": 10 } },
+      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 9, "stones": 10, "relic": 3 } },
+      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 10, "stones": 12 } },
+      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 12, "stones": 12, "relic": 4 } }
     ],
     "milestones": [
       { "dmg": 50,  "gold": 200 },
       { "dmg": 150, "food": 200 },
-      { "dmg": 300, "gems": 2 }
+      { "dmg": 300, "stones": 3 }
     ]
   },
 

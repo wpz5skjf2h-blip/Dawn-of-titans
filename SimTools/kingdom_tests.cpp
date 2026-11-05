@@ -3257,6 +3257,7 @@ void TestRaidBoss()
 	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
 	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
 	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
 	const int64_t Day = 86400;
 	// Master prompt 12.10: Sunday and Monday, three battles a day of two minutes, tiers 1-10, four bosses, phases at
 	// 75/50/25%, damage milestones and an alliance chest by tier.
@@ -3264,7 +3265,7 @@ void TestRaidBoss()
 	KD_CHECK(B.bosses.size() == 4 && B.tiers.size() == 10 && B.leagueTier.size() == Ct.alliances.leagues.size() && B.leagueTier.back() == 10);
 	KD_CHECK(B.phases == std::vector<int>({750, 500, 250}) && B.milestones.size() == 3 && B.milestones.back().first == 300);
 	KD_CHECK(B.bosses[0].id == "behemoth" && B.bosses[0].titan == Ct.FindTitan("titan.atlas") && B.bosses[3].titan == Ct.FindTitan("titan.surtr"));
-	// Escorts and husks are battle troops; tiers grow, and so do their chests.
+	// Escorts and husks are battle troops; tiers grow, and so do their chests (few gems: 12 at most).
 	const SimContent& Sim = Battle();
 	const auto IsTroop = [&Sim](const std::string& Id) {
 		return std::any_of(Sim.troops.begin(), Sim.troops.end(), [&Id](const TroopDef& T) { return T.id == Id; });
@@ -3277,7 +3278,11 @@ void TestRaidBoss()
 	for (size_t I = 1; I < B.tiers.size(); ++I)
 	{
 		KD_CHECK(B.tiers[I].level > B.tiers[I - 1].level && B.tiers[I].stars >= B.tiers[I - 1].stars && B.tiers[I].escort >= B.tiers[I - 1].escort);
-		KD_CHECK(B.tiers[I].chest.res[GemsI] > B.tiers[I - 1].chest.res[GemsI]);
+		KD_CHECK(B.tiers[I].chest.res[GemsI] > B.tiers[I - 1].chest.res[GemsI] && B.tiers[I].chest.res[GemsI] <= 12);
+	}
+	for (const auto& M : B.milestones)
+	{
+		KD_CHECK(M.second.res[GemsI] == 0);
 	}
 
 	// T0 is a Thursday; the next event opens on Sunday 00:00 UTC. Outside an alliance there is no boss.
@@ -3313,14 +3318,16 @@ void TestRaidBoss()
 	std::string Error;
 	Kingdom M(Ct);
 	KD_CHECK(M.Load(K.Save(), Error) && M.Hash() == K.Hash() && M.Save() == K.Save() && M.PendingBoss());
-	// A battle that took 32% of the boss's health pays every milestone (gold and food times the Castle).
+	// A battle that took 32% of the boss's health pays every milestone (gold and food times the Castle, stones on top
+	// of a full portal).
 	const int64_t Gems = K.Amount(Res::Gems);
 	Reward R;
 	KD_CHECK(K.FinishBoss(0, 320, &R) == Error::None && !K.PendingBoss() && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
-	KD_CHECK(R.res[GoldI] == 200 * 5 && R.res[FoodI] == 200 * 5 && R.res[GemsI] == 2 && K.Amount(Res::Gems) == Gems + 2 && K.ArmyCount(Militia) == Army);
+	KD_CHECK(R.res[GoldI] == 200 * 5 && R.res[FoodI] == 200 * 5 && R.res[StonesI] == 3 && R.res[GemsI] == 0 && K.Amount(Res::Stones) == Stones + 3);
+	KD_CHECK(K.Amount(Res::Gems) == Gems && K.ArmyCount(Militia) == Army);
 	KD_CHECK(K.BossMyDamage() == 320 && K.BossMyBattles() == 1 && K.BossMyBest() == 320 && K.FinishBoss(0, 10, nullptr) == Error::NoAttack);
 	// A weak battle pays less; the damage of one battle is at most the boss's whole health.
-	KD_CHECK(K.StartBoss({}, 0, {}) == Error::None && K.FinishBoss(0, 60, &R) == Error::None && R.res[GoldI] == 1000 && R.res[FoodI] == 0 && R.res[GemsI] == 0);
+	KD_CHECK(K.StartBoss({}, 0, {}) == Error::None && K.FinishBoss(0, 60, &R) == Error::None && R.res[GoldI] == 1000 && R.res[FoodI] == 0 && R.res[StonesI] == 0);
 	KD_CHECK(K.StartBoss({}, 0, {}) == Error::None && K.FinishBoss(0, 5000, nullptr) == Error::None && K.BossMyDamage() == 1380 && K.BossMyBest() == 1000);
 	KD_CHECK(K.CheckBoss().error == Error::LimitReached && K.CheckBoss().timeSec == Day - Hour && K.StartBoss({}, 0, {}) == Error::LimitReached);
 	// The pool holds the members' battles and the player's.
