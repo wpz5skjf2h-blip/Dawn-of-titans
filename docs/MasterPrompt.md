@@ -406,6 +406,9 @@ All keys can be remapped. Gamepad support is [POST].
 5. **Resolution.**
    - Result screen: stars, rewards, casualties (killed and wounded), titan XP, MVP unit, damage breakdown per unit, a "Replay" button, "Share" (to alliance chat) and "Retry" (PvE).
 
+> **Implemented now (Loadout):** up to four saved loadouts (titan, squads, spells) taken on the prepare screen at a tap,
+> with each loadout's Power and a counter summary in the Army sheet (docs/M0_Notes.md §6ы).
+
 ### 4.7 Squads and formations
 
 **Squad model.**
