@@ -2169,10 +2169,7 @@ function initHud() {
 		K.allyForm = K.allyForm || { name: '', tag: '' };
 		K.allyForm[e.target.id === 'allyName' ? 'name' : 'tag'] = e.target.value;
 	});
-	$('kCastle').addEventListener('click', () => {
-		const c = K.st.b.find((b) => b.def === K.rules.castleIndex);
-		if (c) { const v = world.views.get(c.id); if (v) focusOn(v.anchor.x, v.anchor.z); select({ kind: 'b', id: c.id }); }
-	});
+	$('kCastle').addEventListener('click', () => openProfile());
 	$('kPlaceCancel').addEventListener('click', cancelPlace);
 	$('kPlaceOk').addEventListener('click', confirmPlace);
 	$('kPanel').addEventListener('click', onAct);
@@ -2217,7 +2214,10 @@ function updateHud() {
 	shards.title = 'Осколки: ' + fmt(st.res[4]) + '. Из руин; на них титаны возвышаются';
 	$('rBuilders').querySelector('span').textContent = st.builders - st.busy + '/' + st.builders;
 	$('rBuilders').title = 'Свободные строители: ' + (st.builders - st.busy) + ' из ' + st.builders;
-	$('kCastle').textContent = 'Замок ' + st.castle;
+	const castleChip = $('kCastle');
+	castleChip.querySelector('b').textContent = 'Замок ' + st.castle;
+	castleChip.querySelector('small').innerHTML = mini('ui.power') + fmtPower(st.power.total);
+	castleChip.title = 'Профиль лорда. Сила королевства: ' + fmt(st.power.total);
 	const qb = $('kQuestBtn');
 	const qs = st.quests;
 	qb.hidden = !K.rules.dailyQuests || !qs || !qs.list.length;
@@ -2503,6 +2503,9 @@ function onAct(e) {
 	case 'wp-more': K.wpAll = !K.wpAll; refreshSheet(true); break;
 	case 'quest-tab': K.questTab = el.dataset.tab; refreshSheet(true); break;
 	case 'goals': openGoals(); break;
+	case 'profile': openProfile(); break;
+	case 'profile-castle': showCastle(); break;
+	case 'profile-shop': openShop(); break;
 	case 'goal-tab': K.goalTab = el.dataset.tab; refreshSheet(true); break;
 	case 'ach-claim': claimAch(id); break;
 	case 'cal-new': claimCalendar('new', id, +el.dataset.choice || 0); break;
@@ -4161,11 +4164,84 @@ function announceWarpath(prev, st) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Kingdom Power (master prompt 7.7): the lord's profile with the number and what it is made of
+// ---------------------------------------------------------------------------------------------
+const PW_PARTS = [
+	{ k: 'b', name: 'Постройки', cls: 'pb' },
+	{ k: 't', name: 'Титаны', cls: 'pt' },
+	{ k: 'r', name: 'Исследования', cls: 'pr' },
+];
+/** Power on the HUD: whole up to 10 000, then thousands with one decimal. */
+function fmtPower(n) {
+	if (n < 1e4) return fmt(n);
+	if (n < 1e6) return (n / 1e3).toFixed(n < 1e5 ? 1 : 0).replace('.', ',').replace(/,0$/, '') + ' тыс.';
+	return fmtShort(n);
+}
+const ownsBuilding = (st, id) => st.b.some((b) => b.def === defIndex(id) && b.lv >= 1);
+/** Shows the Castle on the island and its panel. */
+function showCastle() {
+	closeSheet();
+	const c = K.st.b.find((b) => b.def === K.rules.castleIndex);
+	if (c) { const v = world.views.get(c.id); if (v) focusOn(v.anchor.x, v.anchor.z); select({ kind: 'b', id: c.id }); }
+}
+function openProfile() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const pw = st.power;
+		const R = K.rules.power || { building: 10, castleMul: 5, titans: 5, research: 25 };
+		const total = Math.max(1, pw.total);
+		const bar = '<div class="pwBar" role="img" aria-label="' + PW_PARTS.map((p) => p.name + ' ' + Math.round((100 * pw[p.k]) / total) + '%').join(', ') + '">' +
+			PW_PARTS.map((p) => (pw[p.k] > 0 ? '<i class="' + p.cls + '" style="width:' + ((100 * pw[p.k]) / total).toFixed(2) + '%"></i>' : '')).join('') + '</div>';
+		const built = st.b.filter((b) => b.lv >= 1).length;
+		const troopLv = st.army.lv.reduce((s, l) => s + Math.max(0, l - 1), 0);
+		const spellLv = st.spells.lv.reduce((s, l) => s + Math.max(0, l - 1), 0);
+		const part = (p, sub, btns) => '<div class="pwPart"><span class="dot ' + p.cls + '"></span><div class="info"><b>' + p.name + ' · ' + fmt(pw[p.k]) + '</b><span>' + sub + '</span></div>' +
+			(btns ? '<div class="row">' + btns + '</div>' : '') + '</div>';
+		// The titans that count, strongest first, and how many more there are.
+		const top = pw.top.map(([id, p]) => {
+			const t = st.titans.find((x) => x.id === id);
+			if (!t) return '';
+			const d = K.army.titans[t.def];
+			return '<div class="landCard pwTitan">' + titanIcon(t) + '<div class="info"><b>' + esc(d.name) + ' ' + starsHtml(d.stars) + '</b><span>ур. ' + t.lv + (t.asc ? ', возвышен' : '') +
+				' · реликвий ' + t.relics.length + '</span></div><b class="pwNum">' + fmt(p) + '</b></div>';
+		}).join('');
+		const rest = st.titans.length - pw.top.length;
+		const ach = achDefs().findIndex((d) => d.check === 'power');
+		let achLine = '';
+		if (ach >= 0) {
+			const d = achDefs()[ach];
+			const tier = st.ach.t[ach];
+			achLine = tier >= d.tiers.length ? '<p class="fine">Достижение «' + esc(d.name) + '»: все ступени пройдены.</p>'
+				: '<p class="fine">Достижение «' + esc(d.name) + '»: ' + TIER_NAMES[tier] + ' на ' + fmt(d.tiers[tier][0]) + ' (+' + fmt(d.tiers[tier][1]) + ' ' + iconSvg('gems') + ')' +
+					(achReady(st, ach) ? ' — награда ждёт.</p><div class="actions"><button class="btn primary" data-act="ach-claim" data-id="' + ach + '">Забрать ' + TIER_TAKE[tier] + '</button></div>' : '.</p>');
+		}
+		const lgName = st.ally.my >= 0 ? K.rules.alliances.leagues[st.ally.tier].name : st.season.league >= 0 ? K.rules.seasons.leagues[st.season.league].name : '';
+		const html = sheetTitle(icoHtml('ui.power', 'bld other'), 'Профиль лорда') +
+			'<div class="pwHead">' + mini('ui.power') + '<b>' + fmt(pw.total) + '</b><span>сила королевства</span></div>' + bar +
+			'<div class="costline"><span>Замок</span><b>' + st.castle + '</b><span>Очки победы</span><b>' + iconSvg('vp') + fmt(st.res[5]) + '</b>' +
+			(lgName ? '<span>Лига</span><b>' + esc(lgName) + '</b>' : '') + (st.ally.my >= 0 ? '<span>Альянс</span><b>[' + esc(st.ally.tag) + ']</b>' : '') + '</div>' +
+			part(PW_PARTS[0], built + ' ' + plural(built, 'постройка', 'постройки', 'построек') + ': каждая даёт ' + R.building + ' × уровень<sup>1,5</sup>, Замок — в ' + R.castleMul + ' раз больше',
+				'<button class="btn" data-act="profile-castle">Замок</button><button class="btn" data-act="profile-shop">Строить</button>') +
+			part(PW_PARTS[1], (pw.top.length ? R.titans + ' сильнейших по боевой силе с навыками и реликвиями' + (rest > 0 ? '; ещё ' + rest + ' ' + plural(rest, 'титан не входит', 'титана не входят', 'титанов не входят') : '')
+				: 'боевая сила титанов считается, когда загружены данные боя'), '<button class="btn" data-act="titans">Зал титанов</button>') +
+			(top ? '<div class="pwTop">' + top + '</div>' : '') +
+			part(PW_PARTS[2], R.research + ' за уровень: войска в Арсенале ' + troopLv + ', заклинания в Магической башне ' + spellLv,
+				(ownsBuilding(st, 'armoury') ? '<button class="btn" data-act="armoury">Арсенал</button>' : '') + (ownsBuilding(st, 'arcane_tower') ? '<button class="btn" data-act="arcane">Башня</button>' : '')) +
+			achLine +
+			'<p class="fine">Силу растят стройки и их уровни, уровни титанов, реликвии и возвышение, исследования войск и заклинаний. Формула из мастер-промта (7.7); в оригинале Dawn of Titans силы королевства не было, там рейтинг по очкам победы.</p>' +
+			'<div class="actions">' + closeBtn + '</div>';
+		return { key: ['profile', pw.total, pw.b, pw.t, pw.r, pw.top.join(';'), st.titans.length, st.castle, st.res[5], lgName, st.ally.my, ach >= 0 ? st.ach.t[ach] + ':' + achReady(st, ach) : ''].join('|'), html };
+	});
+}
+
+// ---------------------------------------------------------------------------------------------
 // Main line of goals (master prompt 9.4 and 13.5): one goal at a time, from the first harvest to Castle 9
 // ---------------------------------------------------------------------------------------------
 const GOAL_ICON = { castle: 'building.castle', army: 'ui.army', troopLevel: 'building.armoury', lands: 'land.forest', landLevel: 'land.forest', guard: 'ui.attack',
 	garrison: 'building.garrison', titans: 'building.hall_of_titans', titanLevel: 'building.hall_of_titans', relics: 'building.relic_temple',
-	skills: 'building.hall_of_titans', spells: 'building.spell_forge', spellLevel: 'building.arcane_tower', alliance: 'ui.alliance', missions: 'ui.campaign' };
+	skills: 'building.hall_of_titans', spells: 'building.spell_forge', spellLevel: 'building.arcane_tower', alliance: 'ui.alliance', missions: 'ui.campaign', power: 'ui.power' };
 const goalDefs = () => K.rules.goals || [];
 const goalDef = (i) => goalDefs()[i];
 const goalName = (g) => g.name.replace('{n}', fmt(g.n || 1));
@@ -4493,6 +4569,7 @@ function showGoal() {
 	case 'spells': case 'craft': at('spell_forge', openForge); break;
 	case 'spellLevel': at('arcane_tower', openArcane); break;
 	case 'alliance': openAlliance(); break;
+	case 'power': openProfile(); break;
 	case 'missions': case 'mission': at('adventurers_guild', () => openCampaign()); break;
 	case 'upgrade': openShop(); break;
 	default: openWorldMap(); // lands, their levels and guards, raids, wins, stars, sites, stones
@@ -5368,7 +5445,8 @@ function openTitans() {
 				if (resting) act += '<button class="btn" data-act="skip-titan" data-id="' + t.id + '" data-gems="' + t.skip + '">' + (isArmed('tr:' + t.id) ? 'Подтвердить ' : 'Разбудить ') + gemSpan(t.skip) + '</button>';
 			}
 			return '<div class="titanCard' + (target ? ' on' : '') + '"><div class="head" data-act="titan-relics" data-id="' + t.id + '">' + titanIcon(t) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
-				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + (t.sslots ? ' · навыки ' + (t.skills || []).length + '/' + t.sslots : '') + '</span>' +
+				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + (t.sslots ? ' · навыки ' + (t.skills || []).length + '/' + t.sslots : '') +
+				(t.pw ? ' · сила ' + fmt(t.pw) : '') + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
 				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
 				'<span class="meta" data-live="tr' + t.id + '"></span><div class="row">' + act + '</div></div>';
@@ -5396,7 +5474,7 @@ function openTitans() {
 			(locked.length && !fz ? '<h3>Ещё не призваны</h3><p class="fine">Новых титанов дают алтари Храма реликвий: бесплатный раз в сутки, серебряный и золотой за самоцветы. Попробовать любого титана можно в меню боя, раздел «Ваш титан».</p><div class="shopGrid">' + locked.join('') + '</div>' : '') +
 			'<div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
 		return {
-			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id) + ':' + (t.skills || []).join('.')).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
+			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id) + ':' + (t.skills || []).join('.') + ':' + t.pw).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
 			live(el) { for (const t of K.st.titans) liveTitan(el, t); },
 		};
 	});

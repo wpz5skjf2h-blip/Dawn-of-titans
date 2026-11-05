@@ -320,6 +320,9 @@ const DotIcons = (() => {
 		// Daily quests: a scroll with a green tick.
 		'ui.quest': r(9, 4, 30, 7, 3.5, K.burlap) + p('M12 8H36V40H12Z', K.cream) + r(9, 37, 30, 7, 3.5, K.burlap) +
 			line('M17 15H31M17 20H29M17 25H25', '#c9b48a', 1.6) + line('M20 31L24 35L33 24', '#3f9a4a', 3.4) + spark(40, 9, 3, K.fireY),
+		// Kingdom Power: a crowned red shield with a gold star.
+		'ui.power': p('M24 13L39 17V27C39 36 32.5 41.5 24 45C15.5 41.5 9 36 9 27V17Z', K.red) + p('M24 17L35 20V27C35 33 31 37.5 24 40.5Z', '#ef7a68', 'stroke="none"') +
+			p('M12 12L13.5 3L19 7.5L24 1.5L29 7.5L34.5 3L36 12Z', K.gold) + STAR(24, 28.5, 7.5, K.gold) + hi('M13 20V27'),
 		// The main line of goals: a banner on a pole with a gold star.
 		'ui.goal': stick('M13 44V5', K.woodD, 2.4) + c(13, 4, 2.6, K.gold) + p('M14 7H39L32.5 15.5L39 24H14Z', K.red) + spark(24, 15.5, 4.6, K.gold) + hi('M16.5 10H33'),
 		// Achievements: a medal on a ribbon with a star.

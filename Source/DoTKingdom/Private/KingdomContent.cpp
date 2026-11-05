@@ -506,7 +506,8 @@ bool ParseQuestEvent(const std::string& S, QuestEvent& Out)
 bool ParseGoalCheck(const std::string& S, GoalCheck& Out)
 {
 	static const char* const Names[] = {"castle", "build", "level", "army", "troopLevel", "lands", "landLevel", "guard", "garrison", "titans", "titanLevel",
-		"relics", "skills", "spells", "spellLevel", "alliance", "missions", "event"};
+		"relics", "skills", "spells", "spellLevel", "alliance", "missions", "event", "power"};
+	static_assert(sizeof(Names) / sizeof(Names[0]) == static_cast<size_t>(GoalCheck::Count), "a name for every goal check");
 	for (int I = 0; I < static_cast<int>(GoalCheck::Count); ++I)
 	{
 		if (S == Names[I])
@@ -1536,6 +1537,14 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			Error = "kingdom/kingdom.json: the assault needs 1 to 32 stages, known garrison troops, and boons with ids (at least boonChoices)";
 			return false;
 		}
+	}
+	if (const JsonValue* Pj = Rules.Find("power"))
+	{
+		PowerRules& P = Out.power;
+		P.building = std::max<int64_t>(0, std::min<int64_t>(100000, Pj->GetInt64("building", P.building)));
+		P.castleMul = std::max<int64_t>(0, std::min<int64_t>(100, Pj->GetInt64("castleMul", P.castleMul)));
+		P.titans = std::max(0, std::min(50, Pj->GetInt("titans", P.titans)));
+		P.research = std::max<int64_t>(0, std::min<int64_t>(100000, Pj->GetInt64("research", P.research)));
 	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;

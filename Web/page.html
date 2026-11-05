@@ -288,7 +288,28 @@ body:not(.mode-kingdom) #kov, body:not(.mode-kingdom) #khud { display: none; }
 .res.vp { color: #ffcf4a; } .res.shards { color: #9fe3ff; }
 .res span { color: var(--parch); }
 .res.full span { color: var(--valor); }
-#kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+#kCastle { font-family: var(--font-display); font-weight: 700; font-size: 16px; flex-direction: column; gap: 0; line-height: 1.02; padding: 0 11px; }
+#kCastle b { font-weight: 700; }
+#kCastle small { display: inline-flex; align-items: center; gap: 3px; font: 700 11px/1.1 var(--font-ui); color: #ffb48a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#kCastle small svg { width: 12px; height: 12px; margin: 0; vertical-align: 0; }
+/* The lord's profile: Kingdom Power, a bar of its three parts, the titans that count. */
+.pwHead { display: flex; align-items: center; gap: 10px; }
+.pwHead .gi.mini { width: 34px; height: 34px; margin: 0; vertical-align: 0; }
+.pwHead b { font-family: var(--font-display); font-size: 34px; line-height: 1; color: #ffd9a8; font-variant-numeric: tabular-nums; }
+.pwHead span { color: var(--dim); font-size: 14px; }
+.pwBar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+.pwBar i { display: block; height: 100%; }
+.pwBar i + i { border-left: 2px solid rgba(10, 13, 16, 0.7); }
+.pb { background: #d2a25a; } .pt { background: #e0664f; } .pr { background: #6fb0e8; }
+.pwPart { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.pwPart .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.pwPart .info { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.pwPart .info span { color: var(--dim); font-size: 13px; }
+.pwPart .row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pwTop { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid rgba(224, 102, 79, 0.45); }
+.landCard.pwTitan { grid-template-columns: 40px 1fr auto; padding: 4px 12px 4px 4px; }
+.landCard.pwTitan .ico { width: 40px; height: 40px; border-radius: 10px; }
+.pwNum { font-variant-numeric: tabular-nums; color: #ffb48a; font-size: 16px; }
 /* Titan skills: one line per slot. */
 ul.skills { margin: 4px 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 ul.skills li.fine { list-style: circle; }
@@ -600,7 +621,8 @@ h2.ti > .ico { width: 48px; height: 48px; border-radius: 12px; }
   .res { height: 32px; font-size: 13px; padding: 0 8px 0 4px; }
   .res svg { width: 18px; height: 18px; }
   .res small { display: none; }
-  #kCastle { font-size: 14px; }
+  #kCastle { font-size: 14px; padding: 0 8px; }
+  #kCastle small { font-size: 10px; }
   .bigbtn { min-width: 0; height: 56px; font-size: 16px; padding: 6px 4px 0; }
   .bigbtn .bt { max-width: 100%; }
   .bigbtn small { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -666,7 +688,7 @@ body.adm-perf #perf { display: block !important; }
       <button class="chip icon" id="kMenuBtn" aria-label="Меню королевства">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
       </button>
-      <div class="chip" id="kCastle">Замок 1</div>
+      <button class="chip" id="kCastle" aria-label="Профиль лорда"><b>Замок 1</b><small></small></button>
       <button class="chip" id="kQuestBtn" aria-label="Ежедневные задания" hidden></button>
       <div class="res gold" id="rGold" title="Золото"></div>
       <div class="res food" id="rFood" title="Еда"></div>

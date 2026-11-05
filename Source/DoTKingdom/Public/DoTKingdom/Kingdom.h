@@ -248,6 +248,16 @@ struct AssaultBonus
 	int titanCrit = 0;
 };
 
+/** Kingdom Power (master prompt 7.7) and where it comes from. */
+struct KingdomPowerInfo
+{
+	int64_t buildings = 0; // building × L^1.5 for each building, the Castle's castleMul times
+	int64_t titans = 0; // the strongest titans' battle Power with their relics; 0 without the battle content
+	int64_t research = 0; // per troop level from the Armoury and spell level from the Arcane Tower
+	int64_t total = 0;
+	std::vector<std::pair<int32_t, int64_t>> top; // the titans counted (id, Power), strongest first
+};
+
 /** One of today's daily quests. */
 struct DailyQuest
 {
@@ -784,6 +794,12 @@ public:
 	/** Pays the current goal and brings the next: NotReady (not done yet), Nothing (the line is done). */
 	Error ClaimGoal(Reward* Out);
 
+	// --- Kingdom Power (master prompt 7.7) ---
+	/** The kingdom's Power: its buildings, its strongest titans (with the battle content) and its research. */
+	KingdomPowerInfo KingdomPower() const;
+	/** A titan's battle Power with its relics, in the prompt's units (the simulation's / 100); 0 without the battle content. */
+	int64_t TitanPowerOf(int32_t TitanId) const;
+
 	// --- Achievements (master prompt 13.5) ---
 	// Each counts actions over the whole game (from the version that started counting) or a fact of the kingdom, and
 	// pays gems once per tier reached (bronze, silver, gold).
@@ -969,6 +985,8 @@ private:
 	void RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, SideSetup& Raiders, SideSetup& Defense, int* OutSquads, int* OutGuards,
 		int32_t* OutTitan) const;
 	int64_t ArmyPower(const SideSetup& Side) const;
+	/** A titan of the Hall as the battle takes it: stars, level, ascension and its relics' bonuses. */
+	void TitanBattleSetup(const TitanState& T, TitanSetup& Out) const;
 	/** A defense's power: its army's, with the Garrison's bonus on the city (LandId 0). */
 	int64_t DefensePower(const SideSetup& Defense, int32_t LandId) const;
 	/** Chance in permille that raiders of this power beat this defense. */

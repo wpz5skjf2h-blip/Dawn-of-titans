@@ -213,18 +213,7 @@ void Kingdom::RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, S
 	const TitanState* T = Guard && Guard != PendingTitanId ? FindTitan(Guard) : nullptr;
 	if (T && T->recoverUntil <= At)
 	{
-		const TitanType& Type = C.titans[static_cast<size_t>(T->def)];
-		Defense.titan.present = true;
-		Defense.titan.titanId = Type.id;
-		Defense.titan.stars = Type.stars;
-		Defense.titan.level = T->level;
-		Defense.titan.ascended = T->ascended;
-		// Relic and skill bonuses are in tenths of a percent, the sim takes whole percents (as the battle page does).
-		Defense.titan.atkPct = static_cast<int>(TitanBonus(T->id, RelicStat::Atk) / 10);
-		Defense.titan.hpPct = static_cast<int>(TitanBonus(T->id, RelicStat::Hp) / 10);
-		Defense.titan.armorPct = static_cast<int>(TitanBonus(T->id, RelicStat::Armor) / 10);
-		Defense.titan.critPct = static_cast<int>(TitanBonus(T->id, RelicStat::Crit) / 10);
-		Defense.titan.piercePct = static_cast<int>(TitanBonus(T->id, RelicStat::Pierce) / 10);
+		TitanBattleSetup(*T, Defense.titan);
 	}
 	if (OutSquads)
 	{
@@ -238,6 +227,22 @@ void Kingdom::RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, S
 	{
 		*OutTitan = Defense.titan.present ? T->id : 0;
 	}
+}
+
+void Kingdom::TitanBattleSetup(const TitanState& T, TitanSetup& Out) const
+{
+	const TitanType& Type = C.titans[static_cast<size_t>(T.def)];
+	Out.present = true;
+	Out.titanId = Type.id;
+	Out.stars = Type.stars;
+	Out.level = T.level;
+	Out.ascended = T.ascended;
+	// Relic and skill bonuses are in tenths of a percent, the sim takes whole percents (as the battle page does).
+	Out.atkPct = static_cast<int>(TitanBonus(T.id, RelicStat::Atk) / 10);
+	Out.hpPct = static_cast<int>(TitanBonus(T.id, RelicStat::Hp) / 10);
+	Out.armorPct = static_cast<int>(TitanBonus(T.id, RelicStat::Armor) / 10);
+	Out.critPct = static_cast<int>(TitanBonus(T.id, RelicStat::Crit) / 10);
+	Out.piercePct = static_cast<int>(TitanBonus(T.id, RelicStat::Pierce) / 10);
 }
 
 int64_t Kingdom::ArmyPower(const SideSetup& Side) const
@@ -457,5 +462,64 @@ void Kingdom::ClearGuard(int32_t TitanId)
 		GarrisonTitanId = 0;
 	}
 }
+// --- Kingdom Power (master prompt 7.7) ---
+
+int64_t Kingdom::TitanPowerOf(int32_t TitanId) const
+{
+	const TitanState* T = FindTitan(TitanId);
+	if (!T || !BattleContent)
+	{
+		return 0;
+	}
+	TitanSetup Setup;
+	TitanBattleSetup(*T, Setup);
+	// The simulation's Power is sqrt(EHP × DPS × AoE) with EHP and DPS in hundredths, so 100 times the prompt's.
+	return TitanPower(*BattleContent, Setup) / 100;
+}
+
+KingdomPowerInfo Kingdom::KingdomPower() const
+{
+	const PowerRules& P = C.power;
+	KingdomPowerInfo Out;
+	for (const Building& B : BuildingList)
+	{
+		if (B.level > 0)
+		{
+			// building × L^1.5 = sqrt(building² × L³), rounded down.
+			const uint64_t L = static_cast<uint64_t>(B.level);
+			const int64_t Each = static_cast<int64_t>(ISqrt64(static_cast<uint64_t>(P.building * P.building) * L * L * L));
+			Out.buildings += B.def == C.castle ? Each * P.castleMul : Each;
+		}
+	}
+	if (BattleContent)
+	{
+		for (const TitanState& T : TitanList)
+		{
+			Out.top.emplace_back(T.id, TitanPowerOf(T.id));
+		}
+		std::sort(Out.top.begin(), Out.top.end(), [](const std::pair<int32_t, int64_t>& A, const std::pair<int32_t, int64_t>& B) {
+			return A.second != B.second ? A.second > B.second : A.first < B.first;
+		});
+		if (Out.top.size() > static_cast<size_t>(P.titans))
+		{
+			Out.top.resize(static_cast<size_t>(P.titans));
+		}
+		for (const auto& T : Out.top)
+		{
+			Out.titans += T.second;
+		}
+	}
+	for (const int L : TroopLevels)
+	{
+		Out.research += (L - 1) * P.research;
+	}
+	for (const int L : SpellLevelList)
+	{
+		Out.research += (L - 1) * P.research;
+	}
+	Out.total = Out.buildings + Out.titans + Out.research;
+	return Out;
+}
+
 } // namespace kingdom
 } // namespace dot

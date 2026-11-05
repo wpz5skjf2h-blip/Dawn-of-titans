@@ -335,6 +335,7 @@ enum class GoalCheck : uint8_t
 	Alliance, // 1 in an alliance
 	Missions, // campaign missions won
 	Event, // actions of one kind (QuestEvent) since the goal came up
+	Power, // Kingdom Power (with the battle content)
 	Count
 };
 DOTKINGDOM_API bool ParseGoalCheck(const std::string& S, GoalCheck& Out);
@@ -467,6 +468,15 @@ struct AssaultRules
 	std::vector<int> garrison; // troops (indices) of the extra squads, in turn
 	std::vector<AssaultStage> stages;
 	std::vector<AssaultBoon> boons;
+};
+
+/** Kingdom Power (kingdom.json "power", master prompt 7.7): what a building, a titan and a research level add. */
+struct PowerRules
+{
+	int64_t building = 10; // × L^1.5 for each building
+	int64_t castleMul = 5; // the Castle counts this many times
+	int titans = 5; // the strongest titans counted
+	int64_t research = 25; // per level researched
 };
 
 /** Alliances and their leagues (kingdom.json "alliances"). */
@@ -683,6 +693,7 @@ struct KingdomContent
 	TrialRules trials;
 	WarpathRules warpath;
 	AssaultRules assault;
+	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};
