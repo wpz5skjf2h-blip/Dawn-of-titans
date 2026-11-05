@@ -17,7 +17,11 @@
 //   DotGfx.emit(kind, v3, size)                        one particle from a titan emitter (world coordinates)
 //   DotGfx.trail(kind, x, y, z)                        trail particle for projectiles (world coordinates)
 //   DotGfx.glow(hex), envMap(), tex(name)              shared textures
-//   DotGfx.update(dt, t)                               every battle frame, before rendering
+//   DotGfx.cloudHeap(out, rnd, x, y, z, w, h, n)       puffs of one cumulus heap, for puffClouds
+//   DotGfx.puffClouds(puffs, opts)                     soft 3D clouds from puffs: { mesh, update(dt, camera) } (the kingdom's sky)
+//   DotGfx.cloudShadows(mat, scene)                    drifting cloud shadows on a lit material ('battle' or 'kingdom'); tune
+//                                                      them with cloudShadowSet(scene), move them with stepCloudShadows(scene, dt)
+//   DotGfx.update(dt, t)                               every battle frame, before rendering (also moves the battle's cloud shadows)
 
 const DotGfx = (() => {
 	let T = null;
@@ -301,7 +305,7 @@ const DotGfx = (() => {
 		};
 		// Same onBeforeCompile text for every haze and look: tell three's program cache they differ.
 		mat.customProgramCacheKey = () => 'splat' + haze + lookName;
-		return mat;
+		return cloudShadows(mat, 'battle');
 	}
 	/** Soft blotches (0..1) where the ground is worn to bare earth, from world x, z. */
 	const wornAt = (x, z) => Math.max(0, Math.min(1, (0.5 + 0.28 * Math.sin(x * 0.043 + 1.7) * Math.cos(z * 0.051 + 0.4) + 0.22 * Math.sin(x * 0.11 + z * 0.083 + 2.1) * Math.cos(z * 0.13 - x * 0.02) - 0.56) / 0.26));
@@ -487,7 +491,7 @@ const DotGfx = (() => {
 			lists[pick[0]].push(it);
 		}
 		const tt = look.treeTint;
-		const mat = new T.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+		const mat = cloudShadows(new T.MeshLambertMaterial({ vertexColors: true, flatShading: true }), 'battle');
 		const o = new T.Object3D();
 		const c = new T.Color();
 		for (const k of kinds) {
@@ -546,7 +550,7 @@ const DotGfx = (() => {
 				].join('\n'));
 		};
 		swaying.push(m);
-		return m;
+		return cloudShadows(m, 'battle');
 	}
 	/**
 	 * Two crossed upright quads, base at y = 0, lit as if facing up (so they shade like the ground). Each quad has
@@ -677,7 +681,7 @@ const DotGfx = (() => {
 		const list = PROPS[look.props] ? PROPS[look.props](W, D) : [];
 		if (!list.length) return [];
 		const g = propGeometries();
-		const mat = new T.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+		const mat = cloudShadows(new T.MeshLambertMaterial({ vertexColors: true, flatShading: true }), 'battle');
 		const out = [];
 		for (const [kind, x, z, ry] of list) {
 			const m = new T.Mesh(g[kind], mat);
@@ -701,6 +705,10 @@ const DotGfx = (() => {
 		// Sky dome drawn behind everything; its horizon colour is also the fog colour. The look tints both (dark blue at night).
 		const skyTint = new T.Color(look.sky);
 		const hor = new T.Color(0xc8d9e4).multiply(skyTint);
+		// Cloud shadows over the field: faint under the night sky of the pass, strongest on the sunny steppe.
+		const cs = cloudShadowSet('battle');
+		cs.uCsK.value = lookName === 'winter' ? 0.15 : lookName === 'steppe' ? 0.46 : 0.42;
+		cs.uCsSun.value.set(-90, 160, 60).normalize();
 		const setHorizon = (col) => { if (scene) { scene.background = col.clone(); if (scene.fog) scene.fog.color.copy(col); } };
 		let dome;
 		if (art.sky_dome) {
@@ -854,6 +862,247 @@ const DotGfx = (() => {
 			group.add(s);
 			clouds.push({ s, v: 2 + rnd() * 3, x0: cx });
 		}
+	}
+
+	// --- Puff clouds ------------------------------------------------------------------------------------------
+	// Cumulus heaps drawn as soft 3D puffs: instanced lumpy spheres lit by the sun (white tops, blue-grey bellies, a
+	// silver rim against the light) whose edges fade out, sorted back to front so nearer puffs cover farther ones.
+	// Used over the kingdom's island and in the battle sky.
+	const PUFF_VS = [
+		'#include <common>',
+		'#include <fog_pars_vertex>',
+		'uniform float uTime;',
+		// Per puff: x the heap's base height (local), y how deep in the heap it sits (0 bottom, 1 top), for the shading.
+		'attribute vec2 aPuff;',
+		'varying vec3 vN;',
+		'varying vec3 vW;',
+		'varying float vBase, vAo;',
+		'void main() {',
+		'	vBase = (modelMatrix * vec4(0.0, aPuff.x, 0.0, 1.0)).y;',
+		'	vAo = aPuff.y;',
+		'	vec3 n0 = normalize(position);',
+		// Seed from the puff's own centre (local to the mesh), so the lumps stay put while the mesh drifts.
+		'	float sd = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.283;',
+		// Lumps that slowly roll, so the heaps seem to boil a little.
+		'	float d = 0.13 * sin(n0.x * 3.1 + sd + uTime * 0.13) * sin(n0.y * 2.7 + sd * 0.7) * sin(n0.z * 3.3 + uTime * 0.1)',
+		'		+ 0.07 * sin(n0.x * 7.0 + n0.z * 5.0 + sd * 1.3 + uTime * 0.07) + 0.05 * sin(n0.y * 9.0 + n0.x * 4.0 + sd);',
+		'	vec3 s = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));',
+		'	vN = normalize(mat3(modelMatrix) * (mat3(instanceMatrix) * (n0 / (s * s))));',
+		'	vec4 wp = modelMatrix * instanceMatrix * vec4(position + n0 * d, 1.0);',
+		'	vW = wp.xyz;',
+		'	vec4 mvPosition = viewMatrix * wp;',
+		'	gl_Position = projectionMatrix * mvPosition;',
+		'	#include <fog_vertex>',
+		'}',
+	].join('\n');
+	const PUFF_FS = [
+		'#include <common>',
+		'#include <fog_pars_fragment>',
+		'uniform vec3 uSun, uLit, uShade, uRim;',
+		'uniform float uOpacity, uNear, uBaseFade, uFogK;',
+		'varying vec3 vN;',
+		'varying vec3 vW;',
+		'varying float vBase, vAo;',
+		'void main() {',
+		'	vec3 n = normalize(vN);',
+		'	vec3 toCam = cameraPosition - vW;',
+		'	vec3 v = normalize(toCam);',
+		'	float facing = abs(dot(n, v));',
+		'	float sun = smoothstep(-0.6, 1.0, dot(n, uSun));',
+		'	float sky = 0.5 + 0.5 * n.y;',
+		'	vec3 col = mix(uShade, uLit, clamp(0.75 * sun + 0.45 * sky - 0.05, 0.0, 1.0));',
+		// Puffs low in a heap sit in its shadow: greyer, so the domes on top stand out.
+		'	col = mix(col, uShade * 0.9, (1.0 - vAo) * 0.45);',
+		'	col += uRim * pow(1.0 - facing, 2.5) * (0.35 + 0.65 * max(0.0, dot(-v, uSun)));',
+		'	float a = uOpacity * smoothstep(0.0, 0.55, facing) * smoothstep(uNear, uNear * 2.5, length(toCam));',
+		// The heap's flat bottom: puffs dissolve below its base, so heaps rise out of the haze instead of floating as balls.
+		'	a *= smoothstep(vBase - uBaseFade * 0.3, vBase + uBaseFade, vW.y);',
+		'	gl_FragColor = vec4(col, a);',
+		'	#include <tonemapping_fragment>',
+		'	#include <encodings_fragment>',
+		// The scene fog, scaled by uFogK: clouds keep more of their white through the haze than the ground does.
+		'	#ifdef USE_FOG',
+		'		#ifdef FOG_EXP2',
+		'			float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);',
+		'		#else',
+		'			float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);',
+		'		#endif',
+		'		gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * uFogK);',
+		'	#endif',
+		'}',
+	].join('\n');
+	let puffGeo = null;
+	/**
+	 * One cumulus heap as puffs [x, y, z, sx, sy, sz, base, ao] pushed onto `out`: a flat base row and rounder domes piled
+	 * up toward the middle. y is the heap's flat base, w its width, h how tall it towers, n how many puffs.
+	 */
+	function cloudHeap(out, rnd, x, y, z, w, h, n) {
+		const ang = rnd() * Math.PI;
+		const ca = Math.cos(ang), sa = Math.sin(ang);
+		for (let i = 0; i < n; i++) {
+			const u = (rnd() - 0.5) * 2, v = (rnd() - 0.5) * 2;
+			const edge = Math.min(1, Math.hypot(u, v * 1.6));
+			const lx = u * w * 0.5, lz = v * w * 0.28;
+			const base = i < n * 0.4;
+			const r = w * (0.15 + 0.12 * rnd()) * (1.15 - 0.55 * edge) * (base ? 1.2 : 1);
+			const up = base ? 0 : (1 - edge) * h * (0.3 + 0.7 * rnd());
+			const flat = base ? 0.5 : 0.82;
+			const ao = base ? 0.15 + 0.2 * rnd() : 0.4 + 0.6 * (h > 0 ? up / h : 1);
+			out.push([x + lx * ca - lz * sa, y + up + r * flat * 0.45, z + lx * sa + lz * ca, r * (1 + 0.25 * rnd()), r * flat, r * (0.85 + 0.3 * rnd()), y, ao]);
+		}
+		return out;
+	}
+	/**
+	 * Instanced puff clouds from puffs [x, y, z, sx, sy, sz, base?, ao?] (see cloudHeap). opts: sun (direction), lit, shade,
+	 * rim (colours), opacity, fog (false to ignore the scene fog), near (metres from the camera where puffs fade out),
+	 * baseFade (how far above a heap's base its puffs fade in), fogK (0..1, how much of the fog they take). Returns { mesh, update(dt, camera) }; call update every frame.
+	 */
+	function puffClouds(puffs, opts) {
+		opts = opts || {};
+		if (!puffGeo) puffGeo = new T.IcosahedronGeometry(1, 2);
+		const col = (h) => new T.Color(h);
+		const uniforms = T.UniformsUtils.merge([T.UniformsLib.fog, {
+			uTime: { value: 0 }, uSun: { value: new T.Vector3(-0.4, 0.85, -0.2) }, uLit: { value: col(0xffffff) }, uShade: { value: col(0xa6b4c8) },
+			uRim: { value: col(0x8a8274) }, uOpacity: { value: 1 }, uNear: { value: 12 }, uBaseFade: { value: 6 }, uFogK: { value: 1 },
+		}]);
+		if (opts.sun) uniforms.uSun.value.copy(opts.sun).normalize();
+		if (opts.lit !== undefined) uniforms.uLit.value.set(opts.lit);
+		if (opts.shade !== undefined) uniforms.uShade.value.set(opts.shade);
+		if (opts.rim !== undefined) uniforms.uRim.value.set(opts.rim);
+		if (opts.opacity !== undefined) uniforms.uOpacity.value = opts.opacity;
+		if (opts.near !== undefined) uniforms.uNear.value = opts.near;
+		if (opts.baseFade !== undefined) uniforms.uBaseFade.value = opts.baseFade;
+		if (opts.fogK !== undefined) uniforms.uFogK.value = opts.fogK;
+		const mat = new T.ShaderMaterial({ uniforms, vertexShader: PUFF_VS, fragmentShader: PUFF_FS, transparent: true, depthWrite: false, fog: opts.fog !== false });
+		// Its own geometry (sharing the sphere's buffers) for the per-puff attribute.
+		const geo = new T.BufferGeometry();
+		geo.setAttribute('position', puffGeo.attributes.position);
+		geo.setAttribute('normal', puffGeo.attributes.normal);
+		const extra = new T.InstancedBufferAttribute(new Float32Array(puffs.length * 2), 2);
+		geo.setAttribute('aPuff', extra);
+		const mesh = new T.InstancedMesh(geo, mat, puffs.length);
+		mesh.frustumCulled = false;
+		const o = new T.Object3D();
+		const order = puffs.map((p, i) => i);
+		const dist = new Float32Array(puffs.length);
+		const camLocal = new T.Vector3();
+		const lastCam = new T.Vector3(1e9, 0, 0);
+		let since = 1e9;
+		const sort = () => {
+			for (let i = 0; i < puffs.length; i++) {
+				const p = puffs[i];
+				dist[i] = (p[0] - camLocal.x) ** 2 + (p[1] - camLocal.y) ** 2 + (p[2] - camLocal.z) ** 2;
+			}
+			order.sort((a, b) => dist[b] - dist[a]);
+			order.forEach((k, i) => {
+				const p = puffs[k];
+				o.position.set(p[0], p[1], p[2]);
+				o.scale.set(p[3], p[4], p[5]);
+				o.updateMatrix();
+				mesh.setMatrixAt(i, o.matrix);
+				extra.setXY(i, p[6] !== undefined ? p[6] : -1e5, p[7] !== undefined ? p[7] : 1);
+			});
+			mesh.instanceMatrix.needsUpdate = true;
+			extra.needsUpdate = true;
+		};
+		camLocal.set(0, 1e4, 0);
+		sort();
+		return {
+			mesh,
+			update(dt, cam) {
+				uniforms.uTime.value += dt;
+				since += dt;
+				if (!cam) return;
+				mesh.updateMatrixWorld();
+				camLocal.copy(cam.position);
+				mesh.worldToLocal(camLocal);
+				// Re-sort when the camera (seen from the drifting clouds) has moved or a while has passed.
+				if (camLocal.distanceToSquared(lastCam) > 4 || since > 0.5) { lastCam.copy(camLocal); since = 0; sort(); }
+			},
+		};
+	}
+
+	// --- Cloud shadows ----------------------------------------------------------------------------------------
+	// Soft shadows of clouds drifting over the land. A tileable density map, sampled twice at two scales that drift at
+	// different speeds, dims the direct sunlight of every material patched by cloudShadows(); the ambient light stays, so
+	// shadowed ground keeps its colour. Each scene ('battle', 'kingdom') has its own set of uniforms: strength, scale, sun.
+	let csMap = null;
+	function cloudShadowMap() {
+		if (csMap) return csMap;
+		const S = 256;
+		const c = document.createElement('canvas');
+		c.width = c.height = S;
+		const g = c.getContext('2d');
+		g.fillStyle = '#000';
+		g.fillRect(0, 0, S, S);
+		const rnd = mulberry(41);
+		for (let i = 0; i < 34; i++) {
+			const x = rnd() * S, y = rnd() * S, r = 16 + rnd() * 44;
+			// Drawn nine times, shifted by the map size, so it tiles without seams.
+			for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+				const grd = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+				grd.addColorStop(0, 'rgba(255,255,255,0.5)');
+				grd.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = grd;
+				g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+			}
+		}
+		csMap = new T.CanvasTexture(c);
+		csMap.wrapS = csMap.wrapT = T.RepeatWrapping;
+		return csMap;
+	}
+	const csSets = {};
+	/** The shadow uniforms of one scene: uCsK strength (0 none), uCsScale (1 / metres the map spans), uCsSun (towards the sun), wind (m/s). */
+	function cloudShadowSet(name) {
+		return csSets[name] || (csSets[name] = { uCsMap: { value: cloudShadowMap() }, uCsOff: { value: new T.Vector4() }, uCsK: { value: 0.36 },
+			uCsScale: { value: 1 / 230 }, uCsSun: { value: new T.Vector3(0, 1, 0) }, wind: new T.Vector2(2.4, 0.9) });
+	}
+	/** Moves a scene's cloud shadows on with the wind. */
+	function stepCloudShadows(name, dt) {
+		const s = cloudShadowSet(name);
+		const o = s.uCsOff.value;
+		const k = dt * s.uCsScale.value;
+		// Each layer wraps on its own, so neither jumps.
+		o.x = (o.x - s.wind.x * k) % 1;
+		o.y = (o.y - s.wind.y * k) % 1;
+		o.z = (o.z - s.wind.x * k * 1.5) % 1;
+		o.w = (o.w - s.wind.y * k * 1.5) % 1;
+	}
+	/** Patches a lit (Lambert or Standard) material so the named scene's cloud shadows dim its sunlight; returns it. */
+	function cloudShadows(mat, name) {
+		if (mat.userData.cloudShadows) return mat;
+		mat.userData.cloudShadows = true;
+		const set = cloudShadowSet(name);
+		const prev = mat.onBeforeCompile;
+		const oldKey = mat.customProgramCacheKey;
+		const baseKey = oldKey === T.Material.prototype.customProgramCacheKey ? () => prev.toString() : () => oldKey.call(mat);
+		mat.onBeforeCompile = function (sh, r) {
+			prev.call(this, sh, r);
+			Object.assign(sh.uniforms, { uCsMap: set.uCsMap, uCsOff: set.uCsOff, uCsK: set.uCsK, uCsScale: set.uCsScale, uCsSun: set.uCsSun });
+			sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCsW;')
+				.replace('#include <project_vertex>', [
+					'#include <project_vertex>',
+					'#ifdef USE_INSTANCING',
+					'vCsW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;',
+					'#else',
+					'vCsW = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+					'#endif',
+				].join('\n'));
+			sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uCsMap;\nuniform vec4 uCsOff;\nuniform float uCsK, uCsScale;\nuniform vec3 uCsSun;\nvarying vec3 vCsW;')
+				.replace('#include <lights_fragment_end>', [
+					'#include <lights_fragment_end>',
+					'{',
+					// Cast along the sun, so a hillside, a roof and the ground under it are shaded by the same cloud.
+					'	vec2 cp = (vCsW.xz - uCsSun.xz / max(uCsSun.y, 0.2) * vCsW.y) * uCsScale;',
+					'	float cd = texture2D(uCsMap, cp + uCsOff.xy).r * 0.75 + texture2D(uCsMap, cp * 1.9 + uCsOff.zw).r * 0.45;',
+					'	float cs = 1.0 - uCsK * smoothstep(0.28, 0.58, cd);',
+					'	reflectedLight.directDiffuse *= cs;',
+					'	reflectedLight.directSpecular *= cs;',
+					'}',
+				].join('\n'));
+		};
+		mat.customProgramCacheKey = () => baseKey() + '|cs';
+		return mat;
 	}
 
 	// --- Particles --------------------------------------------------------------------------------------------
@@ -1252,7 +1501,9 @@ const DotGfx = (() => {
 		},
 		setQuality(q) { quality = q; },
 		get hasArt() { return Object.keys(art).length > 0; },
-		tex, glow, envMap, dressTerrain, surroundings, foliage, forest, rockGeometry, water, worldUv, shore, burst, emit, trail, decal,
+		/** True once init() has handed over three.js, so the builders (puffClouds and the rest) can be used. */
+		get ready() { return !!T; },
+		tex, glow, envMap, dressTerrain, surroundings, foliage, forest, rockGeometry, water, worldUv, shore, burst, emit, trail, decal, puffClouds, cloudHeap, cloudShadows, cloudShadowSet, stepCloudShadows,
 		update(dt, t) {
 			time.t = t;
 			time.u.value = t;
@@ -1260,6 +1511,7 @@ const DotGfx = (() => {
 			stepParticles(dt);
 			stepBolts(dt);
 			stepDecals(dt);
+			stepCloudShadows('battle', dt);
 			for (const c of clouds) { c.s.position.x += c.v * dt; if (c.s.position.x > c.x0 + 650) c.s.position.x -= 1300; }
 		},
 		stats: () => ({ particles: P.n, decals: decals.length, bolts: bolts.length }),
