@@ -970,7 +970,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("season").Raw("{").Key("no").Int(Km->Season()).Comma().Key("start").Int(Km->SeasonStart(Km->Season())).Comma();
 	O.Key("end").Int(Km->SeasonStart(Km->Season() + 1)).Comma().Key("league").Int(Km->League(Km->Amount(Res::Vp))).Comma();
 	O.Key("last").Raw("{").Key("no").Int(Last.season).Comma().Key("vp").Int(Last.vp).Comma().Key("league").Int(Last.league).Comma();
-	O.Key("gems").Int(Last.gems).Comma().Key("stones").Int(Last.stones).Comma();
+	O.Key("gems").Int(Last.gems).Comma().Key("stones").Int(Last.stones).Comma().Key("divine").Int(Last.divine).Comma();
 	// What an alliance league paid: the alliance, its league, place of how many, the move, the crystal.
 	O.Key("al").Int(Last.alliance).Comma().Key("tier").Int(Last.allianceTier).Comma().Key("place").Int(Last.place).Comma();
 	O.Key("size").Int(Last.groupSize).Comma().Key("move").Int(Last.move).Comma().Key("avp").Int(Last.allianceVp).Comma();
@@ -1178,6 +1178,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("]}");
 	}
 	O.Raw("],");
+	// Divine gems: held, waiting in the shrine, when one more comes, and each altar's state (the error of buying its
+	// first pick: the altar's first titan of its stars, or the first relic kind).
+	{
+		const dot::kingdom::DivineRules& Dv = C.divine;
+		O.Key("divine").Raw("{").Key("g").Int(Km->DivineGems()).Comma().Key("st").Int(Km->ShrineStored()).Comma();
+		O.Key("nx").Int(Km->ShrineNextAt()).Comma().Key("alt").Raw("[");
+		for (size_t I = 0; I < Dv.altars.size(); ++I)
+		{
+			int Pick = 0;
+			for (size_t T = 0; Dv.altars[I].titanStars > 0 && T < C.titans.size(); ++T)
+			{
+				if (C.titans[T].stars == Dv.altars[I].titanStars)
+				{
+					Pick = static_cast<int>(T);
+					break;
+				}
+			}
+			O.Raw(I ? "," : "").Int(static_cast<int>(Km->CheckDivine(static_cast<int>(I), Pick).error));
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1802,6 +1823,26 @@ EMSCRIPTEN_KEEPALIVE int dk_loadout_delete(int Slot)
 	return K() ? static_cast<int>(K()->DeleteLoadout(Slot)) : -1;
 }
 
+/** Collects the Eternal Shrine: {"err", "gems"}. */
+EMSCRIPTEN_KEEPALIVE const char* dk_shrine_collect()
+{
+	int64_t Gems = 0;
+	const dot::kingdom::Error E = K() ? K()->CollectShrine(&Gems) : dot::kingdom::Error::BadId;
+	Out O(G().Text);
+	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("gems").Int(Gems).Raw("}");
+	return G().Text.c_str();
+}
+
+/** Buys from a divine altar: a titan type (titan altars) or a relic kind: {"err", "id"} (the titan's or relic's id). */
+EMSCRIPTEN_KEEPALIVE const char* dk_divine_buy(int Altar, int Pick)
+{
+	int32_t Id = 0;
+	const dot::kingdom::Error E = K() ? K()->BuyDivine(Altar, Pick, &Id) : dot::kingdom::Error::BadId;
+	Out O(G().Text);
+	O.Raw("{").Key("err").Int(static_cast<int>(E)).Comma().Key("id").Int(Id).Raw("}");
+	return G().Text.c_str();
+}
+
 /** Sweeps a campaign mission won on 3 stars with this titan (0: none): the reward as for a battle. */
 EMSCRIPTEN_KEEPALIVE const char* dk_mission_sweep(int Act, int Mission, int TitanId)
 {
@@ -2221,14 +2262,15 @@ EMSCRIPTEN_KEEPALIVE const char* dk_alliances()
 			O.Key("you").Int(M.name.empty() ? 1 : 0).Comma().Key("at").Int(M.joinedAt).Raw("}");
 		}
 	}
-	// Rewards by place in the player's league (or the lowest one): gems, stones, crystal rarity, titan chance.
+	// Rewards by place in the player's league (or the lowest one): gems, stones, crystal rarity, titan chance and divine
+	// gems.
 	const int Tier = My >= 0 ? Km->Alliance(My).tier : 0;
 	const int Size = static_cast<int>(Km->LeagueTable(Tier).size());
 	O.Raw("],").Key("pay").Raw("[");
 	for (int P = 1; P <= Size; ++P)
 	{
 		const SeasonResult R = Km->LeagueReward(Tier, P, Size);
-		O.Raw(P > 1 ? ",[" : "[").Int(R.gems).Comma().Int(R.stones).Comma().Int(R.crystal).Comma().Int(Km->TitanChancePct(Tier, P, Size)).Raw("]");
+		O.Raw(P > 1 ? ",[" : "[").Int(R.gems).Comma().Int(R.stones).Comma().Int(R.crystal).Comma().Int(Km->TitanChancePct(Tier, P, Size)).Comma().Int(R.divine).Raw("]");
 	}
 	O.Raw("]}");
 	return Finish(S.Text);

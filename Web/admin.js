@@ -456,6 +456,20 @@ function invariants(st, add) {
 			if (new TextEncoder().encode(lo.n).length > 48 || lo.n !== lo.n.trim()) add('bad', nm + 'имя «' + lo.n + '»');
 		});
 	}
+	// Divine gems: none below zero; the shrine keeps up to its cap, nothing without a shrine; an altar is not open
+	// for fewer gems than its price.
+	const dr = rules().divine;
+	if (dr && st.divine) {
+		const dv = st.divine;
+		const built = st.b.some((x) => defs()[x.def].id === dr.building && x.lv > 0);
+		if (!(Number.isInteger(dv.g) && dv.g >= 0)) add('bad', 'Божественных самоцветов ' + dv.g);
+		if (!(dv.st >= 0 && dv.st <= dr.cap)) add('bad', 'В святилище ' + dv.st + ' из ' + dr.cap);
+		if (!built && (dv.st !== 0 || dv.nx !== 0)) add('bad', 'Святилища нет, а в нём ' + dv.st + ' (следующий в ' + dv.nx + ')');
+		if (built && (dv.st >= dr.cap ? dv.nx !== 0 : !(dv.nx > st.now && dv.nx <= st.now + Math.ceil(86400 / dr.perDay)))) {
+			add('bad', 'Святилище: ' + dv.st + ' из ' + dr.cap + ', следующий через ' + (dv.nx - st.now) + ' с');
+		}
+		dr.altars.forEach((a, i) => { if (dv.alt[i] === 0 && dv.g < a.price) add('bad', 'Алтарь «' + a.name + '» открыт при ' + dv.g + ' из ' + a.price); });
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -885,6 +899,36 @@ function runMonkey(steps, seed, keep) {
 			if (code === 0 && (st2.loadouts.length !== st.loadouts.length - 1 || loKeyOf({ loadouts: st.loadouts.filter((x, j) => j !== slot) }) !== loKeyOf(st2))) throw new Error('удаление набора ' + slot + ' сдвинуло не те');
 			return code;
 		}],
+		['собрать святилище', 2, (st) => {
+			if (!B.shrineCollect || !st.divine) return -1;
+			const res = B.shrineCollect();
+			const st2 = B.state();
+			if (res.err === 0 && (res.gems !== st.divine.st || st2.divine.g !== st.divine.g + res.gems || st2.divine.st !== 0)) {
+				throw new Error('святилище: было ' + st.divine.st + ', собрано ' + res.gems + ', божественных ' + st.divine.g + ' → ' + st2.divine.g + ', осталось ' + st2.divine.st);
+			}
+			if (res.err !== 0 && st2.divine.g !== st.divine.g) throw new Error('отказ ' + res.err + ' всё же изменил божественные самоцветы');
+			return res.err;
+		}],
+		['божественный алтарь', 1, (st) => {
+			const dr = rules().divine;
+			if (!B.divineBuy || !st.divine || !dr) return -1;
+			const ai = Math.floor(r() * dr.altars.length);
+			const a = dr.altars[ai];
+			const titans = d.K.army.titans;
+			const ok = a.titan ? titans.map((x, i) => i).filter((i) => titans[i].stars === a.titan) : d.K.army.relics.kinds.map((x, i) => i);
+			const p = r() < 0.1 ? Math.floor(r() * (titans.length + 2)) - 1 : pick(ok);
+			const res = B.divineBuy(ai, p);
+			const st2 = B.state();
+			if (res.err === 0) {
+				if (!ok.includes(p) || st2.divine.g !== st.divine.g - a.price) throw new Error('алтарь «' + a.name + '»: выбор ' + p + ', божественных ' + st.divine.g + ' → ' + st2.divine.g);
+				const t = a.titan ? st2.titans.find((x) => x.id === res.id) : null;
+				const rl = a.titan ? null : st2.relics.find((x) => x.id === res.id);
+				if (a.titan ? !t || t.def !== p || st2.titans.length !== st.titans.length + 1 : !rl || rl.kind !== p || rl.r !== a.relic || st2.relics.length !== st.relics.length + 1) {
+					throw new Error('алтарь «' + a.name + '» дал не то: ' + JSON.stringify(t || rl || res));
+				}
+			} else if (st2.divine.g !== st.divine.g || st2.titans.length !== st.titans.length || st2.relics.length !== st.relics.length) throw new Error('отказ алтаря ' + res.err + ' всё же что-то изменил');
+			return res.err;
+		}],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -1203,6 +1247,10 @@ function renderTab(tab) {
 			h += row(name + ' <b>' + fmt(st.res[i]) + '</b>', steps.map((n) => b('res-add', '+' + short(n), { r: k, n })).join('') + b('res-add', '0', { r: k, n: -1e15 }) +
 				'<input type="number" inputmode="numeric" min="0" placeholder="число" data-in="' + k + '"' + typedAttr(k) + '>' + b('res-set', '=', { r: k }), cap);
 		});
+		if (st.divine) {
+			h += row('Божественные самоцветы <b>' + fmt(st.divine.g) + '</b>', [100, 1000, 10000].map((n) => b('div-add', '+' + short(n), { n })).join('') + b('div-add', '0', { n: -1e15 }) +
+				'<input type="number" inputmode="numeric" min="0" placeholder="число" data-in="divine"' + typedAttr('divine') + '>' + b('div-set', '='), 'в святилище ' + st.divine.st);
+		}
 		h += '</div><div class="actions">' + b('res-fill', 'Заполнить хранилища и камни') + b('res-rich', 'Богатое королевство') + '</div>';
 		h += '<p class="fine">«Богатое королевство»: полные хранилища и камни, +100 000 самоцветов, +5 000 осколков. Первая правка сохраняет копию королевства (вкладка «Сохранение»).</p>';
 		h += '<h3>Город</h3><div class="admList">' +
@@ -1448,6 +1496,13 @@ function act(a, el, n, id, i) {
 		const v = Math.floor(+inputVal(el.dataset.r));
 		if (!Number.isFinite(v) || v < 0) { toast('Введите число от 0', 'bad'); break; }
 		edit((s) => { s.resources[el.dataset.r] = v; }, 'Задано: ' + fmt(v));
+		break;
+	}
+	case 'div-add': edit((s) => { s.divine = s.divine || { gems: 0, from: 0 }; s.divine.gems = Math.max(0, (s.divine.gems || 0) + n); }, n < 0 ? 'Обнулено' : 'Добавлено'); break;
+	case 'div-set': {
+		const v = Math.floor(+inputVal('divine'));
+		if (!Number.isFinite(v) || v < 0) { toast('Введите число от 0', 'bad'); break; }
+		edit((s) => { s.divine = s.divine || { gems: 0, from: 0 }; s.divine.gems = v; }, 'Задано: ' + fmt(v));
 		break;
 	}
 	case 'res-fill': edit((s, st) => { s.resources.gold = Math.max(s.resources.gold, st.cap[0]); s.resources.food = Math.max(s.resources.food, st.cap[1]); s.resources.stones = Math.max(s.resources.stones, st.cap[3]); }, 'Хранилища полны'); break;
