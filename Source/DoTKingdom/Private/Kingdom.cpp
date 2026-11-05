@@ -142,6 +142,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ResetAssault();
 	ResetBoss();
 	ResetWar();
+	ResetHelp();
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -856,15 +857,38 @@ void Kingdom::Advance(int64_t Now)
 			}
 		}
 		const int64_t TG = Regrow >= 0 ? std::max(Time, RivalList[static_cast<size_t>(Regrow)].regrow.front()) : InfT;
-		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT && TG == InfT)
+		// An ally's help on an asked timer (first on a tie: the timer may end with it).
+		size_t HelpIdx = AskList.size();
+		for (size_t I = 0; I < AskList.size(); ++I)
+		{
+			const HelpAsk& A = AskList[I];
+			if (A.got < A.max && A.next <= Now && (HelpIdx == AskList.size() || A.next < AskList[HelpIdx].next))
+			{
+				HelpIdx = I;
+			}
+		}
+		const int64_t TH = HelpIdx < AskList.size() ? std::max(Time, AskList[HelpIdx].next) : InfT;
+		if (TB == InfT && TL == InfT && TR == InfT && TS == InfT && TN == InfT && TX == InfT && TA == InfT && TG == InfT && TH == InfT)
 		{
 			break;
 		}
-		const int64_t At = std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), std::min(TA, TG)));
+		const int64_t At = std::min(std::min(std::min(std::min(TB, TL), std::min(TR, TS)), std::min(std::min(TN, TX), std::min(TA, TG))), TH);
 		ProcessQueue(At);
 		ProcessCraft(At);
 		RegenStones(At);
-		if (TX == At && TB != At && TL != At && TR != At && TS != At && TN != At)
+		if (TH == At)
+		{
+			HelpAsk& A = AskList[HelpIdx];
+			if (HelpLive(A, At))
+			{
+				ApplyHelp(A, At);
+			}
+			else
+			{
+				AskList.erase(AskList.begin() + static_cast<std::ptrdiff_t>(HelpIdx));
+			}
+		}
+		else if (TX == At && TB != At && TL != At && TR != At && TS != At && TN != At)
 		{
 			for (Building& B : BuildingList)
 			{
@@ -915,6 +939,7 @@ void Kingdom::Advance(int64_t Now)
 	ProcessQueue(Now);
 	ProcessCraft(Now);
 	RegenStones(Now);
+	PruneHelp(Now);
 	Time = Now;
 	RollQuests();
 }
@@ -1807,6 +1832,9 @@ Error Kingdom::JoinAlliance(int Index)
 	AllianceIdx = Index;
 	AllianceJoinedAt = Time;
 	ReinforceList.clear();
+	AskList.clear();
+	HelpLogList.clear();
+	HelpedNos.clear();
 	return Error::None;
 }
 
@@ -1832,6 +1860,9 @@ Error Kingdom::CreateAlliance(const std::string& Name, const std::string& Tag)
 	AllianceIdx = BaseAlliances();
 	AllianceJoinedAt = Time;
 	ReinforceList.clear();
+	AskList.clear();
+	HelpLogList.clear();
+	HelpedNos.clear();
 	return Error::None;
 }
 
@@ -1852,6 +1883,10 @@ Error Kingdom::LeaveAlliance()
 	AllianceIdx = -1;
 	AllianceJoinedAt = 0;
 	ReinforceList.clear();
+	// Helps stop with the alliance, and the members' asks go with it.
+	AskList.clear();
+	HelpLogList.clear();
+	HelpedNos.clear();
 	return Error::None;
 }
 
@@ -4879,6 +4914,411 @@ Error Kingdom::ClaimWarChest(Reward* Out)
 	return Error::None;
 }
 
+// --- Alliance help --------------------------------------------------------------------------------------
+
+namespace
+{
+constexpr uint64_t HelpSalt = 0x68656c70ULL;
+constexpr uint64_t AllyAskSalt = 0x61736b73ULL;
+constexpr size_t HelpLogMax = 20;
+constexpr size_t HelpedMax = 8 * 26;
+} // namespace
+
+void Kingdom::ResetHelp()
+{
+	AskList.clear();
+	HelpLogList.clear();
+	HelpedNos.clear();
+	GiveDay = -1;
+	GiveCount = 0;
+}
+
+int Kingdom::HelpMembers(int64_t At) const
+{
+	if (AllianceIdx < 0)
+	{
+		return 0;
+	}
+	return HasOwnAlliance() ? RecruitsAt(At) : AllianceSize(AllianceIdx);
+}
+
+int Kingdom::HelpLimit() const
+{
+	const AllianceHelpRules& H = C.allianceHelp;
+	if (!H.on || AllianceIdx < 0)
+	{
+		return 0;
+	}
+	// The Alliance Camp stands for the prompt's Alliance Hall.
+	const LevelDef* Camp = C.allianceCamp >= 0 ? BuildingLevel(C.allianceCamp) : nullptr;
+	const int Hall = Camp ? Camp->level : 0;
+	return std::max(0, std::min(std::min(H.max, H.base + Hall / H.hallStep), HelpMembers(Time)));
+}
+
+int64_t Kingdom::HelpCut(int64_t Total) const
+{
+	return std::max(C.allianceHelp.minCutSec, std::max<int64_t>(0, Total) * C.allianceHelp.cutPct / 100);
+}
+
+int64_t Kingdom::HelpEnd(HelpKind Kind, int32_t Id) const
+{
+	switch (Kind)
+	{
+	case HelpKind::Building:
+	{
+		const Building* B = Find(Id);
+		return B && B->upgrading ? B->finishAt : 0;
+	}
+	case HelpKind::Land:
+	{
+		const Land* L = FindLand(Id);
+		return L && L->upgrading ? L->finishAt : 0;
+	}
+	case HelpKind::Troop:
+		return Research >= 0 && Research == Id ? ResearchUntil : 0;
+	case HelpKind::Spell:
+		for (const SpellResearchSlot& S : SpellLabs)
+		{
+			if (S.spell == Id)
+			{
+				return S.until;
+			}
+		}
+		return 0;
+	case HelpKind::Titan:
+	{
+		const TitanState* T = FindTitan(Id);
+		return T ? T->recoverUntil : 0;
+	}
+	default:
+		return 0;
+	}
+}
+
+bool Kingdom::HelpLive(const HelpAsk& A, int64_t At) const
+{
+	// The same timer: the same start (a titan cannot fight while it recovers, so a later recovery ends after the ask's).
+	switch (A.kind)
+	{
+	case HelpKind::Building:
+	{
+		const Building* B = Find(A.id);
+		return B && B->upgrading && B->startAt == A.start && B->finishAt > At;
+	}
+	case HelpKind::Land:
+	{
+		const Land* L = FindLand(A.id);
+		return L && L->upgrading && L->startAt == A.start && L->finishAt > At;
+	}
+	case HelpKind::Troop:
+		return Research >= 0 && Research == A.id && ResearchFrom == A.start && ResearchUntil > At;
+	case HelpKind::Spell:
+		for (const SpellResearchSlot& S : SpellLabs)
+		{
+			if (S.spell == A.id && S.from == A.start)
+			{
+				return S.until > At;
+			}
+		}
+		return false;
+	case HelpKind::Titan:
+	{
+		const TitanState* T = FindTitan(A.id);
+		return T && T->recoverUntil > At && T->recoverUntil <= A.end;
+	}
+	default:
+		return false;
+	}
+}
+
+void Kingdom::SetHelpEnd(const HelpAsk& A, int64_t End)
+{
+	switch (A.kind)
+	{
+	case HelpKind::Building:
+		for (Building& B : BuildingList)
+		{
+			B.finishAt = B.id == A.id ? End : B.finishAt;
+		}
+		break;
+	case HelpKind::Land:
+		for (Land& L : LandList)
+		{
+			L.finishAt = L.id == A.id ? End : L.finishAt;
+		}
+		break;
+	case HelpKind::Troop:
+		ResearchUntil = End;
+		break;
+	case HelpKind::Spell:
+		for (SpellResearchSlot& S : SpellLabs)
+		{
+			S.until = S.spell == A.id && S.from == A.start ? End : S.until;
+		}
+		break;
+	case HelpKind::Titan:
+		for (TitanState& T : TitanList)
+		{
+			T.recoverUntil = T.id == A.id ? End : T.recoverUntil;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+int64_t Kingdom::HelpNextAt(const HelpAsk& A, int Got, int64_t From) const
+{
+	const AllianceHelpRules& H = C.allianceHelp;
+	const uint64_t Key = Mix(Mix(Seed ^ HelpSalt, static_cast<uint64_t>(A.at)), (static_cast<uint64_t>(A.kind) << 32) ^ static_cast<uint32_t>(A.id));
+	const std::array<int64_t, 2>& Span = Got == 0 ? H.firstSec : H.gapSec;
+	return From + Span[0] + static_cast<int64_t>(Mix(Key, static_cast<uint64_t>(Got)) % static_cast<uint64_t>(Span[1] - Span[0] + 1));
+}
+
+void Kingdom::ApplyHelp(HelpAsk& A, int64_t At)
+{
+	const int64_t End = HelpEnd(A.kind, A.id);
+	const int64_t Cut = std::max<int64_t>(0, std::min(HelpCut(A.total), End - At));
+	SetHelpEnd(A, End - Cut);
+	A.end = End - Cut;
+	A.cut += Cut;
+	HelpGot G;
+	G.at = At;
+	G.kind = A.kind;
+	G.id = A.id;
+	G.member = HelpMemberIndex((A.helper + A.got) % std::max(1, HelpMembers(At)));
+	G.cut = Cut;
+	HelpLogList.push_back(G);
+	if (HelpLogList.size() > HelpLogMax)
+	{
+		HelpLogList.erase(HelpLogList.begin());
+	}
+	++A.got;
+	A.next = A.got < A.max ? HelpNextAt(A, A.got, At) : 0;
+}
+
+void Kingdom::PruneHelp(int64_t At)
+{
+	AskList.erase(std::remove_if(AskList.begin(), AskList.end(), [this, At](const HelpAsk& A) { return !HelpLive(A, At); }), AskList.end());
+}
+
+std::vector<HelpAsk> Kingdom::HelpAsks() const
+{
+	std::vector<HelpAsk> Out;
+	for (const HelpAsk& A : AskList)
+	{
+		if (HelpLive(A, Time))
+		{
+			Out.push_back(A);
+		}
+	}
+	return Out;
+}
+
+Check Kingdom::CheckAskHelp(HelpKind Kind, int32_t Id) const
+{
+	Check Out;
+	bool bKnown = false;
+	switch (Kind)
+	{
+	case HelpKind::Building:
+		bKnown = Find(Id) != nullptr;
+		break;
+	case HelpKind::Land:
+		bKnown = FindLand(Id) != nullptr;
+		break;
+	case HelpKind::Troop:
+		bKnown = Id >= 0 && Id < static_cast<int32_t>(C.troops.size());
+		break;
+	case HelpKind::Spell:
+		bKnown = Id >= 0 && Id < static_cast<int32_t>(SpellLevelList.size());
+		break;
+	case HelpKind::Titan:
+		bKnown = FindTitan(Id) != nullptr;
+		break;
+	default:
+		break;
+	}
+	if (!C.allianceHelp.on || !bKnown)
+	{
+		Out.error = Error::BadId;
+	}
+	else if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (HelpEnd(Kind, Id) <= Time)
+	{
+		Out.error = Error::NotBusy;
+	}
+	else if (std::any_of(AskList.begin(), AskList.end(), [&](const HelpAsk& A) { return A.kind == Kind && A.id == Id && HelpLive(A, Time); }))
+	{
+		Out.error = Error::Nothing;
+	}
+	else if (HelpLimit() <= 0)
+	{
+		Out.error = Error::NotAllowed;
+	}
+	return Out;
+}
+
+Error Kingdom::AskHelp(HelpKind Kind, int32_t Id)
+{
+	const Check Ck = CheckAskHelp(Kind, Id);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	HelpAsk A;
+	A.kind = Kind;
+	A.id = Id;
+	A.at = Time;
+	A.end = HelpEnd(Kind, Id);
+	switch (Kind)
+	{
+	case HelpKind::Building:
+		A.start = Find(Id)->startAt;
+		break;
+	case HelpKind::Land:
+		A.start = FindLand(Id)->startAt;
+		break;
+	case HelpKind::Troop:
+		A.start = ResearchFrom;
+		break;
+	case HelpKind::Spell:
+		for (const SpellResearchSlot& S : SpellLabs)
+		{
+			A.start = S.spell == Id ? S.from : A.start;
+		}
+		break;
+	default:
+		A.start = Time; // a recovery's start is not kept: what is left counts
+		break;
+	}
+	A.total = std::max<int64_t>(1, A.end - A.start);
+	A.max = HelpLimit();
+	A.helper = static_cast<int>(Mix(Seed ^ HelpSalt, static_cast<uint64_t>(Time) * 64 + static_cast<uint64_t>(Kind)) % static_cast<uint64_t>(std::max(1, HelpMembers(Time))));
+	A.next = HelpNextAt(A, 0, Time);
+	// An earlier ask of a timer that has ended goes.
+	AskList.erase(std::remove_if(AskList.begin(), AskList.end(), [&](const HelpAsk& X) { return X.kind == Kind && X.id == Id; }), AskList.end());
+	AskList.push_back(A);
+	return Error::None;
+}
+
+std::vector<AllyAsk> Kingdom::AllyAsks() const
+{
+	std::vector<AllyAsk> Out;
+	const AllianceHelpRules& H = C.allianceHelp;
+	if (!H.on || AllianceIdx < 0)
+	{
+		return Out;
+	}
+	// Each hour the members post a few asks at moments of it; each stays open for a while.
+	const int64_t Open = static_cast<int64_t>(H.openHours) * 3600;
+	const uint64_t Key = static_cast<uint64_t>(BossKey());
+	for (int64_t Hour = FloorDiv(Time - Open, 3600); Hour <= FloorDiv(Time, 3600); ++Hour)
+	{
+		const uint64_t HH = Mix(Mix(Seed ^ AllyAskSalt, Key), static_cast<uint64_t>(Hour));
+		const int N = H.asksPerHour[0] + static_cast<int>(HH % static_cast<uint64_t>(H.asksPerHour[1] - H.asksPerHour[0] + 1));
+		for (int K = 0; K < N; ++K)
+		{
+			const uint64_t R = Mix(HH, static_cast<uint64_t>(K) + 1);
+			AllyAsk A;
+			A.no = Hour * 8 + K;
+			A.at = Hour * 3600 + static_cast<int64_t>(R % 3600);
+			A.until = A.at + Open;
+			const int Members = HelpMembers(A.at);
+			if (A.at > Time || A.until <= Time || A.at < AllianceJoinedAt || Members <= 0)
+			{
+				continue;
+			}
+			A.member = HelpMemberIndex(static_cast<int>((R >> 16) % static_cast<uint64_t>(Members)));
+			A.kind = static_cast<HelpKind>((R >> 40) % static_cast<uint64_t>(HelpKind::Count));
+			A.helped = std::find(HelpedNos.begin(), HelpedNos.end(), A.no) != HelpedNos.end();
+			Out.push_back(A);
+		}
+	}
+	std::sort(Out.begin(), Out.end(), [](const AllyAsk& X, const AllyAsk& Y) { return X.at != Y.at ? X.at < Y.at : X.no < Y.no; });
+	return Out;
+}
+
+int Kingdom::HelpsGivenToday() const
+{
+	return GiveDay == FloorDiv(Time, 86400) ? GiveCount : 0;
+}
+
+Check Kingdom::CheckGiveHelp() const
+{
+	Check Out;
+	if (!C.allianceHelp.on)
+	{
+		Out.error = Error::BadId;
+	}
+	else if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (HelpsGivenToday() >= C.allianceHelp.dailyCap)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (FloorDiv(Time, 86400) + 1) * 86400 - Time;
+	}
+	else
+	{
+		const std::vector<AllyAsk> Asks = AllyAsks();
+		if (std::none_of(Asks.begin(), Asks.end(), [](const AllyAsk& A) { return !A.helped; }))
+		{
+			Out.error = Error::Nothing;
+		}
+	}
+	return Out;
+}
+
+Error Kingdom::GiveHelp(int* Count, Reward* Out)
+{
+	if (Count)
+	{
+		*Count = 0;
+	}
+	const Check Ck = CheckGiveHelp();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const AllianceHelpRules& H = C.allianceHelp;
+	const int64_t Day = FloorDiv(Time, 86400);
+	if (GiveDay != Day)
+	{
+		GiveDay = Day;
+		GiveCount = 0;
+	}
+	// Asks that can no longer be open are forgotten.
+	const int64_t Oldest = FloorDiv(Time - static_cast<int64_t>(H.openHours) * 3600, 3600) * 8;
+	HelpedNos.erase(std::remove_if(HelpedNos.begin(), HelpedNos.end(), [Oldest](int64_t No) { return No < Oldest; }), HelpedNos.end());
+	Reward R;
+	int N = 0;
+	for (const AllyAsk& A : AllyAsks())
+	{
+		if (A.helped || GiveCount >= H.dailyCap || HelpedNos.size() >= HelpedMax)
+		{
+			continue;
+		}
+		HelpedNos.push_back(A.no);
+		++GiveCount;
+		++N;
+		PayEvent(H.reward, AllyAskSalt, static_cast<uint64_t>(A.no), R, true);
+	}
+	if (Count)
+	{
+		*Count = N;
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
 // --- Main line of goals ------------------------------------------------------------------------------
 
 int64_t Kingdom::GoalValue() const
@@ -7774,6 +8214,54 @@ std::string Kingdom::Save() const
 	W.Key("at");
 	W.Int(WarAt);
 	W.EndObject();
+	// Alliance help (optional): asks of timers still running as [kind, id, at, start, end, total, got, max, next, helper,
+	// cut], helps got as [at, kind, id, member, cut], the members' asks helped and the helps given on a day.
+	W.Key("help");
+	W.BeginObject();
+	W.Key("asks");
+	W.BeginArray();
+	for (const HelpAsk& A : HelpAsks())
+	{
+		W.BeginArray();
+		W.Int(static_cast<int>(A.kind));
+		W.Int(A.id);
+		W.Int(A.at);
+		W.Int(A.start);
+		W.Int(A.end);
+		W.Int(A.total);
+		W.Int(A.got);
+		W.Int(A.max);
+		W.Int(A.next);
+		W.Int(A.helper);
+		W.Int(A.cut);
+		W.EndArray();
+	}
+	W.EndArray();
+	W.Key("log");
+	W.BeginArray();
+	for (const HelpGot& G : HelpLogList)
+	{
+		W.BeginArray();
+		W.Int(G.at);
+		W.Int(static_cast<int>(G.kind));
+		W.Int(G.id);
+		W.Int(G.member);
+		W.Int(G.cut);
+		W.EndArray();
+	}
+	W.EndArray();
+	W.Key("helped");
+	W.BeginArray();
+	for (const int64_t No : HelpedNos)
+	{
+		W.Int(No);
+	}
+	W.EndArray();
+	W.Key("day");
+	W.Int(GiveDay);
+	W.Key("given");
+	W.Int(GiveCount);
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -8694,6 +9182,63 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		WarUsed = std::max(0, std::min(WR.attacks, WarJ->GetInt("used", 0)));
 		WarAt = std::max(-1, std::min(WR.rosterMax - 1, WarJ->GetInt("at", -1)));
 	}
+	// Alliance help (saves before it have asked for nothing).
+	ResetHelp();
+	if (const JsonValue* HelpJ = J.Find("help"); HelpJ && C.allianceHelp.on && AllianceIdx >= 0)
+	{
+		const int Kinds = static_cast<int>(HelpKind::Count);
+		if (const JsonValue* AsksJ = HelpJ->Find("asks"); AsksJ && AsksJ->IsArray())
+		{
+			for (size_t I = 0; I < AsksJ->Size() && AskList.size() < 64; ++I)
+			{
+				const JsonValue& X = (*AsksJ)[I];
+				if (!X.IsArray() || X.Size() != 11 || X[0].AsInt(-1) < 0 || X[0].AsInt(-1) >= Kinds)
+				{
+					continue;
+				}
+				HelpAsk A;
+				A.kind = static_cast<HelpKind>(X[0].AsInt(0));
+				A.id = X[1].AsInt(0);
+				A.at = X[2].AsInt64(0);
+				A.start = X[3].AsInt64(0);
+				A.end = X[4].AsInt64(0);
+				A.total = std::max<int64_t>(1, X[5].AsInt64(1));
+				A.max = std::max(0, std::min(C.allianceHelp.max, X[7].AsInt(0)));
+				A.got = std::max(0, std::min(A.max, X[6].AsInt(0)));
+				A.next = A.got < A.max ? std::max(A.at, X[8].AsInt64(0)) : 0;
+				A.helper = std::max(0, X[9].AsInt(0));
+				A.cut = std::max<int64_t>(0, X[10].AsInt64(0));
+				AskList.push_back(A);
+			}
+		}
+		if (const JsonValue* LogJ = HelpJ->Find("log"); LogJ && LogJ->IsArray())
+		{
+			for (size_t I = 0; I < LogJ->Size() && HelpLogList.size() < HelpLogMax; ++I)
+			{
+				const JsonValue& X = (*LogJ)[I];
+				if (!X.IsArray() || X.Size() != 5 || X[1].AsInt(-1) < 0 || X[1].AsInt(-1) >= Kinds)
+				{
+					continue;
+				}
+				HelpGot G;
+				G.at = X[0].AsInt64(0);
+				G.kind = static_cast<HelpKind>(X[1].AsInt(0));
+				G.id = X[2].AsInt(0);
+				G.member = std::max(0, X[3].AsInt(0));
+				G.cut = std::max<int64_t>(0, X[4].AsInt64(0));
+				HelpLogList.push_back(G);
+			}
+		}
+		if (const JsonValue* NosJ = HelpJ->Find("helped"); NosJ && NosJ->IsArray())
+		{
+			for (size_t I = 0; I < NosJ->Size() && HelpedNos.size() < HelpedMax; ++I)
+			{
+				HelpedNos.push_back((*NosJ)[I].AsInt64(0));
+			}
+		}
+		GiveDay = std::max<int64_t>(-1, HelpJ->GetInt64("day", -1));
+		GiveCount = std::max(0, std::min(C.allianceHelp.dailyCap, HelpJ->GetInt("given", 0)));
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -9194,6 +9739,42 @@ uint64_t Kingdom::Hash() const
 		{
 			W.I32(V);
 		}
+	}
+	// The same for alliance help: only once something was asked, got or given.
+	const std::vector<HelpAsk> Asks = HelpAsks();
+	if (!Asks.empty() || !HelpLogList.empty() || !HelpedNos.empty() || GiveDay >= 0)
+	{
+		W.I32(static_cast<int32_t>(Asks.size()));
+		for (const HelpAsk& A : Asks)
+		{
+			W.U8(static_cast<uint8_t>(A.kind));
+			W.I32(A.id);
+			W.I64(A.at);
+			W.I64(A.start);
+			W.I64(A.end);
+			W.I64(A.total);
+			W.I32(A.got);
+			W.I32(A.max);
+			W.I64(A.next);
+			W.I32(A.helper);
+			W.I64(A.cut);
+		}
+		W.I32(static_cast<int32_t>(HelpLogList.size()));
+		for (const HelpGot& G : HelpLogList)
+		{
+			W.I64(G.at);
+			W.U8(static_cast<uint8_t>(G.kind));
+			W.I32(G.id);
+			W.I32(G.member);
+			W.I64(G.cut);
+		}
+		W.I32(static_cast<int32_t>(HelpedNos.size()));
+		for (const int64_t No : HelpedNos)
+		{
+			W.I64(No);
+		}
+		W.I64(GiveDay);
+		W.I32(GiveCount);
 	}
 	return W.Hash();
 }

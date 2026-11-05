@@ -208,6 +208,28 @@
     ]
   },
 
+  // Alliance help (master prompt 12.4). The original has none (its allies send troops and play leagues), so all of it is
+  // the prompt's or ours. The prompt: members ask for help on construction, research and healing; each help takes 1% of
+  // the whole time off, at least 60 s; a timer gets at most 5 + ⌊Alliance Hall level ÷ 2⌋ helps, up to 15; a help given
+  // earns Honor, up to 50 helps a day. Ours: the Alliance Camp stands for the Hall; land upgrades and a titan's recovery
+  // count too (for a recovery the time left when asked is the whole); no timer gets more helps than the alliance has
+  // members besides the player; the first help comes firstSec after the ask and the next ones gapSec apart; members
+  // post asksPerHour asks each hour, open for openHours; a help given pays "reward" times the Castle level in place of
+  // Honor, which needs the Alliance Shop.
+  "allianceHelp": {
+    "base": 5,
+    "hallStep": 2,
+    "max": 15,
+    "cutPct": 1,
+    "minCutSec": 60,
+    "firstSec": [30, 120],
+    "gapSec": [20, 300],
+    "asksPerHour": [1, 3],
+    "openHours": 2,
+    "dailyCap": 50,
+    "reward": { "gold": 20, "food": 20 }
+  },
+
   // Titan Monuments and XP Arenas (the original, version 1.8, wiki Announcements): monuments replaced the old shard
   // lands; both have fixed difficulties; a monument gives "a % drop of a random Shard", an XP Arena raises the XP titans
   // gain and drops no relics or rewards ("these arenas are no walk in the park"); once battled in, each is unavailable

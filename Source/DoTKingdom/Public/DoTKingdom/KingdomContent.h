@@ -559,6 +559,24 @@ struct AllianceWarRules
 	EventReward star; // for each star of the player's attacks (gold and food times the Castle)
 };
 
+/** Alliance help (kingdom.json "allianceHelp", master prompt 12.4): allies take time off the player's timers one help
+ *  at a time, and the player helps theirs for a small reward. */
+struct AllianceHelpRules
+{
+	bool on = false; // the block is in the content
+	int base = 5; // helps one timer can get
+	int hallStep = 2; // one more for every this many Alliance Camp levels (the prompt's Alliance Hall)
+	int max = 15;
+	int cutPct = 1; // of the timer's whole time, for each help
+	int64_t minCutSec = 60;
+	std::array<int64_t, 2> firstSec{{30, 120}}; // from the ask to the first help
+	std::array<int64_t, 2> gapSec{{20, 300}}; // between two helps
+	std::array<int, 2> asksPerHour{{1, 3}}; // asks the members post each hour
+	int openHours = 2; // how long a member's ask stays open
+	int dailyCap = 50; // helps the player can give a day
+	EventReward reward; // for each help given (gold and food times the Castle)
+};
+
 /** Kingdom Power (kingdom.json "power", master prompt 7.7): what a building, a titan and a research level add. */
 struct PowerRules
 {
@@ -785,6 +803,7 @@ struct KingdomContent
 	AssaultRules assault;
 	RaidBossRules raidBoss;
 	AllianceWarRules allianceWar;
+	AllianceHelpRules allianceHelp;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

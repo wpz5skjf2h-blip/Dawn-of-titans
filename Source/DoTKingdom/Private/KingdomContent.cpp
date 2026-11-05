@@ -1757,6 +1757,48 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
+	{
+		AllianceHelpRules& H = Out.allianceHelp;
+		H.on = true;
+		H.base = std::max(0, std::min(50, Hj->GetInt("base", H.base)));
+		H.hallStep = std::max(1, std::min(20, Hj->GetInt("hallStep", H.hallStep)));
+		H.max = std::max(H.base, std::min(50, Hj->GetInt("max", H.max)));
+		H.cutPct = std::max(0, std::min(100, Hj->GetInt("cutPct", H.cutPct)));
+		H.minCutSec = std::max<int64_t>(0, std::min<int64_t>(86400, Hj->GetInt64("minCutSec", H.minCutSec)));
+		H.openHours = std::max(1, std::min(24, Hj->GetInt("openHours", H.openHours)));
+		H.dailyCap = std::max(0, std::min(1000, Hj->GetInt("dailyCap", H.dailyCap)));
+		bool bOk = true;
+		const auto ReadSpan = [&bOk](const JsonValue* J, int64_t Lo, int64_t Hi, int64_t& OutLo, int64_t& OutHi) {
+			if (!J)
+			{
+				return;
+			}
+			bOk = bOk && J->IsArray() && J->Size() == 2;
+			if (bOk)
+			{
+				OutLo = (*J)[0].AsInt64(-1);
+				OutHi = (*J)[1].AsInt64(-1);
+				bOk = OutLo >= Lo && OutLo <= OutHi && OutHi <= Hi;
+			}
+		};
+		ReadSpan(Hj->Find("firstSec"), 0, 86400, H.firstSec[0], H.firstSec[1]);
+		ReadSpan(Hj->Find("gapSec"), 1, 86400, H.gapSec[0], H.gapSec[1]);
+		int64_t AskLo = H.asksPerHour[0];
+		int64_t AskHi = H.asksPerHour[1];
+		ReadSpan(Hj->Find("asksPerHour"), 0, 8, AskLo, AskHi);
+		H.asksPerHour = {{static_cast<int>(AskLo), static_cast<int>(AskHi)}};
+		if (const JsonValue* Rw = Hj->Find("reward"))
+		{
+			ReadCost(Rw, H.reward.res);
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: alliance help needs firstSec, gapSec and asksPerHour as [low, high] pairs "
+				"(0-86400 s, 1-86400 s, 0-8)";
+			return false;
+		}
+	}
 	if (const JsonValue* Pj = Rules.Find("power"))
 	{
 		PowerRules& P = Out.power;

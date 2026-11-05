@@ -291,6 +291,54 @@ struct WarInfo
 	int myStars = 0; // the stars of the player's attacks, each counted in full
 };
 
+/** What a timer the alliance helps with is (master prompt 12.4). */
+enum class HelpKind : uint8_t
+{
+	Building, // a construction or an upgrade (id: the building)
+	Land, // a land upgrade (id: the land)
+	Troop, // Armoury research (id: the troop)
+	Spell, // Arcane Tower research (id: the spell)
+	Titan, // a titan's recovery (id: the titan)
+	Count
+};
+
+/** A timer the player asked the alliance to help with, and how far the help has gone. */
+struct HelpAsk
+{
+	HelpKind kind = HelpKind::Building;
+	int32_t id = 0;
+	int64_t at = 0; // asked at
+	int64_t start = 0; // the timer's start (a titan's recovery: the ask)
+	int64_t end = 0; // its end as the helps have left it
+	int64_t total = 0; // the whole time each help takes its share of
+	int got = 0; // helps so far
+	int max = 0; // helps it can get
+	int64_t next = 0; // when the next help comes (once got < max)
+	int helper = 0; // the first helper (index into Members()); the next ones follow in turn
+	int64_t cut = 0; // time taken off so far
+};
+
+/** A help the player got: when, on what, from whom (index into Members()) and the time it took off. */
+struct HelpGot
+{
+	int64_t at = 0;
+	HelpKind kind = HelpKind::Building;
+	int32_t id = 0;
+	int member = 0;
+	int64_t cut = 0;
+};
+
+/** A member's ask the player can help with. */
+struct AllyAsk
+{
+	int64_t no = 0; // the hour it was posted × 8 + its place in that hour
+	int member = 0; // index into Members()
+	HelpKind kind = HelpKind::Building; // what the member is waiting for
+	int64_t at = 0; // posted
+	int64_t until = 0; // open until
+	bool helped = false;
+};
+
 /** Kingdom Power (master prompt 7.7) and where it comes from. */
 struct KingdomPowerInfo
 {
@@ -980,6 +1028,33 @@ public:
 	/** The base the pending war attack is on (-1: none). */
 	int WarBattleBase() const { return Pending == WarPending ? WarAt : -1; }
 
+	// --- Alliance help (master prompt 12.4) ---
+	// The player asks the alliance to help with a running timer; computer members answer one by one, and each help takes
+	// a share of the timer's whole time off (at least a minimum). A timer gets a few helps (more with the Alliance Camp),
+	// never more than the alliance has members besides the player. The members ask too: helping them pays a little.
+	/** Helps a timer asked for now could get: the content's base, more with the Alliance Camp, up to its maximum and to
+	 *  the members (0 outside an alliance). */
+	int HelpLimit() const;
+	/** The time one help takes off a timer of this whole length. */
+	int64_t HelpCut(int64_t Total) const;
+	/** The asks of timers still running, in the order they were made (finished ones are dropped). */
+	std::vector<HelpAsk> HelpAsks() const;
+	/** The helps got lately, oldest first (the last 20). */
+	const std::vector<HelpGot>& HelpLog() const { return HelpLogList; }
+	/** BadId (no help in the content, or no such timer), NoAlliance, NotBusy (the timer is not running), Nothing (already
+	 *  asked), NotAllowed (no member to help: an own alliance without recruits). */
+	Check CheckAskHelp(HelpKind Kind, int32_t Id) const;
+	Error AskHelp(HelpKind Kind, int32_t Id);
+	/** The members' asks open now, oldest first. */
+	std::vector<AllyAsk> AllyAsks() const;
+	/** Helps the player gave today (UTC). */
+	int HelpsGivenToday() const;
+	/** BadId (no help in the content), NoAlliance, LimitReached (the day's helps given: timeSec to the next day), Nothing
+	 *  (no open ask the player has not helped with). */
+	Check CheckGiveHelp() const;
+	/** Helps every open ask not helped yet, up to the day's limit; each pays the content's reward. Count: how many. */
+	Error GiveHelp(int* Count, Reward* Out);
+
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
 	// state counts what is there now; an event goal counts actions done while it is the current goal.
@@ -1384,6 +1459,30 @@ private:
 	int64_t WarUsedNo = -1;
 	int WarUsed = 0;
 	int WarAt = -1;
+	// Alliance help: the player's asks (the raw list: finished timers are dropped when time moves on), the helps got
+	// lately, the members' asks helped (by no) and the helps given on a day
+	std::vector<HelpAsk> AskList;
+	std::vector<HelpGot> HelpLogList;
+	std::vector<int64_t> HelpedNos;
+	int64_t GiveDay = -1;
+	int GiveCount = 0;
+	/** Whether an ask's timer is still the one asked for and runs past At. */
+	bool HelpLive(const HelpAsk& A, int64_t At) const;
+	/** The timer's end now (0 if it is not running). */
+	int64_t HelpEnd(HelpKind Kind, int32_t Id) const;
+	/** Moves the timer's end to End. */
+	void SetHelpEnd(const HelpAsk& A, int64_t End);
+	/** The alliance's members other than the player at a moment (computer members, recruits of an own alliance). */
+	int HelpMembers(int64_t At) const;
+	/** The index into Members() of a computer member (0-based among them). */
+	int HelpMemberIndex(int Member) const { return Member + (HasOwnAlliance() ? 1 : 0); }
+	/** When help number Got of an ask comes (Got 0: the first). */
+	int64_t HelpNextAt(const HelpAsk& A, int Got, int64_t From) const;
+	/** Applies the help an ask gets at At. */
+	void ApplyHelp(HelpAsk& A, int64_t At);
+	/** Drops the asks whose timers have ended by At. */
+	void PruneHelp(int64_t At);
+	void ResetHelp();
 	// Daily Trials: the day of the attempts, attempts by trial that day, best stars by trial (2 bits a tier), the
 	// pending battle's trial and tier
 	int64_t DailyDay = -1;
