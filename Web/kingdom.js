@@ -2571,7 +2571,7 @@ function onAct(e) {
 	case 'trial-ms': claimTrial('ms', id); break;
 	case 'trial-rank': claimTrial('rank'); break;
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
-	case 'camp-mode': openCampaign(K.campAct | 0, id === 1); break;
+	case 'camp-mode': openCampaign(campaignAct(K.st, id === 1), id === 1); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
 	case 'mission-sweep': sweepMission(Math.floor(id / 100), id % 100); break;
 	case 'camp-titan': K.campTitan = id; refreshSheet(true); break;
@@ -3476,12 +3476,15 @@ function campaignNote(st) {
 	const c = st.campaign && st.campaign[Math.max(0, campaignAct(st))];
 	return c ? '★ ' + c.total + ' из ' + c.stars.length * 3 : '';
 }
-/** The act to show first: one with a mission to play, else the last open one. */
-function campaignAct(st) {
-	const a = campaignOpen(st);
+/** The act to show first: one with a mission to play, else the last open one (on Heroic, of its own missions). */
+function campaignAct(st, hero) {
+	const a = hero ? heroicOpen(st) : campaignOpen(st);
 	if (a >= 0) return a;
 	let last = 0;
-	(st.campaign || []).forEach((c, i) => { if (c.err[0] !== E.Locked && c.err[0] !== E.NeedRequirement) last = i; });
+	(st.campaign || []).forEach((c0, i) => {
+		const c = hero ? c0.heroic : c0;
+		if (c && c.err[0] !== E.Locked && c.err[0] !== E.NeedRequirement) last = i;
+	});
 	return last;
 }
 function chestText(ch) {

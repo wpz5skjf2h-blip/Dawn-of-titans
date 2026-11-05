@@ -1417,6 +1417,11 @@ About 60% of soft-currency income comes from production and about 40% from battl
 
 **Difficulties:** Normal; **Heroic** (unlocked when an Act is cleared: enemy Power ×1.6, new modifiers, rewards ×2, higher gear rarity); Nightmare [POST].
 
+> **Implemented now (Heroic):** an act won to its last mission opens again on Heroic from Keep (Castle) 16: Warlord AI,
+> +25% to the enemy squads and titan, the titan 8 levels higher, one Titan Spire modifier per mission, mission levels
+> +3; the first win pays ×2, repeat loot ×2 with relics a star better, and Heroic stars open the act's chests again
+> (×2 resources, relic or titan a star better) (docs/M0_Notes.md §6ю).
+
 **Scripted triggers (data-driven).**
 - *Conditions:* time elapsed, unit count, HP threshold, area entered, objective state, spell cast, titan defeated.
 - *Actions:* spawn units, play a dialogue bark, change weather, apply a modifier, collapse a bridge, update an objective, camera hint.

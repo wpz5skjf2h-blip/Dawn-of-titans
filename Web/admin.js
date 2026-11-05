@@ -457,7 +457,7 @@ function invariants(st, add) {
 			const actDone = c.stars[c.stars.length - 1] > 0;
 			const castle = Math.max(cr.acts[a].castle, her.castle);
 			h.err.forEach((e, m) => {
-				const open = e === E.None || e === E.NeedStones;
+				const open = e === 0 || e === 15; // None, NeedStones
 				if (open && (!actDone || st.castle < castle || (m > 0 && h.stars[m - 1] === 0))) add('bad', nm + 'миссия ' + (m + 1) + ' открыта: акт ' + (actDone ? 'пройден' : 'не пройден') + ', Замок ' + st.castle + ', прошлая ★' + (m ? h.stars[m - 1] : '-'));
 				if (h.stars[m] > 0 && m > 0 && h.stars[m - 1] === 0) add('bad', nm + 'миссия ' + (m + 1) + ' пройдена раньше ' + m + '-й');
 			});
