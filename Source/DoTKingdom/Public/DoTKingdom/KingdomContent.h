@@ -575,6 +575,12 @@ struct AllianceWarRules
 
 /** Alliance help (kingdom.json "allianceHelp", master prompt 12.4): allies take time off the player's timers one help
  *  at a time, and the player helps theirs for a small reward. */
+/** Army loadouts (kingdom.json "loadouts"): how many a kingdom keeps (0: none). */
+struct LoadoutRules
+{
+	int max = 0;
+};
+
 struct AllianceHelpRules
 {
 	bool on = false; // the block is in the content
@@ -818,6 +824,7 @@ struct KingdomContent
 	RaidBossRules raidBoss;
 	AllianceWarRules allianceWar;
 	AllianceHelpRules allianceHelp;
+	LoadoutRules loadouts;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
