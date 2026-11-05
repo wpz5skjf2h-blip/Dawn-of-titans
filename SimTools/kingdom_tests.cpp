@@ -1384,6 +1384,93 @@ void TestCampaignSweep()
 	KD_CHECK(A.Load(Rich, Error) && B.Load(Rich, Error) && A.SweepMission(0, 0, 0, nullptr) == Error::None && B.SweepMission(0, 0, 0, nullptr) == Error::None && A.Hash() == B.Hash());
 }
 
+void TestDivine()
+{
+	const KingdomContent& Ct = Content();
+	const DivineRules& D = Ct.divine;
+	KD_CHECK(D.building == Ct.FindBuilding("eternal_shrine") && D.perDay == 11 && D.cap == 77 && D.altars.size() == 4);
+	KD_CHECK(D.altars[0].titanStars == 4 && D.altars[2].relicRarity == 5 && D.altars[0].price > D.altars[2].price);
+	const int Thor = Ct.FindTitan("titan.thor");
+	const int Surtr = Ct.FindTitan("titan.surtr");
+	KD_CHECK(Thor >= 0 && Surtr >= 0 && Ct.titans[static_cast<size_t>(Thor)].stars == 4 && !Ct.relicKinds.empty());
+	const int64_t Day = 86400;
+	Kingdom K(Ct);
+	K.NewGame(T0, 71);
+	const uint64_t H0 = K.Hash();
+	KD_CHECK(K.DivineGems() == 0 && K.ShrineStored() == 0 && K.ShrineNextAt() == 0);
+	KD_CHECK(K.CollectShrine() == Error::NeedRequirement && K.Hash() == H0);
+	KD_CHECK(K.CheckDivine(0, Thor).error == Error::NeedRequirement && K.CheckDivine(0, Thor).missing.building == D.building);
+	KD_CHECK(K.CheckDivine(0, Surtr).error == Error::BadId && K.CheckDivine(4, Thor).error == Error::BadId && K.CheckDivine(-1, 0).error == Error::BadId);
+	KD_CHECK(K.CheckDivine(2, static_cast<int>(Ct.relicKinds.size())).error == Error::BadId);
+	KD_CHECK(K.Save().find("\"divine\":{\"gems\":0,\"from\":0}") != std::string::npos);
+
+	// A shrine being built fills from the moment it stands: 11 a day, a gem every 86 400 / 11 s (rounded up).
+	std::string Error;
+	Kingdom B(Ct);
+	const std::string Building = Replace(K.Save(), "\"buildings\":[", "\"buildings\":[{\"id\":930,\"def\":\"eternal_shrine\",\"level\":0,\"x\":30,\"y\":36,\"upgrading\":true,\"startAt\":" +
+		std::to_string(T0) + ",\"finishAt\":" + std::to_string(T0 + 7200) + "},");
+	KD_CHECK(B.Load(Building, Error) && B.ShrineStored() == 0 && B.ShrineNextAt() == 0);
+	B.Advance(T0 + 7200);
+	KD_CHECK(B.ShrineStored() == 0 && B.ShrineNextAt() == T0 + 7200 + 7855 && B.Hash() != H0);
+	B.Advance(T0 + 7200 + 7854);
+	KD_CHECK(B.ShrineStored() == 0 && B.CollectShrine() == Error::Nothing);
+	B.Advance(T0 + 7200 + 7855);
+	KD_CHECK(B.ShrineStored() == 1);
+	B.Advance(T0 + 7200 + Day);
+	int64_t Got = 0;
+	KD_CHECK(B.ShrineStored() == 11 && B.CollectShrine(&Got) == Error::None && Got == 11 && B.DivineGems() == 11 && B.ShrineStored() == 0);
+	// A part of a gem made before a collect stays: the next one comes as if nobody had collected.
+	B.Advance(T0 + 7200 + Day + 10000);
+	KD_CHECK(B.ShrineStored() == 1 && B.CollectShrine(&Got) == Error::None && Got == 1 && B.ShrineStored() == 0);
+	KD_CHECK(B.ShrineNextAt() == T0 + 7200 + Day + 15710);
+	// Full at 77: it stops filling until collected and starts again then.
+	B.Advance(T0 + 30 * Day);
+	KD_CHECK(B.ShrineStored() == 77 && B.ShrineNextAt() == 0 && B.CollectShrine(&Got) == Error::None && Got == 77 && B.DivineGems() == 89);
+	KD_CHECK(B.ShrineStored() == 0 && B.ShrineNextAt() == T0 + 30 * Day + 7855);
+	const std::string Saved = B.Save();
+	KD_CHECK(Saved.find("\"divine\":{\"gems\":89,\"from\":" + std::to_string(T0 + 30 * Day) + "}") != std::string::npos);
+	Kingdom R(Ct);
+	KD_CHECK(R.Load(Saved, Error) && R.Hash() == B.Hash() && R.Save() == Saved && R.DivineGems() == 89);
+	// A shrine in a save from before divine gems starts filling at the load.
+	const size_t At = Saved.find("\"divine\":{");
+	const std::string Old = Saved.substr(0, At) + Saved.substr(Saved.find('}', At) + 2);
+	KD_CHECK(Old.find("\"divine\"") == std::string::npos && R.Load(Old, Error) && R.DivineGems() == 0 && R.ShrineNextAt() == T0 + 30 * Day + 7855);
+
+	// The altars: a titan of the player's choice among the altar's stars, a relic of the chosen kind at its rarity.
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(Replace(Saved, "\"divine\":{\"gems\":89", "\"divine\":{\"gems\":2500"), Error) && S.DivineGems() == 2500);
+	const size_t Titans = S.Titans().size();
+	int32_t Id = 0;
+	KD_CHECK(S.CheckDivine(0, Surtr).error == Error::BadId && S.CheckDivine(1, Thor).error == Error::BadId);
+	KD_CHECK(S.BuyDivine(0, Thor, &Id) == Error::None && Id != 0 && S.DivineGems() == 100 && S.Titans().size() == Titans + 1);
+	KD_CHECK(S.FindTitan(Id)->def == Thor && S.FindTitan(Id)->level == 1 && !S.FindTitan(Id)->skills.empty());
+	KD_CHECK(S.CheckDivine(3, 0).error == Error::NotEnough && S.BuyDivine(3, 0, &Id) == Error::NotEnough && Id == 0 && S.DivineGems() == 100);
+	Kingdom Rich(Ct);
+	KD_CHECK(Rich.Load(Replace(Saved, "\"divine\":{\"gems\":89", "\"divine\":{\"gems\":1000000"), Error));
+	const int Kind = static_cast<int>(Ct.relicKinds.size()) - 1;
+	KD_CHECK(Rich.BuyDivine(2, Kind, &Id) == Error::None && Rich.FindRelic(Id)->kind == Kind && Rich.FindRelic(Id)->rarity == 5);
+	KD_CHECK(Rich.DivineGems() == 1000000 - D.altars[2].price);
+	// The Hall of Titans and the relic store have room limits.
+	while (Rich.CheckDivine(1, Surtr).error == Error::None)
+	{
+		KD_CHECK(Rich.BuyDivine(1, Surtr, &Id) == Error::None && Rich.FindTitan(Id)->def == Surtr);
+	}
+	const int64_t Left = Rich.DivineGems();
+	KD_CHECK(Rich.CheckDivine(1, Surtr).error == Error::RosterFull && static_cast<int>(Rich.Titans().size()) == Rich.TitanCapacity());
+	KD_CHECK(Rich.BuyDivine(0, Thor, &Id) == Error::RosterFull && Rich.DivineGems() == Left);
+	while (Rich.CheckDivine(3, 0).error == Error::None)
+	{
+		KD_CHECK(Rich.BuyDivine(3, 0, &Id) == Error::None && Rich.FindRelic(Id)->rarity == 4);
+	}
+	KD_CHECK(Rich.CheckDivine(3, 0).error == Error::InventoryFull && static_cast<int>(Rich.Relics().size()) == Ct.maxRelics);
+
+	// The top three alliance leagues pay divine gems, less by place like gems; the others none.
+	const std::vector<AllianceLeagueDef>& Lg = Ct.alliances.leagues;
+	KD_CHECK(Lg.size() == 6 && Lg[0].divine == 0 && Lg[2].divine == 0 && Lg[3].divine == 40 && Lg[5].divine == 150);
+	KD_CHECK(K.LeagueReward(5, 1, 8).divine == 150 && K.LeagueReward(5, 3, 8).divine == 120 && K.LeagueReward(5, 8, 8).divine == 45);
+	KD_CHECK(K.LeagueReward(0, 1, 8).divine == 0 && K.LeagueReward(3, 8, 8).divine == 12);
+}
+
 void TestLoadouts()
 {
 	const KingdomContent& Ct = Content();
@@ -3033,6 +3120,7 @@ void TestAlliances()
 	KD_CHECK((R.crystalTitan != 0) + (R.crystalRelic != 0) + (R.crystalGems != 0) == 1);
 	KD_CHECK(L.Titans().size() == Titans + (R.crystalTitan ? 1 : 0) && L.Relics().size() == Relics + (R.crystalRelic ? 1 : 0));
 	KD_CHECK(L.Amount(Res::Gems) == Gems + R.gems + R.crystalGems); // the personal league does not pay as well
+	KD_CHECK(R.divine == Expect.divine && L.DivineGems() == R.divine);
 	if (R.crystalTitan)
 	{
 		KD_CHECK(Ct.titans[static_cast<size_t>(L.FindTitan(R.crystalTitan)->def)].stars == R.crystal);
@@ -4406,6 +4494,7 @@ int main()
 		{"Campaigns", TestCampaigns},
 		{"CampaignSweep", TestCampaignSweep},
 		{"Loadouts", TestLoadouts},
+		{"Divine", TestDivine},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},

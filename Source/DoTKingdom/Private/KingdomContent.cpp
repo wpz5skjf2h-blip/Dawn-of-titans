@@ -1196,6 +1196,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				}
 				L.gems = std::max<int64_t>(0, J.GetInt64("gems", 0));
 				L.stones = std::max<int64_t>(0, J.GetInt64("stones", 0));
+				L.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
 				L.crystal = std::max(0, std::min(4, J.GetInt("crystal", 0)));
 				if (const JsonValue* P = J.Find("titanPct"))
 				{
@@ -1782,6 +1783,34 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 	if (const JsonValue* Lj = Rules.Find("loadouts"))
 	{
 		Out.loadouts.max = std::max(0, std::min(20, Lj->GetInt("max", 0)));
+	}
+	if (const JsonValue* Dj = Rules.Find("divine"))
+	{
+		DivineRules& D = Out.divine;
+		D.building = Out.FindBuilding(Dj->GetString("building", "eternal_shrine"));
+		D.perDay = std::max<int64_t>(0, std::min<int64_t>(100000, Dj->GetInt64("perDay", 0)));
+		D.cap = std::max<int64_t>(D.perDay, std::min<int64_t>(10000000, Dj->GetInt64("cap", D.perDay)));
+		if (const JsonValue* A = Dj->Find("altars"))
+		{
+			for (size_t I = 0; I < A->Size(); ++I)
+			{
+				const JsonValue& J = (*A)[I];
+				DivineAltar Alt;
+				Alt.id = J.GetString("id");
+				Alt.name = J.GetString("name", Alt.id);
+				Alt.titanStars = std::max(0, std::min(4, J.GetInt("titan", 0)));
+				Alt.relicRarity = Alt.titanStars > 0 ? 0 : std::max(0, std::min(5, J.GetInt("relic", 0)));
+				Alt.price = std::max<int64_t>(1, J.GetInt64("price", 1));
+				if (Alt.titanStars > 0 || Alt.relicRarity > 0)
+				{
+					D.altars.push_back(Alt);
+				}
+			}
+		}
+		if (D.building < 0)
+		{
+			D = DivineRules();
+		}
 	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{

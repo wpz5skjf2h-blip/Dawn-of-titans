@@ -169,16 +169,17 @@
     "reinforceCooldownSec": 1200,
     "reinforceArriveSec": 60,
     // memberVp: weekly VP of a computer member, by its alliance's strength; joinVp of an alliance grows with its
-    // strength (1.5 × the strength, rounded down to 500, from joinVp up to joinVpMax); gems and stones are for first
-    // place; titanPct is the crystal's titan chance for first and last place; troopLevel is what allies send.
+    // strength (1.5 × the strength, rounded down to 500, from joinVp up to joinVpMax); gems, stones and divine gems
+    // are for first place; titanPct is the crystal's titan chance for first and last place; troopLevel is what allies
+    // send.
     "joinVpMax": 8000,
     "leagues": [
       { "id": "bronze",   "name": "Бронзовая лига",  "memberVp": [150, 500],   "gems": 100, "stones": 9,  "crystal": 1, "titanPct": [30, 10], "troopLevel": 3 },
       { "id": "silver",   "name": "Серебряная лига", "memberVp": [300, 900],   "gems": 150, "stones": 12, "crystal": 2, "titanPct": [25, 8],  "troopLevel": 5 },
       { "id": "gold",     "name": "Золотая лига",    "memberVp": [600, 1600],  "gems": 220, "stones": 15, "crystal": 2, "titanPct": [20, 6],  "troopLevel": 7 },
-      { "id": "platinum", "name": "Платиновая лига", "memberVp": [1200, 3000], "gems": 320, "stones": 18, "crystal": 3, "titanPct": [15, 5],  "troopLevel": 9 },
-      { "id": "diamond",  "name": "Алмазная лига",   "memberVp": [2500, 6000], "gems": 450, "stones": 24, "crystal": 3, "titanPct": [12, 4],  "troopLevel": 12 },
-      { "id": "titan",    "name": "Лига титанов",    "memberVp": [5000, 12000],"gems": 650, "stones": 30, "crystal": 4, "titanPct": [8, 2],   "troopLevel": 15 }
+      { "id": "platinum", "name": "Платиновая лига", "memberVp": [1200, 3000], "gems": 320, "stones": 18, "divine": 40, "crystal": 3, "titanPct": [15, 5],  "troopLevel": 9 },
+      { "id": "diamond",  "name": "Алмазная лига",   "memberVp": [2500, 6000], "gems": 450, "stones": 24, "divine": 80, "crystal": 3, "titanPct": [12, 4],  "troopLevel": 12 },
+      { "id": "titan",    "name": "Лига титанов",    "memberVp": [5000, 12000],"gems": 650, "stones": 30, "divine": 150, "crystal": 4, "titanPct": [8, 2],   "troopLevel": 15 }
     ],
     // Computer alliances: name and tag. There are groupSize of them per league at the start.
     "names": [
@@ -975,5 +976,22 @@
   ],
   // Army loadouts (master prompt 4.6, S13): saved armies (a titan, squads, spells) the prepare screen fills in at a tap.
   "loadouts": { "max": 4 },
+  // Divine gems. From the original: the Eternal Shrine is a decoration that gives 11 divine gems a day (wiki,
+  // Buildings); the Divine Shrine's altars sell 5-star relics for 9 000 and divine titans for 12 000-15 000 divine
+  // gems, each from its own altar (blog, 2020); the top leagues and events pay divine gems too (patch notes 1.32).
+  // Ours: the shrine keeps up to "cap" until collected; the top three alliance leagues pay them (alliances.leagues
+  // "divine", for first place, less by place as gems); the altars sell a titan of the player's choice among those of
+  // "titan" stars, or a relic of the player's choice of kind at "relic" rarity; the prices are ours.
+  "divine": {
+    "building": "eternal_shrine",
+    "perDay": 11,
+    "cap": 77,
+    "altars": [
+      { "id": "titan4", "name": "Алтарь божественного титана", "titan": 4, "price": 2400 },
+      { "id": "titan3", "name": "Алтарь героя", "titan": 3, "price": 800 },
+      { "id": "relic5", "name": "Алтарь древней реликвии", "relic": 5, "price": 1500 },
+      { "id": "relic4", "name": "Алтарь редкой реликвии", "relic": 4, "price": 450 }
+    ]
+  },
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]
 }

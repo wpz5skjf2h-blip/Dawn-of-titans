@@ -130,6 +130,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ScrollCount = C.campaigns.scrollsStart;
 	LootRolls = 0;
 	LoadoutList.clear();
+	DivineCount = 0;
+	ShrineFrom = C.divine.building >= 0 && BuildingLevel(C.divine.building) ? Now : 0;
 	QuestDay = -1;
 	WeekNo = -1;
 	TrialWeek = -1;
@@ -757,6 +759,10 @@ void Kingdom::Complete(Building& B, int64_t At)
 	if (B.def == C.castle)
 	{
 		FillRivals(); // the lords grow with the player
+	}
+	if (B.def == C.divine.building && ShrineFrom == 0)
+	{
+		ShrineFrom = std::max<int64_t>(1, At); // the shrine fills from the moment it stands
 	}
 }
 
@@ -1668,6 +1674,7 @@ SeasonResult Kingdom::LeagueReward(int Tier, int Place, int GroupSize) const
 	R.groupSize = GroupSize;
 	R.gems = L.gems * Pct / 100;
 	R.stones = L.stones > 0 ? std::max<int64_t>(1, L.stones * Pct / 100) : 0;
+	R.divine = L.divine > 0 ? std::max<int64_t>(1, L.divine * Pct / 100) : 0;
 	R.crystal = L.crystal;
 	return R;
 }
@@ -1732,6 +1739,7 @@ bool Kingdom::RollAllianceLeagues(int64_t End)
 		const int64_t Before = Amount(Res::Stones);
 		AddResource(Res::Stones, Last.stones);
 		Last.stones = Amount(Res::Stones) - Before;
+		DivineCount += Last.divine;
 		// The crystal: a titan by chance (better at a higher place) while the Hall has room, else a relic of its
 		// rarity, else (the inventory is full) gems.
 		if (Last.crystal > 0)
@@ -2950,6 +2958,130 @@ Error Kingdom::DeleteLoadout(int Slot)
 		return Error::BadId;
 	}
 	LoadoutList.erase(LoadoutList.begin() + Slot);
+	return Error::None;
+}
+
+// --- Divine gems ---------------------------------------------------------------------------------------
+
+int64_t Kingdom::ShrineStored() const
+{
+	const DivineRules& D = C.divine;
+	if (D.building < 0 || D.perDay <= 0 || ShrineFrom <= 0 || !BuildingLevel(D.building) || Time <= ShrineFrom)
+	{
+		return 0;
+	}
+	// Both are capped by the content, so the product stays far from overflowing.
+	return std::min(D.cap, (Time - ShrineFrom) * D.perDay / kSecondsPerDay);
+}
+
+int64_t Kingdom::ShrineNextAt() const
+{
+	const DivineRules& D = C.divine;
+	if (D.building < 0 || D.perDay <= 0 || ShrineFrom <= 0 || !BuildingLevel(D.building))
+	{
+		return 0;
+	}
+	const int64_t Have = ShrineStored();
+	if (Have >= D.cap)
+	{
+		return 0;
+	}
+	// The first second at which the shrine holds one more.
+	return ShrineFrom + ((Have + 1) * kSecondsPerDay + D.perDay - 1) / D.perDay;
+}
+
+Error Kingdom::CollectShrine(int64_t* OutGems)
+{
+	if (OutGems)
+	{
+		*OutGems = 0;
+	}
+	const DivineRules& D = C.divine;
+	if (D.building < 0 || !BuildingLevel(D.building))
+	{
+		return Error::NeedRequirement;
+	}
+	const int64_t N = ShrineStored();
+	if (N <= 0)
+	{
+		return Error::Nothing;
+	}
+	DivineCount += N;
+	// A full shrine stopped filling: it starts again now. Otherwise the part of a gem already made stays.
+	ShrineFrom = N >= D.cap ? Time : ShrineFrom + (N * kSecondsPerDay + D.perDay - 1) / D.perDay;
+	if (OutGems)
+	{
+		*OutGems = N;
+	}
+	return Error::None;
+}
+
+Check Kingdom::CheckDivine(int Altar, int Pick) const
+{
+	Check Out;
+	const DivineRules& D = C.divine;
+	if (Altar < 0 || Altar >= static_cast<int>(D.altars.size()))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const DivineAltar& A = D.altars[static_cast<size_t>(Altar)];
+	if (A.titanStars > 0)
+	{
+		if (Pick < 0 || Pick >= static_cast<int>(C.titans.size()) || C.titans[static_cast<size_t>(Pick)].stars != A.titanStars)
+		{
+			Out.error = Error::BadId;
+			return Out;
+		}
+	}
+	else if (Pick < 0 || Pick >= static_cast<int>(C.relicKinds.size()))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (!BuildingLevel(D.building))
+	{
+		Out.error = Error::NeedRequirement;
+		Out.missing = {D.building, 1, 1};
+		return Out;
+	}
+	if (A.titanStars > 0 && static_cast<int>(TitanList.size()) >= TitanCapacity())
+	{
+		Out.error = Error::RosterFull;
+		return Out;
+	}
+	if (A.relicRarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		Out.error = Error::InventoryFull;
+		return Out;
+	}
+	if (DivineCount < A.price)
+	{
+		Out.error = Error::NotEnough;
+		Out.gemsForMissing = -1;
+		return Out;
+	}
+	return Out;
+}
+
+Error Kingdom::BuyDivine(int Altar, int Pick, int32_t* OutId)
+{
+	if (OutId)
+	{
+		*OutId = 0;
+	}
+	const Check Ck = CheckDivine(Altar, Pick);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const DivineAltar& A = C.divine.altars[static_cast<size_t>(Altar)];
+	DivineCount -= A.price;
+	const int32_t Id = A.titanStars > 0 ? AddTitanOf(Pick) : AddRelic(Pick, A.relicRarity);
+	if (OutId)
+	{
+		*OutId = Id;
+	}
 	return Error::None;
 }
 
@@ -6565,9 +6697,14 @@ int32_t Kingdom::SummonTitan(int Stars, uint64_t Pick)
 			Pool.push_back(static_cast<int>(I));
 		}
 	}
+	return AddTitanOf(Pool[static_cast<size_t>(Pick % static_cast<uint64_t>(Pool.size()))]);
+}
+
+int32_t Kingdom::AddTitanOf(int Def)
+{
 	TitanState T;
 	T.id = NextId++;
-	T.def = Pool[static_cast<size_t>(Pick % static_cast<uint64_t>(Pool.size()))];
+	T.def = Def;
 	StartSkills(T);
 	TitanList.push_back(T);
 	return T.id;
@@ -7694,6 +7831,11 @@ std::string Kingdom::Save() const
 	W.Int(Last.gems);
 	W.Key("stones");
 	W.Int(Last.stones);
+	if (Last.divine > 0)
+	{
+		W.Key("divine");
+		W.Int(Last.divine);
+	}
 	// What the alliance league paid (format 6).
 	if (Last.alliance >= 0)
 	{
@@ -8216,6 +8358,14 @@ std::string Kingdom::Save() const
 		W.EndObject();
 	}
 	W.EndArray();
+	// Divine gems (optional): held, and when the shrine began filling.
+	W.Key("divine");
+	W.BeginObject();
+	W.Key("gems");
+	W.Int(DivineCount);
+	W.Key("from");
+	W.Int(ShrineFrom);
+	W.EndObject();
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -8716,6 +8866,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			Last.league = LastJ->GetInt("league", -1);
 			Last.gems = LastJ->GetInt64("gems", 0);
 			Last.stones = LastJ->GetInt64("stones", 0);
+			Last.divine = std::max<int64_t>(0, LastJ->GetInt64("divine", 0));
 			Last.alliance = LastJ->GetInt("alliance", -1);
 			Last.allianceTier = LastJ->GetInt("allianceTier", -1);
 			Last.place = LastJ->GetInt("place", 0);
@@ -9209,6 +9360,18 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 			LoadoutList.push_back(L);
 		}
+	}
+	// Divine gems (saves before them: none held, and a shrine already built starts filling now).
+	DivineCount = 0;
+	ShrineFrom = 0;
+	if (const JsonValue* DivJ = J.Find("divine"))
+	{
+		DivineCount = std::max<int64_t>(0, DivJ->GetInt64("gems", 0));
+		ShrineFrom = std::max<int64_t>(0, std::min(Time, DivJ->GetInt64("from", 0)));
+	}
+	if (ShrineFrom == 0 && C.divine.building >= 0 && BuildingLevel(C.divine.building))
+	{
+		ShrineFrom = std::max<int64_t>(1, Time);
 	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
@@ -10093,6 +10256,13 @@ uint64_t Kingdom::Hash() const
 	{
 		W.I64(ScrollCount);
 		W.U64(LootRolls);
+	}
+	// And for divine gems: only once the shrine stands or some came.
+	if (DivineCount != 0 || ShrineFrom != 0 || Last.divine != 0)
+	{
+		W.I64(DivineCount);
+		W.I64(ShrineFrom);
+		W.I64(Last.divine);
 	}
 	return W.Hash();
 }
