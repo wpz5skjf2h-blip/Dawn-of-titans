@@ -3240,6 +3240,240 @@ void TestMarshal()
 	}
 }
 
+/** A kingdom with VP to join any alliance, at Castle 5. */
+Kingdom BossKingdom(uint64_t Seed)
+{
+	Kingdom K = WithVp(Seed, 8000);
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5"), Error) && L.CastleLevel() == 5);
+	return L;
+}
+
+void TestRaidBoss()
+{
+	const KingdomContent& Ct = Content();
+	const RaidBossRules& B = Ct.raidBoss;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const int64_t Day = 86400;
+	// Master prompt 12.10: Sunday and Monday, three battles a day of two minutes, tiers 1-10, four bosses, phases at
+	// 75/50/25%, damage milestones and an alliance chest by tier.
+	KD_CHECK(B.castle == 5 && B.days == 2 && B.attempts == 3 && B.battleSec == 120 && B.hpPct == 300 && B.poolPct == 100);
+	KD_CHECK(B.bosses.size() == 4 && B.tiers.size() == 10 && B.leagueTier.size() == Ct.alliances.leagues.size() && B.leagueTier.back() == 10);
+	KD_CHECK(B.phases == std::vector<int>({750, 500, 250}) && B.milestones.size() == 3 && B.milestones.back().first == 300);
+	KD_CHECK(B.bosses[0].id == "behemoth" && B.bosses[0].titan == Ct.FindTitan("titan.atlas") && B.bosses[3].titan == Ct.FindTitan("titan.surtr"));
+	// Escorts and husks are battle troops; tiers grow, and so do their chests (few gems: 12 at most).
+	const SimContent& Sim = Battle();
+	const auto IsTroop = [&Sim](const std::string& Id) {
+		return std::any_of(Sim.troops.begin(), Sim.troops.end(), [&Id](const TroopDef& T) { return T.id == Id; });
+	};
+	KD_CHECK(IsTroop(B.husk));
+	for (const RaidBossDef& D : B.bosses)
+	{
+		KD_CHECK(IsTroop(D.escort));
+	}
+	for (size_t I = 1; I < B.tiers.size(); ++I)
+	{
+		KD_CHECK(B.tiers[I].level > B.tiers[I - 1].level && B.tiers[I].stars >= B.tiers[I - 1].stars && B.tiers[I].escort >= B.tiers[I - 1].escort);
+		KD_CHECK(B.tiers[I].chest.res[GemsI] > B.tiers[I - 1].chest.res[GemsI] && B.tiers[I].chest.res[GemsI] <= 12);
+	}
+	for (const auto& M : B.milestones)
+	{
+		KD_CHECK(M.second.res[GemsI] == 0);
+	}
+
+	// T0 is a Thursday; the next event opens on Sunday 00:00 UTC. Outside an alliance there is no boss.
+	const int64_t Sunday = ((T0 / Day - 3) / 7 * 7 + 3 + 7) * Day;
+	KD_CHECK((Sunday / Day + 3) % 7 == 6 && Sunday > T0 && Sunday - T0 < 7 * Day);
+	Kingdom N(Ct);
+	N.NewGame(T0, 81);
+	KD_CHECK(N.CheckBoss().error == Error::NoAlliance && N.BossTier() == 0 && N.BossPool() == 0 && N.StartBoss({}, 0, {}) == Error::NoAlliance);
+	KD_CHECK(N.ChooseBossTier(1) == Error::NoAlliance && N.ClaimBossChest(nullptr) == Error::NotReady);
+	// Below Castle 5 the alliance fights without the player.
+	Kingdom Low = WithVp(81, 8000);
+	KD_CHECK(Low.JoinAlliance(0) == Error::None && Low.CheckBoss().error == Error::Locked && Low.CheckBoss().castle == 5);
+
+	// An alliance of the lowest league fights tier 1; until Sunday the boss is closed.
+	Kingdom K = BossKingdom(82);
+	KD_CHECK(K.JoinAlliance(0) == Error::None && K.ChooseBossTier(3) == Error::NotAllowed);
+	const int Members = static_cast<int>(K.Members(0).size()) - 1;
+	KD_CHECK(K.BossTier() == 1 && K.BossHomeTier() == 1 && K.BossNextTier() == 1 && K.BossPool() == (Members + 1) * 1000);
+	KD_CHECK(K.CheckBoss().error == Error::NotReady && K.CheckBoss().timeSec == Sunday - T0 && K.BossOpensAt() == Sunday && K.BossClosesAt() == Sunday + 2 * Day);
+	KD_CHECK(!K.BossOpen() && K.StartBoss({}, 0, {}) == Error::NotReady);
+	K.Advance(Sunday + Hour);
+	const int Index = K.BossIndex();
+	KD_CHECK(K.BossOpen() && K.CheckBoss().error == Error::None && K.BossAttemptsLeft() == 3 && Index >= 0 && Index < 4);
+	KD_CHECK(static_cast<int>(K.BossMembers().size()) == Members && K.BossDamage() < K.BossPool() / 10);
+	// A battle is free of stones, nothing is lost and the titan gets no XP.
+	const int Militia = Troop("troop.militia");
+	const int64_t Army = K.ArmyCount(Militia);
+	const int64_t Stones = K.Amount(Res::Stones);
+	const int64_t Count = K.Lifetime(QuestEvent::Count);
+	KD_CHECK(Army >= 1 && K.StartBoss({Militia}, 0, {}) == Error::None && K.PendingBoss() && K.PendingSite() == -1 && K.PendingMission() == -1);
+	KD_CHECK(K.Amount(Res::Stones) == Stones && K.BossAttemptsLeft() == 2 && K.Lifetime(QuestEvent::Count) == Count);
+	KD_CHECK(K.FinishTrial(1, 100, nullptr) == Error::NoAttack && K.FinishSiteAttack(0, 1, {100}, {}, nullptr) == Error::NoAttack);
+	std::string Error;
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(K.Save(), Error) && M.Hash() == K.Hash() && M.Save() == K.Save() && M.PendingBoss());
+	// A battle that took 32% of the boss's health pays every milestone (gold and food times the Castle, stones on top
+	// of a full portal).
+	const int64_t Gems = K.Amount(Res::Gems);
+	Reward R;
+	KD_CHECK(K.FinishBoss(0, 320, &R) == Error::None && !K.PendingBoss() && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(R.res[GoldI] == 200 * 5 && R.res[FoodI] == 200 * 5 && R.res[StonesI] == 3 && R.res[GemsI] == 0 && K.Amount(Res::Stones) == Stones + 3);
+	KD_CHECK(K.Amount(Res::Gems) == Gems && K.ArmyCount(Militia) == Army);
+	KD_CHECK(K.BossMyDamage() == 320 && K.BossMyBattles() == 1 && K.BossMyBest() == 320 && K.FinishBoss(0, 10, nullptr) == Error::NoAttack);
+	// A weak battle pays less; the damage of one battle is at most the boss's whole health.
+	KD_CHECK(K.StartBoss({}, 0, {}) == Error::None && K.FinishBoss(0, 60, &R) == Error::None && R.res[GoldI] == 1000 && R.res[FoodI] == 0 && R.res[StonesI] == 0);
+	KD_CHECK(K.StartBoss({}, 0, {}) == Error::None && K.FinishBoss(0, 5000, nullptr) == Error::None && K.BossMyDamage() == 1380 && K.BossMyBest() == 1000);
+	KD_CHECK(K.CheckBoss().error == Error::LimitReached && K.CheckBoss().timeSec == Day - Hour && K.StartBoss({}, 0, {}) == Error::LimitReached);
+	// The pool holds the members' battles and the player's.
+	int64_t Sum = K.BossMyDamage();
+	for (const BossMemberHits& H : K.BossMembers())
+	{
+		Sum += H.dmg;
+	}
+	KD_CHECK(Sum == K.BossDamage() && !K.BossDefeated());
+	// Every client sees the same members; Monday brings three more battles.
+	Kingdom K2(Ct);
+	KD_CHECK(K2.Load(K.Save(), Error) && K2.Hash() == K.Hash() && K2.BossDamage() == K.BossDamage());
+	K.Advance(Sunday + Day + Hour);
+	KD_CHECK(K.BossAttemptsLeft() == 3 && K.BossMyDamage() == 1380 && K.BossDamage() > K2.BossDamage());
+
+	// By the end every member fought two to six battles. Without the player some bosses fall, with a strong player most.
+	K.Advance(Sunday + 2 * Day + Hour);
+	KD_CHECK(!K.BossOpen() && K.CheckBoss().error == Error::NotReady && K.CheckBoss().timeSec == 7 * Day - 2 * Day - Hour);
+	for (const BossMemberHits& H : K.BossMembers())
+	{
+		KD_CHECK((H.battles >= 2 && H.battles <= 6) || K.BossDefeated());
+	}
+	int Alone = 0;
+	int Helped = 0;
+	int Alliances = 0;
+	Kingdom Base = BossKingdom(91);
+	for (int I = 0; I < Base.AllianceCount(); ++I)
+	{
+		Kingdom A(Ct);
+		KD_CHECK(A.Load(Base.Save(), Error));
+		if (A.JoinAlliance(I) != Error::None)
+		{
+			continue;
+		}
+		// Each league fights its own tier.
+		KD_CHECK(A.BossTier() == B.leagueTier[static_cast<size_t>(std::min(I / 8, 5))]);
+		Kingdom H(Ct);
+		KD_CHECK(H.Load(A.Save(), Error));
+		A.Advance(Sunday + 2 * Day + Hour);
+		Alone += A.BossDefeated() ? 1 : 0;
+		// Five battles of 30% each.
+		for (int D = 0; D < 2; ++D)
+		{
+			H.Advance(Sunday + D * Day + 20 * Hour);
+			for (int X = 0; X < 3 - D; ++X)
+			{
+				if (H.StartBoss({}, 0, {}) == Error::None)
+				{
+					KD_CHECK(H.FinishBoss(0, 300, nullptr) == Error::None);
+				}
+			}
+		}
+		H.Advance(Sunday + 2 * Day + Hour);
+		Helped += H.BossDefeated() ? 1 : 0;
+		KD_CHECK(H.BossDamage() >= A.BossDamage() && (!H.BossDefeated() || H.BossDefeatedAt() <= A.BossDefeatedAt() || !A.BossDefeated()));
+		++Alliances;
+	}
+	KD_CHECK(Alliances >= 40 && Alone * 100 >= 10 * Alliances && Alone * 100 <= 40 * Alliances && Helped * 100 >= 55 * Alliances && Helped > Alone);
+
+	// A boss that falls: everyone who fought opens the chest until the next event.
+	Kingdom F(Ct);
+	int Who = -1;
+	for (int I = 0; I < Base.AllianceCount() && Who < 0; ++I)
+	{
+		KD_CHECK(F.Load(Base.Save(), Error));
+		if (F.JoinAlliance(I) != Error::None)
+		{
+			continue;
+		}
+		F.Advance(Sunday + Day + 20 * Hour);
+		for (int X = 0; X < 3; ++X)
+		{
+			if (F.StartBoss({}, 0, {}) == Error::None)
+			{
+				KD_CHECK(F.FinishBoss(0, 400, nullptr) == Error::None);
+			}
+		}
+		Who = F.BossDefeated() ? I : -1;
+	}
+	KD_CHECK(Who >= 0 && F.BossDamage() == F.BossPool() && F.BossDefeatedAt() > Sunday && F.BossDefeatedAt() <= F.Now());
+	KD_CHECK(F.CheckBoss().error == Error::Nothing && F.CheckBoss().timeSec == Sunday + 7 * Day - F.Now() && F.StartBoss({}, 0, {}) == Error::Nothing);
+	const RaidBossTier& Tier = B.tiers[static_cast<size_t>(F.BossTier() - 1)];
+	const int64_t FGems = F.Amount(Res::Gems);
+	KD_CHECK(F.ClaimBossChest(&R) == Error::None && R.res[GemsI] == Tier.chest.res[GemsI] && F.Amount(Res::Gems) == FGems + Tier.chest.res[GemsI]);
+	KD_CHECK(F.BossChestClaimed() && F.ClaimBossChest(nullptr) == Error::Nothing);
+	// A member who did not fight gets none.
+	Kingdom Idle(Ct);
+	KD_CHECK(Idle.Load(Base.Save(), Error) && Idle.JoinAlliance(Who) == Error::None);
+	Idle.Advance(F.Now());
+	KD_CHECK(Idle.BossDamage() < F.BossDamage() && Idle.ClaimBossChest(nullptr) == Error::NotReady);
+	Idle.Advance(Sunday + 6 * Day);
+	KD_CHECK(!Idle.BossDefeated() || Idle.ClaimBossChest(nullptr) == Error::NotAllowed);
+	// Saving keeps the event; the next Sunday brings the next boss with nothing fought.
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(F.Save(), Error) && S.Hash() == F.Hash() && S.Save() == F.Save() && S.BossChestClaimed() && S.BossDefeated());
+	S.Advance(Sunday + 7 * Day + Hour);
+	KD_CHECK(S.BossIndex() == (Index + 1) % 4 && !S.BossChestClaimed() && S.BossMyDamage() == 0 && S.BossMyBattles() == 0 && !S.BossDefeated());
+	KD_CHECK(S.CheckBoss().error == Error::None && S.BossAttemptsLeft() == 3);
+
+	// Leaving the alliance: the battles stay with it, today's battles stay spent.
+	Kingdom V = BossKingdom(83);
+	KD_CHECK(V.JoinAlliance(0) == Error::None);
+	V.Advance(Sunday + Hour);
+	KD_CHECK(V.StartBoss({}, 0, {}) == Error::None && V.FinishBoss(0, 200, nullptr) == Error::None && V.BossMyDamage() == 200);
+	KD_CHECK(V.LeaveAlliance() == Error::None && V.CheckBoss().error == Error::NoAlliance && V.BossMyDamage() == 0);
+	KD_CHECK(V.JoinAlliance(1) == Error::None && V.BossMyDamage() == 0 && V.BossAttemptsLeft() == 2);
+	KD_CHECK(V.StartBoss({}, 0, {}) == Error::None && V.FinishBoss(0, 100, nullptr) == Error::None && V.BossMyDamage() == 100 && V.BossMyBattles() == 1);
+
+	// An own alliance: the leader picks the tier of the coming events; against a higher tier the members do less.
+	Kingdom O = BossKingdom(84);
+	KD_CHECK(O.CreateAlliance("Дом Рассвета", "ДОМ") == Error::None && O.BossTier() == 1 && O.BossHomeTier() == 1);
+	KD_CHECK(O.ChooseBossTier(11) == Error::BadId && O.ChooseBossTier(-1) == Error::BadId && O.ChooseBossTier(3) == Error::None && O.BossNextTier() == 3);
+	O.Advance(Sunday + Hour);
+	KD_CHECK(O.BossTier() == 3 && O.BossHomeTier() == 1 && O.Members(O.MyAlliance()).size() == O.BossMembers().size() + 1);
+	// Changing the pick during the event leaves this one alone.
+	KD_CHECK(O.ChooseBossTier(1) == Error::None && O.BossTier() == 3 && O.BossNextTier() == 1);
+	Kingdom O2(Ct);
+	KD_CHECK(O2.Load(O.Save(), Error) && O2.Save() == O.Save() && O2.Hash() == O.Hash() && O2.BossTier() == 3 && O2.BossNextTier() == 1);
+	const auto PerBattle = [](const Kingdom& X) {
+		int64_t Dmg = 0;
+		int64_t Battles = 0;
+		for (const BossMemberHits& H : X.BossMembers())
+		{
+			Dmg += H.dmg;
+			Battles += H.battles;
+		}
+		return Battles > 0 ? Dmg / Battles : 0;
+	};
+	O.Advance(Sunday + 2 * Day);
+	const int64_t High = PerBattle(O);
+	O.Advance(Sunday + 7 * Day + Hour);
+	KD_CHECK(O.BossTier() == 1 && O.ChooseBossTier(0) == Error::None && O.BossNextTier() == 1);
+	O.Advance(Sunday + 9 * Day);
+	// At their own tier the recruits hit 250 on average; at two tiers above it 60% of that.
+	const int64_t Own = PerBattle(O);
+	KD_CHECK(Own >= 220 && Own <= 280 && High * 100 >= Own * 50 && High * 100 <= Own * 70);
+
+	// A save from before the boss starts this event's state on the next Advance.
+	const std::string Now = S.Save();
+	const size_t P0 = Now.find(",\"boss\":{");
+	Kingdom Pre(Ct);
+	KD_CHECK(P0 != std::string::npos && Pre.Load(Now.substr(0, P0) + Now.substr(Now.find(",\"calendar\":{")), Error) && Pre.BossMyBattles() == 0);
+	Pre.Advance(S.Now() + 60);
+	KD_CHECK(Pre.BossIndex() == S.BossIndex() && Pre.BossTier() == S.BossTier() && Pre.BossAttemptsLeft() == 3);
+}
+
 void TestAssault()
 {
 	const KingdomContent& Ct = Content();
@@ -3444,7 +3678,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss},
 	};
 	for (const auto& T : Tests)
 	{

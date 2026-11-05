@@ -248,6 +248,13 @@ struct AssaultBonus
 	int titanCrit = 0;
 };
 
+/** A computer member's part in this week's Raid Boss: damage (tenths of a percent of the boss's health) and battles. */
+struct BossMemberHits
+{
+	int64_t dmg = 0;
+	int battles = 0;
+};
+
 /** Kingdom Power (master prompt 7.7) and where it comes from. */
 struct KingdomPowerInfo
 {
@@ -634,14 +641,18 @@ public:
 	static constexpr int32_t TrialPending = -(MissionBase - 1);
 	/** The pending battle id of an Assault stage. */
 	static constexpr int32_t AssaultPending = -(MissionBase - 2);
-	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage or
-	 *  there is none). */
+	/** The pending battle id of a Raid Boss battle. */
+	static constexpr int32_t BossPending = -(MissionBase - 3);
+	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage, a
+	 *  Raid Boss battle or there is none). */
 	int PendingSite() const
 	{
-		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && -Pending < MissionBase ? -Pending - 1 : -1;
+		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && -Pending < MissionBase
+			? -Pending - 1 : -1;
 	}
 	bool PendingTrial() const { return Pending == TrialPending; }
 	bool PendingAssault() const { return Pending == AssaultPending; }
+	bool PendingBoss() const { return Pending == BossPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -809,6 +820,58 @@ public:
 	Error ChooseAssaultBoon(int I);
 	/** Ends the run now: NoAttack (none going), Busy (a stage battle is on). */
 	Error EndAssault();
+
+	// --- Raid Boss (master prompt 12.10) ---
+	// A weekly alliance event from Sunday 00:00 UTC for a few days, from a Castle level. Each week brings the next boss
+	// of the list: a titan with an escort. Its tier sets its level, stars and escort; a computer alliance fights the
+	// tier of the league it started in, the leader of an own alliance picks the tier of the coming events. Members share
+	// one pool of health (the boss's health per member); each battle takes the boss's lost health (in tenths of a
+	// percent) out of it. Computer members fight a few battles at moments of the open days, weaker against a tier over
+	// theirs. A few battles a day for the player, free of stones; nothing is lost in them and the titan gets no XP. A
+	// battle pays the damage milestones it reached; when the pool is empty the boss falls and everyone who fought it
+	// opens the tier's chest, until the next event.
+	/** The last event that opened by Time (it may be over). */
+	int64_t BossEvent() const;
+	bool BossOpen() const;
+	/** When this event opened while it is open, else when the next one opens. */
+	int64_t BossOpensAt() const;
+	int64_t BossClosesAt() const;
+	/** The boss of the last event (index into the content's bosses; -1 without bosses). */
+	int BossIndex() const;
+	/** The tier (1-based) of the last event for the player's alliance (0 outside an alliance). */
+	int BossTier() const;
+	/** The tier the computer members fight as planned (their league's). */
+	int BossHomeTier() const;
+	/** The tier of the next event that has not opened yet. */
+	int BossNextTier() const;
+	/** The own alliance's leader picks the tier of the events that have not opened yet (0: the league's own).
+	 *  NoAlliance, NotAllowed (a computer alliance), BadId. */
+	Error ChooseBossTier(int Tier);
+	/** BadId (no bosses), NoAlliance, Locked (Castle too low: castle), NotReady (closed until timeSec), Nothing (the
+	 *  boss has fallen: the next event opens in timeSec), LimitReached (no battles left today). */
+	Check CheckBoss() const;
+	int BossAttemptsLeft() const;
+	/** The alliance's pool of the boss's health and the damage done so far (tenths of a percent, at most the pool). */
+	int64_t BossPool() const;
+	int64_t BossDamage() const;
+	bool BossDefeated() const;
+	/** When the pool ran out (0 while the boss stands). */
+	int64_t BossDefeatedAt() const;
+	/** The player's damage, battles and best battle this event in this alliance. */
+	int64_t BossMyDamage() const;
+	int BossMyBattles() const;
+	int64_t BossMyBest() const;
+	/** The computer members' parts (in the order of the alliance's members without the player). */
+	std::vector<BossMemberHits> BossMembers() const;
+	bool BossChestClaimed() const { return bBossChest && BossNo == BossEvent(); }
+	/** Starts a boss battle with this army (as StartAttack, without stones or allies); the battle runs elsewhere. */
+	Error StartBoss(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a boss battle: everyone comes back, no spell is spent; the boss's lost health (tenths of a percent of it,
+	 *  at most 1000) comes out of the pool and pays the milestones it reached (a relic one without room is lost). */
+	Error FinishBoss(int Stars, int64_t DamagePermille, Reward* Out);
+	/** Opens the alliance chest: NotReady (the boss stands, or a boss battle is on), NotAllowed (the player did not fight
+	 *  this boss in this alliance), Nothing (opened), InventoryFull. */
+	Error ClaimBossChest(Reward* Out);
 
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
@@ -1008,6 +1071,35 @@ private:
 	/** Brings the state of a new Assault event once it opens. */
 	void RollAssault();
 	void ResetAssault();
+	/** The Raid Boss of an alliance in an event: the alliance (BossKey), its computer members, the tier and theirs. */
+	struct BossSnap
+	{
+		int64_t key = -1;
+		int members = 0;
+		int tier = 0;
+		int home = 0;
+	};
+	/** The battles of the boss up to Time: the damage done (at most the pool), when it fell, the members' parts. */
+	struct BossTally
+	{
+		int64_t pool = 0;
+		int64_t total = 0;
+		int64_t defeatedAt = 0;
+		std::vector<BossMemberHits> members;
+	};
+	/** The alliance the player is in as a key (-1: none; an own alliance by when it was founded). */
+	int64_t BossKey() const;
+	int64_t BossDayOf(int64_t No) const { return No * 7 + 3; }
+	/** The own alliance's pick for an event (0: the league's own). */
+	int BossPickFor(int64_t No) const { return No >= BossPickFrom ? BossPickNew : BossPickOld; }
+	BossSnap BossSnapNow(int64_t No) const;
+	/** The saved snapshot when it is this event's and the alliance's, else the alliance as it is now. */
+	BossSnap BossSnapOf() const;
+	/** Whether the player's battles saved belong to the last event and the alliance the player is in. */
+	bool BossMine() const;
+	BossTally TallyBoss() const;
+	void RollBoss();
+	void ResetBoss();
 	/** Weeks since the Monday before the epoch, for Time. */
 	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
 	// Raids (KingdomRaids.cpp)
@@ -1136,6 +1228,17 @@ private:
 	std::vector<AssaultSquad> AsSquads;
 	std::vector<int> AsBoons;
 	std::vector<int> AsOffer;
+	// Raid Boss: the event, the alliance and tier it was rolled for, the player's battles (time, damage), the chest, the
+	// day's battles, the own alliance's pick (old before the event BossPickFrom, new from it)
+	int64_t BossNo = -1;
+	BossSnap BossSaved;
+	std::vector<std::pair<int64_t, int64_t>> BossHits;
+	bool bBossChest = false;
+	int64_t BossDay = -1;
+	int BossTries = 0;
+	int BossPickOld = 0;
+	int BossPickNew = 0;
+	int64_t BossPickFrom = 0;
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

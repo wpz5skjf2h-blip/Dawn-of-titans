@@ -140,6 +140,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	WpPaid.fill(0);
 	WpPaidRelics = 0;
 	ResetAssault();
+	ResetBoss();
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2259,7 +2260,7 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
 	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
-			: Target == TrialPending || Target == AssaultPending ? QuestEvent::Count : QuestEvent::Site, 1);
+			: Target == TrialPending || Target == AssaultPending || Target == BossPending ? QuestEvent::Count : QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -2801,6 +2802,7 @@ void Kingdom::RollQuests()
 	}
 	RollWarpath();
 	RollAssault();
+	RollBoss();
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -3744,6 +3746,397 @@ Error Kingdom::EndAssault()
 	}
 	bAsOver = true;
 	AsOffer.clear();
+	return Error::None;
+}
+
+// --- Raid Boss -----------------------------------------------------------------------------------------
+
+int64_t Kingdom::BossEvent() const
+{
+	// Events open on Sundays: the epoch's day 3 was one.
+	return FloorDiv(std::max<int64_t>(0, Time) / 86400 - 3, 7);
+}
+
+bool Kingdom::BossOpen() const
+{
+	return !C.raidBoss.bosses.empty() && std::max<int64_t>(0, Time) / 86400 - BossDayOf(BossEvent()) < C.raidBoss.days;
+}
+
+int64_t Kingdom::BossOpensAt() const
+{
+	const int64_t No = BossEvent();
+	return BossDayOf(BossOpen() ? No : No + 1) * 86400;
+}
+
+int64_t Kingdom::BossClosesAt() const { return BossOpensAt() + static_cast<int64_t>(C.raidBoss.days) * 86400; }
+
+int Kingdom::BossIndex() const
+{
+	const int64_t N = static_cast<int64_t>(C.raidBoss.bosses.size());
+	return N == 0 ? -1 : static_cast<int>(((BossEvent() % N) + N) % N);
+}
+
+int64_t Kingdom::BossKey() const
+{
+	if (AllianceIdx < 0)
+	{
+		return -1;
+	}
+	return HasOwnAlliance() ? static_cast<int64_t>(0x100000000LL) + OwnFounded : AllianceIdx;
+}
+
+Kingdom::BossSnap Kingdom::BossSnapNow(int64_t No) const
+{
+	BossSnap S;
+	S.key = BossKey();
+	const RaidBossRules& B = C.raidBoss;
+	if (S.key < 0 || B.bosses.empty())
+	{
+		S.key = -1;
+		return S;
+	}
+	const int Tiers = static_cast<int>(B.tiers.size());
+	const int Leagues = std::max(1, static_cast<int>(C.alliances.leagues.size()));
+	// A computer alliance fights at the tier of the league it started in (its members keep that strength); an own
+	// alliance at its league's.
+	const int League = HasOwnAlliance() ? AllianceTier(AllianceIdx) : std::min(AllianceIdx / std::max(1, C.alliances.groupSize), Leagues - 1);
+	const int Home = B.leagueTier.empty() ? 1 : B.leagueTier[static_cast<size_t>(std::max(0, std::min(League, static_cast<int>(B.leagueTier.size()) - 1)))];
+	S.home = std::max(1, std::min(Tiers, Home));
+	S.members = std::max(0, AllianceSize(AllianceIdx));
+	const int Pick = HasOwnAlliance() ? BossPickFor(No) : 0;
+	S.tier = Pick > 0 ? std::min(Pick, Tiers) : S.home;
+	return S;
+}
+
+Kingdom::BossSnap Kingdom::BossSnapOf() const
+{
+	const int64_t No = BossEvent();
+	if (BossNo == No && BossSaved.key >= 0 && BossSaved.key == BossKey())
+	{
+		return BossSaved;
+	}
+	return BossSnapNow(No);
+}
+
+bool Kingdom::BossMine() const
+{
+	return BossNo == BossEvent() && BossSaved.key >= 0 && BossSaved.key == BossKey();
+}
+
+int Kingdom::BossTier() const { return BossSnapOf().tier; }
+
+int Kingdom::BossHomeTier() const { return BossSnapOf().home; }
+
+int Kingdom::BossNextTier() const { return BossSnapNow(BossEvent() + 1).tier; }
+
+Kingdom::BossTally Kingdom::TallyBoss() const
+{
+	BossTally T;
+	const RaidBossRules& B = C.raidBoss;
+	const BossSnap S = BossSnapOf();
+	if (S.key < 0 || B.bosses.empty())
+	{
+		return T;
+	}
+	const int64_t No = BossEvent();
+	T.pool = static_cast<int64_t>(S.members + 1) * B.poolPct * 10;
+	T.members.assign(static_cast<size_t>(S.members), BossMemberHits());
+	struct Hit
+	{
+		int64_t at;
+		int64_t dmg;
+		int who; // -1: the player
+	};
+	std::vector<Hit> Hits;
+	const int64_t Open = BossDayOf(No) * 86400;
+	const int64_t Len = static_cast<int64_t>(B.days) * 86400;
+	const int MaxHits = std::max(1, B.attempts * B.days);
+	// Against a tier over theirs the members do less (down to a tenth), against one under it more (up to twice).
+	const int D = S.tier - S.home;
+	const int64_t Pct = D > 0 ? std::max(10, 100 - B.memberStepPct * D) : std::min(200, 100 - B.memberStepPct * D);
+	const uint64_t Base = Mix(Seed ^ 0x7261696462ULL, static_cast<uint64_t>(S.key));
+	for (int M = 0; M < S.members; ++M)
+	{
+		// Each member fights two to six battles at moments of the open days, each 75-125% of their usual.
+		const uint64_t H = Mix(Base, static_cast<uint64_t>(No) * 64 + static_cast<uint64_t>(M));
+		const int N = std::min(MaxHits, 2 + static_cast<int>(H % 5));
+		for (int J = 0; J < N; ++J)
+		{
+			const uint64_t Hj = Mix(H, static_cast<uint64_t>(J) + 1);
+			Hits.push_back({Open + static_cast<int64_t>(Hj % static_cast<uint64_t>(Len)), B.memberHit * Pct / 100 * (75 + static_cast<int64_t>((Hj >> 32) % 51)) / 100, M});
+		}
+	}
+	if (BossMine())
+	{
+		for (const std::pair<int64_t, int64_t>& X : BossHits)
+		{
+			Hits.push_back({X.first, X.second, -1});
+		}
+	}
+	std::sort(Hits.begin(), Hits.end(), [](const Hit& X, const Hit& Y) { return X.at != Y.at ? X.at < Y.at : X.who < Y.who; });
+	for (const Hit& X : Hits)
+	{
+		// Members stop once the boss has fallen; the player's battles all count (one may end after the fall).
+		if (X.who >= 0 && (X.at > Time || T.defeatedAt > 0))
+		{
+			continue;
+		}
+		T.total += X.dmg;
+		if (X.who >= 0)
+		{
+			T.members[static_cast<size_t>(X.who)].dmg += X.dmg;
+			++T.members[static_cast<size_t>(X.who)].battles;
+		}
+		if (T.defeatedAt == 0 && T.total >= T.pool)
+		{
+			T.defeatedAt = std::max<int64_t>(1, X.at);
+		}
+	}
+	T.total = std::min(T.total, T.pool);
+	return T;
+}
+
+int64_t Kingdom::BossPool() const { return TallyBoss().pool; }
+
+int64_t Kingdom::BossDamage() const { return TallyBoss().total; }
+
+bool Kingdom::BossDefeated() const { return TallyBoss().defeatedAt > 0; }
+
+int64_t Kingdom::BossDefeatedAt() const { return TallyBoss().defeatedAt; }
+
+int64_t Kingdom::BossMyDamage() const
+{
+	int64_t Sum = 0;
+	if (BossMine())
+	{
+		for (const std::pair<int64_t, int64_t>& X : BossHits)
+		{
+			Sum += X.second;
+		}
+	}
+	return Sum;
+}
+
+int Kingdom::BossMyBattles() const { return BossMine() ? static_cast<int>(BossHits.size()) : 0; }
+
+int64_t Kingdom::BossMyBest() const
+{
+	int64_t Best = 0;
+	if (BossMine())
+	{
+		for (const std::pair<int64_t, int64_t>& X : BossHits)
+		{
+			Best = std::max(Best, X.second);
+		}
+	}
+	return Best;
+}
+
+std::vector<BossMemberHits> Kingdom::BossMembers() const { return TallyBoss().members; }
+
+int Kingdom::BossAttemptsLeft() const
+{
+	return std::max(0, C.raidBoss.attempts - (BossDay == std::max<int64_t>(0, Time) / 86400 ? BossTries : 0));
+}
+
+Error Kingdom::ChooseBossTier(int Tier)
+{
+	if (C.raidBoss.bosses.empty())
+	{
+		return Error::BadId;
+	}
+	if (AllianceIdx < 0)
+	{
+		return Error::NoAlliance;
+	}
+	if (!HasOwnAlliance())
+	{
+		return Error::NotAllowed;
+	}
+	if (Tier < 0 || Tier > static_cast<int>(C.raidBoss.tiers.size()))
+	{
+		return Error::BadId;
+	}
+	// The pick holds from the next event that has not opened yet; the last one keeps its tier.
+	const int64_t Latest = BossEvent();
+	BossPickOld = BossPickFor(Latest);
+	BossPickNew = Tier;
+	BossPickFrom = Latest + 1;
+	return Error::None;
+}
+
+Check Kingdom::CheckBoss() const
+{
+	Check Out;
+	if (C.raidBoss.bosses.empty())
+	{
+		Out.error = Error::BadId;
+	}
+	else if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (CastleLevel() < C.raidBoss.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.raidBoss.castle;
+	}
+	else if (!BossOpen())
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = BossOpensAt() - Time;
+	}
+	else if (BossDefeated())
+	{
+		Out.error = Error::Nothing;
+		Out.timeSec = BossDayOf(BossEvent() + 1) * 86400 - Time;
+	}
+	else if (BossAttemptsLeft() <= 0)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (std::max<int64_t>(0, Time) / 86400 + 1) * 86400 - Time;
+	}
+	return Out;
+}
+
+void Kingdom::ResetBoss()
+{
+	BossNo = -1;
+	BossSaved = BossSnap();
+	BossHits.clear();
+	bBossChest = false;
+	BossDay = -1;
+	BossTries = 0;
+	BossPickOld = 0;
+	BossPickNew = 0;
+	BossPickFrom = 0;
+}
+
+void Kingdom::RollBoss()
+{
+	if (C.raidBoss.bosses.empty())
+	{
+		return;
+	}
+	const int64_t No = BossEvent();
+	// A boss battle still on keeps its event until it is finished.
+	if (No == BossNo || Pending == BossPending)
+	{
+		return;
+	}
+	BossNo = No;
+	BossHits.clear();
+	bBossChest = false;
+	// The alliance as the event opens: its members and tier hold for the event.
+	BossSaved = BossSnapNow(No);
+}
+
+Error Kingdom::StartBoss(const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	const Check Ck = CheckBoss();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const Error E = BeginBattle(BossPending, false, 0, Squads, TitanId, Spells, false);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	if (!BossMine())
+	{
+		// The player's first battle of the event in this alliance (it was joined after the event opened, or another
+		// one): the alliance as it is now, and the battles fought elsewhere stay there.
+		BossNo = BossEvent();
+		BossSaved = BossSnapNow(BossNo);
+		BossHits.clear();
+	}
+	// A battle counts when it starts, whatever its end (a retreat too).
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	if (BossDay != Day)
+	{
+		BossDay = Day;
+		BossTries = 0;
+	}
+	++BossTries;
+	return Error::None;
+}
+
+Error Kingdom::FinishBoss(int Stars, int64_t DamagePermille, Reward* Out)
+{
+	if (Pending != BossPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// As in a trial every squad, spell and the titan come back as they went.
+	Reward R;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	const int64_t Dmg = std::max<int64_t>(0, std::min<int64_t>(1000, DamagePermille));
+	// The battle counts for the alliance it began in (the player may have left it since).
+	if (BossMine() && BossHits.size() < 64)
+	{
+		BossHits.emplace_back(Time, Dmg);
+		const std::vector<std::pair<int64_t, EventReward>>& Ms = C.raidBoss.milestones;
+		for (size_t I = 0; I < Ms.size(); ++I)
+		{
+			if (Dmg >= Ms[I].first && PayEvent(Ms[I].second, 0x626d696c65ULL, static_cast<uint64_t>(BossNo) * 4096 + BossHits.size() * 32 + I, R, true) != Error::None)
+			{
+				++R.relicsLost;
+			}
+		}
+	}
+	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimBossChest(Reward* Out)
+{
+	const RaidBossRules& B = C.raidBoss;
+	if (B.bosses.empty())
+	{
+		return Error::BadId;
+	}
+	if (BossChestClaimed())
+	{
+		return Error::Nothing;
+	}
+	if (Pending == BossPending || !BossDefeated())
+	{
+		return Error::NotReady;
+	}
+	if (!BossMine() || BossHits.empty())
+	{
+		return Error::NotAllowed;
+	}
+	const int Tier = std::max(1, std::min(static_cast<int>(B.tiers.size()), BossSnapOf().tier));
+	Reward R;
+	const Error E = PayEvent(B.tiers[static_cast<size_t>(Tier - 1)].chest, 0x6263686573ULL, static_cast<uint64_t>(BossNo), R);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	bBossChest = true;
+	if (Out)
+	{
+		*Out = R;
+	}
 	return Error::None;
 }
 
@@ -6547,6 +6940,42 @@ std::string Kingdom::Save() const
 	}
 	W.EndArray();
 	W.EndObject();
+	// Raid Boss (optional): the event's alliance and the player's battles as [time, damage].
+	W.Key("boss");
+	W.BeginObject();
+	W.Key("no");
+	W.Int(BossNo);
+	W.Key("key");
+	W.Int(BossSaved.key);
+	W.Key("members");
+	W.Int(BossSaved.members);
+	W.Key("tier");
+	W.Int(BossSaved.tier);
+	W.Key("home");
+	W.Int(BossSaved.home);
+	W.Key("hits");
+	W.BeginArray();
+	for (const std::pair<int64_t, int64_t>& X : BossHits)
+	{
+		W.BeginArray();
+		W.Int(X.first);
+		W.Int(X.second);
+		W.EndArray();
+	}
+	W.EndArray();
+	W.Key("chest");
+	W.Bool(bBossChest);
+	W.Key("day");
+	W.Int(BossDay);
+	W.Key("tries");
+	W.Int(BossTries);
+	W.Key("pick");
+	W.BeginArray();
+	W.Int(BossPickOld);
+	W.Int(BossPickNew);
+	W.Int(BossPickFrom);
+	W.EndArray();
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -7368,6 +7797,41 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			AsOffer.clear();
 		}
 	}
+	// Raid Boss (saves before it start this event's state on the next Advance).
+	ResetBoss();
+	if (const JsonValue* BossJ = J.Find("boss"); BossJ && !C.raidBoss.bosses.empty())
+	{
+		const int Tiers = static_cast<int>(C.raidBoss.tiers.size());
+		BossNo = BossJ->GetInt64("no", -1);
+		BossSaved.key = std::max<int64_t>(-1, BossJ->GetInt64("key", -1));
+		BossSaved.members = std::max(0, std::min(1000, BossJ->GetInt("members", 0)));
+		BossSaved.tier = std::max(0, std::min(Tiers, BossJ->GetInt("tier", 0)));
+		BossSaved.home = std::max(0, std::min(Tiers, BossJ->GetInt("home", 0)));
+		if (BossSaved.key >= 0 && (BossSaved.tier < 1 || BossSaved.home < 1))
+		{
+			BossSaved = BossSnap();
+		}
+		if (const JsonValue* HitsJ = BossJ->Find("hits"); HitsJ && HitsJ->IsArray())
+		{
+			for (size_t I = 0; I < HitsJ->Size() && BossHits.size() < 64; ++I)
+			{
+				const JsonValue& H = (*HitsJ)[I];
+				if (H.IsArray() && H.Size() == 2)
+				{
+					BossHits.emplace_back(H[0].AsInt64(0), std::max<int64_t>(0, std::min<int64_t>(1000, H[1].AsInt64(0))));
+				}
+			}
+		}
+		bBossChest = BossJ->GetBool("chest", false);
+		BossDay = std::max<int64_t>(-1, BossJ->GetInt64("day", -1));
+		BossTries = std::max(0, BossJ->GetInt("tries", 0));
+		if (const JsonValue* PickJ = BossJ->Find("pick"); PickJ && PickJ->IsArray() && PickJ->Size() == 3)
+		{
+			BossPickOld = std::max(0, std::min(Tiers, (*PickJ)[0].AsInt(0)));
+			BossPickNew = std::max(0, std::min(Tiers, (*PickJ)[1].AsInt(0)));
+			BossPickFrom = (*PickJ)[2].AsInt64(0);
+		}
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -7426,6 +7890,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		// A site, mission, trial or Assault run the content (or the save) no longer has.
 		const int Mission = PendingMission();
 		if (Pending == TrialPending ? C.trials.list.empty()
+				: Pending == BossPending ? C.raidBoss.bosses.empty()
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
@@ -7775,6 +8240,27 @@ uint64_t Kingdom::Hash() const
 		{
 			W.I32(B);
 		}
+	}
+	// The same for the Raid Boss: only once an event has rolled or the player has touched it.
+	if (BossNo >= 0 || BossDay >= 0 || BossPickFrom != 0)
+	{
+		W.I64(BossNo);
+		W.I64(BossSaved.key);
+		W.I32(BossSaved.members);
+		W.I32(BossSaved.tier);
+		W.I32(BossSaved.home);
+		W.I32(static_cast<int32_t>(BossHits.size()));
+		for (const std::pair<int64_t, int64_t>& X : BossHits)
+		{
+			W.I64(X.first);
+			W.I64(X.second);
+		}
+		W.U32(bBossChest ? 1u : 0u);
+		W.I64(BossDay);
+		W.I32(BossTries);
+		W.I32(BossPickOld);
+		W.I32(BossPickNew);
+		W.I64(BossPickFrom);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)
