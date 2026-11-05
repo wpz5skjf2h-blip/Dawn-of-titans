@@ -3427,6 +3427,13 @@ function sweepButton(c, a, m) {
 	return '<button class="btn' + (err === E.None ? ' primary' : '') + '" data-act="mission-sweep" data-id="' + (a * 100 + m) + '"' +
 		(err === E.None ? '' : ' disabled title="' + esc(sweepErrText(err)) + '"') + '>Зачистка · 1 ' + iconSvg('scroll') + ' ' + fmtShort(sweepFood(missionDef(a, m))) + ' ' + iconSvg('food') + '</button>';
 }
+/** A repeat win's or a sweep's loot for a toast (relics go in the army toast). */
+function lootText(r) {
+	const loot = rewardParts(r);
+	if (loot.length) return ', добыча: ' + loot.join(', ');
+	const table = K.rules.campaigns.loot || [];
+	return table.length && !(r.relics || []).length && !r.relicsLost ? ', добыча не влезла: склады полны' : '';
+}
 /** Who goes on sweeps: the rested titans (the strongest by default) or none. */
 function sweepPicker(st, pick) {
 	const now = nowF();
@@ -3446,8 +3453,7 @@ function sweepMission(a, m) {
 		refresh(true);
 		return;
 	}
-	const loot = rewardParts(r);
-	toast('Зачистка «' + md.name + '»: ★★★' + (loot.length ? ', добыча: ' + loot.join(', ') : ''), 'gold');
+	toast('Зачистка «' + md.name + '»: ★★★' + lootText(r), 'gold');
 	armyToast(r, []);
 	persist();
 	refresh(true);
@@ -3508,8 +3514,8 @@ function openCampaign(act) {
 			(lockedAct ? '<p class="fine">' + (c.err[0] === E.NeedRequirement ? 'Сначала постройте Гильдию искателей приключений.' : c.ck.c ? 'Акт откроется на Замке ' + c.ck.c + '.' : 'Акт откроется, когда будет пройден предыдущий.') + '</p>' : '') +
 			'<div class="costline"><span>Звёзды акта</span><b>★ ' + c.total + ' / ' + max + '</b><span>камни ' + iconSvg('stones') + st.res[3] + '</span>' +
 			(sweepOn() ? '<span>свитки ' + iconSvg('scroll') + (st.scrolls || 0) + '</span>' : '') + '</div>' +
-			'<h3>Миссии</h3>' + cards.join('') + sweepHtml +
-			(hidden > 0 && !lockedAct ? '<p class="fine">Впереди ещё ' + hidden + ' ' + plural(hidden, 'миссия', 'миссии', 'миссий') + ': туман рассеивается по мере продвижения.</p>' : '') +
+			'<h3>Миссии</h3>' + cards.join('') +
+			(hidden > 0 && !lockedAct ? '<p class="fine">Впереди ещё ' + hidden + ' ' + plural(hidden, 'миссия', 'миссии', 'миссий') + ': туман рассеивается по мере продвижения.</p>' : '') + sweepHtml +
 			'<h3>Сундуки за звёзды</h3>' + chests.join('') +
 			'<div class="actions">' + closeBtn + '</div>';
 		return { key: ['camp', a, st.res[3] >= K.rules.campaigns.stones, st.campaign.map((x) => x.stars.join('') + ':' + x.err.join('.') + ':' + (x.sw || []).join('.') + ':' + x.chests.join('')).join('/'),
@@ -3552,10 +3558,7 @@ function missionEnd(ctx, stars, retreat) {
 		else if (r.first) {
 			const got = RES.map((k, i) => (i === 0 ? r.gold : i === 1 ? r.food : i === 2 ? r.gems : i === 3 ? r.stones : 0));
 			toast('«' + md.name + '»: победа ' + '★'.repeat(stars) + '! Награда: ' + RES.map((k, i) => (got[i] > 0 ? resAmount(k, got[i]) : '')).filter(Boolean).join(', '), 'gold');
-		} else {
-			const loot = rewardParts(r);
-			toast('«' + md.name + '»: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : '') + (loot.length ? ', добыча: ' + loot.join(', ') : ''), 'gold');
-		}
+		} else toast('«' + md.name + '»: ' + '★'.repeat(stars) + (r.xp ? ', опыт титана +' + fmt(r.xp) : '') + lootText(r), 'gold');
 		armyToast(r, used);
 		if (stars > 0 && r.first && m === A.missions.length - 1) setTimeout(() => toast(A.name + ' пройден! ' + A.outro, 'gold'), 900);
 	}
