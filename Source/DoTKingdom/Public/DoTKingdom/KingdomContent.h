@@ -274,6 +274,17 @@ struct MissionLoot
 	int relic = 0; // a relic of this rarity (0 = none)
 };
 
+/** Heroic difficulty (master prompt 10.2): every act again, with a stronger enemy, once the act is won to its end. */
+struct HeroicRules
+{
+	int castle = 0; // Castle level that opens it (and the act's own); 0: no Heroic
+	int level = 0; // added to a mission's level (titan XP, loot, sweep food)
+	int firstPct = 100; // first-win reward, percent of the mission's
+	int lootPct = 100; // repeat wins' and sweeps' resources, percent of the loot table's
+	int relicUp = 0; // stars added to the relics of the loot table and of the chests
+	int chestPct = 100; // star chests' resources, percent of the act's
+};
+
 /** Campaigns of the Adventurers' Guild (kingdom.json "campaigns"). */
 struct CampaignRules
 {
@@ -285,6 +296,7 @@ struct CampaignRules
 	int64_t scrollsStart = 0; // War Scrolls a new kingdom (or a save from before them) has
 	int64_t scrollsMax = 0; // the most a kingdom holds
 	std::vector<MissionLoot> loot; // rolled by repeat wins and sweeps (empty: titan XP only)
+	HeroicRules heroic;
 };
 
 /** What a daily quest counts. */

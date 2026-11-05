@@ -215,6 +215,10 @@ You are the last heir of the House of Highvale (the player names their house). O
 - Each Act has an intro and an outro told in 3–6 illustrated story panels (voice optional).
 - After Act 6: Heroic difficulty for all Acts, plus the endless **Titan Spire** tower mode [POST].
 
+> **Implemented now (Acts 1–4):** Highvale (Keep 8), Mistmoor (Keep 12), Sunreach (Keep 16, with siege missions whose
+> defenders fight behind walls) and Jade Peaks (Keep 20), each 12 missions and a boss with Ilsa Wren's briefings and
+> star chests (docs/M0_Notes.md §6д, §6я).
+
 ### 2.6 Narrative delivery
 - Comic-style story panels with 2.5D parallax before and after each Act; short barks during battle; mission briefings.
 - Every titan has a lore card (150–250 words), unlocked when it is bound. The **Lore Codex** collects them and grants rewards for completed sets.
@@ -1416,6 +1420,11 @@ About 60% of soft-currency income comes from production and about 40% from battl
 **Pattern per region (12 missions + boss):** M1–M3 field battles introducing the region's new enemy; M4 a special type; M5–M7 field or siege; M8 Titan Hunt; M9–M11 mixed; M12 elite (Heroic-like); M13 boss. Plus 2–4 optional side missions with unique rewards (lore, decorations).
 
 **Difficulties:** Normal; **Heroic** (unlocked when an Act is cleared: enemy Power ×1.6, new modifiers, rewards ×2, higher gear rarity); Nightmare [POST].
+
+> **Implemented now (Heroic):** an act won to its last mission opens again on Heroic from Keep (Castle) 16: Warlord AI,
+> +25% to the enemy squads and titan, the titan 8 levels higher, one Titan Spire modifier per mission, mission levels
+> +3; the first win pays ×2, repeat loot ×2 with relics a star better, and Heroic stars open the act's chests again
+> (×2 resources, relic or titan a star better) (docs/M0_Notes.md §6ю).
 
 **Scripted triggers (data-driven).**
 - *Conditions:* time elapsed, unit count, HP threshold, area entered, objective state, spell cast, titan defeated.

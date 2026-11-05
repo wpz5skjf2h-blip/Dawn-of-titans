@@ -1061,10 +1061,11 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 						A.chests.push_back(D);
 					}
 				}
-				// Missions are stored as one byte of stars each and chests as bits of a 32-bit mask.
-				if (A.id.empty() || A.missions.empty() || A.missions.size() > 99 || A.chests.size() > 32 || Out.battles.empty())
+				// Missions are stored as one byte of stars each and chests as bits of a 32-bit mask; Heroic missions and
+				// chests are numbered from 50.
+				if (A.id.empty() || A.missions.empty() || A.missions.size() > 50 || A.chests.size() > 32 || Out.battles.empty())
 				{
-					Error = "kingdom/kingdom.json: a campaign act needs an id, 1-99 missions, at most 32 chests and the battles table";
+					Error = "kingdom/kingdom.json: a campaign act needs an id, 1-50 missions, at most 32 chests and the battles table";
 					return false;
 				}
 				G.acts.push_back(A);
@@ -1075,6 +1076,16 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			G.sweepFood = std::max<int64_t>(0, SweepJ->GetInt64("food", 0));
 			G.scrollsStart = std::max<int64_t>(0, SweepJ->GetInt64("start", 0));
 			G.scrollsMax = std::max<int64_t>(G.scrollsStart, SweepJ->GetInt64("max", G.scrollsStart));
+		}
+		if (const JsonValue* HeroJ = Camp->Find("heroic"))
+		{
+			HeroicRules& H = G.heroic;
+			H.castle = std::max(0, std::min(100, HeroJ->GetInt("castle", 0)));
+			H.level = std::max(0, std::min(static_cast<int>(Out.battles.size()), HeroJ->GetInt("level", 0)));
+			H.firstPct = std::max(0, std::min(1000, HeroJ->GetInt("first", 100)));
+			H.lootPct = std::max(0, std::min(1000, HeroJ->GetInt("loot", 100)));
+			H.relicUp = std::max(0, std::min(4, HeroJ->GetInt("relicUp", 0)));
+			H.chestPct = std::max(0, std::min(1000, HeroJ->GetInt("chest", 100)));
 		}
 		if (const JsonValue* LootJ = Camp->Find("loot"))
 		{

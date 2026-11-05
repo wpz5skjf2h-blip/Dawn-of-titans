@@ -127,6 +127,8 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	SiteCounter = 0;
 	MissionStarList.assign(C.campaigns.acts.size(), {});
 	ChestMask.assign(C.campaigns.acts.size(), 0);
+	HeroicStarList.assign(C.campaigns.acts.size(), {});
+	HeroicChestMask.assign(C.campaigns.acts.size(), 0);
 	ScrollCount = C.campaigns.scrollsStart;
 	LootRolls = 0;
 	LoadoutList.clear();
@@ -2608,14 +2610,23 @@ int Kingdom::MissionCount(int Act) const
 	return Act >= 0 && Act < ActCount() ? static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].missions.size()) : 0;
 }
 
+bool Kingdom::ValidMission(int Act, int Mission) const
+{
+	const int M = Mission >= HeroicBase ? Mission - HeroicBase : Mission;
+	return M >= 0 && M < MissionCount(Act) && (Mission < HeroicBase || HeroicOn());
+}
+
 int Kingdom::MissionStars(int Act, int Mission) const
 {
-	if (Act < 0 || Act >= static_cast<int>(MissionStarList.size()))
+	const bool bHeroic = Mission >= HeroicBase;
+	const std::vector<std::vector<uint8_t>>& List = bHeroic ? HeroicStarList : MissionStarList;
+	const int M = bHeroic ? Mission - HeroicBase : Mission;
+	if (Act < 0 || Act >= static_cast<int>(List.size()))
 	{
 		return 0;
 	}
-	const std::vector<uint8_t>& Stars = MissionStarList[static_cast<size_t>(Act)];
-	return Mission >= 0 && Mission < static_cast<int>(Stars.size()) ? Stars[static_cast<size_t>(Mission)] : 0;
+	const std::vector<uint8_t>& Stars = List[static_cast<size_t>(Act)];
+	return M >= 0 && M < static_cast<int>(Stars.size()) ? Stars[static_cast<size_t>(M)] : 0;
 }
 
 int Kingdom::ActStars(int Act) const
@@ -2628,32 +2639,62 @@ int Kingdom::ActStars(int Act) const
 	return Total;
 }
 
+int Kingdom::HeroicStars(int Act) const
+{
+	int Total = 0;
+	for (int M = 0; M < MissionCount(Act); ++M)
+	{
+		Total += MissionStars(Act, HeroicBase + M);
+	}
+	return Total;
+}
+
+int Kingdom::MissionLevel(int Act, int Mission) const
+{
+	if (!ValidMission(Act, Mission))
+	{
+		return 0;
+	}
+	const bool bHeroic = Mission >= HeroicBase;
+	const int Level = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(bHeroic ? Mission - HeroicBase : Mission)].level;
+	return bHeroic ? std::min(static_cast<int>(C.battles.size()), Level + C.campaigns.heroic.level) : Level;
+}
+
 bool Kingdom::ChestClaimed(int Act, int Chest) const
 {
-	return Act >= 0 && Act < static_cast<int>(ChestMask.size()) && Chest >= 0 && Chest < 32 && ((ChestMask[static_cast<size_t>(Act)] >> Chest) & 1u) != 0;
+	const bool bHeroic = Chest >= HeroicBase;
+	const std::vector<uint32_t>& Mask = bHeroic ? HeroicChestMask : ChestMask;
+	const int K = bHeroic ? Chest - HeroicBase : Chest;
+	return Act >= 0 && Act < static_cast<int>(Mask.size()) && K >= 0 && K < 32 && ((Mask[static_cast<size_t>(Act)] >> K) & 1u) != 0;
 }
 
 Check Kingdom::CheckMission(int Act, int Mission) const
 {
 	Check Out;
-	if (Mission < 0 || Mission >= MissionCount(Act))
+	if (!ValidMission(Act, Mission))
 	{
 		Out.error = Error::BadId;
 		return Out;
 	}
 	const ActDef& A = C.campaigns.acts[static_cast<size_t>(Act)];
+	const bool bHeroic = Mission >= HeroicBase;
+	const int First = bHeroic ? HeroicBase : 0;
+	const int Castle = bHeroic ? std::max(A.castle, C.campaigns.heroic.castle) : A.castle;
 	Out.cost[static_cast<size_t>(ResIndex(Res::Stones))] = C.campaigns.stones;
-	// Missions go in order, and an act opens when the one before it is won to its last mission.
-	const bool bOpen = Mission > 0 ? MissionStars(Act, Mission - 1) > 0 : (Act == 0 || MissionStars(Act - 1, MissionCount(Act - 1) - 1) > 0);
+	// Missions go in order, and an act opens when the one before it is won to its last mission; on Heroic, when the
+	// act itself is.
+	const bool bOpen = Mission > First ? MissionStars(Act, Mission - 1) > 0
+		: bHeroic ? MissionStars(Act, MissionCount(Act) - 1) > 0
+		: (Act == 0 || MissionStars(Act - 1, MissionCount(Act - 1) - 1) > 0);
 	if (C.campaigns.guild >= 0 && !BuildingLevel(C.campaigns.guild))
 	{
 		Out.error = Error::NeedRequirement;
 		Out.missing = {C.campaigns.guild, 1, 1};
 	}
-	else if (CastleLevel() < A.castle)
+	else if (CastleLevel() < Castle)
 	{
 		Out.error = Error::Locked;
-		Out.castle = A.castle;
+		Out.castle = Castle;
 	}
 	else if (!bOpen)
 	{
@@ -2678,34 +2719,40 @@ Error Kingdom::StartMission(int Act, int Mission, const std::vector<int>& Squads
 
 Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out)
 {
-	if (Mission < 0 || Mission >= MissionCount(Act) || Pending != -(MissionBase + Act * 100 + Mission))
+	if (!ValidMission(Act, Mission) || Pending != -(MissionBase + Act * 100 + Mission))
 	{
 		return Error::NoAttack;
 	}
 	Pending = 0;
-	const MissionDef& D = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Mission)];
+	const bool bHeroic = Mission >= HeroicBase;
+	const int Index = bHeroic ? Mission - HeroicBase : Mission;
+	const MissionDef& D = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Index)];
+	const int Level = MissionLevel(Act, Mission);
 	Reward R;
-	EndBattle(D.level, Stars, 100, SurvivorPct, SpellsUsed, R);
-	MissionStarList.resize(C.campaigns.acts.size());
-	std::vector<uint8_t>& Best = MissionStarList[static_cast<size_t>(Act)];
+	EndBattle(Level, Stars, 100, SurvivorPct, SpellsUsed, R);
+	std::vector<std::vector<uint8_t>>& List = bHeroic ? HeroicStarList : MissionStarList;
+	List.resize(C.campaigns.acts.size());
+	std::vector<uint8_t>& Best = List[static_cast<size_t>(Act)];
 	Best.resize(static_cast<size_t>(MissionCount(Act)), 0);
-	uint8_t& Mine = Best[static_cast<size_t>(Mission)];
+	uint8_t& Mine = Best[static_cast<size_t>(Index)];
 	const uint8_t Won = static_cast<uint8_t>(std::max(0, std::min(3, Stars)));
 	if (Won > 0 && Mine > 0)
 	{
 		// Repeats roll the loot table (and give the titan XP).
-		RollMissionLoot(D.level, Won, R);
+		RollMissionLoot(Level, Won, bHeroic, R);
 	}
 	if (Won > 0 && Mine == 0)
 	{
-		// The first win pays the mission's reward (repeats roll the loot table above).
+		// The first win pays the mission's reward, more of it on Heroic (repeats roll the loot table above).
 		R.firstClear = true;
+		const int64_t Pct = bHeroic ? C.campaigns.heroic.firstPct : 100;
 		for (int I = 0; I < kResCount; ++I)
 		{
-			if (D.first[static_cast<size_t>(I)] > 0)
+			const int64_t N = D.first[static_cast<size_t>(I)] * Pct / 100;
+			if (N > 0)
 			{
 				const int64_t Before = Amount(static_cast<Res>(I));
-				AddResource(static_cast<Res>(I), D.first[static_cast<size_t>(I)]);
+				AddResource(static_cast<Res>(I), N);
 				R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
 			}
 		}
@@ -2720,7 +2767,9 @@ Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<
 
 Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 {
-	if (Act < 0 || Act >= ActCount() || Chest < 0 || Chest >= static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].chests.size()))
+	const bool bHeroic = Chest >= HeroicBase;
+	const int K = bHeroic ? Chest - HeroicBase : Chest;
+	if (Act < 0 || Act >= ActCount() || K < 0 || K >= static_cast<int>(C.campaigns.acts[static_cast<size_t>(Act)].chests.size()) || (bHeroic && !HeroicOn()))
 	{
 		return Error::BadId;
 	}
@@ -2728,32 +2777,38 @@ Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 	{
 		return Error::Nothing;
 	}
-	const ChestDef& D = C.campaigns.acts[static_cast<size_t>(Act)].chests[static_cast<size_t>(Chest)];
-	if (ActStars(Act) < D.stars)
+	const ChestDef& D = C.campaigns.acts[static_cast<size_t>(Act)].chests[static_cast<size_t>(K)];
+	if ((bHeroic ? HeroicStars(Act) : ActStars(Act)) < D.stars)
 	{
 		return Error::NotEnough;
 	}
-	// A titan while the Hall of Titans has room, else a relic of its rarity; a relic needs room in the inventory.
-	const uint64_t H = Mix(Seed ^ 0x6368657374ULL, static_cast<uint64_t>(Act * 32 + Chest));
-	const bool bTitan = D.titan > 0 && static_cast<int>(TitanList.size()) < TitanCapacity();
-	const int RelicRarity = bTitan ? D.relic : std::max(D.relic, D.titan);
+	// A titan while the Hall of Titans has room, else a relic of its rarity; a relic needs room in the inventory. On
+	// Heroic both are of higher rarity, and the resources are more.
+	const HeroicRules& Hr = C.campaigns.heroic;
+	const uint64_t H = Mix(Seed ^ (bHeroic ? 0x6865726f6963ULL : 0x6368657374ULL), static_cast<uint64_t>(Act * 32 + K));
+	const int TitanRarity = D.titan > 0 ? std::min(4, D.titan + (bHeroic ? Hr.relicUp : 0)) : 0;
+	const int Relic = D.relic > 0 ? std::min(5, D.relic + (bHeroic ? Hr.relicUp : 0)) : 0;
+	const bool bTitan = TitanRarity > 0 && static_cast<int>(TitanList.size()) < TitanCapacity();
+	const int RelicRarity = bTitan ? Relic : std::max(Relic, TitanRarity);
 	if (RelicRarity > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
 	{
 		return Error::InventoryFull;
 	}
 	Reward R;
+	const int64_t Pct = bHeroic ? Hr.chestPct : 100;
 	for (int I = 0; I < kResCount; ++I)
 	{
-		if (D.res[static_cast<size_t>(I)] > 0)
+		const int64_t N = D.res[static_cast<size_t>(I)] * Pct / 100;
+		if (N > 0)
 		{
 			const int64_t Before = Amount(static_cast<Res>(I));
-			AddResource(static_cast<Res>(I), D.res[static_cast<size_t>(I)]);
+			AddResource(static_cast<Res>(I), N);
 			R.res[static_cast<size_t>(I)] += Amount(static_cast<Res>(I)) - Before;
 		}
 	}
 	if (bTitan)
 	{
-		R.newTitan = SummonTitan(D.titan, H >> 24);
+		R.newTitan = SummonTitan(TitanRarity, H >> 24);
 	}
 	if (RelicRarity > 0)
 	{
@@ -2763,8 +2818,9 @@ Error Kingdom::ClaimChest(int Act, int Chest, Reward* Out)
 			R.relics.push_back(Id);
 		}
 	}
-	ChestMask.resize(C.campaigns.acts.size(), 0);
-	ChestMask[static_cast<size_t>(Act)] |= 1u << Chest;
+	std::vector<uint32_t>& Mask = bHeroic ? HeroicChestMask : ChestMask;
+	Mask.resize(C.campaigns.acts.size(), 0);
+	Mask[static_cast<size_t>(Act)] |= 1u << K;
 	if (Out)
 	{
 		*Out = R;
@@ -2779,7 +2835,7 @@ namespace
 constexpr uint64_t LootSalt = 0x6c6f6f74ULL;
 }
 
-void Kingdom::RollMissionLoot(int Level, int Stars, Reward& R)
+void Kingdom::RollMissionLoot(int Level, int Stars, bool bHeroic, Reward& R)
 {
 	int64_t Total = 0;
 	for (const MissionLoot& L : C.campaigns.loot)
@@ -2802,8 +2858,8 @@ void Kingdom::RollMissionLoot(int Level, int Stars, Reward& R)
 		}
 		Pick -= L.weight;
 	}
-	// As on a land, fewer stars bring less of it.
-	const int64_t Pct = Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50);
+	// As on a land, fewer stars bring less of it; Heroic brings more.
+	const int64_t Pct = (Stars >= 3 ? 100 : (Stars == 2 ? 75 : 50)) * (bHeroic ? C.campaigns.heroic.lootPct : 100) / 100;
 	for (int I = 0; I < kResCount; ++I)
 	{
 		int64_t N = Got->res[static_cast<size_t>(I)];
@@ -2823,7 +2879,8 @@ void Kingdom::RollMissionLoot(int Level, int Stars, Reward& R)
 	}
 	if (Got->relic > 0)
 	{
-		const int32_t Id = static_cast<int>(RelicList.size()) < C.maxRelics ? AddRelic(RollRelicKind(H >> 32), Got->relic) : 0;
+		const int Rarity = std::min(5, Got->relic + (bHeroic ? C.campaigns.heroic.relicUp : 0));
+		const int32_t Id = static_cast<int>(RelicList.size()) < C.maxRelics ? AddRelic(RollRelicKind(H >> 32), Rarity) : 0;
 		if (Id != 0)
 		{
 			R.relics.push_back(Id);
@@ -2859,8 +2916,7 @@ Check Kingdom::CheckSweep(int Act, int Mission) const
 		Out.error = Error::NotAllowed;
 		return Out;
 	}
-	const int Level = C.campaigns.acts[static_cast<size_t>(Act)].missions[static_cast<size_t>(Mission)].level;
-	const int64_t Food = C.campaigns.sweepFood * Level;
+	const int64_t Food = C.campaigns.sweepFood * MissionLevel(Act, Mission);
 	Out.cost[static_cast<size_t>(ResIndex(Res::Food))] = Food;
 	if (MissionStars(Act, Mission) < 3)
 	{
@@ -8483,18 +8539,23 @@ std::string Kingdom::Save() const
 	}
 	W.EndObject();
 	W.EndObject();
-	// Campaigns (optional): best stars as a string of digits and opened chests as a bit mask, by act id.
+	// Campaigns (optional): best stars as a string of digits and opened chests as a bit mask, by act id; the same on
+	// Heroic once a Heroic mission is won.
 	W.Key("campaigns");
 	W.BeginObject();
 	for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
 	{
 		std::string Stars;
+		std::string Heroic;
 		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
 		{
 			Stars += static_cast<char>('0' + MissionStars(static_cast<int>(A), M));
+			Heroic += static_cast<char>('0' + MissionStars(static_cast<int>(A), HeroicBase + M));
 		}
 		const uint32_t Mask = A < ChestMask.size() ? ChestMask[A] : 0;
-		if (Stars.find_first_not_of('0') == std::string::npos && Mask == 0)
+		const uint32_t HeroicMask = A < HeroicChestMask.size() ? HeroicChestMask[A] : 0;
+		const bool bHeroic = Heroic.find_first_not_of('0') != std::string::npos || HeroicMask != 0;
+		if (Stars.find_first_not_of('0') == std::string::npos && Mask == 0 && !bHeroic)
 		{
 			continue;
 		}
@@ -8504,6 +8565,13 @@ std::string Kingdom::Save() const
 		W.String(Stars.c_str());
 		W.Key("chests");
 		W.Int(static_cast<int64_t>(Mask));
+		if (bHeroic)
+		{
+			W.Key("heroic");
+			W.String(Heroic.c_str());
+			W.Key("heroicChests");
+			W.Int(static_cast<int64_t>(HeroicMask));
+		}
 		W.EndObject();
 	}
 	W.EndObject();
@@ -9489,9 +9557,11 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
-	// Campaigns (saves before them have played no mission).
+	// Campaigns (saves before them have played no mission; before Heroic, none on Heroic).
 	MissionStarList.assign(C.campaigns.acts.size(), {});
 	ChestMask.assign(C.campaigns.acts.size(), 0);
+	HeroicStarList.assign(C.campaigns.acts.size(), {});
+	HeroicChestMask.assign(C.campaigns.acts.size(), 0);
 	if (const JsonValue* CampJ = J.Find("campaigns"))
 	{
 		for (size_t A = 0; A < C.campaigns.acts.size(); ++A)
@@ -9501,14 +9571,21 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			{
 				continue;
 			}
-			const std::string Stars = ActJ->GetString("stars");
-			std::vector<uint8_t>& Best = MissionStarList[A];
-			Best.assign(C.campaigns.acts[A].missions.size(), 0);
-			for (size_t M = 0; M < Best.size() && M < Stars.size(); ++M)
-			{
-				Best[M] = static_cast<uint8_t>(Stars[M] >= '1' && Stars[M] <= '3' ? Stars[M] - '0' : 0);
-			}
+			const auto ReadStars = [&](const std::string& Stars, std::vector<uint8_t>& Best) {
+				Best.assign(C.campaigns.acts[A].missions.size(), 0);
+				for (size_t M = 0; M < Best.size() && M < Stars.size(); ++M)
+				{
+					Best[M] = static_cast<uint8_t>(Stars[M] >= '1' && Stars[M] <= '3' ? Stars[M] - '0' : 0);
+				}
+			};
+			const uint32_t AllChests = C.campaigns.acts[A].chests.size() >= 32 ? 0xffffffffu : (1u << C.campaigns.acts[A].chests.size()) - 1u;
+			ReadStars(ActJ->GetString("stars"), MissionStarList[A]);
 			ChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("chests", 0)));
+			if (HeroicOn())
+			{
+				ReadStars(ActJ->GetString("heroic"), HeroicStarList[A]);
+				HeroicChestMask[A] = static_cast<uint32_t>(std::max<int64_t>(0, ActJ->GetInt64("heroicChests", 0))) & AllChests;
+			}
 		}
 	}
 	// Sweeps (saves before them start with the new kingdom's scrolls).
@@ -9966,7 +10043,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				: Pending == WarPending ? !WarContent() || WarAt < 0
 				: Pending == SpirePending ? C.spire.castle <= 0 || SpireAt < 1
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
-				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
+				: Mission >= 0 ? !ValidMission(Mission / 100, Mission % 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
 			Pending = 0;
 		}
@@ -10489,6 +10566,22 @@ uint64_t Kingdom::Hash() const
 		W.I64(SpireWeek);
 		W.I32(SpireWeekTop);
 		W.I32(SpireAt);
+	}
+	// And for Heroic missions: only once one is won or a Heroic chest opened.
+	for (size_t A = 0; A < HeroicStarList.size() || A < HeroicChestMask.size(); ++A)
+	{
+		const int Stars = HeroicStars(static_cast<int>(A));
+		const uint32_t Mask = A < HeroicChestMask.size() ? HeroicChestMask[A] : 0;
+		if (Stars == 0 && Mask == 0)
+		{
+			continue;
+		}
+		W.I32(static_cast<int32_t>(A) + 0x4845);
+		for (int M = 0; M < MissionCount(static_cast<int>(A)); ++M)
+		{
+			W.I32(MissionStars(static_cast<int>(A), HeroicBase + M));
+		}
+		W.U32(Mask);
 	}
 	return W.Hash();
 }

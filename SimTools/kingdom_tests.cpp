@@ -1181,8 +1181,10 @@ void TestCampaigns()
 	const CampaignRules& G = Ct.campaigns;
 	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
 	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
-	KD_CHECK(G.stones == 2 && G.guild == Def("adventurers_guild") && G.acts.size() == 2);
+	// The master prompt's launch campaign: Acts 1-4 (Highvale, Mistmoor, Sunreach, Jade Peaks).
+	KD_CHECK(G.stones == 2 && G.guild == Def("adventurers_guild") && G.acts.size() == 4);
 	KD_CHECK(G.acts[0].id == "act1" && G.acts[0].castle == 8 && G.acts[1].id == "act2" && G.acts[1].castle == 12);
+	KD_CHECK(G.acts[2].id == "act3" && G.acts[2].castle == 16 && G.acts[3].id == "act4" && G.acts[3].castle == 20);
 	const MissionDef& First = G.acts[0].missions[0];
 	KD_CHECK(First.id == "a1m1" && First.level == 3 && First.first[GemsI] == 10 && First.first[FoodI] == 5000);
 	KD_CHECK(G.acts[0].chests[2].stars == 36 && G.acts[0].chests[2].titan == 2 && G.acts[0].chests[2].res[GemsI] == 150 && G.acts[0].chests[1].relic == 3);
@@ -1192,14 +1194,14 @@ void TestCampaigns()
 		KD_CHECK(A.missions.size() == 13 && A.chests.size() == 3 && A.chests[0].stars == 12 && A.chests[1].stars == 24 && A.chests[2].stars == 36);
 		for (size_t M = 0; M < A.missions.size(); ++M)
 		{
-			KD_CHECK(A.missions[M].first[GemsI] >= 10 && A.missions[M].first[GemsI] <= 40);
+			KD_CHECK(A.missions[M].first[GemsI] >= 10 && A.missions[M].first[GemsI] <= 50);
 			KD_CHECK(M == 0 || A.missions[M].level >= A.missions[M - 1].level);
 		}
 	}
 
 	Kingdom K(Content());
 	K.NewGame(T0, 61);
-	KD_CHECK(K.ActCount() == 2 && K.MissionCount(0) == 13 && K.MissionCount(2) == 0 && K.ActStars(0) == 0 && !K.ChestClaimed(0, 0));
+	KD_CHECK(K.ActCount() == 4 && K.MissionCount(0) == 13 && K.MissionCount(3) == 13 && K.MissionCount(4) == 0 && K.ActStars(0) == 0 && !K.ChestClaimed(0, 0));
 	// Without the Adventurers' Guild nothing opens.
 	const Check NoGuild = K.CheckMission(0, 0);
 	KD_CHECK(NoGuild.error == Error::NeedRequirement && NoGuild.missing.building == G.guild && NoGuild.missing.level == 1);
@@ -1269,6 +1271,22 @@ void TestCampaigns()
 	Kingdom O(Content());
 	const std::string Old = Replace(AtCastle(8), "\"campaigns\":{}", "\"x\":0");
 	KD_CHECK(Old != AtCastle(8) && O.Load(Old, Error) && O.ActStars(0) == 0 && O.CheckMission(0, 0).error == Error::None);
+	// Acts III and IV: each waits for the act before it and for its Castle.
+	const std::string Won = "\"stars\":\"3333333333333\",\"chests\":0}";
+	const auto Acts = [&](int Castle, int Done) {
+		std::string Camp = "\"campaigns\":{";
+		for (int A = 0; A < Done; ++A)
+		{
+			Camp += std::string(A ? "," : "") + "\"act" + std::to_string(A + 1) + "\":{" + Won;
+		}
+		return Replace(AtCastle(Castle), "\"campaigns\":{}", Camp + "}");
+	};
+	KD_CHECK(O.Load(Acts(20, 1), Error) && O.ActStars(0) == 39 && O.CheckMission(1, 0).error == Error::None && O.CheckMission(2, 0).error == Error::Locked && O.CheckMission(2, 0).castle == 0);
+	KD_CHECK(O.Load(Acts(15, 2), Error) && O.ActStars(1) == 39 && O.CheckMission(2, 0).error == Error::Locked && O.CheckMission(2, 0).castle == 16);
+	KD_CHECK(O.Load(Acts(16, 2), Error) && O.CheckMission(2, 0).error == Error::None && O.CheckMission(3, 0).error == Error::Locked && O.CheckMission(3, 0).castle == 20);
+	KD_CHECK(O.Load(Acts(19, 3), Error) && O.ActStars(2) == 39 && O.CheckMission(3, 0).error == Error::Locked && O.CheckMission(3, 0).castle == 20);
+	KD_CHECK(O.Load(Acts(20, 3), Error) && O.CheckMission(3, 0).error == Error::None && O.MissionLevel(3, 0) == 9 && O.MissionLevel(2, 0) == 8);
+	KD_CHECK(O.Load(Acts(20, 4), Error) && O.ActStars(3) == 39 && O.ClaimChest(3, 1, &R) == Error::None && R.relics.size() == 1 && O.FindRelic(R.relics[0])->rarity == 5);
 }
 
 void TestCampaignSweep()
@@ -1476,6 +1494,130 @@ void TestDivine()
 	KD_CHECK(Ct.raidBoss.tiers.back().chest.divine == 12 && Ct.raidBoss.tiers[0].chest.divine == 0);
 	KD_CHECK(Ct.allianceWar.chests.back().win.divine == 20 && Ct.allianceWar.chests.back().lose.divine == 0 && Ct.allianceWar.chests[0].win.divine == 0);
 	KD_CHECK(Ct.assault.stages.back().reward.divine == 40 && Ct.assault.stages[4].reward.divine == 15 && Ct.assault.stages[0].reward.divine == 0);
+}
+
+void TestHeroic()
+{
+	const KingdomContent& Ct = Content();
+	const HeroicRules& H = Ct.campaigns.heroic;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const int HB = Kingdom::HeroicBase;
+	// Master prompt 10.2: Heroic opens when an act is cleared (Castle 16-18), rewards x2 and better relics.
+	KD_CHECK(H.castle == 16 && H.level == 3 && H.firstPct == 200 && H.lootPct == 200 && H.relicUp == 1 && H.chestPct == 200);
+	Kingdom K(Ct);
+	K.NewGame(T0, 127);
+	const uint64_t H0 = K.Hash();
+	KD_CHECK(K.HeroicOn() && K.HeroicStars(0) == 0 && K.MissionStars(0, HB) == 0 && !K.ChestClaimed(0, HB));
+	// Mission numbers: HeroicBase + M is mission M on Heroic; nothing else is a mission.
+	KD_CHECK(K.CheckMission(0, HB + 13).error == Error::BadId && K.CheckMission(0, 13).error == Error::BadId && K.CheckMission(0, HB - 1).error == Error::BadId);
+	KD_CHECK(K.CheckMission(0, -1).error == Error::BadId && K.CheckMission(4, HB).error == Error::BadId && K.CheckSweep(0, HB + 13).error == Error::BadId);
+	KD_CHECK(K.MissionLevel(0, 0) == 3 && K.MissionLevel(0, HB) == 6 && K.MissionLevel(0, HB + 12) == 9 && K.MissionLevel(1, HB + 12) == 9 && K.MissionLevel(0, HB + 13) == 0);
+	KD_CHECK(K.CheckMission(0, HB).error == Error::NeedRequirement && K.ClaimChest(0, HB + 3, nullptr) == Error::BadId && K.ClaimChest(0, HB, nullptr) == Error::NotEnough);
+	// With vaults big enough for twice the loot.
+	const std::string Save = WithBuilding(WithBuilding(WithBuilding(K.Save(), "adventurers_guild", 1, 2), "gold_vault", 5, 10), "granary", 5, 14);
+	const auto AtCastle = [&](int Castle) { return Replace(Save, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":" + std::to_string(Castle)); };
+	std::string Error;
+	const auto WithRes = [](const std::string& Save0, int64_t F0) {
+		const size_t From = Save0.find("\"resources\":{");
+		const size_t To = Save0.find('}', From);
+		return Save0.substr(0, From) + "\"resources\":{\"gold\":0,\"food\":" + std::to_string(F0) + ",\"gems\":100,\"stones\":0,\"shards\":0,\"vp\":0" + Save0.substr(To);
+	};
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(AtCastle(16), Error) && P.Capacity(Res::Gold) >= 20000 && P.Capacity(Res::Food) >= 20000);
+	// Not before the act is won to its end; then from its first mission, in order.
+	KD_CHECK(P.CheckMission(0, HB).error == Error::Locked && P.CheckMission(0, HB).castle == 0 && P.StartMission(0, HB, {}, 0, {}, false) == Error::Locked);
+	Reward R;
+	for (int M = 0; M < 13; ++M)
+	{
+		P.RefillStones();
+		KD_CHECK(P.StartMission(0, M, {}, 0, {}, false) == Error::None && P.FinishMission(0, M, M == 12 ? 1 : 3, {}, {}, &R) == Error::None);
+		KD_CHECK(P.HeroicStars(0) == 0 && P.CheckMission(0, HB).error == (M == 12 ? Error::None : Error::Locked));
+	}
+	KD_CHECK(P.ActStars(0) == 37 && P.CheckMission(0, HB + 1).error == Error::Locked && P.CheckMission(1, HB).error == Error::Locked);
+	KD_CHECK(P.CheckMission(0, HB).cost[StonesI] == 2 && P.CheckSweep(0, HB).error == Error::NotReady && P.CheckSweep(0, HB).cost[FoodI] == 500 * 6);
+	// Below its Castle it waits (the act's own Castle, if higher, would count).
+	Kingdom Low(Ct);
+	KD_CHECK(Low.Load(Replace(P.Save(), "\"def\":\"castle\",\"level\":16", "\"def\":\"castle\",\"level\":15"), Error) && Low.CastleLevel() == 15);
+	KD_CHECK(Low.CheckMission(0, HB).error == Error::Locked && Low.CheckMission(0, HB).castle == 16 && Low.CheckMission(0, 0).error == Error::None);
+	// A Heroic battle: stones as usual, its own pending id; it reloads as it was.
+	const int32_t Perun = P.Titans()[0].id;
+	const int Militia = Troop("troop.militia");
+	P.RefillStones();
+	const int64_t Stones = P.Amount(Res::Stones);
+	KD_CHECK(P.StartMission(0, HB, {Militia}, Perun, {}, false) == Error::None && P.Amount(Res::Stones) == Stones - 2);
+	KD_CHECK(P.PendingMission() == HB && P.PendingAttack() == -(Kingdom::MissionBase + HB) && P.PendingSite() == -1);
+	KD_CHECK(P.FinishMission(0, 0, 3, {}, {}, nullptr) == Error::NoAttack && P.FinishMission(0, HB + 1, 3, {}, {}, nullptr) == Error::NoAttack);
+	const std::string Mid = P.Save();
+	Kingdom M2(Ct);
+	KD_CHECK(Mid.find("\"pending\":-1050,") != std::string::npos && M2.Load(Mid, Error) && M2.Hash() == P.Hash() && M2.Save() == Mid && M2.PendingMission() == HB);
+	// A pending Heroic mission the content does not have is dropped on load.
+	KD_CHECK(M2.Load(Replace(Mid, "\"pending\":-1050,", "\"pending\":-1063,"), Error) && M2.PendingAttack() == 0);
+	// A loss pays nothing; the titan gains XP as in a battle of the Heroic level.
+	KD_CHECK(P.FinishMission(0, HB, 0, {100}, {}, &R) == Error::None && !R.firstClear && R.res[GemsI] == 0 && P.MissionStars(0, HB) == 0);
+	KD_CHECK(R.titanId == Perun && R.titanXp == Ct.titanBattleXp[5] * Ct.titanStarsPct[0] / 100);
+	// The first win pays twice the mission's reward; the normal stars stay as they are.
+	KD_CHECK(P.Load(WithRes(P.Save(), 0), Error) && P.Amount(Res::Food) == 0);
+	P.RefillStones();
+	const int64_t Gems = P.Amount(Res::Gems);
+	const int64_t Food0 = P.Amount(Res::Food);
+	KD_CHECK(P.StartMission(0, HB, {}, 0, {}, false) == Error::None && P.FinishMission(0, HB, 2, {}, {}, &R) == Error::None);
+	KD_CHECK(R.firstClear && R.res[GemsI] == 20 && P.Amount(Res::Gems) == Gems + 20 && R.relics.empty());
+	KD_CHECK(R.res[FoodI] == std::min<int64_t>(10000, P.Capacity(Res::Food) - Food0) && R.res[FoodI] == 10000);
+	KD_CHECK(P.MissionStars(0, HB) == 2 && P.HeroicStars(0) == 2 && P.MissionStars(0, 0) == 3 && P.ActStars(0) == 37 && P.CheckMission(0, HB + 1).error == Error::None);
+	KD_CHECK(P.Lifetime(QuestEvent::Mission) >= 15 && P.Hash() != M2.Hash());
+	// Heroic chests count Heroic stars only, and give more.
+	KD_CHECK(P.ClaimChest(0, HB, &R) == Error::NotEnough && P.ClaimChest(0, 0, &R) == Error::None && R.res[GemsI] == 50 && !P.ChestClaimed(0, HB));
+	for (int M = 0; M < 13; ++M)
+	{
+		P.RefillStones();
+		KD_CHECK(P.StartMission(0, HB + M, {}, 0, {}, false) == Error::None && P.FinishMission(0, HB + M, 3, {}, {}, &R) == Error::None);
+		KD_CHECK(R.firstClear == (M > 0));
+	}
+	KD_CHECK(P.HeroicStars(0) == 39 && P.ActStars(0) == 37 && P.CheckMission(1, HB).error == Error::Locked);
+	const int64_t Gems2 = P.Amount(Res::Gems);
+	const int64_t Stones2 = P.Amount(Res::Stones);
+	KD_CHECK(P.ClaimChest(0, HB, &R) == Error::None && R.res[GemsI] == 100 && P.Amount(Res::Gems) == Gems2 + 100 && R.res[StonesI] == P.Amount(Res::Stones) - Stones2);
+	KD_CHECK(P.ChestClaimed(0, HB) && P.ChestClaimed(0, 0) && !P.ChestClaimed(0, 1) && P.ClaimChest(0, HB, &R) == Error::Nothing);
+	KD_CHECK(P.ClaimChest(0, HB + 1, &R) == Error::None && R.relics.size() == 1 && P.FindRelic(R.relics[0])->rarity == 4);
+	const size_t Titans = P.Titans().size();
+	const bool bRoom = static_cast<int>(Titans) < P.TitanCapacity();
+	KD_CHECK(P.ClaimChest(0, HB + 2, &R) == Error::None);
+	KD_CHECK(bRoom ? R.newTitan != 0 && Ct.titans[static_cast<size_t>(P.FindTitan(R.newTitan)->def)].stars == 3 : R.newTitan == 0 && R.relics.size() == 1 && P.FindRelic(R.relics[0])->rarity == 3);
+	// Saved by act beside the normal stars; the hash covers them; a save without them has none.
+	const std::string Base = P.Save();
+	KD_CHECK(Base.find("\"heroic\":\"3333333333333\",\"heroicChests\":7") != std::string::npos);
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(Base, Error) && S.Hash() == P.Hash() && S.Save() == Base && S.HeroicStars(0) == 39 && S.ChestClaimed(0, HB + 2));
+	KD_CHECK(S.Load(Replace(Base, ",\"heroic\":\"3333333333333\",\"heroicChests\":7", ""), Error) && S.HeroicStars(0) == 0 && !S.ChestClaimed(0, HB) && S.ActStars(0) == 37);
+	KD_CHECK(S.Hash() != P.Hash() && S.CheckMission(0, HB).error == Error::None);
+	KD_CHECK(S.Load(Replace(Base, "\"heroicChests\":7", "\"heroicChests\":255"), Error) && S.ChestClaimed(0, HB + 2) && !S.ChestClaimed(0, HB + 3));
+	KD_CHECK(K.Hash() == H0);
+	// Sweeps and repeats roll the loot table at the Heroic level, twice the resources, relics a star better.
+	const size_t RollsAt = Base.find("\"rolls\":");
+	const std::string RollsKey = Base.substr(RollsAt, Base.find('}', RollsAt) - RollsAt);
+	int Kinds[4] = {0, 0, 0, 0};
+	for (int N = 0; N < 120; ++N)
+	{
+		KD_CHECK(S.Load(WithRes(Replace(Base, RollsKey, "\"rolls\":" + std::to_string(N)), 5000), Error));
+		const size_t RelicsBefore = S.Relics().size();
+		KD_CHECK(S.SweepMission(0, HB, 0, &R) == Error::None && S.Amount(Res::Food) == 5000 - 3000 + R.res[FoodI]);
+		// Gold and food: 600 a level (6), twice; stones 3, twice.
+		KD_CHECK(R.res[GoldI] == 0 || R.res[GoldI] == 7200);
+		KD_CHECK(R.res[FoodI] == 0 || R.res[FoodI] == 7200);
+		KD_CHECK(R.res[StonesI] == 0 || R.res[StonesI] == 6);
+		KD_CHECK(R.relics.empty() || (S.FindRelic(R.relics[0])->rarity == 2 && S.Relics().size() == RelicsBefore + 1));
+		Kinds[0] += R.res[GoldI] > 0 ? 1 : 0;
+		Kinds[1] += R.res[FoodI] > 0 ? 1 : 0;
+		Kinds[2] += R.res[StonesI] > 0 ? 1 : 0;
+		Kinds[3] += R.relics.size() + static_cast<size_t>(R.relicsLost) > 0 ? 1 : 0;
+	}
+	std::printf("  heroic loot in 120 rolls: gold %d, food %d, stones %d, relics %d\n", Kinds[0], Kinds[1], Kinds[2], Kinds[3]);
+	KD_CHECK(Kinds[0] + Kinds[1] + Kinds[2] + Kinds[3] == 120 && Kinds[0] > 20 && Kinds[1] > 20 && Kinds[2] > 3);
+	// Act II on Heroic waits for Act II itself.
+	KD_CHECK(S.CheckMission(1, HB).error == Error::Locked && S.CheckMission(1, 0).error == Error::None);
 }
 
 void TestSpire()
@@ -4652,6 +4794,7 @@ int main()
 		{"Loadouts", TestLoadouts},
 		{"Divine", TestDivine},
 		{"Spire", TestSpire},
+		{"Heroic", TestHeroic},
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
