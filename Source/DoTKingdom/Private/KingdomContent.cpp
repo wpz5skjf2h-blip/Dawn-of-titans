@@ -1477,6 +1477,66 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Aj = Rules.Find("assault"))
+	{
+		AssaultRules& A = Out.assault;
+		A.castle = std::max(1, Aj->GetInt("castle", A.castle));
+		A.weeks = std::max(1, std::min(52, Aj->GetInt("weeks", A.weeks)));
+		A.week = std::max(0, std::min(A.weeks - 1, Aj->GetInt("week", A.week)));
+		A.startDay = std::max(0, std::min(6, Aj->GetInt("startDay", A.startDay)));
+		A.days = std::max(1, std::min(A.weeks * 7, Aj->GetInt("days", A.days)));
+		A.retries = std::max(0, Aj->GetInt("retries", A.retries));
+		A.boonChoices = std::max(1, Aj->GetInt("boonChoices", A.boonChoices));
+		bool bOk = true;
+		if (const JsonValue* G = Aj->Find("garrison"))
+		{
+			for (size_t I = 0; I < G->Size(); ++I)
+			{
+				A.garrison.push_back(Out.FindTroop((*G)[I].AsString()));
+				bOk = bOk && A.garrison.back() >= 0;
+			}
+		}
+		if (const JsonValue* Stages = Aj->Find("stages"))
+		{
+			for (size_t I = 0; I < Stages->Size(); ++I)
+			{
+				const JsonValue& J = (*Stages)[I];
+				AssaultStage S;
+				S.level = J.GetInt("level", 0);
+				S.extra = std::max(0, std::min(8, J.GetInt("extra", 0)));
+				S.fortPct = std::max(0, std::min(200, J.GetInt("fort", 0)));
+				S.titan = J.GetBool("titan", false);
+				if (const JsonValue* Pay = J.Find("reward"))
+				{
+					ReadCost(Pay, S.reward.res);
+					S.reward.relic = std::max(0, std::min(5, Pay->GetInt("relic", 0)));
+				}
+				bOk = bOk && (S.extra == 0 || !A.garrison.empty());
+				A.stages.push_back(S);
+			}
+		}
+		if (const JsonValue* Boons = Aj->Find("boons"))
+		{
+			for (size_t I = 0; I < Boons->Size(); ++I)
+			{
+				const JsonValue& J = (*Boons)[I];
+				AssaultBoon B;
+				B.id = J.GetString("id");
+				B.troopAtkPct = std::max(0, J.GetInt("atkPct", 0));
+				B.troopHpPct = std::max(0, J.GetInt("hpPct", 0));
+				B.revivePct = std::max(0, std::min(100, J.GetInt("revivePct", 0)));
+				B.titanPct = std::max(0, J.GetInt("titanPct", 0));
+				B.titanCritPct = std::max(0, J.GetInt("critPct", 0));
+				bOk = bOk && !B.id.empty();
+				A.boons.push_back(B);
+			}
+		}
+		if (!bOk || A.stages.empty() || A.stages.size() > 32 || static_cast<int>(A.boons.size()) < A.boonChoices || A.boons.size() > 32)
+		{
+			Error = "kingdom/kingdom.json: the assault needs 1 to 32 stages, known garrison troops, and boons with ids (at least boonChoices)";
+			return false;
+		}
+	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;
 }

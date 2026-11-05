@@ -2431,7 +2431,7 @@ void TestTitanTrials()
 std::string WithWarpath(const std::string& Save, const std::string& Wp)
 {
 	const size_t P = Save.find("\"warpath\":{");
-	const size_t Q = Save.find(",\"calendar\":{");
+	const size_t Q = Save.find(",\"assault\":{");
 	return P == std::string::npos || Q == std::string::npos ? Save : Save.substr(0, P) + "\"warpath\":" + Wp + Save.substr(Q);
 }
 
@@ -2905,6 +2905,186 @@ void TestAlliances()
 	KD_CHECK(V.Load(V5, Error) && V.MyAlliance() == -1 && V.AllianceCount() == 48 && V.Hash() == K.Hash());
 }
 
+/** The save with its "assault" object replaced. */
+std::string WithAssault(const std::string& Save, const std::string& As)
+{
+	const size_t P = Save.find("\"assault\":{");
+	const size_t Q = Save.find(",\"calendar\":{");
+	return P == std::string::npos || Q == std::string::npos ? Save : Save.substr(0, P) + "\"assault\":" + As + Save.substr(Q);
+}
+
+void TestAssault()
+{
+	const KingdomContent& Ct = Content();
+	const AssaultRules& A = Ct.assault;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	// Master prompt 10.5: a monthly event of 5 days, 10 fortified sieges, 1 of 3 boons after a stage, 3 retries a run.
+	// Ours: from Castle 5, Friday to Tuesday in the second week of every four, 70 gems for all stages.
+	KD_CHECK(A.castle == 5 && A.weeks == 4 && A.week == 1 && A.startDay == 4 && A.days == 5 && A.retries == 3 && A.boonChoices == 3);
+	KD_CHECK(A.stages.size() == 10 && A.boons.size() == 5 && A.garrison.size() == 3 && A.garrison[1] == Troop("troop.ballista"));
+	int64_t StageGems = 0;
+	int Titans = 0;
+	for (const AssaultStage& S : A.stages)
+	{
+		StageGems += S.reward.res[GemsI];
+		Titans += S.titan ? 1 : 0;
+	}
+	KD_CHECK(StageGems == 70 && Titans == 2 && A.stages[4].titan && A.stages[9].titan && A.stages[9].reward.relic == 3 && A.stages[4].reward.relic == 2);
+	KD_CHECK(A.stages[0].level == -2 && A.stages[9].level == 2 && A.stages[9].extra == 2 && A.stages[9].fortPct == 25 && A.stages[0].reward.res[GoldI] == 1000);
+	KD_CHECK(A.boons[2].id == "medic" && A.boons[2].revivePct == 30 && A.boons[0].troopAtkPct == 15 && A.boons[1].troopHpPct == 15);
+	KD_CHECK(A.boons[3].titanPct == 20 && A.boons[4].titanCritPct == 10);
+
+	// T0 (day 20370, a Thursday of week 2910) is after event 727 (Friday 20364 to Tuesday 20368); event 728 opens on
+	// Friday 20392, in week 2913. A new kingdom is below Castle 5.
+	Kingdom K(Ct);
+	K.NewGame(T0, 75);
+	const int64_t Open = 20392 * Day;
+	KD_CHECK(K.AssaultEvent() == 727 && !K.AssaultOpen() && K.AssaultOpensAt() == Open && K.AssaultClosesAt() == Open + 5 * Day);
+	KD_CHECK(K.CheckAssault().error == Error::Locked && K.CheckAssault().castle == 5 && K.StartAssault({}, 0) == Error::Locked);
+	KD_CHECK(!K.AssaultStarted() && !K.AssaultRunning() && K.AssaultRetriesLeft() == 3 && K.StartAssaultStage({}) == Error::NoAttack && K.EndAssault() == Error::NoAttack);
+	const int Militia = Troop("troop.militia");
+	std::string Error;
+	Kingdom L(Ct);
+	std::string Save = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5");
+	Save = Replace(Save, "\"units\":{\"troop.militia\":" + std::to_string(K.ArmyCount(Militia)), "\"units\":{\"troop.militia\":9");
+	KD_CHECK(L.Load(Save, Error) && L.CastleLevel() == 5 && L.ArmyCount(Militia) == 9);
+	KD_CHECK(L.CheckAssault().error == Error::NotReady && L.CheckAssault().timeSec == Open - T0 && L.StartAssault({Militia}, 0) == Error::NotReady);
+	L.Advance(Open + Hour);
+	KD_CHECK(L.AssaultEvent() == 728 && L.AssaultOpen() && L.AssaultOpensAt() == Open && L.CheckAssault().error == Error::None);
+	// The army: squads of the camp (no more than it has, no more than the slots) and a titan that is not resting.
+	const int Slots = L.BattleSlots();
+	const int32_t Perun = L.Titans()[0].id;
+	KD_CHECK(Slots >= 2 && Slots < 9 && L.StartAssault({}, 0) == Error::NoTroops && L.StartAssault(std::vector<int>(static_cast<size_t>(Slots) + 1, Militia), 0) == Error::TooManySquads);
+	KD_CHECK(L.StartAssault({-1}, 0) == Error::BadId && L.StartAssault({Militia}, 99999) == Error::BadId && !L.AssaultStarted());
+	Kingdom Few(Ct);
+	KD_CHECK(Few.Load(Replace(L.Save(), "\"units\":{\"troop.militia\":9", "\"units\":{\"troop.militia\":1"), Error) && Few.StartAssault({Militia, Militia}, 0) == Error::NoTroops);
+	KD_CHECK(L.StartAssault({Militia, Militia}, Perun) == Error::None && L.AssaultRunning() && L.AssaultStagesWon() == 0 && L.AssaultBase() == 5);
+	KD_CHECK(L.ArmyCount(Militia) == 9 && L.AssaultArmy().size() == 2 && L.AssaultArmy()[0].pct == 100 && L.AssaultArmy()[1].level == L.TroopLevel(Militia));
+	KD_CHECK(L.AssaultTitan() == Perun && L.AssaultLevel(0) == 3 && L.AssaultLevel(4) == 5 && L.AssaultLevel(9) == 7 && L.StartAssault({Militia}, 0) == Error::Nothing);
+	KD_CHECK(L.FinishAssaultStage(3, {100, 100}, nullptr) == Error::NoAttack && L.ChooseAssaultBoon(0) == Error::Nothing);
+	// A stage battle: free of stones, the camp's squads stay home; no other battle or ending the run meanwhile.
+	const int64_t Stones = L.Amount(Res::Stones);
+	const int64_t Gold = L.Amount(Res::Gold);
+	const int64_t Xp = L.WarpathXp();
+	const int64_t Wins = L.Lifetime(QuestEvent::Win);
+	KD_CHECK(L.StartAssaultStage({}) == Error::None && L.PendingAssault() && L.PendingSite() == -1 && L.PendingMission() == -1 && !L.PendingTrial());
+	KD_CHECK(L.PendingAttack() == Kingdom::AssaultPending && L.Amount(Res::Stones) == Stones && L.PendingSquads().empty());
+	KD_CHECK(L.StartAssaultStage({}) == Error::Busy && L.EndAssault() == Error::Busy && L.FinishTrial(3, 100, nullptr) == Error::NoAttack);
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.PendingAssault());
+	// A win: losses carry over, the stage pays (gold x Castle level), three different boons are offered.
+	Reward R;
+	KD_CHECK(L.FinishAssaultStage(3, {50, 100}, &R) == Error::None && !L.PendingAssault() && L.AssaultStagesWon() == 1);
+	KD_CHECK(L.AssaultArmy()[0].pct == 50 && L.AssaultArmy()[1].pct == 100 && R.squadsBack == 2 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(R.res[GoldI] == 5000 && L.Amount(Res::Gold) == Gold + 5000 && L.Lifetime(QuestEvent::Win) == Wins + 1 && L.WarpathXp() == Xp + 10);
+	const std::vector<int> Offer = L.AssaultOffer();
+	KD_CHECK(Offer.size() == 3 && Offer[0] != Offer[1] && Offer[1] != Offer[2] && Offer[0] != Offer[2] && Offer[0] >= 0 && Offer[2] < 5);
+	KD_CHECK(L.StartAssaultStage({}) == Error::NotReady && L.ChooseAssaultBoon(3) == Error::BadId && L.ChooseAssaultBoon(-1) == Error::BadId);
+	// The same seed, event and stage offer the same boons.
+	KD_CHECK(M.FinishAssaultStage(3, {50, 100}, nullptr) == Error::None && M.AssaultOffer() == Offer && M.Hash() == L.Hash());
+	// The field medic brings back 30 % of each squad's losses (a whole squad too).
+	Kingdom N(Ct);
+	const std::string Medic = "{\"no\":728,\"run\":true,\"over\":false,\"stage\":1,\"tries\":0,\"base\":5,\"titan\":0,\"squads\":[[0,3,50],[0,3,0],[0,3,100]],\"boons\":[],\"offer\":[2,0,1]}";
+	KD_CHECK(N.Load(WithAssault(L.Save(), Medic), Error) && N.AssaultArmy().size() == 3 && N.AssaultOffer().size() == 3 && N.AssaultTitan() == 0);
+	KD_CHECK(N.ChooseAssaultBoon(0) == Error::None && N.AssaultArmy()[0].pct == 65 && N.AssaultArmy()[1].pct == 30 && N.AssaultArmy()[2].pct == 100);
+	KD_CHECK(N.AssaultBoons() == std::vector<int>{2} && N.AssaultOffer().empty() && N.ChooseAssaultBoon(0) == Error::Nothing);
+	// The fallen squad came back: the next battle takes all three.
+	KD_CHECK(N.StartAssaultStage({}) == Error::None && N.FinishAssaultStage(2, {100, 0, 40}, nullptr) == Error::None);
+	KD_CHECK(N.AssaultArmy()[0].pct == 65 && N.AssaultArmy()[1].pct == 0 && N.AssaultArmy()[2].pct == 40 && N.AssaultStagesWon() == 2);
+	// Boons add up for the battle.
+	const int Pick = L.AssaultOffer()[0];
+	KD_CHECK(L.ChooseAssaultBoon(0) == Error::None && L.AssaultBoons() == std::vector<int>{Pick} && L.AssaultOffer().empty());
+	const AssaultBonus Sum = L.AssaultBonuses();
+	KD_CHECK(Sum.troopAtk == A.boons[static_cast<size_t>(Pick)].troopAtkPct && Sum.troopHp == A.boons[static_cast<size_t>(Pick)].troopHpPct);
+	KD_CHECK(Sum.titan == A.boons[static_cast<size_t>(Pick)].titanPct && Sum.titanCrit == A.boons[static_cast<size_t>(Pick)].titanCritPct);
+	// A loss (or a retreat) spends a retry and leaves the army as it was; the fourth loss ends the run.
+	const std::vector<AssaultSquad> Before = L.AssaultArmy();
+	for (int Try = 0; Try < 3; ++Try)
+	{
+		KD_CHECK(L.StartAssaultStage({}) == Error::None && L.FinishAssaultStage(0, {0, 0}, &R) == Error::None && L.AssaultRunning());
+		KD_CHECK(L.AssaultRetriesLeft() == 2 - Try && L.AssaultStagesWon() == 1 && L.AssaultArmy()[0].pct == Before[0].pct && L.AssaultOffer().empty());
+	}
+	KD_CHECK(R.res[GoldI] == 0 && L.StartAssaultStage({}) == Error::None && L.FinishAssaultStage(0, {}, nullptr) == Error::None);
+	KD_CHECK(!L.AssaultRunning() && L.AssaultOver() && L.AssaultStagesWon() == 1 && L.CheckAssault().error == Error::Nothing);
+	KD_CHECK(L.CheckAssault().timeSec == Open + 28 * Day - L.Now() && L.StartAssault({Militia}, 0) == Error::Nothing && L.EndAssault() == Error::NoAttack);
+	KD_CHECK(L.StartAssaultStage({}) == Error::NoAttack && L.ArmyCount(Militia) == 9);
+
+	// A whole run: ten stages won pay 70 gems, two relics (★★ and ★★★) and gold and food by the Castle's level.
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(Save, Error));
+	F.Advance(Open + 2 * Hour);
+	const int64_t Gems = F.Amount(Res::Gems);
+	const int64_t Food = F.Amount(Res::Food);
+	const size_t Relics = F.Relics().size();
+	KD_CHECK(F.StartAssault({Militia}, 0) == Error::None);
+	int64_t PaidGold = 0;
+	int64_t PaidFood = 0;
+	for (int S = 0; S < 10; ++S)
+	{
+		KD_CHECK(F.StartAssaultStage({}) == Error::None && F.FinishAssaultStage(3, {100}, &R) == Error::None && F.AssaultStagesWon() == S + 1);
+		PaidGold += R.res[GoldI];
+		PaidFood += R.res[FoodI];
+		KD_CHECK(F.AssaultOffer().size() == (S < 9 ? 3u : 0u));
+		if (S < 9)
+		{
+			KD_CHECK(F.ChooseAssaultBoon(S % 3) == Error::None);
+		}
+	}
+	KD_CHECK(F.AssaultOver() && F.AssaultBoons().size() == 9 && F.Amount(Res::Gems) == Gems + 70 && F.Relics().size() == Relics + 2);
+	KD_CHECK(PaidGold == 15000 && PaidFood == 15000 && F.Amount(Res::Food) >= Food + 15000 - 1000 && F.FindRelic(R.relics[0])->rarity == 3);
+	KD_CHECK(F.StartAssaultStage({}) == Error::NoAttack && F.CheckAssault().error == Error::Nothing);
+
+	// The army wiped out in a won stage (no titan) ends the run.
+	Kingdom W(Ct);
+	KD_CHECK(W.Load(Save, Error));
+	W.Advance(Open + 3 * Hour);
+	KD_CHECK(W.StartAssault({Militia}, 0) == Error::None && W.StartAssaultStage({}) == Error::None && W.FinishAssaultStage(1, {0}, &R) == Error::None);
+	KD_CHECK(W.AssaultOver() && W.AssaultStagesWon() == 1 && W.AssaultOffer().empty() && R.squadsLost == 1);
+	// With the titan the run goes on without squads; ending it by hand closes it.
+	Kingdom T(Ct);
+	KD_CHECK(T.Load(Save, Error));
+	T.Advance(Open + 3 * Hour);
+	KD_CHECK(T.StartAssault({Militia}, Perun) == Error::None && T.StartAssaultStage({}) == Error::None && T.FinishAssaultStage(1, {0}, nullptr) == Error::None);
+	KD_CHECK(T.AssaultRunning() && T.AssaultOffer().size() == 3 && T.EndAssault() == Error::None && T.AssaultOver() && T.AssaultOffer().empty());
+
+	// The event closes on Tuesday night: no stage can start, the state stays until the next event opens.
+	Kingdom C(Ct);
+	KD_CHECK(C.Load(Save, Error));
+	C.Advance(Open + Hour);
+	KD_CHECK(C.StartAssault({Militia}, 0) == Error::None);
+	C.Advance(Open + 5 * Day);
+	KD_CHECK(!C.AssaultOpen() && C.AssaultOpensAt() == Open + 28 * Day && C.CheckAssault().error == Error::NotReady && C.StartAssaultStage({}) == Error::NotReady);
+	KD_CHECK(C.AssaultEvent() == 728 && C.AssaultRunning() && C.AssaultArmy().size() == 1);
+	// A stage battle still on when the next event opens keeps its run until it ends; the next roll starts afresh.
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(Save, Error));
+	P.Advance(Open + 5 * Day - Hour);
+	KD_CHECK(P.StartAssault({Militia}, 0) == Error::None && P.StartAssaultStage({}) == Error::None);
+	P.Advance(Open + 28 * Day + Hour);
+	KD_CHECK(P.AssaultEvent() == 728 && P.PendingAssault() && P.FinishAssaultStage(3, {100}, nullptr) == Error::None && P.AssaultStagesWon() == 1);
+	P.Advance(Open + 28 * Day + 2 * Hour);
+	KD_CHECK(P.AssaultEvent() == 729 && !P.AssaultStarted() && P.AssaultStagesWon() == 0 && P.AssaultArmy().empty() && P.CheckAssault().error == Error::None);
+	C.Advance(Open + 28 * Day);
+	KD_CHECK(C.AssaultEvent() == 729 && !C.AssaultStarted() && C.CheckAssault().error == Error::None);
+
+	// Loading: a pending stage without a run is dropped, broken squads and boons are left out.
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(WithAssault(M.Save(), "{\"no\":728,\"run\":false,\"stage\":0,\"squads\":[],\"boons\":[],\"offer\":[]}"), Error) && !B.PendingAssault());
+	const std::string Broken = "{\"no\":728,\"run\":true,\"over\":false,\"stage\":40,\"tries\":9,\"base\":5,\"titan\":0,\"squads\":[[99,1,50],[0,0,180],[0,3]],\"boons\":[7,1,-1],\"offer\":[4,4,4,4,4]}";
+	KD_CHECK(B.Load(WithAssault(L.Save(), Broken), Error) && B.AssaultStagesWon() == 10 && B.AssaultRetriesLeft() == 0 && B.AssaultArmy().size() == 1);
+	KD_CHECK(B.AssaultArmy()[0].level == 1 && B.AssaultArmy()[0].pct == 100 && B.AssaultBoons() == std::vector<int>{1} && B.AssaultOffer().size() == 3);
+	// A save from before the Assault loads with no event until the next Advance, which rolls this one.
+	const size_t P0 = L.Save().find(",\"assault\":{");
+	const size_t P1 = L.Save().find(",\"calendar\":{");
+	Kingdom O(Ct);
+	KD_CHECK(P0 != std::string::npos && O.Load(L.Save().substr(0, P0) + L.Save().substr(P1), Error) && O.AssaultEvent() == -1 && !O.AssaultStarted());
+	O.Advance(O.Now() + 1);
+	KD_CHECK(O.AssaultEvent() == 728 && !O.AssaultStarted() && O.CheckAssault().error == Error::None);
+}
+
 int main()
 {
 	struct
@@ -2937,7 +3117,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault},
 	};
 	for (const auto& T : Tests)
 	{

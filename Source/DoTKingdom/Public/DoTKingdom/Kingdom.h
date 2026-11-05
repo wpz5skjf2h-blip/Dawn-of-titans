@@ -231,6 +231,23 @@ struct Reward
 	int32_t newTitan = 0; // a titan a star chest gave
 };
 
+/** A squad of an Assault run: its troop (index), its level when the run began and its share of men still standing. */
+struct AssaultSquad
+{
+	int troop = 0;
+	int level = 1;
+	int pct = 100;
+};
+
+/** The chosen Assault boons summed up for a battle (%). */
+struct AssaultBonus
+{
+	int troopAtk = 0;
+	int troopHp = 0;
+	int titan = 0; // attack and health
+	int titanCrit = 0;
+};
+
 /** One of today's daily quests. */
 struct DailyQuest
 {
@@ -578,9 +595,16 @@ public:
 	static constexpr int32_t MissionBase = 1000;
 	/** The pending battle id of a Titan Trial. */
 	static constexpr int32_t TrialPending = -(MissionBase - 1);
-	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial or there is none). */
-	int PendingSite() const { return Pending < 0 && Pending != TrialPending && -Pending < MissionBase ? -Pending - 1 : -1; }
+	/** The pending battle id of an Assault stage. */
+	static constexpr int32_t AssaultPending = -(MissionBase - 2);
+	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage or
+	 *  there is none). */
+	int PendingSite() const
+	{
+		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && -Pending < MissionBase ? -Pending - 1 : -1;
+	}
 	bool PendingTrial() const { return Pending == TrialPending; }
+	bool PendingAssault() const { return Pending == AssaultPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -702,6 +726,52 @@ public:
 	int64_t WarpathPaidSeason() const { return WpPaidNo; }
 	const ResArray& WarpathPaid() const { return WpPaid; }
 	int WarpathPaidRelics() const { return WpPaidRelics; }
+
+	// --- Assault (master prompt 10.5) ---
+	// A monthly event of a few days from a Castle level: one run of sieges in order with an army taken from the Army
+	// Camp (a copy: the camp keeps its squads) and a titan. Losses carry over from stage to stage; after each won stage
+	// the player takes one of a few boons (stronger squads or titan, or some of the fallen back). A lost stage spends a
+	// retry and is fought again with the army it had; the run ends when the stages, the retries or the army run out.
+	// Each won stage pays its reward at once.
+	/** The event the state belongs to (the last one that opened; -1 before the first roll). */
+	int64_t AssaultEvent() const { return AssaultNo; }
+	bool AssaultOpen() const;
+	/** When this event opened, or when the next one opens while none is open. */
+	int64_t AssaultOpensAt() const;
+	int64_t AssaultClosesAt() const;
+	/** Locked (Castle too low: castle), NotReady (closed until timeSec), Nothing (this event's run is over: the next
+	 *  event opens in timeSec). */
+	Check CheckAssault() const;
+	bool AssaultStarted() const { return bAsRun; }
+	bool AssaultRunning() const { return bAsRun && !bAsOver; }
+	bool AssaultOver() const { return bAsOver; }
+	/** Stages won in this run. */
+	int AssaultStagesWon() const { return AsStage; }
+	int AssaultRetriesLeft() const;
+	/** The Castle level the run began at. */
+	int AssaultBase() const { return AsBase; }
+	/** A stage's battle level: the Castle's at the run's start plus the stage's offset, within the battle table. */
+	int AssaultLevel(int Stage) const;
+	int32_t AssaultTitan() const { return AsTitan; }
+	const std::vector<AssaultSquad>& AssaultArmy() const { return AsSquads; }
+	/** Boons taken (indices into the content's boons, in order) and the ones offered now (empty: none to choose). */
+	const std::vector<int>& AssaultBoons() const { return AsBoons; }
+	const std::vector<int>& AssaultOffer() const { return AsOffer; }
+	AssaultBonus AssaultBonuses() const;
+	/** Starts this event's run with squads of the camp (troop indices) and a titan (0: none). Locked, NotReady, Nothing
+	 *  (a run already), TooManySquads, NoTroops (none chosen, or more than the camp has), BadId, TitanRecovering. */
+	Error StartAssault(const std::vector<int>& Squads, int32_t TitanId);
+	/** Begins the next stage's battle with spells of the stock (they are not spent). NoAttack (no run going), NotReady
+	 *  (the event is closed, or a boon is to be chosen first), Busy (another battle is on). */
+	Error StartAssaultStage(const std::vector<int>& Spells);
+	/** Applies a stage's battle. SurvivorPct: the share (%) still standing of each squad that went (the run's squads
+	 *  with men left, in order). A win carries the losses over, pays the stage and offers boons; a loss (or a retreat)
+	 *  spends a retry, or ends the run when none is left. */
+	Error FinishAssaultStage(int Stars, const std::vector<int>& SurvivorPct, Reward* Out);
+	/** Takes an offered boon: Nothing (none offered), BadId. */
+	Error ChooseAssaultBoon(int I);
+	/** Ends the run now: NoAttack (none going), Busy (a stage battle is on). */
+	Error EndAssault();
 
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
@@ -879,6 +949,12 @@ private:
 	void AddWarpathXp(int64_t Xp, bool Battle);
 	/** Starts the pass of Time's weeks; the old one's reached tiers and chests are paid first. */
 	void RollWarpath();
+	/** The last Assault event that opened by Time (it may be over) and the day an event opens. */
+	int64_t AssaultNoNow() const;
+	int64_t AssaultStartDay(int64_t No) const;
+	/** Brings the state of a new Assault event once it opens. */
+	void RollAssault();
+	void ResetAssault();
 	/** Weeks since the Monday before the epoch, for Time. */
 	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
 	// Raids (KingdomRaids.cpp)
@@ -993,6 +1069,18 @@ private:
 	int64_t WpPaidNo = -1;
 	ResArray WpPaid{};
 	int WpPaidRelics = 0;
+	// Assault: the event, whether its run began and is over, stages won, retries used, the Castle at the start, the
+	// titan, the squads, boons taken and boons offered
+	int64_t AssaultNo = -1;
+	bool bAsRun = false;
+	bool bAsOver = false;
+	int AsStage = 0;
+	int AsTries = 0;
+	int AsBase = 1;
+	int32_t AsTitan = 0;
+	std::vector<AssaultSquad> AsSquads;
+	std::vector<int> AsBoons;
+	std::vector<int> AsOffer;
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

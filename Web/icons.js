@@ -338,6 +338,10 @@ const DotIcons = (() => {
 			line('M24 2V10M24 38V46M2 26H10M38 26H46', K.red, 2.2) + c(24, 26, 15, 'none', 'stroke="' + K.red + '" stroke-width="2"'),
 		'mission.elite': p('M24 4L40 9V23C40 33 33 40 24 44C15 40 8 33 8 23V9Z', K.blue) + p('M24 8L36 12V23C36 31 31 36 24 40Z', '#78aef0', 'stroke="none"') +
 			STAR(24, 23, 9, K.gold) + hi('M12 12V22'),
+		// Assault: a fortress gate between two crenellated towers, a red banner over the gate.
+		'mission.siege': p('M5 44V14H8V10H11V14H14V10H17V14V44Z', K.stone) + p('M31 44V14H34V10H37V14H40V10H43V14V44Z', K.stone) +
+			r(16, 21, 16, 23, 1, K.stoneD) + p('M19 44V34C19 28.5 29 28.5 29 34V44Z', INK) + line('M21.5 31.5V44M24 30V44M26.5 31.5V44', K.steelD, 1.2) +
+			stick('M24 21V4', K.woodD, 1.6) + p('M25 4H36L33 8L36 12H25Z', K.red) + hi('M8 18V40M34 18V40'),
 		'mission.boss': p('M11 20L14 6L20 13L24 4L28 13L34 6L37 20Z', K.gold) + c(14, 6, 1.6, K.red) + c(24, 4, 1.6, K.blue) + c(34, 6, 1.6, K.red) +
 			p('M12 22C12 15 36 15 36 22V31C36 34 33 35 31 35V41H17V35C15 35 12 34 12 31Z', K.bone) +
 			p('M16 25C16 22 22 22 22 25C22 28 16 28 16 25Z', INK) + p('M26 25C26 22 32 22 32 25C32 28 26 28 26 25Z', INK) +
