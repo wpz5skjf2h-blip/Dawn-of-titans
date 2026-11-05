@@ -3755,7 +3755,7 @@ function openBoss() {
 					: b.fell ? '<button class="btn" disabled>' + (b.mb ? 'Сундук после боя' : 'Сундук — тем, кто бился с боссом') + '</button>'
 						: '<button class="btn" disabled>Сундук — когда запас кончится</button>';
 			const rows = b.members.map((m) => ({ name: m[0], dmg: m[1], n: m[2] })).concat([{ name: 'Вы', dmg: b.mine, n: b.mb, me: true }]).sort((x, y) => y.dmg - x.dmg || (x.me ? -1 : y.me ? 1 : 0));
-			const board = rows.map((r, n) => '<span class="pl' + (r.me ? ' me' : '') + '">' + (n + 1) + '</span><span class="nm' + (r.me ? ' me' : '') + '">' + esc(r.name) + '<small>' + (r.n ? r.n + ' ' + plural(r.n, 'бой', 'боя', 'боёв') : 'ещё не бился') + '</small></span>' +
+			const board = rows.map((r, n) => '<span class="pl' + (r.me ? ' me' : '') + '">' + (n + 1) + '</span><span class="nm' + (r.me ? ' me' : '') + '">' + esc(r.name) + '<small>' + (r.n ? r.n + ' ' + plural(r.n, 'бой', 'боя', 'боёв') : r.me ? 'ещё не бились' : 'ещё не бился') + '</small></span>' +
 				'<span class="v' + (r.me ? ' me' : '') + '">' + (r.dmg ? pctOf(r.dmg) : '—') + '</span>').join('');
 			const tiers = R.tiers.map((x, i) => '<button class="opt' + (b.next === i + 1 ? ' on' : '') + '" data-act="boss-tier" data-id="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>ур. ' + x.level + ' ' + '★'.repeat(x.stars) + '</span></button>').join('');
 			const pick = st.ally.own ? '<h3>Сложность следующих рейдов</h3><div class="opts tiers">' + tiers + '</div>' +
