@@ -748,7 +748,7 @@ public:
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
 	// Guild). A mission costs portal stones and gives titan XP like a land battle of its level; the first win also
-	// pays its first-clear reward. Stars won in an act open its star chests.
+	// pays its first-clear reward, a repeat win rolls the loot table. Stars won in an act open its star chests.
 	int ActCount() const { return static_cast<int>(C.campaigns.acts.size()); }
 	int MissionCount(int Act) const;
 	/** Best stars won in the mission (0 = not won yet). */
@@ -762,7 +762,7 @@ public:
 	/** Spends portal stones for a mission battle with this army (as StartAttack); the battle runs elsewhere. */
 	Error StartMission(int Act, int Mission, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells, bool Reinforce);
 	/** Applies a mission's result as on a land (casualties, spells, titan XP), keeps the best stars and pays the
-	 *  first-clear reward on the first win. */
+	 *  first-clear reward on the first win; a repeat win rolls the loot table. */
 	Error FinishMission(int Act, int Mission, int Stars, const std::vector<int>& SurvivorPct, const std::vector<int>& SpellsUsed, Reward* Out);
 	/** Opens a star chest: NotEnough (too few stars), Nothing (already open). */
 	Error ClaimChest(int Act, int Chest, Reward* Out);

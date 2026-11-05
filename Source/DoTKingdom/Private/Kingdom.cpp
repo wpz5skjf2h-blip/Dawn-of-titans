@@ -2684,7 +2684,7 @@ Error Kingdom::FinishMission(int Act, int Mission, int Stars, const std::vector<
 	}
 	if (Won > 0 && Mine == 0)
 	{
-		// The first win pays the mission's reward (repeats give the titan XP only).
+		// The first win pays the mission's reward (repeats roll the loot table above).
 		R.firstClear = true;
 		for (int I = 0; I < kResCount; ++I)
 		{
