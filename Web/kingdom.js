@@ -4321,7 +4321,7 @@ function warEnd(ctx, stars, retreat) {
 const helpRules = () => K.rules.allianceHelp;
 const helpOn = (st) => !!(helpRules() && st.help);
 /** What a member's ask is about, by kind (0 building, 1 land, 2 Armoury, 3 Arcane Tower, 4 titan). */
-const HELP_ALLY = ['стройка', 'улучшение земли', 'исследование в Арсенале', 'заклинание в Магической башне', 'отдых титана'];
+const HELP_ALLY = ['стройка', 'земля', 'Арсенал', 'Магическая башня', 'отдых титана'];
 /** A timer's name: the building, the land, the troop, the spell or the titan (Next: with the level it goes to). */
 function helpWhat(st, kind, id, next) {
 	if (kind === 0) {
@@ -4421,7 +4421,7 @@ function openHelp() {
 			const gck = h.gck;
 			const giveBtn = gck.err === E.None ? '<button class="btn primary" data-act="help-give">Помочь всем · ' + open + ' · ' + helpPay(st, Math.min(open, R.dailyCap - h.today)) + '</button>'
 				: '<button class="btn" disabled>' + esc(gck.err === E.Nothing ? 'Новых просьб нет' : helpErrText(gck.err, gck)) + '</button>';
-			const log = h.log.slice().reverse().map((g) => '<span class="pl">−</span><span class="nm">' + esc(senderName(data, g[3]) || 'союзник') + '<small>' + esc(helpWhat(st, g[1], g[2], false)) + ' · <span data-live="hl' + g[0] + '_' + g[2] + '"></span></small></span>' +
+			const log = h.log.slice().reverse().map((g) => '<span class="pl">−</span><span class="nm">' + esc(senderName(data, g[3]) || 'союзник') + '<small>' + esc(helpWhat(st, g[1], g[2], false)) + '</small></span>' +
 				'<span class="v">−' + fmtDur(g[4]) + '</span>').join('');
 			body = '<div class="costline"><span>Помощей на таймер</span><b>' + h.lim + '</b><span>Лагерь альянса: ' + (st.b.filter((b) => defOf(b.def).id === 'alliance_camp').map((b) => 'ур. ' + b.lv).join(', ') || 'нет') + '</span></div>' +
 				'<h3>Ваши таймеры</h3>' + (mine ? '<div class="helpRows">' + mine + '</div>' : '<p class="fine">Сейчас ничего не строится, не изучается и титаны не отдыхают.</p>') + askAll +
@@ -4445,7 +4445,6 @@ function openHelp() {
 					live(el, 'h' + c[0] + '_' + c[1], 'осталось ' + fmtDur(Math.max(0, c[2] - now)) + (a && a[8] ? ', помощь −' + fmtDur(a[8]) : ''));
 				}
 				for (const a of s2.help.ally) live(el, 'ha' + a[0], a[5] ? 'помогли' : 'ещё ' + fmtDur(Math.max(0, a[4] - now)));
-				for (const g of s2.help.log) live(el, 'hl' + g[0] + '_' + g[2], fmtDur(Math.max(0, now - g[0])) + ' назад');
 			},
 		};
 	});
