@@ -1394,6 +1394,10 @@ About 60% of soft-currency income comes from production and about 40% from battl
 - **Catch-up:** upgrades below 50% of the server's median Keep level get −20% time (configurable). Alliance mentoring is [POST].
 - One global world. Conquest maps are instanced per event (12.7).
 
+> **Implemented now (comeback):** a visit after 7+ days away (from Keep (Castle) 2) leaves a gift: 3,000 Gold and Food
+> ×Keep level, 50 gems, 10 portal stones, 3 War Scrolls and a 3★ relic (portal stones and scrolls stand in for the
+> speed-ups and the Silver Sigil), with a "What's new" list since the day the player left (docs/M0_Notes.md §6я1).
+
 ---
 
 ## 10. PvE: CAMPAIGN & SOLO MODES

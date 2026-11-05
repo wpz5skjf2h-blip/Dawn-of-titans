@@ -70,6 +70,13 @@ void Kingdom::Visit()
 		const uint64_t H = RaidMix(Seed, RaidCounter++);
 		NextRaid = Time + R.everyMinSec + static_cast<int64_t>(H % static_cast<uint64_t>(R.everyMaxSec - R.everyMinSec + 1));
 	}
+	// A week or more since the last visit earns the comeback gift (a longer absence replaces one not claimed yet).
+	const int64_t Away = Time - VisitAt;
+	if (C.comeback.days > 0 && VisitAt > 0 && Away >= static_cast<int64_t>(C.comeback.days) * 86400 && Away > ComebackSec && CastleLevel() >= C.comeback.castle)
+	{
+		ComebackSec = Away;
+		ComebackAt = Time;
+	}
 	VisitAt = Time;
 	NoteLogin();
 }

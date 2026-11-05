@@ -1199,5 +1199,20 @@
         "middle": { "gems": 15 }, "top": { "gems": 15, "divine": 40, "relic": 4 } }
     ]
   },
+  // Comeback gift (master prompt 9.5): a kingdom left alone for `days` or more (from Castle `castle`) finds a gift on
+  // return: gold and food times the Castle, gems, portal stones, War Scrolls and a relic (the prompt's Silver Sigil;
+  // the original has no sigils). The client shows the news dated on or after the day the player left ("What's new").
+  "comeback": { "days": 7, "castle": 2, "gold": 3000, "food": 3000, "gems": 50, "stones": 10, "scrolls": 3, "relic": 3,
+    "news": [
+      { "date": "2026-11-04", "text": "«Путь лорда» — главная линия целей, достижения, календарь входа и еженедельные задания" },
+      { "date": "2026-11-05", "text": "Испытания титанов, «Путь войны», тренировка и штурм крепости" },
+      { "date": "2026-11-05", "text": "Сила королевства, разведка перед боем и советы маршала" },
+      { "date": "2026-11-05", "text": "Рейдовый босс, ежедневные испытания, война альянсов и помощь альянса" },
+      { "date": "2026-11-05", "text": "Зачистка миссий за боевые свитки и наборы армии" },
+      { "date": "2026-11-05", "text": "Божественные самоцветы: Вечное святилище и его алтари" },
+      { "date": "2026-11-05", "text": "Башня титанов: сто этажей, верхние десять открываются заново каждый понедельник" },
+      { "date": "2026-11-06", "text": "Кампания: Акт III «Санрич» с осадами, Акт IV «Нефритовые пики» и героическая сложность" },
+      { "date": "2026-11-06", "text": "Подарок за возвращение после недели отсутствия" }
+    ] },
   "battleSlots": [[100, 128], [140, 128], [120, 126], [120, 142], [200, 134], [60, 132]]
 }

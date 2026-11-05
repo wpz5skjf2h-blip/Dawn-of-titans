@@ -510,6 +510,13 @@ function invariants(st, add) {
 		if (sp.at && sp.at !== sp.next) add('warn', 'Башня: бой на этаже ' + sp.at + ', а следующий ' + sp.next + ' (неделя сменилась во время боя?)');
 		if (sp.at && !inBattle()) add('warn', 'Висит незавершённый бой в башне');
 	}
+	// Comeback gift: only for a week or more away, from its Castle, and the absence ended no later than now.
+	const cbr = rules().comeback;
+	if (cbr && st.comeback) {
+		const cb = st.comeback;
+		if (cb.away === 0 ? cb.since !== 0 : !(cb.away >= cbr.days * 86400 && cb.since >= 0 && cb.since + cb.away <= st.now)) add('bad', 'Подарок за возвращение: отсутствие ' + cb.away + ' с, с ' + cb.since + ', сейчас ' + st.now);
+		if (cb.away && !cbr.days) add('bad', 'Подарок за возвращение ждёт, а он выключен');
+	}
 	// Kingdom Power: the parts add up; the strongest titans count, strongest first, with their own Power.
 	const pw = st.power;
 	if (pw) {
@@ -608,7 +615,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'помочь союзникам', 'башня титанов']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'помочь союзникам', 'башня титанов', 'подарок за возвращение']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -1004,6 +1011,27 @@ function runMonkey(steps, seed, keep) {
 			if (res.err === 0 && (res.gold + res.food) !== (stars > 0 ? band.pay * Math.max(1, st.castle) : 0)) throw new Error('башня: этаж ' + sp.next + ' заплатил ' + res.gold + ' золота и ' + res.food + ' еды');
 			return res.err;
 		}],
+		['подарок за возвращение', 2, (st) => {
+			if (!B.comebackClaim || !st.comeback) return -1;
+			// A visit after a week or more away earns the gift (sometimes the week passes here); then mostly claim it.
+			if (r() < 0.3) { t += Math.floor(86400 * (7 + r() * 3)); B.advance(t); }
+			B.visit();
+			const st1 = B.state();
+			const R = rules().comeback;
+			if (st.comeback.away === 0 && st1.comeback.away !== 0 && st1.castle < R.castle) throw new Error('подарок за возвращение до Замка ' + R.castle);
+			if (r() < 0.2) return -1;
+			const res = B.comebackClaim();
+			const st2 = B.state();
+			if (!st1.comeback.away) {
+				if (res.err !== 13 || st2.res.join() !== st1.res.join() || st2.scrolls !== st1.scrolls) throw new Error('подарок без отсутствия: отказ ' + res.err + ', ресурсы ' + st1.res.join() + ' → ' + st2.res.join());
+				return res.err;
+			}
+			if (res.err !== 0) throw new Error('подарок за возвращение не выдан: отказ ' + res.err);
+			if (st2.comeback.away !== 0) throw new Error('подарок за возвращение остался после получения');
+			if (st2.res[2] !== st1.res[2] + R.gems) throw new Error('подарок за возвращение: самоцветы ' + st1.res[2] + ' → ' + st2.res[2]);
+			if (st2.relics.length + (res.relicsLost || 0) !== st1.relics.length + (R.relic ? 1 : 0)) throw new Error('подарок за возвращение: реликвий ' + st1.relics.length + ' → ' + st2.relics.length);
+			return 0;
+		}],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);
@@ -1331,6 +1359,12 @@ function renderTab(tab) {
 			h += row('Башня титанов: взято <b>' + st.spire.top + '</b>', [0, 9, 49, st.spire.fixed - 1, st.spire.fixed + 5].map((n) => b('spire-set', String(n), { n })).join(''),
 				'следующий этаж ' + (st.spire.next || '—'));
 		}
+		if (st.comeback && rules().comeback && rules().comeback.days) {
+			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
+			const cbd = rules().comeback.days;
+			h += row('Подарок за возвращение <b>' + (st.comeback.away ? 'ждёт' : 'нет') + '</b>', b('cb-set', 'Выдать', { n: 1 }) + b('cb-set', 'Убрать', { n: 0 }),
+				st.comeback.away ? 'за ' + Math.floor(st.comeback.away / 86400) + ' дн. отсутствия' : 'даётся после ' + cbd + ' дн. отсутствия, с Замка ' + rules().comeback.castle);
+		}
 		h += '</div><div class="actions">' + b('res-fill', 'Заполнить хранилища и камни') + b('res-rich', 'Богатое королевство') + '</div>';
 		h += '<p class="fine">«Богатое королевство»: полные хранилища и камни, +100 000 самоцветов, +5 000 осколков. Первая правка сохраняет копию королевства (вкладка «Сохранение»).</p>';
 		h += '<h3>Город</h3><div class="admList">' +
@@ -1584,6 +1618,10 @@ function act(a, el, n, id, i) {
 		const week = Math.floor((Math.floor(Math.max(0, st.now) / 86400) + 3) / 7);
 		s.spire = { top: Math.min(n, fixed), week: n > fixed ? week : -1, weekTop: n > fixed ? n : 0, at: 0 };
 	}, 'Башня: взято ' + n); break;
+	case 'cb-set': edit((s, st) => {
+		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
+		else delete s.comeback;
+	}, n ? 'Подарок за возвращение ждёт' : 'Подарок убран'); break;
 	case 'div-set': {
 		const v = Math.floor(+inputVal('divine'));
 		if (!Number.isFinite(v) || v < 0) { toast('Введите число от 0', 'bad'); break; }

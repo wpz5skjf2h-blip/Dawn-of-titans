@@ -212,6 +212,7 @@ class KingdomBridge {
 		return this.M.ccall('dk_spire_start', 'number', ['string', 'number', 'string'], [(squads || []).join(','), titan || 0, (spells || []).join(',')]);
 	}
 	spireFinish(stars) { return JSON.parse(this.str(this.M._dk_spire_finish(stars))); }
+	comebackClaim() { return JSON.parse(this.str(this.M._dk_comeback_claim())); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
 	warStart(base, squads, titan, spells) {
 		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
@@ -326,8 +327,8 @@ function persist() {
 function visit() {
 	K.visitAt = performance.now();
 	K.bridge.visit();
-	// A new day's login may open a calendar reward.
-	if (K.ready) setTimeout(() => { refresh(); maybeShowCalendar(); }, 0);
+	// A new day's login may open a calendar reward; a week away, the comeback gift first.
+	if (K.ready) setTimeout(() => { refresh(); maybeShowComeback(); maybeShowCalendar(); }, 0);
 }
 function persistSoon() { clearTimeout(saver.timer); saver.timer = setTimeout(persist, 400); }
 
@@ -2571,6 +2572,8 @@ function onAct(e) {
 	case 'trial-ms': claimTrial('ms', id); break;
 	case 'trial-rank': claimTrial('rank'); break;
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
+	case 'comeback-claim': claimComeback(); break;
+	case 'comeback-open': openComeback(); break;
 	case 'camp-mode': openCampaign(campaignAct(K.st, id === 1), id === 1); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
 	case 'mission-sweep': sweepMission(Math.floor(id / 100), id % 100); break;
@@ -5631,8 +5634,10 @@ function openGoals(tab) {
 			'<button class="' + (K.goalTab === 'ach' ? 'on' : '') + '" data-act="goal-tab" data-tab="ach">Достижения' + (ready ? ' · ' + ready : '') + '</button>' +
 			'<button class="' + (K.goalTab === 'cal' ? 'on' : '') + '" data-act="goal-tab" data-tab="cal">Календарь' + (calN ? ' · ' + calN : '') + '</button></div>';
 		if (K.goalTab === 'cal') {
-			return { key: ['cal', JSON.stringify(st.cal), st.castle, st.res[2] >= calRules().monthly.catchUpGems, ready].join('|'),
-				html: sheetTitle(icoHtml('ui.calendar', 'bld other'), 'Календарь') + tabs + calendarHtml(st) + '<div class="actions">' + closeBtn + '</div>' };
+			const cb = st.comeback && st.comeback.away ? '<div class="landCard won">' + icoHtml('ui.chest', 'gold land') + '<div class="info"><b>Подарок за возвращение</b><span>' + comebackGift(st).join(' · ') + '</span></div>' +
+				'<div class="row"><button class="btn primary" data-act="comeback-open">Открыть подарок</button></div></div>' : '';
+			return { key: ['cal', JSON.stringify(st.cal), st.castle, st.res[2] >= calRules().monthly.catchUpGems, ready, cb ? st.comeback.away : 0].join('|'),
+				html: sheetTitle(icoHtml('ui.calendar', 'bld other'), 'Календарь') + tabs + cb + calendarHtml(st) + '<div class="actions">' + closeBtn + '</div>' };
 		}
 		if (K.goalTab === 'ach') {
 			const defs = achDefs();
@@ -5685,7 +5690,8 @@ function calMonthRunning(st) { return st.cal.ms >= 0 && st.cal.today < st.cal.ms
 function calMonthReady(st) { return calMonthRunning(st) ? Math.max(0, st.cal.ml - st.cal.mc) : 0; }
 function calReadyCount(st) {
 	if (!st.cal) return 0;
-	let n = calMonthReady(st);
+	// The comeback gift waits on the calendar's tab too.
+	let n = calMonthReady(st) + (st.comeback && st.comeback.away ? 1 : 0);
 	for (let d = 0; d < calRules().newcomer.length; d++) n += calNewcomerReady(st, d) ? 1 : 0;
 	return n;
 }
@@ -5781,6 +5787,64 @@ function claimCalendar(kind, day, choice) {
 	}
 	calRewardToast(kind === 'new' ? 'Неделя новичка, день ' + (day + 1) : 'Награда месяца', r);
 	persist();
+	refresh(true);
+}
+// ---------------------------------------------------------------------------------------------
+// Comeback gift (master prompt 9.5): after a week or more away the kingdom finds a gift, and the sheet tells what is new
+// since the player left (kingdom.json comeback.news by date).
+// ---------------------------------------------------------------------------------------------
+const comebackRules = () => K.rules.comeback || null;
+/** The news dated on or after the day the player left. */
+function comebackNews(since) {
+	const day = new Date(since * 1000).toISOString().slice(0, 10);
+	return ((comebackRules() && comebackRules().news) || []).filter((n) => n.date >= day);
+}
+/** What the gift holds, part by part (gold and food times the Castle, as Kingdom::ClaimComeback pays it). */
+function comebackGift(st) {
+	const R = comebackRules();
+	const parts = RES.map((k) => (R[k] || 0) * (k === 'gold' || k === 'food' ? Math.max(1, st.castle) : 1)).map((n, i) => (n > 0 ? '+' + fmt(n) + ' ' + iconSvg(RES[i]) : '')).filter(Boolean);
+	if (R.scrolls) parts.push('+' + R.scrolls + ' ' + iconSvg('scroll') + ' ' + plural(R.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
+	if (R.relic) parts.push('реликвия ' + '★'.repeat(R.relic));
+	return parts;
+}
+/** Once a session, as the kingdom opens after the absence. */
+function maybeShowComeback() {
+	if (!K.ready || !K.st || !K.st.comeback || !K.st.comeback.away || K.cbShown || K.sheet || K.place || K.app.mode !== 'kingdom') return;
+	K.cbShown = true;
+	openComeback();
+}
+function openComeback() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const cb = st.comeback;
+		if (!cb.away) {
+			return { key: 'comeback-none', html: sheetTitle(icoHtml('ui.chest', 'gold land'), 'Подарок за возвращение') + '<p>Подарок уже получен.</p><div class="actions">' + closeBtn + '</div>' };
+		}
+		const days = Math.floor(cb.away / 86400);
+		const news = comebackNews(cb.since);
+		const html = sheetTitle(icoHtml('ui.chest', 'gold land'), 'С возвращением, мой государь!') +
+			'<p>Королевство ждало вас ' + days + ' ' + plural(days, 'день', 'дня', 'дней') + '. Советники собрали подарок к вашему возвращению:</p>' +
+			'<p class="costline">' + comebackGift(st).map((x) => '<b>' + x + '</b>').join('') + '</p>' +
+			(news.length ? '<h3>Что нового</h3><ul class="cbNews">' + news.map((n) => '<li><span>' + esc(new Date(n.date + 'T00:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })) + '</span> ' + esc(n.text) + '</li>').join('') + '</ul>' : '') +
+			'<p class="fine">Подарок даётся, если в королевство не заходили неделю или дольше (с Замка ' + comebackRules().castle + '). Реликвия при полном складе пропадёт, остальное придёт.</p>' +
+			'<div class="actions"><button class="btn primary" data-act="comeback-claim">Забрать подарок</button>' + closeBtn + '</div>';
+		return { key: ['comeback', cb.away, st.castle].join('|'), html };
+	});
+}
+function claimComeback() {
+	const r = K.bridge.comebackClaim();
+	if (r.err !== E.None) {
+		toast(errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	const parts = rewardParts(r);
+	toast('Подарок за возвращение: ' + parts.join(', ') + (r.relicsLost ? '; реликвия не поместилась' : ''), 'gold');
+	armyToast(r, []);
+	persist();
+	closeSheet();
 	refresh(true);
 }
 /** Opens the calendar once a UTC day when a reward waits in it. */
@@ -8123,7 +8187,7 @@ function init(app) {
 		let welcomed = false;
 		try { welcomed = !!localStorage.getItem(HINT_KEY); } catch (e) { /* ignore */ }
 		if (!welcomed && !loaded) openWelcome();
-		else setTimeout(maybeShowCalendar, 1200);
+		else setTimeout(() => { maybeShowComeback(); maybeShowCalendar(); }, 1200);
 		// Debug and test hooks (used by the automated browser tests and the admin mode, Web/admin.js).
 		window.dotKingdomDebug = {
 			K, world, view, clock, refresh, persist, cloud, nowSec, toast, adopt, findSpot, openPrepare,
