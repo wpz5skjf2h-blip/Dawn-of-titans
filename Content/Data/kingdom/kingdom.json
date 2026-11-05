@@ -484,6 +484,72 @@
     ]
   },
 
+  // Daily Trials (master prompt 10.3: six trials, one a weekday from Monday to Saturday and all of them on Sunday;
+  // 3 attempts a day each, 10 difficulty tiers, a tier won on 3 stars can be swept). From Castle 3. Free of stones, and
+  // nothing is lost in them (no casualties, spells or titan XP), as in the Titan Trials. A tier opens at its Castle
+  // level once the tier before it is won in that trial. A win pays the tier's amount whatever the stars; a sweep pays it
+  // at once and spends an attempt. The game has no essence, ore, sigils, silk or tomes, so: Gold Vault pays gold,
+  // Essence Springs titan XP to the titan that fought (a sweep: to the titan picked), Forge Depths a relic of the tier's
+  // rarity, Lineage Trial titan shards (half as many again with a titan of the week's lineage), Banner Grounds food,
+  // Hall of Tomes minutes off the research running in the Armoury and in the Arcane Tower. "day": 0 Monday ... 5
+  // Saturday; "pay": gold, food, titanXp, relic, shards or study; "amounts": one a tier. Lineages turn weekly.
+  // For the web client only: "name", "note", "map", "ai", "timerSec", "enemy" (troops repeated over the squads of the
+  // tier's battle level), "squads" (at most this many), "titans" (the enemy titan by the tier's rarity, 1 to 4 stars;
+  // none: no titan; the Lineage Trial takes the week's lineage), "hpPct" (the enemy titan's extra health), "fort" (the
+  // enemy squads' extra health), "power" (their extra attack and health, %); tiers' "level" (battle table row), "titanLevel", "titanStars", "bonus" (enemy squads'
+  // extra attack and health, %). No gems. Numbers are ours.
+  "dailyTrials": {
+    "castle": 3,
+    "attempts": 3,
+    "lineageBonusPct": 50,
+    "tiers": [
+      { "castle": 3,  "level": 2, "titanLevel": 6,  "titanStars": 1, "bonus": 0 },
+      { "castle": 4,  "level": 3, "titanLevel": 9,  "titanStars": 1, "bonus": 0 },
+      { "castle": 6,  "level": 4, "titanLevel": 12, "titanStars": 1, "bonus": 0 },
+      { "castle": 8,  "level": 5, "titanLevel": 15, "titanStars": 1, "bonus": 0 },
+      { "castle": 10, "level": 6, "titanLevel": 20, "titanStars": 2, "bonus": 0 },
+      { "castle": 12, "level": 7, "titanLevel": 28, "titanStars": 3, "bonus": 0 },
+      { "castle": 14, "level": 8, "titanLevel": 34, "titanStars": 3, "bonus": 0 },
+      { "castle": 16, "level": 9, "titanLevel": 40, "titanStars": 4, "bonus": 0 },
+      { "castle": 18, "level": 9, "titanLevel": 45, "titanStars": 4, "bonus": 20 },
+      { "castle": 20, "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 40 }
+    ],
+    "lineages": [
+      { "id": "olympus", "name": "Олимп", "titans": ["titan.talos", "titan.minotaur", "titan.cyclops", "titan.atlas", "titan.hecate", "titan.artemis"] },
+      { "id": "aesir",   "name": "Асы",   "titans": ["titan.ymir", "titan.loki", "titan.surtr", "titan.tyr", "titan.thor"] },
+      { "id": "nav",     "name": "Навь и Правь", "titans": ["titan.perun", "titan.veles"] }
+    ],
+    "list": [
+      { "id": "gold_vault", "day": 0, "pay": "gold", "name": "Золотая казна", "map": "map.highvale_01", "ai": "warlord", "timerSec": 150,
+        "note": "Разбойники с вожаком-титаном напали на обоз с казной. Перехватите их, пока они не ушли с золотом",
+        "enemy": ["troop.outriders", "troop.militia", "troop.panthers", "troop.archers", "troop.outriders", "troop.swordsmen"],
+        "titans": ["titan.talos", "titan.loki", "titan.tyr", "titan.veles"],
+        "amounts": [4000, 6000, 10000, 16000, 25000, 36000, 50000, 68000, 90000, 120000] },
+      { "id": "essence_springs", "day": 1, "pay": "titanXp", "name": "Источники сущности", "map": "map.lake_01", "ai": "veteran", "squads": 0, "hpPct": 100,
+        "note": "Охота на дикого титана у источников. Сущность получит ваш титан, поэтому в бой без титана не пускают",
+        "enemy": [], "titans": ["titan.minotaur", "titan.ymir", "titan.surtr", "titan.veles"],
+        "amounts": [300, 450, 700, 1000, 1500, 2100, 2900, 3900, 5200, 7000] },
+      { "id": "forge_depths", "day": 2, "pay": "relic", "name": "Глубины кузни", "map": "map.mountain_01", "ai": "veteran", "fort": 15,
+        "note": "Осада подземной кузни: за стенами гренадеры и баллисты, в горнах куются реликвии",
+        "enemy": ["troop.pikemen", "troop.grenadiers", "troop.ballista", "troop.goliaths", "troop.archers", "troop.chainbreakers"],
+        "titans": ["titan.talos", "titan.atlas", "titan.tyr", "titan.thor"],
+        "amounts": [1, 1, 1, 2, 2, 2, 3, 3, 4, 4] },
+      { "id": "lineage", "day": 3, "pay": "shards", "name": "Испытание рода", "map": "map.forest_01", "ai": "veteran",
+        "note": "Полевая битва с титаном рода этой недели. Титан того же рода в вашем войске приносит больше осколков",
+        "enemy": ["troop.swordsmen", "troop.archers", "troop.spearmen", "troop.knights", "troop.priests", "troop.outriders"],
+        "amounts": [1, 1, 2, 2, 3, 3, 4, 5, 6, 8] },
+      { "id": "banner_grounds", "day": 4, "pay": "food", "name": "Знамённое поле", "map": "map.highvale_01", "ai": "veteran",
+        "note": "Полевая битва под знамёнами: конница врага рвётся к вашим стягам",
+        "enemy": ["troop.knights", "troop.spearmen", "troop.archers", "troop.outriders", "troop.swordsmen", "troop.archers"],
+        "titans": ["titan.cyclops", "titan.perun", "titan.artemis", "titan.veles"],
+        "amounts": [4000, 6000, 10000, 16000, 25000, 36000, 50000, 68000, 90000, 120000] },
+      { "id": "hall_of_tomes", "day": 5, "pay": "study", "name": "Зал фолиантов", "map": "map.ruins_01", "ai": "veteran", "squads": 3, "hpPct": 50,
+        "note": "Хранитель зала и его жрецы. Знания из фолиантов сокращают исследования, которые идут в Оружейной и в Магической башне",
+        "enemy": ["troop.priests", "troop.swordsmen", "troop.priests"], "titans": ["titan.cyclops", "titan.loki", "titan.hecate", "titan.veles"],
+        "amounts": [15, 20, 30, 45, 60, 90, 120, 150, 180, 240] }
+    ]
+  },
+
   // Warpath (master prompt 13.4: a pass per 4-week season, 50 tiers of 1 000 XP; XP 100 a daily quest, 500 a weekly
   // challenge, 10 a battle up to 300 a day, and events; the free track pays 300 gems with Sigils and the like; a tier
   // costs 150 gems; past tier 50 a bonus chest every 2 000 XP). Only the free track: no premium, no payments. Passes run

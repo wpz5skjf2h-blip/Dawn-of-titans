@@ -2260,7 +2260,8 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
 	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
-			: Target == TrialPending || Target == AssaultPending || Target == BossPending ? QuestEvent::Count : QuestEvent::Site, 1);
+			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending ? QuestEvent::Count
+			: QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -3238,6 +3239,317 @@ Error Kingdom::ClaimTrialRank(Reward* Out)
 		*Out = R;
 	}
 	return Error::None;
+}
+
+// --- Daily Trials ------------------------------------------------------------------------------------
+
+bool Kingdom::DailyOpen(int Trial) const
+{
+	if (Trial < 0 || Trial >= DailyCount())
+	{
+		return false;
+	}
+	const int Weekday = DailyWeekday();
+	return Weekday == 6 || Weekday == C.dailyTrials.list[static_cast<size_t>(Trial)].day;
+}
+
+int Kingdom::DailyLineage() const
+{
+	const size_t N = C.dailyTrials.lineages.size();
+	return N == 0 ? -1 : static_cast<int>(WeekOf() % static_cast<int64_t>(N));
+}
+
+int Kingdom::DailyStars(int Trial, int Tier) const
+{
+	if (Trial < 0 || Trial >= static_cast<int>(DailyBest.size()) || Tier < 1 || Tier > DailyTiers())
+	{
+		return 0;
+	}
+	return static_cast<int>((DailyBest[static_cast<size_t>(Trial)] >> ((Tier - 1) * 2)) & 3u);
+}
+
+int Kingdom::DailyTopTier(int Trial) const
+{
+	if (Trial < 0 || Trial >= DailyCount() || CastleLevel() < C.dailyTrials.castle)
+	{
+		return 0;
+	}
+	int Top = 0;
+	while (Top < DailyTiers() && CastleLevel() >= C.dailyTrials.tierCastle[static_cast<size_t>(Top)] && (Top == 0 || DailyStars(Trial, Top) > 0))
+	{
+		++Top;
+	}
+	return Top;
+}
+
+int Kingdom::DailyAttemptsLeft(int Trial) const
+{
+	if (Trial < 0 || Trial >= DailyCount())
+	{
+		return 0;
+	}
+	const bool bToday = DailyDay == std::max<int64_t>(0, Time) / 86400 && Trial < static_cast<int>(DailyTries.size());
+	return std::max(0, C.dailyTrials.attempts - (bToday ? DailyTries[static_cast<size_t>(Trial)] : 0));
+}
+
+Check Kingdom::CheckDaily(int Trial, int Tier) const
+{
+	Check Out;
+	const DailyTrialRules& D = C.dailyTrials;
+	if (Trial < 0 || Trial >= DailyCount() || Tier < 1 || Tier > DailyTiers())
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const int Castle = std::max(D.castle, D.tierCastle[static_cast<size_t>(Tier - 1)]);
+	if (CastleLevel() < Castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = Castle;
+	}
+	else if (Tier > 1 && DailyStars(Trial, Tier - 1) == 0)
+	{
+		Out.error = Error::NeedRequirement;
+	}
+	else if (!DailyOpen(Trial))
+	{
+		// The next day that is the trial's own or a Sunday.
+		const int Weekday = DailyWeekday();
+		const int Day = D.list[static_cast<size_t>(Trial)].day;
+		int Ahead = 1;
+		while (Ahead < 7 && (Weekday + Ahead) % 7 != 6 && (Weekday + Ahead) % 7 != Day)
+		{
+			++Ahead;
+		}
+		Out.error = Error::NotReady;
+		Out.timeSec = (std::max<int64_t>(0, Time) / 86400 + Ahead) * 86400 - Time;
+	}
+	else if (DailyAttemptsLeft(Trial) <= 0)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (std::max<int64_t>(0, Time) / 86400 + 1) * 86400 - Time;
+	}
+	return Out;
+}
+
+int64_t Kingdom::DailyAmount(int Trial, int Tier) const
+{
+	if (Trial < 0 || Trial >= DailyCount() || Tier < 1 || Tier > DailyTiers())
+	{
+		return 0;
+	}
+	return C.dailyTrials.list[static_cast<size_t>(Trial)].amounts[static_cast<size_t>(Tier - 1)];
+}
+
+void Kingdom::SpendDaily(int Trial)
+{
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	if (DailyDay != Day)
+	{
+		DailyDay = Day;
+		DailyTries.assign(static_cast<size_t>(DailyCount()), 0);
+	}
+	if (DailyTries.size() < static_cast<size_t>(DailyCount()))
+	{
+		DailyTries.resize(static_cast<size_t>(DailyCount()), 0);
+	}
+	++DailyTries[static_cast<size_t>(Trial)];
+}
+
+Error Kingdom::PayDaily(int Trial, int Tier, int32_t TitanId, uint64_t Pick, Reward& R)
+{
+	const DailyTrialRules& D = C.dailyTrials;
+	const DailyTrialDef& T = D.list[static_cast<size_t>(Trial)];
+	int64_t Amount = T.amounts[static_cast<size_t>(Tier - 1)];
+	EventReward Pay;
+	switch (T.pay)
+	{
+	case DailyPay::Gold:
+		Pay.res[static_cast<size_t>(ResIndex(Res::Gold))] = Amount;
+		break;
+	case DailyPay::Food:
+		Pay.res[static_cast<size_t>(ResIndex(Res::Food))] = Amount;
+		break;
+	case DailyPay::Shards:
+	{
+		// Half as many again (the content's share) with a titan of this week's lineage.
+		const TitanState* Titan = TitanId != 0 ? FindTitan(TitanId) : nullptr;
+		const int Line = DailyLineage();
+		if (Titan && Line >= 0 && D.lineageBonusPct > 0)
+		{
+			const std::vector<int>& Kin = D.lineages[static_cast<size_t>(Line)];
+			if (std::find(Kin.begin(), Kin.end(), Titan->def) != Kin.end())
+			{
+				Amount += std::max<int64_t>(1, Amount * D.lineageBonusPct / 100);
+			}
+		}
+		Pay.res[static_cast<size_t>(ResIndex(Res::Shards))] = Amount;
+		break;
+	}
+	case DailyPay::Relic:
+		Pay.relic = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(5, Amount)));
+		break;
+	case DailyPay::TitanXp:
+		SettleLands(); // the titan may level up: its lands produce at the old rate until now
+		for (TitanState& Titan : TitanList)
+		{
+			if (Titan.id == TitanId)
+			{
+				R.titanId = Titan.id;
+				R.titanXp = Amount;
+				AddTitanXp(Titan, Amount, &R.titanLevels);
+			}
+		}
+		return Error::None;
+	case DailyPay::Study:
+	{
+		// Minutes off the Armoury's research and every Arcane Tower research running now; what ends now ends at once.
+		const int64_t Sec = Amount * 60;
+		bool bAny = false;
+		if (Research >= 0 && ResearchUntil > Time)
+		{
+			ResearchUntil = std::max(Time, ResearchUntil - Sec);
+			bAny = true;
+		}
+		for (SpellResearchSlot& Lab : SpellLabs)
+		{
+			if (Lab.until > Time)
+			{
+				Lab.until = std::max(Time, Lab.until - Sec);
+				bAny = true;
+			}
+		}
+		if (bAny)
+		{
+			R.studySec = Sec;
+			Advance(Time);
+		}
+		return Error::None;
+	}
+	}
+	return PayEvent(Pay, 0x6461696c79ULL, Pick, R);
+}
+
+Error Kingdom::StartDaily(int Trial, int Tier, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	const Check Ck = CheckDaily(Trial, Tier);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const DailyTrialDef& T = C.dailyTrials.list[static_cast<size_t>(Trial)];
+	if (T.pay == DailyPay::TitanXp && (TitanId == 0 || !FindTitan(TitanId)))
+	{
+		return Error::NotAllowed;
+	}
+	if (T.pay == DailyPay::Relic && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	const Error E = BeginBattle(DailyPending, false, 0, Squads, TitanId, Spells, false);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	DailyAt = Trial;
+	DailyAtTier = Tier;
+	// A battle counts when it starts, whatever its end (a retreat too).
+	SpendDaily(Trial);
+	return Error::None;
+}
+
+Error Kingdom::FinishDaily(int Stars, Reward* Out)
+{
+	if (Pending != DailyPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	const int Trial = DailyAt;
+	const int Tier = DailyAtTier;
+	DailyAt = -1;
+	DailyAtTier = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// As in a Titan Trial every squad, spell and the titan come back as they went.
+	Reward R;
+	const int32_t TitanId = PendingTitanId;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	if (Stars > 0 && Trial >= 0 && Trial < DailyCount() && Tier >= 1 && Tier <= DailyTiers())
+	{
+		if (DailyBest.size() < static_cast<size_t>(DailyCount()))
+		{
+			DailyBest.resize(static_cast<size_t>(DailyCount()), 0);
+		}
+		if (Stars > DailyStars(Trial, Tier))
+		{
+			uint32_t& Best = DailyBest[static_cast<size_t>(Trial)];
+			const int Shift = (Tier - 1) * 2;
+			Best = (Best & ~(3u << Shift)) | (static_cast<uint32_t>(Stars) << Shift);
+		}
+		const uint64_t Pick = static_cast<uint64_t>(std::max<int64_t>(0, DailyDay)) * 4096 + static_cast<uint64_t>(Trial) * 256
+			+ static_cast<uint64_t>(C.dailyTrials.attempts - DailyAttemptsLeft(Trial));
+		if (PayDaily(Trial, Tier, TitanId, Pick, R) != Error::None)
+		{
+			++R.relicsLost; // the relic inventory filled up during the battle
+		}
+	}
+	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::SweepDaily(int Trial, int Tier, int32_t TitanId, Reward* Out)
+{
+	const Check Ck = CheckDaily(Trial, Tier);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	if (DailyStars(Trial, Tier) < 3)
+	{
+		return Error::NotReady;
+	}
+	if (TitanId != 0 && !FindTitan(TitanId))
+	{
+		return Error::BadId;
+	}
+	const DailyTrialDef& T = C.dailyTrials.list[static_cast<size_t>(Trial)];
+	if (T.pay == DailyPay::TitanXp && TitanId == 0)
+	{
+		return Error::NotAllowed;
+	}
+	if (T.pay == DailyPay::Relic && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		return Error::InventoryFull;
+	}
+	SpendDaily(Trial);
+	Reward R;
+	const uint64_t Pick = static_cast<uint64_t>(DailyDay) * 4096 + static_cast<uint64_t>(Trial) * 256
+		+ static_cast<uint64_t>(C.dailyTrials.attempts - DailyAttemptsLeft(Trial));
+	const Error E = PayDaily(Trial, Tier, TitanId, Pick, R);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return E;
 }
 
 // --- Warpath --------------------------------------------------------------------------------------------
@@ -6976,6 +7288,30 @@ std::string Kingdom::Save() const
 	W.Int(BossPickFrom);
 	W.EndArray();
 	W.EndObject();
+	// Daily Trials (optional): the day of the attempts, attempts and best stars (2 bits a tier) by trial, the battle on.
+	W.Key("daily");
+	W.BeginObject();
+	W.Key("day");
+	W.Int(DailyDay);
+	W.Key("tries");
+	W.BeginArray();
+	for (const int X : DailyTries)
+	{
+		W.Int(X);
+	}
+	W.EndArray();
+	W.Key("best");
+	W.BeginArray();
+	for (const uint32_t X : DailyBest)
+	{
+		W.Int(X);
+	}
+	W.EndArray();
+	W.Key("at");
+	W.Int(DailyAt);
+	W.Key("tier");
+	W.Int(DailyAtTier);
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -7832,6 +8168,34 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			BossPickFrom = (*PickJ)[2].AsInt64(0);
 		}
 	}
+	// Daily Trials (saves before them start with none won).
+	DailyDay = -1;
+	DailyTries.clear();
+	DailyBest.clear();
+	DailyAt = -1;
+	DailyAtTier = 0;
+	if (const JsonValue* DailyJ = J.Find("daily"); DailyJ && !C.dailyTrials.list.empty())
+	{
+		const size_t N = C.dailyTrials.list.size();
+		const uint32_t Mask = DailyTiers() >= 16 ? 0xffffffffu : (1u << (DailyTiers() * 2)) - 1u;
+		DailyDay = std::max<int64_t>(-1, DailyJ->GetInt64("day", -1));
+		if (const JsonValue* TriesJ = DailyJ->Find("tries"); TriesJ && TriesJ->IsArray())
+		{
+			for (size_t I = 0; I < TriesJ->Size() && I < N; ++I)
+			{
+				DailyTries.push_back(std::max(0, std::min(1000, (*TriesJ)[I].AsInt(0))));
+			}
+		}
+		if (const JsonValue* BestJ = DailyJ->Find("best"); BestJ && BestJ->IsArray())
+		{
+			for (size_t I = 0; I < BestJ->Size() && I < N; ++I)
+			{
+				DailyBest.push_back(static_cast<uint32_t>(std::max<int64_t>(0, (*BestJ)[I].AsInt64(0))) & Mask);
+			}
+		}
+		DailyAt = std::max(-1, std::min(static_cast<int>(N) - 1, DailyJ->GetInt("at", -1)));
+		DailyAtTier = std::max(0, std::min(DailyTiers(), DailyJ->GetInt("tier", 0)));
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -7891,6 +8255,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		const int Mission = PendingMission();
 		if (Pending == TrialPending ? C.trials.list.empty()
 				: Pending == BossPending ? C.raidBoss.bosses.empty()
+				: Pending == DailyPending ? DailyAt < 0 || DailyAt >= DailyCount() || DailyAtTier < 1 || DailyAtTier > DailyTiers()
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
@@ -8261,6 +8626,23 @@ uint64_t Kingdom::Hash() const
 		W.I32(BossPickOld);
 		W.I32(BossPickNew);
 		W.I64(BossPickFrom);
+	}
+	// The same for the Daily Trials: only once one has been tried.
+	if (DailyDay >= 0 || !DailyBest.empty() || DailyAt >= 0)
+	{
+		W.I64(DailyDay);
+		W.I32(static_cast<int32_t>(DailyTries.size()));
+		for (const int X : DailyTries)
+		{
+			W.I32(X);
+		}
+		W.I32(static_cast<int32_t>(DailyBest.size()));
+		for (const uint32_t X : DailyBest)
+		{
+			W.U32(X);
+		}
+		W.I32(DailyAt);
+		W.I32(DailyAtTier);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)

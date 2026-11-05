@@ -3240,6 +3240,122 @@ void TestMarshal()
 	}
 }
 
+void TestDailyTrials()
+{
+	const KingdomContent& Ct = Content();
+	const DailyTrialRules& D = Ct.dailyTrials;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t ShardsI = static_cast<size_t>(ResIndex(Res::Shards));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const int64_t Day = 86400;
+	// Master prompt 10.3: a trial a weekday, all on Sunday, 3 attempts a day each, 10 tiers. Ours: from Castle 3, tiers at
+	// rising Castle levels, three lineages, no gems.
+	KD_CHECK(D.castle == 3 && D.attempts == 3 && D.lineageBonusPct == 50 && D.tierCastle.size() == 10 && D.lineages.size() == 3 && D.list.size() == 6);
+	KD_CHECK(D.tierCastle.front() == 3 && D.tierCastle.back() == 20 && D.lineages[2] == std::vector<int>({Ct.FindTitan("titan.perun"), Ct.FindTitan("titan.veles")}));
+	const DailyPay Pays[] = {DailyPay::Gold, DailyPay::TitanXp, DailyPay::Relic, DailyPay::Shards, DailyPay::Food, DailyPay::Study};
+	for (size_t I = 0; I < D.list.size(); ++I)
+	{
+		KD_CHECK(D.list[I].day == static_cast<int>(I) && D.list[I].pay == Pays[I] && D.list[I].amounts.size() == 10);
+		for (size_t T = 1; T < 10; ++T)
+		{
+			KD_CHECK(D.list[I].amounts[T] >= D.list[I].amounts[T - 1] && D.tierCastle[T] > D.tierCastle[T - 1]);
+		}
+	}
+	KD_CHECK(D.list[0].amounts[0] == 4000 && D.list[1].amounts[0] == 300 && D.list[2].amounts.back() == 4 && D.list[5].amounts[0] == 15);
+
+	// T0 is a Thursday (the Lineage Trial's day) of week 2910 (the lineage of Olympus). A new kingdom is below Castle 3.
+	const int64_t Today = T0 / Day;
+	KD_CHECK((Today + 3) % 7 == 3 && T0 % Day > 0);
+	Kingdom K(Ct);
+	K.NewGame(T0, 101);
+	KD_CHECK(K.DailyCount() == 6 && K.DailyTiers() == 10 && K.DailyWeekday() == 3 && K.DailyLineage() == 0 && K.DailyOpen(3) && !K.DailyOpen(0));
+	KD_CHECK(K.CheckDaily(3, 1).error == Error::Locked && K.CheckDaily(3, 1).castle == 3 && K.DailyTopTier(3) == 0 && K.StartDaily(3, 1, {}, 0, {}) == Error::Locked);
+	KD_CHECK(K.CheckDaily(6, 1).error == Error::BadId && K.CheckDaily(3, 0).error == Error::BadId && K.CheckDaily(3, 11).error == Error::BadId);
+	const uint64_t Untouched = K.Hash();
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":3"), Error) && L.CastleLevel() == 3);
+	// At Castle 3 the first tier is open, the second waits for Castle 4; Monday's trial opens on Sunday.
+	KD_CHECK(L.DailyTopTier(3) == 1 && L.CheckDaily(3, 1).error == Error::None && L.CheckDaily(3, 2).error == Error::Locked && L.CheckDaily(3, 2).castle == 4);
+	KD_CHECK(L.CheckDaily(0, 1).error == Error::NotReady && L.CheckDaily(0, 1).timeSec == (Today + 3) * Day - T0 && L.StartDaily(0, 1, {}, 0, {}) == Error::NotReady);
+	KD_CHECK(L.DailyAttemptsLeft(3) == 3 && L.DailyStars(3, 1) == 0 && L.SweepDaily(3, 1, 0, nullptr) == Error::NotReady);
+	// A battle is free of stones and counts when it starts; it reloads as it was.
+	const int32_t Perun = L.Titans()[0].id;
+	KD_CHECK(L.Titans()[0].def == Ct.FindTitan("titan.perun"));
+	const int Militia = Troop("troop.militia");
+	const int64_t Army = L.ArmyCount(Militia);
+	const int64_t Stones = L.Amount(Res::Stones);
+	const int64_t Count = L.Lifetime(QuestEvent::Count);
+	const int64_t Wins = L.Lifetime(QuestEvent::Win);
+	KD_CHECK(Army >= 1 && L.StartDaily(3, 1, {Militia}, Perun, {}) == Error::None && L.PendingDaily() && L.PendingSite() == -1 && L.PendingMission() == -1);
+	KD_CHECK(L.DailyBattleTrial() == 3 && L.DailyBattleTier() == 1 && L.Amount(Res::Stones) == Stones && L.DailyAttemptsLeft(3) == 2 && L.Lifetime(QuestEvent::Count) == Count);
+	KD_CHECK(L.SweepDaily(3, 1, 0, nullptr) == Error::Busy && L.FinishTrial(1, 100, nullptr) == Error::NoAttack && L.FinishBoss(1, 10, nullptr) == Error::NoAttack);
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.PendingDaily() && M.DailyBattleTrial() == 3);
+	// A 3-star win pays the tier's shard (Perun is not of Olympus); nothing is lost and the titan gets no battle XP.
+	const int64_t Shards = L.Amount(Res::Shards);
+	Reward R;
+	KD_CHECK(L.FinishDaily(3, &R) == Error::None && !L.PendingDaily() && L.DailyBattleTrial() == -1 && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(R.res[ShardsI] == 1 && L.Amount(Res::Shards) == Shards + 1 && L.ArmyCount(Militia) == Army && L.DailyStars(3, 1) == 3 && L.Lifetime(QuestEvent::Win) == Wins + 1);
+	KD_CHECK(L.FinishDaily(3, nullptr) == Error::NoAttack && L.DailyTopTier(3) == 1);
+	// A tier won on 3 stars sweeps for an attempt; a lost battle pays nothing and keeps the stars.
+	KD_CHECK(L.SweepDaily(3, 1, 0, &R) == Error::None && R.res[ShardsI] == 1 && R.squadsBack == 0 && L.DailyAttemptsLeft(3) == 1 && L.Lifetime(QuestEvent::Win) == Wins + 1);
+	KD_CHECK(L.SweepDaily(3, 1, 999999, nullptr) == Error::BadId && L.DailyAttemptsLeft(3) == 1);
+	KD_CHECK(L.StartDaily(3, 1, {}, 0, {}) == Error::None && L.FinishDaily(0, &R) == Error::None && R.res[ShardsI] == 0 && L.DailyStars(3, 1) == 3);
+	KD_CHECK(L.CheckDaily(3, 1).error == Error::LimitReached && L.CheckDaily(3, 1).timeSec == (Today + 1) * Day - T0 && L.SweepDaily(3, 1, 0, nullptr) == Error::LimitReached);
+	KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.DailyStars(3, 1) == 3 && M.DailyAttemptsLeft(3) == 0);
+	KD_CHECK(L.Hash() != Untouched);
+
+	// Sunday: every trial is open with three attempts.
+	L.Advance((Today + 3) * Day + Hour);
+	KD_CHECK(L.DailyWeekday() == 6);
+	for (int I = 0; I < 6; ++I)
+	{
+		KD_CHECK(L.DailyOpen(I) && L.DailyAttemptsLeft(I) == 3 && L.CheckDaily(I, 1).error == Error::None);
+	}
+	KD_CHECK(L.CheckDaily(0, 2).error == Error::Locked);
+	// Gold Vault: gold on top of full vaults. Banner Grounds: food.
+	const int64_t Gold = L.Amount(Res::Gold);
+	KD_CHECK(L.StartDaily(0, 1, {Militia}, 0, {}) == Error::None && L.FinishDaily(1, &R) == Error::None && R.res[GoldI] == 4000 && L.Amount(Res::Gold) == Gold + 4000);
+	KD_CHECK(L.DailyStars(0, 1) == 1 && L.SweepDaily(0, 1, 0, nullptr) == Error::NotReady);
+	KD_CHECK(L.StartDaily(4, 1, {}, 0, {}) == Error::None && L.FinishDaily(2, &R) == Error::None && R.res[FoodI] == 4000 && R.res[StonesI] == 0);
+	// Essence Springs: only with a titan, whose XP grows by the tier's amount; a sweep gives it to the titan picked.
+	const int64_t Xp = L.Titans()[0].xp;
+	const int Level = L.Titans()[0].level;
+	KD_CHECK(L.StartDaily(1, 1, {Militia}, 0, {}) == Error::NotAllowed && L.DailyAttemptsLeft(1) == 3 && !L.PendingDaily());
+	KD_CHECK(L.StartDaily(1, 1, {}, Perun, {}) == Error::None && L.FinishDaily(3, &R) == Error::None && R.titanId == Perun && R.titanXp == 300);
+	KD_CHECK(L.Titans()[0].level > Level || L.Titans()[0].xp == Xp + 300);
+	KD_CHECK(L.SweepDaily(1, 1, 0, nullptr) == Error::NotAllowed && L.SweepDaily(1, 1, Perun, &R) == Error::None && R.titanXp == 300 && L.DailyAttemptsLeft(1) == 1);
+	// Forge Depths: a relic of the tier's rarity.
+	const size_t Relics = L.Relics().size();
+	KD_CHECK(L.StartDaily(2, 1, {}, 0, {}) == Error::None && L.FinishDaily(3, &R) == Error::None && R.relics.size() == 1 && L.Relics().size() == Relics + 1);
+	KD_CHECK(L.FindRelic(R.relics[0]) && L.FindRelic(R.relics[0])->rarity == 1);
+	// Hall of Tomes: minutes off the research running; none running, none taken.
+	KD_CHECK(L.StartDaily(5, 1, {}, 0, {}) == Error::None && L.FinishDaily(3, &R) == Error::None && R.studySec == 0);
+	Kingdom S(Ct);
+	const int64_t Until = L.Now() + 2 * Hour;
+	KD_CHECK(S.Load(Replace(L.Save(), "\"research\":\"\",\"researchFrom\":0,\"researchUntil\":0",
+		"\"research\":\"troop.militia\",\"researchFrom\":" + std::to_string(L.Now()) + ",\"researchUntil\":" + std::to_string(Until)), Error));
+	KD_CHECK(S.ResearchTroop() == Militia && S.ResearchFinish() == Until);
+	KD_CHECK(S.SweepDaily(5, 1, 0, &R) == Error::None && R.studySec == 15 * 60 && S.ResearchFinish() == Until - 15 * 60 && S.ResearchTroop() == Militia);
+	const int MilitiaLevel = S.TroopLevel(Militia);
+	S.Advance(Until - 16 * 60);
+	KD_CHECK(S.SweepDaily(5, 1, 0, &R) == Error::None && R.studySec == 15 * 60 && S.ResearchTroop() < 0 && S.TroopLevel(Militia) == MilitiaLevel + 1);
+	// The Lineage Trial on Sunday of a Nav week (2912): Perun brings half as many shards again (at least one).
+	Kingdom N(Ct);
+	KD_CHECK(N.Load(L.Save(), Error));
+	N.Advance((Today + 14) * Day + Hour);
+	KD_CHECK(N.DailyLineage() == 2 && N.DailyWeekday() == 3 && N.DailyAttemptsLeft(3) == 3);
+	KD_CHECK(N.SweepDaily(3, 1, Perun, &R) == Error::None && R.res[ShardsI] == 2 && N.SweepDaily(3, 1, 0, &R) == Error::None && R.res[ShardsI] == 1);
+	// Monday: the Gold Vault alone; the Lineage Trial waits for Thursday.
+	L.Advance((Today + 4) * Day + Hour);
+	KD_CHECK(L.DailyWeekday() == 0 && L.DailyOpen(0) && !L.DailyOpen(3) && L.DailyAttemptsLeft(0) == 3 && L.CheckDaily(3, 1).timeSec == 3 * Day - Hour);
+	// A save without daily trials starts with none won.
+	Kingdom O(Ct);
+	KD_CHECK(O.Load(Replace(L.Save(), "\"daily\":{", "\"dailyOld\":{"), Error) && O.DailyStars(3, 1) == 0 && O.DailyAttemptsLeft(0) == 3);
+}
+
 /** A kingdom with VP to join any alliance, at Castle 5. */
 Kingdom BossKingdom(uint64_t Seed)
 {
@@ -3678,7 +3794,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials},
 	};
 	for (const auto& T : Tests)
 	{

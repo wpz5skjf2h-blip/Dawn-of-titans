@@ -1440,6 +1440,79 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Dj = Rules.Find("dailyTrials"))
+	{
+		DailyTrialRules& D = Out.dailyTrials;
+		D.castle = std::max(1, Dj->GetInt("castle", D.castle));
+		D.attempts = std::max(1, std::min(20, Dj->GetInt("attempts", D.attempts)));
+		D.lineageBonusPct = std::max(0, std::min(1000, Dj->GetInt("lineageBonusPct", D.lineageBonusPct)));
+		bool bOk = true;
+		if (const JsonValue* Tiers = Dj->Find("tiers"))
+		{
+			for (size_t I = 0; I < Tiers->Size(); ++I)
+			{
+				const int Castle = std::max(1, (*Tiers)[I].GetInt("castle", D.castle));
+				bOk = bOk && (D.tierCastle.empty() || Castle >= D.tierCastle.back());
+				D.tierCastle.push_back(Castle);
+			}
+		}
+		if (const JsonValue* Lines = Dj->Find("lineages"))
+		{
+			for (size_t I = 0; I < Lines->Size(); ++I)
+			{
+				std::vector<int> Titans;
+				const JsonValue* Ts = (*Lines)[I].Find("titans");
+				for (size_t K = 0; Ts && K < Ts->Size(); ++K)
+				{
+					Titans.push_back(Out.FindTitan((*Ts)[K].AsString()));
+					bOk = bOk && Titans.back() >= 0;
+				}
+				bOk = bOk && !Titans.empty();
+				D.lineages.push_back(Titans);
+			}
+		}
+		if (const JsonValue* Trials = Dj->Find("list"))
+		{
+			for (size_t I = 0; I < Trials->Size(); ++I)
+			{
+				const JsonValue& J = (*Trials)[I];
+				DailyTrialDef T;
+				T.id = J.GetString("id");
+				T.day = J.GetInt("day", -1);
+				const std::string Pay = J.GetString("pay");
+				static const char* const PayNames[] = {"gold", "food", "titanXp", "relic", "shards", "study"};
+				bool bPay = false;
+				for (int K = 0; K < 6; ++K)
+				{
+					if (Pay == PayNames[K])
+					{
+						T.pay = static_cast<DailyPay>(K);
+						bPay = true;
+					}
+				}
+				bOk = bOk && !T.id.empty() && T.day >= 0 && T.day <= 5 && bPay;
+				const JsonValue* Amounts = J.Find("amounts");
+				for (size_t K = 0; Amounts && K < Amounts->Size(); ++K)
+				{
+					const int64_t A = (*Amounts)[K].AsInt64();
+					bOk = bOk && A > 0 && (T.pay != DailyPay::Relic || A <= 5);
+					T.amounts.push_back(A);
+				}
+				bOk = bOk && T.amounts.size() == D.tierCastle.size();
+				for (const DailyTrialDef& Other : D.list)
+				{
+					bOk = bOk && Other.id != T.id;
+				}
+				D.list.push_back(T);
+			}
+		}
+		if (!bOk || D.tierCastle.empty() || D.tierCastle.size() > 16 || D.list.size() > 16)
+		{
+			Error = "kingdom/kingdom.json: daily trials need 1 to 16 tiers of rising Castle, lineages of known titans, and up to 16 "
+				"trials with distinct ids, a day 0-5, a known pay and a positive amount a tier (a relic rarity 1-5)";
+			return false;
+		}
+	}
 	if (const JsonValue* Wj = Rules.Find("warpath"))
 	{
 		WarpathRules& W = Out.warpath;
