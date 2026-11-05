@@ -1210,6 +1210,42 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw(I ? "," : "").Int(Km->WarpathPaid()[I]);
 	}
 	O.Raw("],").Key("relics").Int(Km->WarpathPaidRelics()).Raw("}},");
+	// Assault: the event (-1 before the first), whether it is open, when it opens (or opened) and closes, what starting
+	// the run now would say, whether the run began and is over, stages won, retries left, the Castle at the start, the
+	// titan, the squads as [troop, level, share %], boons taken and offered (indices into kingdom.json "assault" "boons"),
+	// the boons' sums for a battle and each stage's battle level.
+	O.Key("assault").Raw("{").Key("no").Int(Km->AssaultEvent()).Comma().Key("open").Int(Km->AssaultOpen() ? 1 : 0).Comma();
+	O.Key("opens").Int(Km->AssaultOpensAt()).Comma().Key("closes").Int(Km->AssaultClosesAt()).Comma().Key("ck");
+	WriteCheck(O, Km->CheckAssault());
+	O.Comma().Key("run").Int(Km->AssaultStarted() ? 1 : 0).Comma().Key("over").Int(Km->AssaultOver() ? 1 : 0).Comma();
+	O.Key("stage").Int(Km->AssaultStagesWon()).Comma().Key("tries").Int(Km->AssaultRetriesLeft()).Comma().Key("base").Int(Km->AssaultBase()).Comma();
+	O.Key("titan").Int(Km->AssaultTitan()).Comma().Key("squads").Raw("[");
+	for (size_t I = 0; I < Km->AssaultArmy().size(); ++I)
+	{
+		const dot::kingdom::AssaultSquad& Q = Km->AssaultArmy()[I];
+		O.Raw(I ? ",[" : "[").Int(Q.troop).Comma().Int(Q.level).Comma().Int(Q.pct).Raw("]");
+	}
+	O.Raw("],").Key("boons").Raw("[");
+	for (size_t I = 0; I < Km->AssaultBoons().size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AssaultBoons()[I]);
+	}
+	O.Raw("],").Key("offer").Raw("[");
+	for (size_t I = 0; I < Km->AssaultOffer().size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AssaultOffer()[I]);
+	}
+	{
+		const dot::kingdom::AssaultBonus Sum = Km->AssaultBonuses();
+		O.Raw("],").Key("bonus").Raw("{").Key("atk").Int(Sum.troopAtk).Comma().Key("hp").Int(Sum.troopHp).Comma().Key("titan").Int(Sum.titan).Comma();
+		O.Key("crit").Int(Sum.titanCrit).Raw("},");
+	}
+	O.Key("lv").Raw("[");
+	for (int I = 0; I < static_cast<int>(C.assault.stages.size()); ++I)
+	{
+		O.Raw(I ? "," : "").Int(Km->AssaultLevel(I));
+	}
+	O.Raw("]},");
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1239,6 +1275,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Raw("]},");
 	O.Key("pending").Int(Km->PendingAttack()).Comma().Key("pendingCapture").Int(Km->PendingCapture() ? 1 : 0).Comma();
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
+	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1698,6 +1735,38 @@ EMSCRIPTEN_KEEPALIVE const char* dk_wp_bonus()
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimWarpathBonus(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** Starts the Assault run with squads of the camp (troop indices, comma-separated) and a titan (0: none). */
+EMSCRIPTEN_KEEPALIVE int dk_as_start(const char* Squads, int TitanId)
+{
+	return K() ? static_cast<int>(K()->StartAssault(ParseInts(Squads), TitanId)) : -1;
+}
+
+/** Begins the next Assault stage's battle with spells of the stock (they go along free). */
+EMSCRIPTEN_KEEPALIVE int dk_as_stage(const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartAssaultStage(ParseInts(Spells))) : -1;
+}
+
+/** Ends an Assault stage's battle: stars and each squad's surviving share (%), the run's squads with men left in order. */
+EMSCRIPTEN_KEEPALIVE const char* dk_as_finish(int Stars, const char* Survivors)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishAssaultStage(Stars, ParseInts(Survivors), &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Takes an offered Assault boon (index into the offer). */
+EMSCRIPTEN_KEEPALIVE int dk_as_boon(int I)
+{
+	return K() ? static_cast<int>(K()->ChooseAssaultBoon(I)) : -1;
+}
+
+/** Ends the Assault run now. */
+EMSCRIPTEN_KEEPALIVE int dk_as_end()
+{
+	return K() ? static_cast<int>(K()->EndAssault()) : -1;
 }
 
 /** Opens the daily chest: the reward as for a battle (gems, stones, relics). */

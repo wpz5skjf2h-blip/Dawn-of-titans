@@ -194,6 +194,11 @@ class KingdomBridge {
 	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
 	wpSkip() { return this.M._dk_wp_skip(); }
 	wpBonus() { return JSON.parse(this.str(this.M._dk_wp_bonus())); }
+	asStart(squads, titan) { return this.M.ccall('dk_as_start', 'number', ['string', 'number'], [(squads || []).join(','), titan || 0]); }
+	asStage(spells) { return this.M.ccall('dk_as_stage', 'number', ['string'], [(spells || []).join(',')]); }
+	asFinish(stars, survivors) { return JSON.parse(this.str(this.M.ccall('dk_as_finish', 'number', ['number', 'string'], [stars, (survivors || []).join(',')]))); }
+	asBoon(i) { return this.M._dk_as_boon(i); }
+	asEnd() { return this.M._dk_as_end(); }
 	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
 	achClaim(i) { return JSON.parse(this.str(this.M._dk_ach_claim(i))); }
 	calNewcomer(day, choice) { return JSON.parse(this.str(this.M._dk_cal_newcomer(day, choice))); }
@@ -2046,6 +2051,7 @@ function refresh(force) {
 	if (prev && !force) announce(prev, K.st);
 	if (prev) announceQuests(prev, K.st);
 	if (prev) announceTrial(prev, K.st);
+	if (prev) announceAssault(prev, K.st);
 	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
 	announceSeason(K.st);
@@ -2225,8 +2231,9 @@ function updateHud() {
 	}
 	$('kAttackSub').textContent = st.res[3] + ' ' + plural(st.res[3], 'камень', 'камня', 'камней');
 	const trialN = trialReady(st);
-	$('kAttack').classList.toggle('ready', trialN > 0);
-	$('kAttack').title = trialN > 0 ? 'Атака. Испытание титанов: ' + (trialOpen(st) && st.trial.left > 0 ? 'есть бои' : 'есть награда') : 'Атака';
+	const asN = assaultReady(st);
+	$('kAttack').classList.toggle('ready', trialN + asN > 0);
+	$('kAttack').title = trialN > 0 ? 'Атака. Испытание титанов: ' + (trialOpen(st) && st.trial.left > 0 ? 'есть бои' : 'есть награда') : asN > 0 ? 'Атака. Идёт Штурм' : 'Атака';
 	$('kArmySub').textContent = st.army.total + ' / ' + st.army.cap + ' · ' + st.titans.length + ' ' + plural(st.titans.length, 'титан', 'титана', 'титанов');
 	updateGoal();
 }
@@ -2474,6 +2481,13 @@ function onAct(e) {
 	case 'pr-titan': if (K.practice) { K.practice.titan = !K.practice.titan; refreshSheet(true); } break;
 	case 'pr-go': openPrepare(0, false, -1, null, false, true); break;
 	case 'trial-go': startTrial(); break;
+	case 'assault': openAssault(); break;
+	case 'as-go': startAssault(); break;
+	case 'as-boon': chooseAssaultBoon(id); break;
+	case 'as-end':
+		if (!isArmed('as-end')) arm('as-end');
+		else endAssault();
+		break;
 	case 'trial-ms': claimTrial('ms', id); break;
 	case 'trial-rank': claimTrial('rank'); break;
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
@@ -3683,6 +3697,186 @@ function practiceEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Assault (master prompt 10.5): a monthly event of five days, a gauntlet of ten sieges fought by one army whose losses
+// carry over; a boon after each won stage, three retries a run. The kingdom keeps the run (Kingdom::StartAssault and
+// on); the land battle code fights a stage as a pseudo land { id, lv, assault: stage }.
+// ---------------------------------------------------------------------------------------------
+const ASSAULT_ID = 970000;
+const asRules = () => K.rules.assault;
+const asOn = (st) => !!(asRules() && st.assault && st.assault.no >= 0);
+const asStage = (i) => asRules().stages[i];
+const asBoon = (i) => asRules().boons[i];
+/** The run's squads that still have men, as [troop, level, share %], in the order they go to battle. */
+const asAlive = (st) => st.assault.squads.filter((q) => q[2] > 0);
+/** The run's titan (null without one, or when it is gone). */
+const asTitan = (st) => (st.assault.titan ? st.titans.find((t) => t.id === st.assault.titan) || null : null);
+const asStageLv = (st, i) => st.assault.lv[Math.max(0, Math.min(i, st.assault.lv.length - 1))];
+const asTarget = (st, i) => ({ id: ASSAULT_ID + (Math.max(0, st.assault.no) % 1000) * 32 + i, lv: asStageLv(st, i), assault: i, own: -1 });
+/** The stage to fight next (the last one once all are won). */
+const assaultTarget = (st) => asTarget(st, Math.min(st.assault.stage, asRules().stages.length - 1));
+/** A stage's battlefield: its map's land type lends the name and note (Highvale without one). */
+const asField = (i) => siteField({ name: 'Штурм', map: asStage(i).map || 'map.highvale_01' });
+const asMany = (n) => plural(n, 'отряд', 'отряда', 'отрядов');
+/** A stage's defenders (troop ids): the battle level's army, then the garrison's squads. */
+function assaultEnemy(i, lv) {
+	const b = K.rules.battles[Math.min(lv, K.rules.battles.length) - 1];
+	const g = asRules().garrison;
+	return b.squads.concat(Array.from({ length: asStage(i).extra || 0 }, (x, k) => g[(i + k) % g.length]));
+}
+/** A stage's enemy titan: a titan of the level's rarity band (as on the lands) where the level has one or the stage
+ *  brings one; the level's titan level, else 2 x level + 2. */
+function assaultTitan(w) {
+	const b = K.rules.battles[Math.min(w.lv, K.rules.battles.length) - 1];
+	if (!b.titan && !asStage(w.assault).titan) return null;
+	const band = w.lv <= 6 ? [1, 2] : w.lv <= 8 ? [2, 3] : [3, 4];
+	const pool = K.army.titans.filter((t) => t.stars >= band[0] && t.stars <= band[1]);
+	const def = pool[(Math.imul(w.id, 2246822519) >>> 0) % pool.length];
+	return { def, level: Math.min(10 + 10 * def.stars, b.titan ? b.titan.level : 2 * w.lv + 2) };
+}
+function assaultEnemyText(st, i) {
+	const lv = asStageLv(st, i);
+	const sd = asStage(i);
+	const b = K.rules.battles[Math.min(lv, K.rules.battles.length) - 1];
+	const n = assaultEnemy(i, lv).length;
+	const et = assaultTitan(asTarget(st, i));
+	return AI_RU[b.ai] + ', уровень ' + lv + ': ' + n + ' ' + asMany(n) + (sd.extra ? ', из них гарнизон ' + sd.extra + ' (' + [...new Set(assaultEnemy(i, lv).slice(b.squads.length))].map((id) => TROOP_RU[id] || id).join(', ') + ')' : '') +
+		(sd.fort ? ', стены дают защитникам +' + sd.fort + '% здоровья' : '') + (et ? ', титан ' + et.def.name + ' ур. ' + et.level : ', без титана');
+}
+/** A stage's reward in words: gold and food grow with the Castle, as the kingdom pays them. */
+const asPay = (r, st) => eventPay(Object.assign({}, r, { gold: (r.gold || 0) * Math.max(1, st.castle), food: (r.food || 0) * Math.max(1, st.castle) }));
+const asLocked = (st) => st.castle < asRules().castle && !st.assault.run;
+/** 1 while the event waits for the player: a run to start, a boon to choose or a stage to fight. */
+function assaultReady(st) {
+	if (!asOn(st) || asLocked(st)) return 0;
+	const a = st.assault;
+	return a.open && !a.over && !st.pendingAssault ? 1 : 0;
+}
+function asArmyHtml(st) {
+	const a = st.assault;
+	const t = asTitan(st);
+	const th = t ? '<div class="troopRow">' + titanIcon(t) + '<div class="info"><b>' + esc(titanName(t)) + ' ' + starsHtml(K.army.titans[t.def].stars) + '</b>' +
+		'<span>ур. ' + t.lv + ' · в каждый бой выходит целым</span></div></div>' : '<p class="fine">Без титана.</p>';
+	return th + a.squads.map((q) => '<div class="troopRow">' + troopIcon(q[0]) + '<div class="info"><b>' + esc(K.army.troops[q[0]].name) + ' · ур. ' + q[1] + '</b>' +
+		'<span>' + (q[2] > 0 ? 'в строю ' + q[2] + '% бойцов' : 'отряд пал') + '</span><div class="progress thin"><i style="width:' + q[2] + '%"></i></div></div></div>').join('');
+}
+function assaultCard(st) {
+	if (!asOn(st)) return '';
+	const a = st.assault;
+	const R = asRules();
+	const n = assaultReady(st);
+	const sub = asLocked(st) ? 'с Замка ' + R.castle + ' · 10 осад одним войском'
+		: a.over ? 'окончен: взято этапов ' + a.stage + ' из ' + R.stages.length + (a.open ? '' : ' · следующий через ' + fmtDur(a.opens - nowF()))
+			: !a.open ? 'следующий через ' + fmtDur(a.opens - nowF())
+				: a.run ? 'этап ' + (a.stage + 1) + ' из ' + R.stages.length + ' · попыток ' + a.tries + ' · идёт ещё ' + fmtDur(a.closes - nowF())
+					: 'идёт ещё ' + fmtDur(a.closes - nowF()) + ' · 10 осад одним войском';
+	return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml('mission.siege', (asLocked(st) ? 'shards' : 'gold') + ' land') + '<div class="info"><b>Штурм</b><span>' + sub + '</span></div>' +
+		'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="assault">' + (n ? 'Открыть · 1' : 'Открыть') + '</button></div></div>';
+}
+function openAssault() {
+	if (!asOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = asRules();
+		const a = st.assault;
+		const n = R.stages.length;
+		const locked = asLocked(st);
+		const timer = a.open ? a.closes - nowF() : a.opens - nowF();
+		const status = locked ? '<p class="fine">Штурм открывается с Замка ' + R.castle + '. Пока можно посмотреть этапы и награды.</p>'
+			: '<div class="costline"><span>' + (a.open ? 'До конца штурма' : 'Следующий штурм через') + '</span><b data-live="assault">' + fmtDur(Math.max(0, timer)) + '</b>' +
+				(a.run ? '<span>этапов ' + a.stage + ' из ' + n + ' · попыток ' + a.tries + ' из ' + R.retries + '</span>' : '') + '</div>';
+		let body = '';
+		if (a.run) {
+			if (a.over) body += '<p><b>' + (a.stage >= n ? 'Крепость взята: пройдены все ' + n + ' этапов!' : 'Штурм окончен: взято этапов ' + a.stage + ' из ' + n + '.') + '</b> Следующий штурм — через месяц, с новым войском.</p>';
+			body += '<h3>Войско штурма</h3>' + asArmyHtml(st);
+			if (a.boons.length) {
+				body += '<h3>Благословения</h3><p>' + a.boons.map((b) => '<b>' + esc(asBoon(b).name) + '</b> — ' + esc(asBoon(b).text)).join('; ') + '.</p>';
+			}
+		}
+		if (a.offer.length && !a.over) {
+			body += '<h3>Выберите благословение</h3><div class="opts">' + a.offer.map((b, i) => '<button class="opt" data-act="as-boon" data-id="' + i + '"><b>' + esc(asBoon(b).name) + '</b>' +
+				'<span>' + esc(asBoon(b).text) + '</span></button>').join('') + '</div><p class="fine">Благословения складываются и действуют до конца штурма.</p>';
+		}
+		let go = '';
+		if (!locked && a.open && !a.over && !st.pendingAssault && !a.offer.length) {
+			go = '<button class="btn primary" data-act="as-go">' + (a.run ? 'В бой · этап ' + (a.stage + 1) + ' из ' + n : 'Собрать войско') + '</button>';
+		}
+		const end = a.run && !a.over && !st.pendingAssault ? '<button class="btn' + (isArmed('as-end') ? ' danger' : '') + '" data-act="as-end">' + (isArmed('as-end') ? 'Точно завершить?' : 'Завершить штурм') + '</button>' : '';
+		const ladder = R.stages.map((sd, i) => {
+			const won = a.run && i < a.stage;
+			const cur = a.run && !a.over && i === a.stage;
+			const lv = asStageLv(st, i);
+			const et = assaultTitan(asTarget(st, i));
+			return '<div class="landCard' + (won ? ' won' : cur ? ' ready' : '') + '"><div class="ico ' + (won || cur ? 'gold' : 'shards') + ' land">' + DotIcons.svg('mission.siege') + '<i class="lvb">' + (i + 1) + '</i></div>' +
+				'<div class="info"><b>Этап ' + (i + 1) + ' · ур. ' + lv + (et ? ' · титан' : '') + '</b><span>' + (sd.extra ? 'гарнизон +' + sd.extra + ' · ' : '') + (sd.fort ? 'стены +' + sd.fort + '%' : 'без стен') + '</span>' +
+				'<span>' + asPay(sd.reward, st) + '</span></div><div class="row">' + (won ? '<button class="btn" disabled>Взят</button>' : '') + '</div></div>';
+		}).join('');
+		const html = sheetTitle(icoHtml('mission.siege', 'gold land'), 'Штурм') +
+			'<p class="fine">Раз в месяц, с пятницы по вторник: ' + n + ' осад подряд одним войском. Отряды берутся из лагеря копией (лагерь их не теряет), потери переходят с этапа на этап, ' +
+			'а лечат их только благословения: после каждой победы выберите одно из ' + R.boonChoices + '. Поражение или отступление тратит одну из ' + R.retries + ' попыток, и этап можно повторить тем же войском. ' +
+			'Каждый взятый этап платит сразу; камни портала не нужны, заклинания не тратятся.</p>' +
+			status + body + (go || end ? '<div class="actions">' + go + end + '</div>' : '') +
+			'<h3>Этапы</h3>' + ladder +
+			'<p class="fine">Уровень этапа считается от уровня Замка в начале штурма. В мастер-промпте у штурма есть таблица лидеров; без сервера её нет. Золото и еда растут с Замком.</p>' +
+			'<div class="actions"><button class="btn" data-act="world">Карта мира</button>' + closeBtn + '</div>';
+		return { key: ['assault', a.no, a.open, a.run, a.over, a.stage, a.tries, a.offer.join(), a.boons.join(), a.squads.join(';'), a.lv.join(), st.castle, st.pendingAssault, locked, isArmed('as-end'), asTitan(st) ? asTitan(st).lv : 0].join('|'), html,
+			live: (el) => live(el, 'assault', fmtDur(Math.max(0, (K.st.assault.open ? K.st.assault.closes : K.st.assault.opens) - nowF()))) };
+	});
+}
+function startAssault() {
+	const st = K.st;
+	if (!asOn(st)) return;
+	const a = st.assault;
+	if (!a.run && a.ck.err !== E.None) { toast(a.ck.err === E.NotReady ? 'Штурм ещё не начался' : a.ck.err === E.Nothing ? 'Штурм этого месяца уже окончен' : errText(a.ck.err, a.ck), 'bad'); return; }
+	if (a.run && (a.over || !a.open)) { toast(a.over ? 'Штурм этого месяца уже окончен' : 'Штурм закрыт до следующего месяца', 'bad'); return; }
+	if (a.offer.length) { toast('Сначала выберите благословение', 'bad'); return; }
+	openPrepare(0, false, -1, null, false, false, true);
+}
+function chooseAssaultBoon(i) {
+	const b = K.st.assault.offer[i];
+	const code = K.bridge.asBoon(i);
+	if (code !== E.None) { toast(code === E.Nothing ? 'Благословение уже выбрано' : errText(code), 'bad'); refresh(true); return; }
+	toast('Благословение «' + asBoon(b).name + '»: ' + asBoon(b).text, 'gold');
+	persist();
+	refresh(true);
+}
+function endAssault() {
+	K.armed = null;
+	const code = K.bridge.asEnd();
+	if (code !== E.None) { toast(errText(code), 'bad'); refresh(true); return; }
+	toast('Штурм завершён: взято этапов ' + K.bridge.state().assault.stage + ' из ' + asRules().stages.length, '');
+	persist();
+	refresh(true);
+}
+function assaultEnd(ctx, stars, retreat) {
+	const n = asRules().stages.length;
+	const r = K.bridge.asFinish(stars, stars > 0 ? survivorsFromBattle(ctx.squads || 0) : []);
+	persist();
+	refresh(true);
+	if (r.err !== E.None) { toast(errText(r.err), 'bad'); return; }
+	const a = K.st.assault;
+	if (stars > 0) {
+		const parts = rewardParts(r);
+		if (r.shards) parts.push('+' + resAmount('shards', r.shards));
+		const got = (r.relics || []).map((rid) => K.st.relics.find((x) => x.id === rid)).filter(Boolean);
+		for (const x of got) parts.push((/^реликвия/i.test(relicName(x)) ? '' : 'реликвия ') + relicName(x) + ' ' + '★'.repeat(x.r));
+		if (r.relicsLost) parts.push('реликвия пропала: склад полон');
+		toast('Штурм, этап ' + (ctx.stage + 1) + ' взят ' + '★'.repeat(stars) + (parts.length ? ': ' + parts.join(', ') : '') + (r.lost ? '. Пало ' + r.lost + ' ' + asMany(r.lost) : ''), 'gold');
+		if (a.over) setTimeout(() => toast(a.stage >= n ? 'Крепость взята: все ' + n + ' этапов штурма пройдены!' : 'Войско штурма разбито: взято этапов ' + a.stage + ' из ' + n, a.stage >= n ? 'gold' : 'bad'), 900);
+	} else {
+		toast((retreat ? 'Отступление' : 'Поражение') + ' на этапе ' + (ctx.stage + 1) + (a.over ? ': попыток больше нет, штурм окончен (взято этапов ' + a.stage + ' из ' + n + ')'
+			: ': потрачена попытка, осталось ' + a.tries + '. Войско осталось каким было'), 'bad');
+	}
+	openAssault();
+}
+/** A toast when the Assault opens while the game is on. */
+function announceAssault(prev, st) {
+	if (!asOn(st) || !prev.assault || asLocked(st)) return;
+	if (!prev.assault.open && st.assault.open) toast('Начался Штурм: ' + asRules().stages.length + ' осад одним войском до вторника, награда за каждый этап', 'gold');
+}
+
+// ---------------------------------------------------------------------------------------------
 // Daily quests: five a day for the Castle's level, a reward for each, the daily chest for all of them
 // ---------------------------------------------------------------------------------------------
 const QUEST_ICON = { win: 'ui.attack', threeStars: 'mission.elite', raid: 'land.forest', collectGold: 'building.gold_mine', collectFood: 'building.farm',
@@ -4372,7 +4566,7 @@ function openWorld() {
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + trialCard(st) + practiceCard() +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + trialCard(st) + assaultCard(st) + practiceCard() +
 			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
 			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
 				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
@@ -4511,7 +4705,7 @@ function openWorldMap() {
 			'<div class="mapLegend"><span><i style="border-color:var(--own)"></i>ваши земли ' + st.lands.length + ' / ' + st.landCap + '</span><span><i style="border-color:rgba(239,231,214,0.85)"></i>ничьи</span>' +
 			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
 			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
-			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + trialCard(st) +
+			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + trialCard(st) + assaultCard(st) +
 			'<div class="actions"><button class="btn" data-act="world-list">Списком</button><button class="btn" data-act="practice">Тренировка</button>' + closeBtn + '</div>';
 		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
@@ -4681,6 +4875,7 @@ const worldLand = (id) => K.st.world.find((x) => x.id === id) || (K.st.rivalLand
 /** The lord (name, realm) of a rival by its index in the state. */
 const lordOf = (i) => (K.st.rivals && K.st.rivals[i] ? K.rules.rivals.lords[K.st.rivals[i].lord] : null);
 function enemyTitan(w) {
+	if (w.assault >= 0) return assaultTitan(w);
 	if (w.mission) return missionTitan(missionDef(w.mission.a, w.mission.m));
 	if (w.trial >= 0) return trialTitan(trialDef(w.trial), w.lv);
 	if (w.practice && w.noTitan) return null;
@@ -4703,9 +4898,10 @@ function landScenario(w, prep) {
 	const site = w.site >= 0 ? siteDef(w.site) : null;
 	const md = w.mission ? missionDef(w.mission.a, w.mission.m) : null;
 	const td = w.trial >= 0 ? trialDef(w.trial) : null;
-	const ty = td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
-	const lord = !md && !site && !td && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	const asd = w.assault >= 0 ? asStage(w.assault) : null;
+	const ty = asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
+	const lord = !md && !site && !td && !asd && w.own >= 0 ? lordOf(w.own) : null;
+	sc.name = asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -4714,37 +4910,51 @@ function landScenario(w, prep) {
 	let back = 0;
 	att.name = 'Ваше войско';
 	// The player's squads first (the kingdom reads their survivors in this order), then the allies'.
-	const sent = prep.squads.map((t) => [t, K.st.army.lv[t]]).concat(prep.reinf || []);
-	att.squads = sent.map(([t, lv]) => {
+	// An Assault squad goes at the level it had when the run began, with its share of men still standing.
+	const sent = prep.squads.map((t, i) => [t, prep.levels ? prep.levels[i] : K.st.army.lv[t]]).concat(prep.reinf || []);
+	att.squads = sent.map(([t, lv], i) => {
 		const tr = K.army.troops[t];
 		const lvl = tr.levels[Math.max(1, Math.min(lv, tr.levels.length)) - 1];
 		const ranged = BACK_ROW.has(tr.id);
 		const pos = ranged ? [xs[back++ % xs.length], 18 - 6 * Math.floor((back - 1) / xs.length)] : [xs[front++ % xs.length], 34 - 6 * Math.floor((front - 1) / xs.length)];
-		return { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
+		const sq = { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
+		const share = prep.shares ? prep.shares[i] : 100;
+		if (share > 0 && share < 100) sq.count = Math.max(1, Math.round(((K.squadSize[tr.id] || 20) * share) / 100));
+		return sq;
 	});
+	// The Assault's boons, on top of the titan's relics and skills.
+	const boon = prep.bonus || { atk: 0, hp: 0, titan: 0, crit: 0 };
 	const mine = prep.titan ? K.st.titans.find((t) => t.id === prep.titan) : null;
 	if (mine) {
 		att.titan = { id: K.army.titans[mine.def].id, level: mine.lv, stars: K.army.titans[mine.def].stars, ascended: !!mine.asc, abilityLevels: [1, 1], pos: [120, 26], facingDeg: 0,
-			bonus: { atkPct: Math.floor(mine.total[0] / 10), hpPct: Math.floor(mine.total[1] / 10), armorPct: Math.floor(mine.total[2] / 10),
-				critPct: Math.floor(mine.total[3] / 10), piercePct: Math.floor(mine.total[4] / 10) } };
+			bonus: { atkPct: Math.floor(mine.total[0] / 10) + boon.titan, hpPct: Math.floor(mine.total[1] / 10) + boon.titan, armorPct: Math.floor(mine.total[2] / 10),
+				critPct: Math.floor(mine.total[3] / 10) + boon.crit, piercePct: Math.floor(mine.total[4] / 10) } };
 		// Relics and skills of the titan that strengthen the whole army.
-		att.troopBonus = { atkPct: Math.floor(mine.total[5] / 10), hpPct: Math.floor(mine.total[6] / 10) };
-	} else delete att.titan;
+		att.troopBonus = { atkPct: Math.floor(mine.total[5] / 10) + boon.atk, hpPct: Math.floor(mine.total[6] / 10) + boon.hp };
+	} else {
+		delete att.titan;
+		if (boon.atk || boon.hp) att.troopBonus = { atkPct: boon.atk, hpPct: boon.hp };
+	}
 	// Spells from the Spell Forge stock: every charge goes along, at its Arcane Tower level.
 	const sp = K.st.spells;
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
+	def.name = asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
 	def.ai = (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
-	const enemy = td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
+	// An Assault stage adds its garrison behind the level's army.
+	const enemy = asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? md.squads : b.squads;
+	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
-		return { troop, tier: md ? md.tier : b.tier, pos: slots[i % slots.length], facingDeg: 180, formation: CAVALRY.has(troop) ? 'Wedge' : 'Line' };
+		const pos = asd && i >= b.squads.length ? [garrisonX[(i - b.squads.length) % garrisonX.length], 149] : slots[i % slots.length];
+		return { troop, tier: md ? md.tier : b.tier, pos, facingDeg: 180, formation: CAVALRY.has(troop) ? 'Wedge' : 'Line' };
 	});
+	// Its walls: the defenders' squads have more health.
+	if (asd && asd.fort) def.troopBonus = { atkPct: 0, hpPct: asd.fort };
 	const et = enemyTitan(w);
 	if (et) def.titan = { id: et.def.id, level: et.level, stars: et.stars || et.def.stars, abilityLevels: [1, 1], pos: [120, 134], facingDeg: 180 };
 	else delete def.titan;
@@ -4772,26 +4982,42 @@ function launchAttack() {
 	const ms = p && p.mission;
 	const trial = p && p.trial;
 	const practice = p && p.practice;
-	const w = practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
+	const assault = p && p.assault;
+	let w = assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
-	if (!squads.length && !p.titan) { toast('Выберите титана или хотя бы один отряд', 'bad'); return; }
+	const asRun = assault && K.st.assault.run;
+	if (!asRun && !squads.length && !p.titan) { toast('Выберите титана или хотя бы один отряд', 'bad'); return; }
 	const spells = p.spells.filter((i) => K.st.spells.stock[i] > 0);
-	const code = practice ? E.None : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
+	// The Assault's first battle starts the run with the chosen army; later ones take the run's army as it stands.
+	let code = E.None;
+	if (assault) {
+		if (!asRun) code = K.bridge.asStart(squads, p.titan);
+		if (code === E.None) code = K.bridge.asStage(spells);
+	} else code = practice ? E.None : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
 		: site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
 	if (code !== E.None) { toast(errText(code), 'bad'); refresh(true); return; }
 	if (!practice) persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
-	const reinf = practice ? [] : K.bridge.state().ally.pend;
-	const sc = landScenario(w, { squads, titan: p.titan, spells, reinf });
+	const reinf = practice || assault ? [] : K.bridge.state().ally.pend;
+	let prep = { squads, titan: p.titan, spells, reinf };
+	if (assault) {
+		const st = K.bridge.state();
+		const alive = asAlive(st);
+		const ti = asTitan(st);
+		w = assaultTarget(st);
+		prep = { squads: alive.map((q) => q[0]), levels: alive.map((q) => q[1]), shares: alive.map((q) => q[2]), titan: ti ? ti.id : 0, spells, reinf, bonus: st.assault.bonus };
+	}
+	const sc = landScenario(w, prep);
 	const path = 'scenarios/land_battle.json';
 	K.app.sim.addFile(path, JSON.stringify(sc));
 	closeSheet();
 	select(null);
 	const charges = sc.sides.attacker.spellCharges.slice();
 	// A site battle is a land battle for the battle screen (retreat, stars back to the kingdom), with its site.
-	K.app.startLandBattle(path, sc.sides.defender.ai, practice ? { kind: 'land', practice: true, level: w.lv, squads: squads.length, charges }
+	K.app.startLandBattle(path, sc.sides.defender.ai, assault ? { kind: 'land', assault: true, stage: w.assault, level: w.lv, squads: prep.squads.length, charges }
+		: practice ? { kind: 'land', practice: true, level: w.lv, squads: squads.length, charges }
 		: trial ? { kind: 'land', trial: true, level: w.lv, squads: squads.length, charges }
 		: ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
 		: site ? { kind: 'land', site: p.site, level: w.lv, squads: squads.length, charges }
@@ -4846,6 +5072,10 @@ function onBattleEnd(ctx, stars, retreat) {
 	}
 	if (ctx && ctx.kind === 'land' && ctx.practice) {
 		practiceEnd(ctx, stars, retreat);
+		return;
+	}
+	if (ctx && ctx.kind === 'land' && ctx.assault) {
+		assaultEnd(ctx, stars, retreat);
 		return;
 	}
 	if (ctx && ctx.kind === 'land' && !(ctx.site >= 0)) {
@@ -5597,7 +5827,7 @@ function openRaidLog(away) {
 }
 
 /** Before a land battle: pick the titan and the squads (up to the Army Camp's battle slots). */
-function openPrepare(wid, capture, site, mission, trial, practice) {
+function openPrepare(wid, capture, site, mission, trial, practice, assault) {
 	cancelPlace();
 	select(null);
 	const a = K.st.army;
@@ -5617,14 +5847,18 @@ function openPrepare(wid, capture, site, mission, trial, practice) {
 	}
 	const sp = K.st.spells;
 	const spells = sp.stock.map((n, i) => [n, i]).filter((x) => x[0] > 0).sort((x, y) => y[0] - x[0]).slice(0, sp.kinds).map((x) => x[1]);
-	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, titan: ready.length ? ready[0].id : 0, counts, spells, reinf: !td && !practice };
+	K.prep = { wid, capture, site: site >= 0 ? site : -1, mission: mission || null, trial: !!td, practice: !!practice, assault: !!assault, titan: ready.length ? ready[0].id : 0, counts, spells,
+		reinf: !td && !practice && !assault };
 	openSheet(() => {
 		const st = K.st;
 		const p = K.prep;
 		const md = p.mission ? missionDef(p.mission.a, p.mission.m) : null;
 		const sd = !md && p.site >= 0 ? siteDef(p.site) : null;
 		const pr = p.practice;
-		const w = pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
+		const as = p.assault;
+		// A run that began goes with its own army: only the spells are chosen.
+		const asFixed = as && st.assault.run;
+		const w = as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -5638,31 +5872,35 @@ function openPrepare(wid, capture, site, mission, trial, practice) {
 		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + aa.lv[t] + '</b><span>' + (okTroop(t) ? 'в лагере ' + aa.n[t] : 'не по правилу испытания') + '</span></div>' +
 			'<div class="stepper"><button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="-1"' + (p.counts[t] > 0 ? '' : ' disabled') + '>−</button><b>' + p.counts[t] + '</b>' +
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots && okTroop(t) ? '' : ' disabled') + '>+</button></div></div>');
-		const ty = td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
+		const ty = as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
-		const cost = td || pr ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
+		const cost = td || pr || as ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
 		const spellOpts = K.army.spells.map((d, i) => (sp.stock[i] > 0 ? '<button class="opt wi' + (p.spells.includes(i) ? ' on' : '') + '" data-act="prep-spell" data-id="' + i + '">' + spellIcon(i) + '<b>' + esc(d.name) + '</b>' +
 			'<span>×' + sp.stock[i] + ' · ур. ' + sp.lv[i] + '</span></button>' : '')).filter(Boolean);
 		// Allies' squads that have arrived in the Alliance Camp fight once and are gone (the original).
-		const arrived = td || pr ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
+		const arrived = td || pr || as ? [] : st.ally.reinf.filter((r) => r[2] <= nowF());
 		const reinfHtml = arrived.length ? '<h3>Подкрепления альянса</h3><div class="opts"><button class="opt wi' + (p.reinf ? ' on' : '') + '" data-act="prep-reinf">' + icoHtml('ui.alliance', 'troop') +
 			'<b>' + (p.reinf ? 'Взять ' : 'Не брать ') + arrived.length + ' ' + plural(arrived.length, 'отряд', 'отряда', 'отрядов') + '</b><span>' + arrived.map((r) => esc(K.army.troops[r[0]].name) + ' ' + r[1]).join(', ') + '</span></button></div>' +
 			'<p class="fine">Они не занимают места армии и после боя уходят, сколько бы ни выжило.</p>' : '';
-		const html = sheetTitle(td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv) +
+		const asN = asRules() ? asRules().stages.length : 0;
+		const asNote = as ? '<p class="fine">Этап ' + (w.assault + 1) + ' из ' + asN + '. Победа: ' + asPay(asStage(w.assault).reward, st) + '. ' +
+			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
+		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
+			: '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
+		const html = sheetTitle(as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? 'Миссия' : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
-			(td ? '<p class="fine">Попыток сегодня: ' + st.trial.left + '. Лучший счёт недели: ' + fmt(st.trial.best) + '. Попытка засчитывается при начале боя, даже если отступить.</p>'
+			'<p>Противник: ' + esc(as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			asNote + (td ? '<p class="fine">Попыток сегодня: ' + st.trial.left + '. Лучший счёт недели: ' + fmt(st.trial.best) + '. Попытка засчитывается при начале боя, даже если отступить.</p>'
 				: md ? '<p class="fine">' + missionRewardText(p.mission.a, p.mission.m) + '</p>' : sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
-			'<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' +
-			'<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml +
+			armyHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
-			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (td ? 'Берутся все заряды выбранных заклинаний; в испытании они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
+			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td ? 'Берутся все заряды выбранных заклинаний; в испытании они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
-			'<p class="fine">' + (pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td ? 'В испытании никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
-			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan ? '' : ' disabled') + '>' + (td || pr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
+			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td ? 'В испытании никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			'<div class="actions"><button class="btn primary" data-act="prep-go"' + (used || p.titan || asFixed ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
+		return { key: ['prep', pr, as, as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF())).join(), p.reinf, arrived.length].join('|'), html };
 	});
 }
 
@@ -5906,6 +6144,9 @@ function init(app) {
 		K.rules.castleIndex = K.defs.findIndex((d) => d.id === 'castle');
 		K.sandbox = JSON.parse(files['scenarios/m0_sandbox.json']);
 		K.army = JSON.parse(files['kingdom/army.json']);
+		// Men in a full squad by troop id (an Assault squad goes with its share of them).
+		K.squadSize = {};
+		for (const t of parseJsonc(files['troops.json']).troops) K.squadSize[t.id] = t.squadSize;
 
 		const local = readLocal();
 		let loaded = false;
@@ -5937,6 +6178,10 @@ function init(app) {
 			// A trial battle: the attempt is spent, the best score stays.
 			K.bridge.trialFinish(0, 0);
 			setTimeout(() => toast('Прерванный бой испытания засчитан как отступление', 'bad'), 600);
+		} else if (st.pendingAssault) {
+			// An Assault stage: it counts as lost (a retry is spent), the run's army stays as it was.
+			K.bridge.asFinish(0, []);
+			setTimeout(() => toast('Прерванный бой штурма засчитан как поражение: потрачена попытка', 'bad'), 600);
 		} else if (st.pendingMission >= 0) {
 			// And for a campaign mission (it can be fought again).
 			K.bridge.missionFinish(Math.floor(st.pendingMission / 100), st.pendingMission % 100, 0, st.army.away.map(() => 100), st.spells.away.map(() => 0));

@@ -511,6 +511,48 @@
     ]
   },
 
+  // Assault (master prompt 10.5: a monthly 5-day event, a gauntlet of 10 fortified sieges; casualties carry over with no
+  // healing but boons; 1 of 3 boons after each stage; 3 retry tokens a run; rewards per stage; a leaderboard). Ours: from
+  // Castle 5, in the second week of every four, Friday to Tuesday (00:00 UTC). One run per event with up to the battle
+  // slots of squads from the Army Camp and a titan: the run takes a copy, so the camp keeps its army, and each squad
+  // keeps its share of men from stage to stage. A stage's battle is the level of the Castle at the run's start plus
+  // "level", with "extra" garrison squads on top of that level's army, the defenders' health raised by "fort" % and an
+  // enemy titan where "titan" (else the level's own, if any). Spells go along free, as in the trials. A lost stage (or
+  // a retreat) spends a retry and is fought again with the army it had. Boons: "atkPct"/"hpPct" for every squad,
+  // "titanPct" for the titan's attack and health, "critPct" for its crit chance, "revivePct" brings back that share of
+  // every squad's losses at once. Gold and food grow with the Castle (x Castle level). 70 gems a month for all ten
+  // stages. No leaderboard: the prompt lists only server-verified scores. "name", "text" and "map" are for the web
+  // client. Numbers are ours.
+  "assault": {
+    "castle": 5,
+    "weeks": 4,
+    "week": 1,
+    "startDay": 4,
+    "days": 5,
+    "retries": 3,
+    "boonChoices": 3,
+    "garrison": ["troop.archers", "troop.ballista", "troop.pikemen"],
+    "stages": [
+      { "level": -2, "extra": 0, "fort": 0,  "map": "map.highvale_01", "reward": { "gold": 1000 } },
+      { "level": -2, "extra": 1, "fort": 0,  "map": "map.forest_01",   "reward": { "gems": 5, "stones": 6 } },
+      { "level": -1, "extra": 0, "fort": 5,  "map": "map.lake_01",     "reward": { "food": 1000 } },
+      { "level": -1, "extra": 1, "fort": 5,  "map": "map.mountain_01", "reward": { "gems": 5, "shards": 2 } },
+      { "level": 0,  "extra": 1, "fort": 10, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 10, "relic": 2 } },
+      { "level": 0,  "extra": 1, "fort": 10, "map": "map.highvale_01", "reward": { "gold": 2000 } },
+      { "level": 1,  "extra": 1, "fort": 15, "map": "map.forest_01",   "reward": { "gems": 10, "stones": 9 } },
+      { "level": 1,  "extra": 2, "fort": 15, "map": "map.lake_01",     "reward": { "food": 2000 } },
+      { "level": 2,  "extra": 2, "fort": 20, "map": "map.mountain_01", "reward": { "gems": 10, "shards": 3 } },
+      { "level": 2,  "extra": 2, "fort": 25, "map": "map.ruins_01",    "titan": true, "reward": { "gems": 30, "relic": 3 } }
+    ],
+    "boons": [
+      { "id": "fury",   "name": "Ярость",               "text": "+15% к атаке всех отрядов",           "atkPct": 15 },
+      { "id": "guard",  "name": "Стойкость",            "text": "+15% к здоровью всех отрядов",        "hpPct": 15 },
+      { "id": "medic",  "name": "Полевой лекарь",       "text": "вернуть 30% павших бойцов каждого отряда", "revivePct": 30 },
+      { "id": "titan",  "name": "Благословение титана", "text": "+20% к атаке и здоровью титана",      "titanPct": 20 },
+      { "id": "aim",    "name": "Меткий глаз",          "text": "+10% к шансу крита титана",           "critPct": 10 }
+    ]
+  },
+
   // The main line of goals (master prompt 9.4 and 13.5; the original starts with a step-by-step tutorial): one goal at a
   // time, from the first collected food to Castle 9, about the first week. "check" is a fact of the kingdom (castle,
   // build, level, army, troopLevel, lands, landLevel, guard, garrison, titans, titanLevel, relics, skills, spells,

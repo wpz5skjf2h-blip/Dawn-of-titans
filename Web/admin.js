@@ -326,6 +326,18 @@ function invariants(st, add) {
 	if (st.spells.total > st.spells.cap) add('warn', 'Заклинаний больше вместимости Кузницы: ' + st.spells.total + ' из ' + st.spells.cap);
 	if (!(st.season.end > st.now)) add('bad', 'Сезон ' + st.season.no + ' должен был закончиться');
 	if (st.pending && !inBattle()) add('warn', 'Висит незавершённый бой за землю #' + st.pending);
+	const asr = rules().assault;
+	const as = st.assault;
+	if (asr && as && as.no >= 0) {
+		if (as.stage < 0 || as.stage > asr.stages.length) add('bad', 'Штурм: этап ' + as.stage + ' из ' + asr.stages.length);
+		if (as.tries < 0 || as.tries > asr.retries) add('bad', 'Штурм: попыток ' + as.tries + ' из ' + asr.retries);
+		if (as.squads.some((q) => q[2] < 0 || q[2] > 100)) add('bad', 'Штурм: доля отряда вне 0–100%: ' + as.squads.map((q) => q[2]).join(', '));
+		if (as.squads.length > st.army.slots) add('warn', 'Штурм: отрядов ' + as.squads.length + ' при ' + st.army.slots + ' местах в бою');
+		if (as.offer.length && (!as.run || as.over)) add('bad', 'Штурм окончен или не начат, а благословения предложены');
+		if (as.offer.length > asr.boonChoices || new Set(as.offer).size !== as.offer.length) add('bad', 'Штурм: предложено ' + as.offer.join(', '));
+		if (as.boons.length > as.stage) add('bad', 'Штурм: благословений ' + as.boons.length + ' за ' + as.stage + ' этапов');
+		if (as.run && !as.over && as.stage >= asr.stages.length) add('bad', 'Штурм пройден целиком, но не окончен');
+	}
 }
 /** Returns [[level, text]] with level 'ok' | 'warn' | 'bad'; the kingdom is left as it was. */
 function runChecks() {
@@ -398,7 +410,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -512,6 +524,40 @@ function runMonkey(steps, seed, keep) {
 			return code;
 		}],
 		['сундук пути', 1, (st) => (B.wpBonus && st.wp && st.wp.no >= 0 ? B.wpBonus().err : -1)],
+		['штурм', 4, (st) => {
+			if (!B.asStart || !st.assault || st.assault.no < 0) return -1;
+			const as = st.assault;
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			let code;
+			let kind = 'stage';
+			if (!as.run) {
+				kind = 'start';
+				const squads = [];
+				st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+				const ti = pick(st.titans.filter((x) => x.rec <= st.now));
+				code = B.asStart(squads, ti ? ti.id : 0);
+			} else if (as.offer.length) {
+				kind = 'boon';
+				code = B.asBoon(Math.floor(r() * 4));
+			} else {
+				const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+				code = B.asStage(spells);
+				if (code === 0) {
+					const alive = as.squads.filter((q) => q[2] > 0);
+					code = B.asFinish(Math.floor(r() * 4), alive.map(() => Math.floor(r() * 101))).err;
+				}
+			}
+			// The run's army is a copy: the camp and the spells stay; the run never goes back.
+			const st2 = B.state();
+			const a2 = st2.assault;
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('штурм забрал отряды или заклинания лагеря');
+			if (a2.no === as.no && (a2.stage < as.stage || a2.tries > as.tries || (as.over && !a2.over))) throw new Error('штурм откатился: этап ' + as.stage + ' → ' + a2.stage + ', попыток ' + as.tries + ' → ' + a2.tries);
+			if (a2.no === as.no && kind === 'stage' && a2.squads.some((q, k) => q[2] > as.squads[k][2])) throw new Error('в бою штурма отряд прибавил бойцов: ' + as.squads.map((q) => q[2]).join() + ' → ' + a2.squads.map((q) => q[2]).join());
+			if (st2.pendingAssault) throw new Error('бой штурма остался незавершённым');
+			return code;
+		}],
+		['конец штурма', 1, () => (B.asEnd ? B.asEnd() : -1)],
 		['время', 12, () => { t += r() < 0.08 ? Math.floor(86400 * (1 + r() * 3)) : Math.floor(1 + r() * 14400); B.advance(t); return 0; }],
 	];
 	const total = acts.reduce((x, y) => x + y[1], 0);

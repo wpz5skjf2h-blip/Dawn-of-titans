@@ -431,6 +431,44 @@ struct WarpathRules
 	std::vector<EventReward> tiers; // at most 64
 };
 
+/** One Assault stage: its battle level against the Castle's at the run's start, garrison squads on top of that level's
+ *  army, the defenders' fortification (health %), an enemy titan, and what winning it pays. */
+struct AssaultStage
+{
+	int level = 0;
+	int extra = 0;
+	int fortPct = 0;
+	bool titan = false;
+	EventReward reward;
+};
+
+/** An Assault boon, picked after a won stage; boons stack over the run. */
+struct AssaultBoon
+{
+	std::string id;
+	int troopAtkPct = 0;
+	int troopHpPct = 0;
+	int revivePct = 0; // of every squad's losses, at once
+	int titanPct = 0; // the titan's attack and health
+	int titanCritPct = 0;
+};
+
+/** Assault (kingdom.json "assault", master prompt 10.5): a monthly gauntlet of sieges fought by one army whose losses
+ *  carry over. */
+struct AssaultRules
+{
+	int castle = 5; // Castle level it opens at
+	int weeks = 4; // a cycle of this many weeks from a Monday
+	int week = 1; // the week of the cycle it opens in (0-based)
+	int startDay = 4; // the day of that week it opens (0 = Monday)
+	int days = 5; // open for this many days
+	int retries = 3; // lost stages a run can fight again
+	int boonChoices = 3; // boons offered after a won stage
+	std::vector<int> garrison; // troops (indices) of the extra squads, in turn
+	std::vector<AssaultStage> stages;
+	std::vector<AssaultBoon> boons;
+};
+
 /** Alliances and their leagues (kingdom.json "alliances"). */
 struct AllianceRules
 {
@@ -644,6 +682,7 @@ struct KingdomContent
 	CalendarRules calendar;
 	TrialRules trials;
 	WarpathRules warpath;
+	AssaultRules assault;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
 	ResArray startResources{};

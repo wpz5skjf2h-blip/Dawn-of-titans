@@ -139,6 +139,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	WpPaidNo = -1;
 	WpPaid.fill(0);
 	WpPaidRelics = 0;
+	ResetAssault();
 	QuestCounter = 0;
 	RollQuests();
 	GoalAt = 0;
@@ -2257,7 +2258,8 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 		}
 	}
 	NoteQuest(QuestEvent::Stones, Cost);
-	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission : Target == TrialPending ? QuestEvent::Count : QuestEvent::Site, 1);
+	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
+			: Target == TrialPending || Target == AssaultPending ? QuestEvent::Count : QuestEvent::Site, 1);
 	return Error::None;
 }
 
@@ -2798,6 +2800,7 @@ void Kingdom::RollQuests()
 		bTrialRank = false;
 	}
 	RollWarpath();
+	RollAssault();
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -3417,6 +3420,330 @@ Error Kingdom::ClaimWarpathBonus(Reward* Out)
 	{
 		*Out = R;
 	}
+	return Error::None;
+}
+
+// --- Assault --------------------------------------------------------------------------------------------
+
+namespace
+{
+constexpr uint64_t AssaultSalt = 0x6173736c74ULL;
+constexpr uint64_t AssaultBoonSalt = 0x61626f6f6eULL;
+}
+
+int64_t Kingdom::AssaultStartDay(int64_t No) const
+{
+	const AssaultRules& A = C.assault;
+	// A week's Monday is day Week * 7 - 3 (the epoch's day 0 was a Thursday).
+	return (No * A.weeks + A.week) * 7 - 3 + A.startDay;
+}
+
+int64_t Kingdom::AssaultNoNow() const
+{
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	return FloorDiv(Day - AssaultStartDay(0), static_cast<int64_t>(C.assault.weeks) * 7);
+}
+
+bool Kingdom::AssaultOpen() const
+{
+	if (C.assault.stages.empty())
+	{
+		return false;
+	}
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	return Day - AssaultStartDay(AssaultNoNow()) < C.assault.days;
+}
+
+int64_t Kingdom::AssaultOpensAt() const
+{
+	const int64_t No = AssaultNoNow();
+	return AssaultStartDay(AssaultOpen() ? No : No + 1) * 86400;
+}
+
+int64_t Kingdom::AssaultClosesAt() const { return AssaultOpensAt() + static_cast<int64_t>(C.assault.days) * 86400; }
+
+Check Kingdom::CheckAssault() const
+{
+	Check Out;
+	if (C.assault.stages.empty())
+	{
+		Out.error = Error::BadId;
+	}
+	else if (CastleLevel() < C.assault.castle && !bAsRun)
+	{
+		Out.error = Error::Locked;
+		Out.castle = C.assault.castle;
+	}
+	else if (!AssaultOpen())
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = AssaultOpensAt() - Time;
+	}
+	else if (bAsOver)
+	{
+		Out.error = Error::Nothing;
+		Out.timeSec = AssaultStartDay(AssaultNoNow() + 1) * 86400 - Time;
+	}
+	return Out;
+}
+
+int Kingdom::AssaultRetriesLeft() const { return std::max(0, C.assault.retries - AsTries); }
+
+int Kingdom::AssaultLevel(int Stage) const
+{
+	const int Top = std::max(1, static_cast<int>(C.battles.size()));
+	const int Off = Stage >= 0 && Stage < static_cast<int>(C.assault.stages.size()) ? C.assault.stages[static_cast<size_t>(Stage)].level : 0;
+	return std::max(1, std::min(Top, (bAsRun ? AsBase : CastleLevel()) + Off));
+}
+
+AssaultBonus Kingdom::AssaultBonuses() const
+{
+	AssaultBonus Out;
+	for (const int I : AsBoons)
+	{
+		const AssaultBoon& B = C.assault.boons[static_cast<size_t>(I)];
+		Out.troopAtk += B.troopAtkPct;
+		Out.troopHp += B.troopHpPct;
+		Out.titan += B.titanPct;
+		Out.titanCrit += B.titanCritPct;
+	}
+	return Out;
+}
+
+void Kingdom::RollAssault()
+{
+	if (C.assault.stages.empty())
+	{
+		return;
+	}
+	const int64_t No = AssaultNoNow();
+	// A stage battle still on keeps its run until it is finished; the next roll brings the new event.
+	if (No == AssaultNo || Pending == AssaultPending)
+	{
+		return;
+	}
+	ResetAssault();
+	AssaultNo = No;
+}
+
+void Kingdom::ResetAssault()
+{
+	AssaultNo = -1;
+	bAsRun = false;
+	bAsOver = false;
+	AsStage = 0;
+	AsTries = 0;
+	AsBase = 1;
+	AsTitan = 0;
+	AsSquads.clear();
+	AsBoons.clear();
+	AsOffer.clear();
+}
+
+Error Kingdom::StartAssault(const std::vector<int>& Squads, int32_t TitanId)
+{
+	const Check Ck = CheckAssault();
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	if (bAsRun)
+	{
+		return Error::Nothing;
+	}
+	if (Squads.empty() && TitanId == 0)
+	{
+		return Error::NoTroops;
+	}
+	if (static_cast<int>(Squads.size()) > BattleSlots())
+	{
+		return Error::TooManySquads;
+	}
+	std::vector<int64_t> Need(C.troops.size(), 0);
+	for (const int T : Squads)
+	{
+		if (T < 0 || T >= static_cast<int>(C.troops.size()))
+		{
+			return Error::BadId;
+		}
+		if (++Need[static_cast<size_t>(T)] > Army[static_cast<size_t>(T)])
+		{
+			return Error::NoTroops;
+		}
+	}
+	if (TitanId != 0)
+	{
+		const TitanState* T = FindTitan(TitanId);
+		if (!T)
+		{
+			return Error::BadId;
+		}
+		if (T->recoverUntil > Time)
+		{
+			return Error::TitanRecovering;
+		}
+	}
+	bAsRun = true;
+	bAsOver = false;
+	AsStage = 0;
+	AsTries = 0;
+	AsBase = std::max(1, CastleLevel());
+	AsTitan = TitanId;
+	AsSquads.clear();
+	for (const int T : Squads)
+	{
+		AsSquads.push_back(AssaultSquad{T, TroopLevel(T), 100});
+	}
+	AsBoons.clear();
+	AsOffer.clear();
+	return Error::None;
+}
+
+Error Kingdom::StartAssaultStage(const std::vector<int>& Spells)
+{
+	if (!AssaultRunning())
+	{
+		return Error::NoAttack;
+	}
+	if (!AssaultOpen() || !AsOffer.empty())
+	{
+		return Error::NotReady;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	// The run's army goes, not the camp's: no squad of the camp is taken, and the titan needs no rest.
+	return BeginBattle(AssaultPending, false, 0, std::vector<int>(), 0, Spells, false);
+}
+
+Error Kingdom::FinishAssaultStage(int Stars, const std::vector<int>& SurvivorPct, Reward* Out)
+{
+	if (Pending != AssaultPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	// Spells go along free, as in the trials.
+	Reward R;
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	AddWarpathXp(C.warpath.battleXp, true);
+	const int Stages = static_cast<int>(C.assault.stages.size());
+	if (AssaultRunning() && AsStage < Stages)
+	{
+		if (Stars > 0)
+		{
+			// Losses carry over: each squad that went keeps the share of its men still standing.
+			size_t K = 0;
+			for (AssaultSquad& Q : AsSquads)
+			{
+				if (Q.pct <= 0)
+				{
+					continue;
+				}
+				const int Pct = K < SurvivorPct.size() ? std::max(0, std::min(100, SurvivorPct[K])) : 0;
+				++K;
+				Q.pct = Q.pct * Pct / 100;
+				R.squadsBack += Q.pct > 0 ? 1 : 0;
+				R.squadsLost += Q.pct > 0 ? 0 : 1;
+			}
+			EventReward Pay = C.assault.stages[static_cast<size_t>(AsStage)].reward;
+			const uint64_t Pick = static_cast<uint64_t>(std::max<int64_t>(0, AssaultNo)) * 32 + static_cast<uint64_t>(AsStage);
+			if (PayEvent(Pay, AssaultSalt, Pick, R, true) != Error::None)
+			{
+				// No room for the relic: the rest is paid all the same.
+				Pay.relic = 0;
+				PayEvent(Pay, AssaultSalt, Pick, R, true);
+				R.relicsLost = 1;
+			}
+			++AsStage;
+			bool bAlive = AsTitan != 0 && FindTitan(AsTitan);
+			for (const AssaultSquad& Q : AsSquads)
+			{
+				bAlive = bAlive || Q.pct > 0;
+			}
+			if (AsStage >= Stages || !bAlive)
+			{
+				bAsOver = true;
+			}
+			else
+			{
+				// Boons to choose from: distinct ones, by the seed, the event and the stage.
+				const int N = static_cast<int>(C.assault.boons.size());
+				std::vector<int> Pool(static_cast<size_t>(N));
+				for (int I = 0; I < N; ++I)
+				{
+					Pool[static_cast<size_t>(I)] = I;
+				}
+				for (int I = 0; I < std::min(N, C.assault.boonChoices); ++I)
+				{
+					const uint64_t H = Mix(Seed ^ AssaultBoonSalt, Pick * 64 + static_cast<uint64_t>(I));
+					const int J = I + static_cast<int>(H % static_cast<uint64_t>(N - I));
+					std::swap(Pool[static_cast<size_t>(I)], Pool[static_cast<size_t>(J)]);
+					AsOffer.push_back(Pool[static_cast<size_t>(I)]);
+				}
+			}
+		}
+		else if (AssaultRetriesLeft() > 0)
+		{
+			++AsTries; // the stage is fought again with the army it had
+		}
+		else
+		{
+			bAsOver = true;
+		}
+	}
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ChooseAssaultBoon(int I)
+{
+	if (AsOffer.empty())
+	{
+		return Error::Nothing;
+	}
+	if (I < 0 || I >= static_cast<int>(AsOffer.size()))
+	{
+		return Error::BadId;
+	}
+	const int Boon = AsOffer[static_cast<size_t>(I)];
+	AsBoons.push_back(Boon);
+	const int Revive = C.assault.boons[static_cast<size_t>(Boon)].revivePct;
+	for (AssaultSquad& Q : AsSquads)
+	{
+		Q.pct = std::min(100, Q.pct + (100 - Q.pct) * Revive / 100);
+	}
+	AsOffer.clear();
+	return Error::None;
+}
+
+Error Kingdom::EndAssault()
+{
+	if (!AssaultRunning())
+	{
+		return Error::NoAttack;
+	}
+	if (Pending == AssaultPending)
+	{
+		return Error::Busy;
+	}
+	bAsOver = true;
+	AsOffer.clear();
 	return Error::None;
 }
 
@@ -6175,6 +6502,49 @@ std::string Kingdom::Save() const
 	W.Int(WpPaidRelics);
 	W.EndObject();
 	W.EndObject();
+	// Assault (optional): this event's run; squads as [troop, level, share].
+	W.Key("assault");
+	W.BeginObject();
+	W.Key("no");
+	W.Int(AssaultNo);
+	W.Key("run");
+	W.Bool(bAsRun);
+	W.Key("over");
+	W.Bool(bAsOver);
+	W.Key("stage");
+	W.Int(AsStage);
+	W.Key("tries");
+	W.Int(AsTries);
+	W.Key("base");
+	W.Int(AsBase);
+	W.Key("titan");
+	W.Int(AsTitan);
+	W.Key("squads");
+	W.BeginArray();
+	for (const AssaultSquad& Q : AsSquads)
+	{
+		W.BeginArray();
+		W.Int(Q.troop);
+		W.Int(Q.level);
+		W.Int(Q.pct);
+		W.EndArray();
+	}
+	W.EndArray();
+	W.Key("boons");
+	W.BeginArray();
+	for (const int B : AsBoons)
+	{
+		W.Int(B);
+	}
+	W.EndArray();
+	W.Key("offer");
+	W.BeginArray();
+	for (const int B : AsOffer)
+	{
+		W.Int(B);
+	}
+	W.EndArray();
+	W.EndObject();
 	// Login calendars (optional).
 	W.Key("calendar");
 	W.BeginObject();
@@ -6950,6 +7320,52 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			WpPaidRelics = std::max(0, PaidJ->GetInt("relics", 0));
 		}
 	}
+	// Assault (saves before it start this event's state on the next Advance).
+	ResetAssault();
+	if (const JsonValue* AsJ = J.Find("assault"); AsJ && !C.assault.stages.empty())
+	{
+		const int Boons = static_cast<int>(C.assault.boons.size());
+		const int Troops = static_cast<int>(C.troops.size());
+		AssaultNo = std::max<int64_t>(-1, AsJ->GetInt64("no", -1));
+		bAsRun = AsJ->GetBool("run", false);
+		bAsOver = bAsRun && AsJ->GetBool("over", false);
+		AsStage = std::max(0, std::min(static_cast<int>(C.assault.stages.size()), AsJ->GetInt("stage", 0)));
+		AsTries = std::max(0, std::min(C.assault.retries, AsJ->GetInt("tries", 0)));
+		AsBase = std::max(1, AsJ->GetInt("base", 1));
+		AsTitan = static_cast<int32_t>(AsJ->GetInt64("titan", 0));
+		if (const JsonValue* Sq = AsJ->Find("squads"); Sq && Sq->IsArray())
+		{
+			for (size_t I = 0; I < Sq->Size() && static_cast<int>(AsSquads.size()) < std::max(1, BattleSlots()); ++I)
+			{
+				const JsonValue& Q = (*Sq)[I];
+				const int T = Q.Size() >= 3 ? Q[0].AsInt(-1) : -1;
+				if (T >= 0 && T < Troops)
+				{
+					AsSquads.push_back(AssaultSquad{T, std::max(1, Q[1].AsInt(1)), std::max(0, std::min(100, Q[2].AsInt(0)))});
+				}
+			}
+		}
+		for (const char* Key : {"boons", "offer"})
+		{
+			std::vector<int>& List = Key[0] == 'b' ? AsBoons : AsOffer;
+			const size_t Most = Key[0] == 'b' ? C.assault.stages.size() : static_cast<size_t>(C.assault.boonChoices);
+			if (const JsonValue* L = AsJ->Find(Key); L && L->IsArray())
+			{
+				for (size_t I = 0; I < L->Size() && List.size() < Most; ++I)
+				{
+					const int B = (*L)[I].AsInt(-1);
+					if (B >= 0 && B < Boons)
+					{
+						List.push_back(B);
+					}
+				}
+			}
+		}
+		if (!bAsRun || bAsOver)
+		{
+			AsOffer.clear();
+		}
+	}
 	// Login calendars (saves before them start at the next visit).
 	LoginCount = 0;
 	LoginDay = -1;
@@ -7005,9 +7421,10 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 	}
 	if (Pending < 0)
 	{
-		// A site, mission or trial the content no longer has.
+		// A site, mission, trial or Assault run the content (or the save) no longer has.
 		const int Mission = PendingMission();
 		if (Pending == TrialPending ? C.trials.list.empty()
+				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? Mission % 100 >= MissionCount(Mission / 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
 			Pending = 0;
@@ -7329,6 +7746,33 @@ uint64_t Kingdom::Hash() const
 			W.I64(X);
 		}
 		W.I32(WpPaidRelics);
+	}
+	// The same for the Assault: only once an event has rolled.
+	if (AssaultNo >= 0)
+	{
+		W.I64(AssaultNo);
+		W.U32((bAsRun ? 1u : 0u) | (bAsOver ? 2u : 0u));
+		W.I32(AsStage);
+		W.I32(AsTries);
+		W.I32(AsBase);
+		W.I32(AsTitan);
+		W.I32(static_cast<int32_t>(AsSquads.size()));
+		for (const AssaultSquad& Q : AsSquads)
+		{
+			W.I32(Q.troop);
+			W.I32(Q.level);
+			W.I32(Q.pct);
+		}
+		W.I32(static_cast<int32_t>(AsBoons.size()));
+		for (const int B : AsBoons)
+		{
+			W.I32(B);
+		}
+		W.I32(static_cast<int32_t>(AsOffer.size()));
+		for (const int B : AsOffer)
+		{
+			W.I32(B);
+		}
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)
