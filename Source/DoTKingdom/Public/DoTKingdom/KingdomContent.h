@@ -530,6 +530,35 @@ struct RaidBossRules
 	std::vector<std::pair<int64_t, EventReward>> milestones; // (damage in one battle, reward), ascending
 };
 
+/** An Alliance War chest of a league: for a win, a draw and a loss. */
+struct WarChest
+{
+	EventReward win;
+	EventReward draw;
+	EventReward lose;
+};
+
+/** Alliance War (kingdom.json "allianceWar", master prompt 12.9): a weekly war of the player's alliance against a
+ *  computer alliance of its league. A prep day, then battle days with a few attacks for each member of the roster on
+ *  the other side's bases; a base gives up to 3 stars, and a new attack only adds stars over its best. */
+struct AllianceWarRules
+{
+	int castle = 6; // Castle level the player attacks from
+	int minMembers = 10; // members an alliance needs for a war, the player included
+	int rosterStep = 5; // the roster is the members rounded down to this
+	int rosterMax = 30;
+	int prepDay = 3; // weekday of the prep day (Monday 0)
+	int battleDays = 2;
+	int attacks = 2; // each member's attacks in a war
+	int idlePct = 15; // computer members who make no attack
+	int onePct = 25; // computer members who make only one
+	std::array<int, 6> starPct{{35, 20, 65, 15, 85, 10}}; // 3, 2 and 1 star or more: % at an equal tier and per tier over
+	int tiers = 0; // base tiers (the web gives them their armies)
+	std::vector<int> leagueTier; // tier of the bases in the middle of the roster, by league
+	std::vector<WarChest> chests; // by league
+	EventReward star; // for each star of the player's attacks (gold and food times the Castle)
+};
+
 /** Kingdom Power (kingdom.json "power", master prompt 7.7): what a building, a titan and a research level add. */
 struct PowerRules
 {
@@ -755,6 +784,7 @@ struct KingdomContent
 	WarpathRules warpath;
 	AssaultRules assault;
 	RaidBossRules raidBoss;
+	AllianceWarRules allianceWar;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

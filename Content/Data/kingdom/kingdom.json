@@ -675,6 +675,71 @@
     ]
   },
 
+  // Alliance War (master prompt 12.9; not checked against the original). Every week the player's alliance, with at
+  // least `minMembers` members (the player included), meets a computer alliance of its league (or the nearest one) with
+  // a roster of the same size: the members rounded down to `rosterStep`, at most `rosterMax`. The prep day (`prepDay`,
+  // Monday 0; Thursday as in the prompt) shows the rival, then `battleDays` battle days from 00:00 UTC. Each member has
+  // a base and `attacks` attacks on the other side's bases; a base gives up to 3 stars and an attack only adds the stars
+  // over the base's best so far. The rosters go strongest first: the bases of the first third are a tier over the
+  // league's `leagueTier`, the last third one under, the player stands in the middle of the alliance's roster. Computer
+  // members attack at moments of the battle days (`idlePct` % of them make no attack, `onePct` % only one): the
+  // strongest base of a tier up to theirs that still has stars to give, else the weakest such base; `starPct` is the
+  // chance of 3, 2 and 1 star or more at an equal tier and how much each tier of difference adds (or takes away). The
+  // player attacks from Castle `castle`, free of stones; nothing is lost (12.7) and the titan gets no XP. The side with
+  // more stars wins; after the battle days everyone who attacked opens the war chest of the league by the result, plus
+  // `star` for each star of their own attacks (gold and food times the Castle), until the next prep day. A tier's army
+  // (web only): `level` of the battle table (squads and AI), a titan of `titanStars` from `titans` at `titanLevel`,
+  // `bonus` % more health and damage, a composition of `armies` and a field of `maps` by the base. Our numbers.
+  "allianceWar": {
+    "castle": 6,
+    "minMembers": 10,
+    "rosterStep": 5,
+    "rosterMax": 30,
+    "prepDay": 3,
+    "battleDays": 2,
+    "attacks": 2,
+    "idlePct": 15,
+    "onePct": 25,
+    "starPct": [35, 20, 65, 15, 85, 10],
+    "battleSec": 180,
+    "leagueTier": [3, 4, 5, 7, 8, 9],
+    "tiers": [
+      { "level": 2, "titanLevel": 6,  "titanStars": 1, "bonus": 0 },
+      { "level": 3, "titanLevel": 9,  "titanStars": 1, "bonus": 0 },
+      { "level": 4, "titanLevel": 12, "titanStars": 1, "bonus": 0 },
+      { "level": 5, "titanLevel": 15, "titanStars": 1, "bonus": 0 },
+      { "level": 6, "titanLevel": 20, "titanStars": 2, "bonus": 0 },
+      { "level": 7, "titanLevel": 28, "titanStars": 3, "bonus": 0 },
+      { "level": 8, "titanLevel": 34, "titanStars": 3, "bonus": 0 },
+      { "level": 9, "titanLevel": 40, "titanStars": 4, "bonus": 0 },
+      { "level": 9, "titanLevel": 45, "titanStars": 4, "bonus": 20 },
+      { "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 40 }
+    ],
+    "titans": [
+      ["titan.talos", "titan.minotaur", "titan.cyclops"],
+      ["titan.perun", "titan.atlas", "titan.ymir", "titan.loki"],
+      ["titan.surtr", "titan.hecate", "titan.artemis", "titan.tyr"],
+      ["titan.thor", "titan.veles"]
+    ],
+    "armies": [
+      ["troop.swordsmen", "troop.archers", "troop.spearmen", "troop.knights", "troop.priests", "troop.outriders"],
+      ["troop.pikemen", "troop.grenadiers", "troop.archers", "troop.goliaths", "troop.militia", "troop.ballista"],
+      ["troop.militia", "troop.archers", "troop.outriders", "troop.panthers", "troop.swordsmen", "troop.archers"],
+      ["troop.knights", "troop.spearmen", "troop.priests", "troop.archers", "troop.chainbreakers", "troop.swordsmen"],
+      ["troop.goliaths", "troop.archers", "troop.panthers", "troop.spearmen", "troop.grenadiers", "troop.militia"]
+    ],
+    "maps": ["map.highvale_01", "map.forest_01", "map.lake_01", "map.mountain_01", "map.ruins_01"],
+    "chests": [
+      { "win": { "gems": 8,  "stones": 6,  "relic": 1 }, "draw": { "gems": 6,  "stones": 4 },  "lose": { "gems": 4,  "stones": 3 } },
+      { "win": { "gems": 10, "stones": 8,  "relic": 2 }, "draw": { "gems": 7,  "stones": 5 },  "lose": { "gems": 5,  "stones": 4 } },
+      { "win": { "gems": 12, "stones": 9,  "relic": 2 }, "draw": { "gems": 8,  "stones": 6 },  "lose": { "gems": 6,  "stones": 4 } },
+      { "win": { "gems": 15, "stones": 10, "relic": 3 }, "draw": { "gems": 10, "stones": 7 },  "lose": { "gems": 7,  "stones": 5 } },
+      { "win": { "gems": 18, "stones": 12, "relic": 3 }, "draw": { "gems": 12, "stones": 8 },  "lose": { "gems": 9,  "stones": 6 } },
+      { "win": { "gems": 22, "stones": 14, "relic": 4 }, "draw": { "gems": 15, "stones": 10 }, "lose": { "gems": 11, "stones": 7 } }
+    ],
+    "star": { "gold": 150, "food": 150 }
+  },
+
   // Kingdom Power (master prompt 7.7; the original has none, it ranks by victory points): a number on the lord's
   // profile that sums the kingdom up. Each building gives building × L^1.5 (the Castle castleMul times that), the
   // strongest `titans` titans their battle Power (sqrt(EHP × DPS × AoE), master prompt 5.10, with their relics), and

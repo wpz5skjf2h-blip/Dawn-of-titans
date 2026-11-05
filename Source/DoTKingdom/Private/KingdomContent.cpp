@@ -1696,6 +1696,67 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Wj = Rules.Find("allianceWar"))
+	{
+		AllianceWarRules& W = Out.allianceWar;
+		W.castle = std::max(1, Wj->GetInt("castle", W.castle));
+		W.rosterStep = std::max(1, std::min(10, Wj->GetInt("rosterStep", W.rosterStep)));
+		W.rosterMax = std::max(W.rosterStep, std::min(60, Wj->GetInt("rosterMax", W.rosterMax)));
+		W.minMembers = std::max(W.rosterStep, std::min(W.rosterMax, Wj->GetInt("minMembers", W.minMembers)));
+		W.prepDay = std::max(0, std::min(6, Wj->GetInt("prepDay", W.prepDay)));
+		W.battleDays = std::max(1, std::min(5, Wj->GetInt("battleDays", W.battleDays)));
+		W.attacks = std::max(1, std::min(5, Wj->GetInt("attacks", W.attacks)));
+		W.idlePct = std::max(0, std::min(100, Wj->GetInt("idlePct", W.idlePct)));
+		W.onePct = std::max(0, std::min(100 - W.idlePct, Wj->GetInt("onePct", W.onePct)));
+		const auto ReadWarReward = [](const JsonValue* J, EventReward& R) {
+			if (J)
+			{
+				ReadCost(J, R.res);
+				R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
+			}
+		};
+		bool bOk = true;
+		if (const JsonValue* Sp = Wj->Find("starPct"))
+		{
+			bOk = Sp->IsArray() && Sp->Size() == W.starPct.size();
+			for (size_t I = 0; bOk && I < W.starPct.size(); ++I)
+			{
+				W.starPct[I] = std::max(-100, std::min(100, (*Sp)[I].AsInt(0)));
+			}
+		}
+		if (const JsonValue* Tiers = Wj->Find("tiers"))
+		{
+			W.tiers = static_cast<int>(Tiers->Size());
+		}
+		if (const JsonValue* Lt = Wj->Find("leagueTier"))
+		{
+			for (size_t I = 0; I < Lt->Size(); ++I)
+			{
+				const int T = (*Lt)[I].AsInt();
+				bOk = bOk && T >= 1 && T <= W.tiers;
+				W.leagueTier.push_back(T);
+			}
+		}
+		if (const JsonValue* Chests = Wj->Find("chests"))
+		{
+			for (size_t I = 0; I < Chests->Size(); ++I)
+			{
+				const JsonValue& J = (*Chests)[I];
+				WarChest Ch;
+				ReadWarReward(J.Find("win"), Ch.win);
+				ReadWarReward(J.Find("draw"), Ch.draw);
+				ReadWarReward(J.Find("lose"), Ch.lose);
+				W.chests.push_back(Ch);
+			}
+		}
+		ReadWarReward(Wj->Find("star"), W.star);
+		if (!bOk || W.tiers < 1 || W.tiers > 32 || W.leagueTier.empty() || W.chests.size() != W.leagueTier.size() || 1 + W.battleDays > 6)
+		{
+			Error = "kingdom/kingdom.json: the alliance war needs 1 to 32 tiers, leagueTier within them, a chest for each league, "
+				"six starPct numbers and a prep day and battle days within a week";
+			return false;
+		}
+	}
 	if (const JsonValue* Pj = Rules.Find("power"))
 	{
 		PowerRules& P = Out.power;

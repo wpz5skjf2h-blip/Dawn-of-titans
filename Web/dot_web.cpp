@@ -1292,6 +1292,34 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		O.Raw("]}");
 	}
 	O.Raw("]},");
+	// Alliance War: the war (no), its phase (0 prep, 1 battle days, 2 over), its days, whether the alliance is at war,
+	// its members, the rival (index, name, tag), the league, the roster and the player's place, what attacking now would
+	// say, attacks left, the stars of the player's attacks, the stars of both sides, the result (once over), the chest
+	// opened, and both rosters as [name, tier, best stars taken from the base, by whom (-1 nobody), attacks, stars won].
+	{
+		const dot::kingdom::WarInfo W = Km->War();
+		O.Key("war").Raw("{").Key("no").Int(W.no).Comma().Key("ph").Int(W.phase).Comma().Key("prep").Int(W.prepAt).Comma();
+		O.Key("battle").Int(W.battleAt).Comma().Key("end").Int(W.endAt).Comma().Key("next").Int(W.nextAt).Comma();
+		O.Key("on").Int(W.on ? 1 : 0).Comma().Key("members").Int(W.members).Comma().Key("opp").Int(W.opponent).Comma();
+		const dot::kingdom::AllianceInfo Opp = W.opponent >= 0 ? Km->Alliance(W.opponent) : dot::kingdom::AllianceInfo();
+		O.Key("oppName").Str(Opp.name).Comma().Key("oppTag").Str(Opp.tag).Comma().Key("league").Int(W.league).Comma();
+		O.Key("roster").Int(W.roster).Comma().Key("me").Int(W.me).Comma().Key("ck");
+		WriteCheck(O, Km->CheckWar(-1));
+		O.Comma().Key("left").Int(W.attacksLeft).Comma().Key("mine").Int(W.myStars).Comma().Key("ours").Int(W.ourStars).Comma();
+		O.Key("theirs").Int(W.theirStars).Comma().Key("res").Int(W.result).Comma().Key("chest").Int(Km->WarChestClaimed() ? 1 : 0).Comma();
+		for (int Side = 0; Side < 2; ++Side)
+		{
+			O.Key(Side == 0 ? "us" : "them").Raw("[");
+			const std::vector<dot::kingdom::WarMember>& L = Side == 0 ? W.ours : W.theirs;
+			for (size_t I = 0; I < L.size(); ++I)
+			{
+				const dot::kingdom::WarMember& M = L[I];
+				O.Raw(I ? ",[" : "[").Str(M.name).Comma().Int(M.tier).Comma().Int(M.stars).Comma().Int(M.by).Comma().Int(M.attacks).Comma().Int(M.won).Raw("]");
+			}
+			O.Raw(Side == 0 ? "]," : "]");
+		}
+		O.Raw("},");
+	}
 	// Main line of goals: the current goal (index into kingdom.json "goals"), its count and whether it is done.
 	O.Key("goal").Raw("{").Key("i").Int(Km->GoalIndex()).Comma().Key("v").Int(Km->GoalValue()).Comma().Key("done").Int(Km->GoalDone() ? 1 : 0).Raw("},");
 	// Login calendars: logins, the newcomer days claimed (bits), the monthly cycle (first day, logins, claimed,
@@ -1332,6 +1360,7 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 	O.Key("pendingSite").Int(Km->PendingSite()).Comma().Key("pendingMission").Int(Km->PendingMission()).Comma().Key("pendingTrial").Int(Km->PendingTrial() ? 1 : 0).Comma();
 	O.Key("pendingAssault").Int(Km->PendingAssault() ? 1 : 0).Comma().Key("pendingBoss").Int(Km->PendingBoss() ? 1 : 0).Comma();
 	O.Key("pendingDaily").Raw("[").Int(Km->DailyBattleTrial()).Comma().Int(Km->DailyBattleTier()).Raw("],");
+	O.Key("pendingWar").Int(Km->WarBattleBase()).Comma();
 	// Army: troop levels and counts, camp, queue, Armoury research, Medical School, spells allowed in battle.
 	O.Key("army").Raw("{").Key("lv").Raw("[");
 	for (size_t I = 0; I < C.troops.size(); ++I)
@@ -1818,6 +1847,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_daily_sweep(int Trial, int Tier, int TitanId
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->SweepDaily(Trial, Tier, TitanId, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** An Alliance War attack on a base of the rival's roster: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_war_start(int Base, const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartWar(Base, ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends an Alliance War attack with its stars. */
+EMSCRIPTEN_KEEPALIVE const char* dk_war_finish(int Stars)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishWar(Stars, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_war_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimWarChest(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

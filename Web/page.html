@@ -498,6 +498,15 @@ ul.goalNext li .cost { white-space: nowrap; }
 .league .me { color: var(--valor); font-weight: 700; }
 .league .up { color: var(--good); } .league .down { color: #ffb4a6; }
 .league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
+.warBases { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto; gap: 6px 10px; font-size: 14px; align-items: center; }
+.warBases .pl { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+.warBases .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.warBases .nm small { color: var(--dim); margin-left: 6px; }
+.warBases .me { color: var(--valor); font-weight: 700; }
+.warBases .wby { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; text-align: right; }
+.btn.slim { height: 34px; padding: 0 12px; font-size: 13px; }
+.wst { color: var(--valor); letter-spacing: -1px; white-space: nowrap; } .wst i { font-style: normal; opacity: 0.25; }
+.wscore { color: var(--valor); white-space: nowrap; }
 .league.ranks { grid-template-columns: 64px 1fr auto; }
 .league.ranks .pl { text-align: left; white-space: nowrap; }
 /* A sheet is a scrolling flex column: a bar must not shrink to nothing when the sheet is long. */
