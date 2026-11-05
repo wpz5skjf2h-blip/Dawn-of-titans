@@ -1439,6 +1439,44 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Wj = Rules.Find("warpath"))
+	{
+		WarpathRules& W = Out.warpath;
+		W.weeks = std::max(1, Wj->GetInt("weeks", W.weeks));
+		W.tierXp = std::max<int64_t>(1, Wj->GetInt64("tierXp", W.tierXp));
+		W.skipGems = std::max<int64_t>(0, Wj->GetInt64("skipGems", W.skipGems));
+		W.bonusXp = std::max<int64_t>(1, Wj->GetInt64("bonusXp", W.bonusXp));
+		if (const JsonValue* Xp = Wj->Find("xp"))
+		{
+			W.dailyXp = std::max<int64_t>(0, Xp->GetInt64("daily", W.dailyXp));
+			W.weeklyXp = std::max<int64_t>(0, Xp->GetInt64("weekly", W.weeklyXp));
+			W.battleXp = std::max<int64_t>(0, Xp->GetInt64("battle", W.battleXp));
+			W.battleCap = std::max<int64_t>(0, Xp->GetInt64("battleCap", W.battleCap));
+			W.trialXp = std::max<int64_t>(0, Xp->GetInt64("trial", W.trialXp));
+		}
+		const auto ReadPay = [](const JsonValue& J, EventReward& R) {
+			ReadCost(&J, R.res);
+			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+		};
+		if (const JsonValue* B = Wj->Find("bonus"))
+		{
+			ReadPay(*B, W.bonus);
+		}
+		if (const JsonValue* Tiers = Wj->Find("tiers"))
+		{
+			for (size_t I = 0; I < Tiers->Size(); ++I)
+			{
+				EventReward R;
+				ReadPay((*Tiers)[I], R);
+				W.tiers.push_back(R);
+			}
+		}
+		if (W.tiers.empty() || W.tiers.size() > 64)
+		{
+			Error = "kingdom/kingdom.json: the warpath needs 1 to 64 tiers";
+			return false;
+		}
+	}
 	Out.hash = HashToHex(HashInput.Hash());
 	return true;
 }

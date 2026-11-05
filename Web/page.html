@@ -451,6 +451,18 @@ ul.goalNext li .cost { white-space: nowrap; }
 .league .sep { grid-column: 1 / -1; height: 1px; background: rgba(255, 255, 255, 0.08); }
 .league.ranks { grid-template-columns: 64px 1fr auto; }
 .league.ranks .pl { text-align: left; white-space: nowrap; }
+/* A sheet is a scrolling flex column: a bar must not shrink to nothing when the sheet is long. */
+#kSheetPanel .progress { flex-shrink: 0; }
+.wpTrack { display: grid; grid-template-columns: 34px 1fr auto; gap: 6px 10px; align-items: center; font-size: 14px; }
+.wpTrack .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--dim); }
+.wpTrack .n.on { background: radial-gradient(circle at 40% 35%, #f6d77c, #9a6a1f); color: #2a1a05; border-color: transparent; }
+.wpTrack .r { min-width: 0; }
+.wpTrack .r.big { color: var(--valor); font-weight: 700; }
+.wpTrack .r.got { opacity: 0.55; }
+.wpTrack .s { font-size: 12px; color: var(--dim); text-align: right; white-space: nowrap; }
+.wpTrack .s .ok { color: var(--valor); }
+.wpTrack .s .btn { height: 34px; padding: 0 12px; font-size: 13px; }
+.wpTrack .sep { grid-column: 1 / -1; height: 0; border-top: 1px dashed rgba(255, 255, 255, 0.12); margin: 2px 0; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); min-width: 0; }
 .field input { height: 42px; border-radius: 10px; border: 1px solid var(--hair); background: rgba(255, 255, 255, 0.06); color: var(--parch);
   padding: 0 12px; font: inherit; font-size: 16px; min-width: 0; }

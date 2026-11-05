@@ -191,6 +191,9 @@ class KingdomBridge {
 	trialFinish(stars, score) { return JSON.parse(this.str(this.M._dk_trial_finish(stars, Math.max(0, Math.min(2147483647, Math.round(score || 0)))))); }
 	trialMilestone(i) { return JSON.parse(this.str(this.M._dk_trial_milestone(i))); }
 	trialRank() { return JSON.parse(this.str(this.M._dk_trial_rank())); }
+	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
+	wpSkip() { return this.M._dk_wp_skip(); }
+	wpBonus() { return JSON.parse(this.str(this.M._dk_wp_bonus())); }
 	goalClaim() { return JSON.parse(this.str(this.M._dk_goal_claim())); }
 	achClaim(i) { return JSON.parse(this.str(this.M._dk_ach_claim(i))); }
 	calNewcomer(day, choice) { return JSON.parse(this.str(this.M._dk_cal_newcomer(day, choice))); }
@@ -2043,6 +2046,7 @@ function refresh(force) {
 	if (prev && !force) announce(prev, K.st);
 	if (prev) announceQuests(prev, K.st);
 	if (prev) announceTrial(prev, K.st);
+	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
 	announceSeason(K.st);
 	announceRaids(K.st);
@@ -2214,9 +2218,10 @@ function updateHud() {
 	if (!qb.hidden) {
 		const claimed = qs.list.filter((q) => q.claimed).length;
 		qb.querySelector('span').textContent = claimed + '/' + qs.list.length;
-		qb.classList.toggle('ready', questsReady(st) > 0);
+		qb.classList.toggle('ready', questsReady(st) + wpReady(st) > 0);
 		const wk = st.week && st.week.list.length ? ', заданий недели ' + st.week.list.filter((q) => q.claimed).length + ' из ' + st.week.list.length : '';
-		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + wk + (questsReady(st) ? ', есть награда' : '');
+		const wpt = wpOn(st) ? ', Путь войны: уровень ' + st.wp.tier : '';
+		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + wk + wpt + (questsReady(st) + wpReady(st) ? ', есть награда' : '');
 	}
 	$('kAttackSub').textContent = st.res[3] + ' ' + plural(st.res[3], 'камень', 'камня', 'камней');
 	const trialN = trialReady(st);
@@ -2472,6 +2477,11 @@ function onAct(e) {
 	case 'quest-claim': claimQuest(id, el.dataset.kind); break;
 	case 'quest-reroll': run(el.dataset.kind === 'week' ? K.bridge.weekReroll(id) : K.bridge.questReroll(id), 'Задание заменено'); break;
 	case 'quest-chest': openQuestChest(el.dataset.kind); break;
+	case 'wp-claim': claimWarpath(id); break;
+	case 'wp-all': claimWarpathAll(); break;
+	case 'wp-bonus': openWarpathBonus(); break;
+	case 'wp-skip': gemAction('wp-skip', +el.dataset.gems, buyWarpathTier); break;
+	case 'wp-more': K.wpAll = !K.wpAll; refreshSheet(true); break;
 	case 'quest-tab': K.questTab = el.dataset.tab; refreshSheet(true); break;
 	case 'goals': openGoals(); break;
 	case 'goal-tab': K.goalTab = el.dataset.tab; refreshSheet(true); break;
@@ -3653,14 +3663,23 @@ function announceQuests(prev, st) {
 function openQuests(tab) {
 	if (!K.rules.dailyQuests) return;
 	const hasWeek = !!(K.rules.weeklyQuests && K.st.week && K.st.week.list.length);
+	const hasWp = wpOn(K.st);
+	const dayN = questsReady(K.st, 'day');
 	if (typeof tab === 'string') K.questTab = tab;
-	else K.questTab = hasWeek && questsReady(K.st, 'week') > 0 && !questsReady(K.st, 'day') ? 'week' : 'day';
-	if (!hasWeek) K.questTab = 'day';
+	else K.questTab = !dayN && hasWeek && questsReady(K.st, 'week') > 0 ? 'week' : !dayN && hasWp && wpReady(K.st) > 0 ? 'wp' : 'day';
+	if ((K.questTab === 'week' && !hasWeek) || (K.questTab === 'wp' && !hasWp)) K.questTab = 'day';
 	cancelPlace();
 	select(null);
 	openSheet(() => {
 		const st = K.st;
 		const kind = K.questTab;
+		const nDay = questsReady(st, 'day');
+		const nWeek = questsReady(st, 'week');
+		const nWp = wpReady(st);
+		const tabs = hasWeek || hasWp ? '<div class="shopTabs"><button class="' + (kind === 'day' ? 'on' : '') + '" data-act="quest-tab" data-tab="day">Сегодня' + (nDay ? ' · ' + nDay : '') + '</button>' +
+			(hasWeek ? '<button class="' + (kind === 'week' ? 'on' : '') + '" data-act="quest-tab" data-tab="week">Неделя' + (nWeek ? ' · ' + nWeek : '') + '</button>' : '') +
+			(hasWp ? '<button class="' + (kind === 'wp' ? 'on' : '') + '" data-act="quest-tab" data-tab="wp">Путь войны' + (nWp ? ' · ' + nWp : '') + '</button>' : '') + '</div>' : '';
+		if (kind === 'wp') return wpSheet(st, tabs);
 		const week = kind === 'week';
 		const qs = questBoard(st, kind);
 		const rules = questRules(kind);
@@ -3685,10 +3704,6 @@ function openQuests(tab) {
 			: claimed === qs.list.length ? '<button class="btn primary" data-act="quest-chest" data-kind="' + kind + '">Открыть</button>'
 				: '<button class="btn" disabled>Заберите все награды · ' + claimed + ' из ' + qs.list.length + '</button>';
 		const end = week ? qs.end : qs.dayEnd;
-		const nDay = questsReady(st, 'day');
-		const nWeek = questsReady(st, 'week');
-		const tabs = hasWeek ? '<div class="shopTabs"><button class="' + (week ? '' : 'on') + '" data-act="quest-tab" data-tab="day">Сегодня' + (nDay ? ' · ' + nDay : '') + '</button>' +
-			'<button class="' + (week ? 'on' : '') + '" data-act="quest-tab" data-tab="week">Неделя' + (nWeek ? ' · ' + nWeek : '') + '</button></div>' : '';
 		const about = week
 			? 'Каждый понедельник в 00:00 UTC приходят ' + rules.count + ' ' + plural(rules.count, 'задание', 'задания', 'заданий') + ' на неделю для уровня вашего Замка: те же дела, что в ежедневных, но больше. ' +
 				'За каждое — награда, а за все — сундук недели. Незаконченное можно заменить ' + rules.rerolls + ' ' + plural(rules.rerolls, 'раз', 'раза', 'раз') + ' за неделю; невыполненные сгорают с концом недели.'
@@ -3703,7 +3718,7 @@ function openQuests(tab) {
 			'<div class="info"><b>Сундук за все задания' + (week ? ' недели' : '') + '</b><span>' + resPlus(chestRes) + (rel ? ', реликвия ' + '★'.repeat(rel) : '') + '</span></div>' +
 			'<div class="row">' + chestBtn + '</div></div>' +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['quests', kind, end, qs.rerolls, qs.chest, st.castle, nDay, nWeek, qs.list.map((q) => q.def + ':' + Math.min(q.progress, q.target) + ':' + q.claimed).join()].join('|'), html,
+		return { key: ['quests', kind, end, qs.rerolls, qs.chest, st.castle, nDay, nWeek, nWp, qs.list.map((q) => q.def + ':' + Math.min(q.progress, q.target) + ':' + q.claimed).join()].join('|'), html,
 			live: (el) => live(el, 'qday', fmtDur(Math.max(0, end - nowF()))) };
 	});
 }
@@ -3733,6 +3748,153 @@ function openQuestChest(kind) {
 	toast((kind === 'week' ? 'Сундук недели: ' : 'Ежедневный сундук: ') + parts.join(', '), 'gold');
 	persist();
 	refresh(true);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Warpath (master prompt 13.4): the free track of a four-week pass. Quests, battles and trial milestones give XP; each
+// tier pays its reward; gems buy the next tier; past the last tier XP fills bonus chests
+// ---------------------------------------------------------------------------------------------
+const WP_KEY = 'dot.kingdom.warpathSeen';
+const wpRules = () => K.rules.warpath;
+const wpOn = (st) => !!(wpRules() && wpRules().tiers && wpRules().tiers.length && st && st.wp && st.wp.no >= 0);
+/** A tier's reward as it is paid now: gold and food grow with the Castle. */
+function wpPay(t, castle) {
+	const r = Object.assign({}, t);
+	if (r.gold) r.gold *= Math.max(1, castle);
+	if (r.food) r.food *= Math.max(1, castle);
+	return r;
+}
+/** Tiers reached and not claimed, plus bonus chests filled. */
+function wpReady(st) {
+	if (!wpOn(st)) return 0;
+	let n = 0;
+	for (let i = 0; i < st.wp.tier; i++) if (st.wp.got[i] !== '1') n++;
+	return n + st.wp.bonus;
+}
+/** What a claim paid, for a toast: resources with shards, and relics by name. */
+function wpGot(r) {
+	const parts = rewardParts(r);
+	if (r.shards) parts.push('+' + fmt(r.shards) + ' осколков');
+	const st = K.bridge.state();
+	for (const rid of r.relics || []) {
+		const x = st.relics.find((y) => y.id === rid);
+		if (x) parts.push((/^реликвия/i.test(relicName(x)) ? '' : 'реликвия ') + relicName(x) + ' ' + '★'.repeat(x.r));
+	}
+	return parts;
+}
+function wpSheet(st, tabs) {
+	const R = wpRules();
+	const wp = st.wp;
+	const N = R.tiers.length;
+	const top = wp.tier >= N;
+	const need = top ? R.bonusXp : R.tierXp;
+	const into = top ? (wp.xp - N * R.tierXp) % R.bonusXp : wp.xp - wp.tier * R.tierXp;
+	const ready = wpReady(st);
+	const all = !!K.wpAll;
+	const rows = [];
+	let prev = -1;
+	R.tiers.forEach((t, i) => {
+		const got = wp.got[i] === '1';
+		const reached = i < wp.tier;
+		if (!(all || (reached && !got) || (i >= wp.tier && i < wp.tier + 5) || (t.relic && i >= wp.tier) || i === N - 1 || (i === wp.tier - 1 && got))) return;
+		if (rows.length && i > prev + 1) rows.push('<span class="sep"></span>');
+		prev = i;
+		const s = got ? '<span class="ok">получено</span>'
+			: reached ? '<button class="btn primary" data-act="wp-claim" data-id="' + i + '">Забрать</button>'
+				: '<span>ещё ' + fmt((i + 1) * R.tierXp - wp.xp) + ' опыта</span>';
+		rows.push('<span class="n' + (reached ? ' on' : '') + '">' + (i + 1) + '</span><span class="r' + (t.relic ? ' big' : '') + (got ? ' got' : '') + '">' + eventPay(wpPay(t, st.castle)) + '</span><span class="s">' + s + '</span>');
+	});
+	const paid = wp.paid.no >= 0 && wp.paid.no === wp.no - 1
+		? '<p class="fine">Прошлый сезон закончился, и всё, до чего вы дошли и что не забрали, выдано: ' + resPlus(wp.paid.res) +
+			(wp.paid.relics ? ' + ' + wp.paid.relics + ' ' + plural(wp.paid.relics, 'реликвия', 'реликвии', 'реликвий') : '') + '.</p>' : '';
+	const html = sheetTitle(icoHtml('ui.attack', 'gold land'), 'Путь войны') + tabs +
+		'<p class="fine">Сезон идёт ' + R.weeks + ' ' + plural(R.weeks, 'неделю', 'недели', 'недель') + ' с понедельника 00:00 UTC. Опыт дают: ежедневное задание +' + R.xp.daily +
+		', задание недели +' + R.xp.weekly + ', любой бой +' + R.xp.battle + ' (до ' + R.xp.battleCap + ' в день), награда испытания титанов за очки +' + R.xp.trial +
+		'. Каждые ' + fmt(R.tierXp) + ' опыта — новый уровень и его награда; золото и еда растут с уровнем Замка, награды ложатся и сверх склада. ' +
+		'Что вы прошли и не забрали, выдаётся в конце сезона.</p>' + paid +
+		'<div class="costline"><span>Уровень</span><b>' + wp.tier + ' из ' + N + '</b><span>' + (top ? 'до бонусного сундука ' : 'до следующего ') + fmt(need - into) + ' опыта</span></div>' +
+		'<div class="progress"><i style="width:' + Math.round((100 * into) / need) + '%"></i></div>' +
+		'<div class="costline"><span>Сезон закончится через</span><b data-live="wp">' + fmtDur(Math.max(0, wp.end - nowF())) + '</b><span>опыт за бои сегодня ' + wp.day + ' / ' + R.xp.battleCap + '</span></div>' +
+		'<div class="actions">' + (ready ? '<button class="btn primary" data-act="wp-all">Забрать всё · ' + ready + '</button>' : '') +
+		(top ? '' : '<button class="btn" data-act="wp-skip" data-gems="' + R.skipGems + '">' + (isArmed('wp-skip') ? 'Подтвердить ' : 'Уровень за ') + gemSpan(R.skipGems) + '</button>') + '</div>' +
+		'<h3>Награды</h3><div class="wpTrack">' + rows.join('') + '</div>' +
+		'<div class="actions"><button class="btn" data-act="wp-more">' + (all ? 'Свернуть' : 'Все ' + N + ' уровней') + '</button></div>' +
+		'<h3>Бонусные сундуки</h3><div class="landCard' + (wp.bonus ? ' ready' : '') + '">' + icoHtml('ui.chest', (wp.bonus ? 'gold' : 'shards') + ' land') +
+		'<div class="info"><b>Сундук за каждые ' + fmt(R.bonusXp) + ' опыта после ' + N + '-го уровня</b><span>' + eventPay(wpPay(R.bonus, st.castle)) + '</span></div>' +
+		'<div class="row"><button class="btn' + (wp.bonus ? ' primary' : '') + '" data-act="wp-bonus"' + (wp.bonus ? '' : ' disabled') + '>' + (wp.bonus ? 'Открыть · ' + wp.bonus : top ? 'Копите опыт' : 'После ' + N + '-го уровня') + '</button></div></div>' +
+		'<div class="actions">' + closeBtn + '</div>';
+	return { key: ['wp', wp.no, wp.xp, wp.got, wp.bonus, wp.day, wp.paid.no, st.castle, all, isArmed('wp-skip'), tabs].join('|'), html,
+		live: (el) => live(el, 'wp', fmtDur(Math.max(0, K.st.wp.end - nowF()))) };
+}
+function wpError(err) {
+	toast(err === E.NotReady ? 'Этот уровень ещё не пройден' : err === E.Nothing ? 'Награда уже получена' : err === E.InventoryFull ? 'Нет места для реликвии: освободите место в Храме реликвий' :
+		err === E.NotEnough ? 'Не хватает самоцветов' : err === E.LimitReached ? 'Все уровни уже пройдены' : errText(err), 'bad');
+	refresh(true);
+}
+function claimWarpath(i) {
+	const r = K.bridge.wpClaim(i);
+	if (r.err !== E.None) { wpError(r.err); return; }
+	toast('Путь войны, уровень ' + (i + 1) + ': ' + wpGot(r).join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+/** Claims every tier reached and the bonus chests; a relic without room waits. */
+function claimWarpathAll() {
+	const st = K.st;
+	const sum = { gold: 0, food: 0, gems: 0, stones: 0, shards: 0, relics: [] };
+	let n = 0;
+	let full = 0;
+	const add = (r) => {
+		for (const k of ['gold', 'food', 'gems', 'stones', 'shards']) sum[k] += r[k] || 0;
+		sum.relics.push(...(r.relics || []));
+		n++;
+	};
+	for (let i = 0; i < st.wp.tier; i++) {
+		if (st.wp.got[i] === '1') continue;
+		const r = K.bridge.wpClaim(i);
+		if (r.err === E.None) add(r);
+		else if (r.err === E.InventoryFull) full++;
+	}
+	for (let b = st.wp.bonus; b > 0; b--) {
+		const r = K.bridge.wpBonus();
+		if (r.err === E.None) add(r);
+		else if (r.err === E.InventoryFull) { full++; break; }
+	}
+	if (n) toast('Путь войны, наград ' + n + ': ' + wpGot(sum).join(', '), 'gold');
+	if (full) toast('Нет места для реликвии: ' + full + ' ' + plural(full, 'награда ждёт', 'награды ждут', 'наград ждут') + ' в Пути войны', 'bad');
+	persist();
+	refresh(true);
+}
+function openWarpathBonus() {
+	const r = K.bridge.wpBonus();
+	if (r.err !== E.None) { wpError(r.err); return; }
+	toast('Бонусный сундук Пути войны: ' + wpGot(r).join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+function buyWarpathTier() {
+	const err = K.bridge.wpSkip();
+	if (err !== E.None) { wpError(err); return; }
+	persist(); // the new tier's toast comes from announceWarpath
+	refresh(true);
+}
+/** A toast when a tier is reached while the game is on, and once when a pass ended and paid what was left. */
+function announceWarpath(prev, st) {
+	if (!wpOn(st)) return;
+	if (prev && prev.wp && prev.wp.no === st.wp.no && st.wp.tier > prev.wp.tier) {
+		toast('Путь войны: уровень ' + st.wp.tier + '! Заберите награду в заданиях', 'gold');
+	} else if (prev && prev.wp && prev.wp.no === st.wp.no && st.wp.bonus > prev.wp.bonus) {
+		toast('Путь войны: бонусный сундук готов', 'gold');
+	}
+	const paid = st.wp.paid;
+	if (paid.no < 0) return;
+	let seen = -1;
+	try { seen = +(localStorage.getItem(WP_KEY) || -1); } catch (e) { seen = K.wpSeen === undefined ? -1 : K.wpSeen; }
+	if (seen >= paid.no || K.wpSeen === paid.no) return;
+	K.wpSeen = paid.no;
+	try { localStorage.setItem(WP_KEY, String(paid.no)); } catch (e) { /* per-viewer only */ }
+	toast('Сезон Пути войны закончился: невзятые награды выданы — ' + wpGot(Object.assign({}, ...RES.map((k, i) => ({ [k]: paid.res[i] })))).join(', ') +
+		(paid.relics ? ', реликвий ' + paid.relics : ''), 'gold');
 }
 
 // ---------------------------------------------------------------------------------------------

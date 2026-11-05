@@ -678,6 +678,31 @@ public:
 	 *  reward for the place), InventoryFull. */
 	Error ClaimTrialRank(Reward* Out);
 
+	// --- Warpath (master prompt 13.4) ---
+	// The free track of a pass that lasts a few weeks from a Monday. Claimed daily and weekly quests, battles (up to a
+	// cap a day) and Titan Trial milestones give XP; every tier reached pays its reward once claimed; gems buy the next
+	// tier. Past the last tier, XP fills bonus chests. What is reached and not claimed is paid when the pass ends.
+	int64_t WarpathSeason() const { return WarpathNo; }
+	int64_t WarpathEnd() const;
+	int64_t WarpathXp() const { return WpXp; }
+	/** Tiers reached (0 up to the content's tiers). */
+	int WarpathTier() const;
+	bool WarpathClaimed(int Tier) const { return Tier >= 0 && Tier < 64 && ((WpMask >> Tier) & 1u) != 0; }
+	/** Bonus chests filled and not opened yet. */
+	int WarpathBonusReady() const;
+	/** Battle XP counted today (towards the daily cap). */
+	int64_t WarpathBattleXpToday() const;
+	/** Pays a tier (0-based): BadId, NotReady (not reached), Nothing (claimed), InventoryFull. */
+	Error ClaimWarpath(int Tier, Reward* Out);
+	/** Buys XP up to the next tier: LimitReached (all tiers reached), NotEnough (gems). */
+	Error BuyWarpathTier();
+	/** Opens a bonus chest: NotReady (none filled), InventoryFull. */
+	Error ClaimWarpathBonus(Reward* Out);
+	/** What the end of the last pass paid for tiers reached and not claimed (its number, -1 for none), for a notice. */
+	int64_t WarpathPaidSeason() const { return WpPaidNo; }
+	const ResArray& WarpathPaid() const { return WpPaid; }
+	int WarpathPaidRelics() const { return WpPaidRelics; }
+
 	// --- Main line of goals (master prompt 9.4 and 13.5) ---
 	// One goal at a time, in order: build this, reach that level, win a battle... A goal that checks the kingdom's
 	// state counts what is there now; an event goal counts actions done while it is the current goal.
@@ -847,8 +872,13 @@ private:
 	Error ClaimChestIn(const QuestRules& Rules, const std::vector<DailyQuest>& List, bool& bOpened, uint64_t Salt, int64_t Period, Reward* Out);
 	/** Pays a reward on top of full vaults (a gift is never lost; the vaults then collect nothing until it is spent). */
 	void PayGift(const ResArray& Pay, Reward& R);
-	/** The same with an event's relic (InventoryFull when it has no room, and nothing is paid). */
-	Error PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R);
+	/** The same with an event's relic (InventoryFull when it has no room, and nothing is paid); Scale multiplies gold
+	 *  and food by the Castle's level. */
+	Error PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Reward& R, bool Scale = false);
+	/** Adds Warpath XP (battle XP up to the daily cap). */
+	void AddWarpathXp(int64_t Xp, bool Battle);
+	/** Starts the pass of Time's weeks; the old one's reached tiers and chests are paid first. */
+	void RollWarpath();
 	/** Weeks since the Monday before the epoch, for Time. */
 	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
 	// Raids (KingdomRaids.cpp)
@@ -952,6 +982,17 @@ private:
 	int64_t TrialScore = 0;
 	uint32_t TrialMask = 0;
 	bool bTrialRank = false;
+	// Warpath: the pass (weeks since the Monday before the epoch / weeks a pass), XP, tiers claimed (bits), bonus chests
+	// opened, battle XP on a day, and what the end of the last pass paid
+	int64_t WarpathNo = -1;
+	int64_t WpXp = 0;
+	uint64_t WpMask = 0;
+	int WpBonus = 0;
+	int64_t WpDay = -1;
+	int64_t WpDayXp = 0;
+	int64_t WpPaidNo = -1;
+	ResArray WpPaid{};
+	int WpPaidRelics = 0;
 	// Main line of goals
 	int GoalAt = 0;
 	int64_t GoalEvents = 0;

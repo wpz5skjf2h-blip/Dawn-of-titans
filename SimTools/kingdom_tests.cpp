@@ -2428,6 +2428,132 @@ void TestTitanTrials()
 	KD_CHECK(Pre.TrialIndex() == S.TrialIndex() && Pre.Hash() != 0);
 }
 
+std::string WithWarpath(const std::string& Save, const std::string& Wp)
+{
+	const size_t P = Save.find("\"warpath\":{");
+	const size_t Q = Save.find(",\"calendar\":{");
+	return P == std::string::npos || Q == std::string::npos ? Save : Save.substr(0, P) + "\"warpath\":" + Wp + Save.substr(Q);
+}
+
+void TestWarpath()
+{
+	const KingdomContent& Ct = Content();
+	const WarpathRules& W = Ct.warpath;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const size_t ShardsI = static_cast<size_t>(ResIndex(Res::Shards));
+	const int64_t Day = 86400;
+	// Master prompt 13.4: four-week passes of 50 tiers of 1 000 XP, 150 gems a tier, a bonus chest per 2 000 XP past the
+	// last tier. Ours pays 200 gems on the free track, 120 of them by tier 30, and a relic every ten tiers.
+	KD_CHECK(W.weeks == 4 && W.tierXp == 1000 && W.tiers.size() == 50 && W.skipGems == 150 && W.bonusXp == 2000);
+	KD_CHECK(W.dailyXp == 100 && W.weeklyXp == 500 && W.battleXp == 10 && W.battleCap == 300 && W.trialXp == 300);
+	int64_t TierGems = 0;
+	int64_t Gems30 = 0;
+	int RelicTiers = 0;
+	for (size_t I = 0; I < W.tiers.size(); ++I)
+	{
+		TierGems += W.tiers[I].res[GemsI];
+		Gems30 += I < 30 ? W.tiers[I].res[GemsI] : 0;
+		RelicTiers += W.tiers[I].relic > 0 ? 1 : 0;
+	}
+	KD_CHECK(TierGems == 200 && Gems30 == 120 && RelicTiers == 5 && W.tiers[0].res[GoldI] == 1000 && W.tiers[49].relic == 4);
+	KD_CHECK(W.bonus.res[GemsI] == 5 && W.bonus.res[StonesI] == 6 && W.bonus.relic == 0);
+
+	// T0, a Thursday of week 2910, is in pass 727 (weeks 2908 to 2911), which ends on the Monday of week 2912.
+	Kingdom K(Ct);
+	K.NewGame(T0, 73);
+	const int64_t End = (2912 * 7 - 3) * Day;
+	KD_CHECK(K.WarpathSeason() == 727 && K.WarpathEnd() == End && K.WarpathXp() == 0 && K.WarpathTier() == 0 && K.WarpathBonusReady() == 0);
+	KD_CHECK(K.ClaimWarpath(0, nullptr) == Error::NotReady && K.ClaimWarpath(50, nullptr) == Error::BadId && K.ClaimWarpath(-1, nullptr) == Error::BadId);
+	KD_CHECK(K.ClaimWarpathBonus(nullptr) == Error::NotReady && K.WarpathPaidSeason() == -1 && !K.WarpathClaimed(0) && !K.WarpathClaimed(64));
+	// A battle gives 10 XP, a lost one too.
+	KD_CHECK(K.StartAttack(K.World()[0].id, false) == Error::None && K.FinishAttack(K.World()[0].id, false, 3) == Error::None && K.WarpathXp() == 10);
+	KD_CHECK(K.StartAttack(K.World()[0].id, false) == Error::None && K.FinishAttack(K.World()[0].id, false, 0) == Error::None);
+	KD_CHECK(K.WarpathXp() == 20 && K.WarpathBattleXpToday() == 20);
+	// Up to 300 a day from battles; the next day counts again.
+	std::string Error;
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Replace(K.Save(), "\"dayXp\":20", "\"dayXp\":295"), Error) && L.WarpathBattleXpToday() == 295 && L.WarpathXp() == 20);
+	KD_CHECK(L.StartAttack(L.World()[0].id, false) == Error::None && L.FinishAttack(L.World()[0].id, false, 0) == Error::None && L.WarpathXp() == 25);
+	L.RefillStones();
+	KD_CHECK(L.StartAttack(L.World()[0].id, false) == Error::None && L.FinishAttack(L.World()[0].id, false, 0) == Error::None && L.WarpathXp() == 25);
+	KD_CHECK(L.WarpathBattleXpToday() == 300);
+	L.Advance(T0 + Day);
+	L.RefillStones();
+	KD_CHECK(L.WarpathBattleXpToday() == 0 && L.StartAttack(L.World()[0].id, false) == Error::None && L.FinishAttack(L.World()[0].id, false, 0) == Error::None);
+	KD_CHECK(L.WarpathXp() == 35 && L.WarpathBattleXpToday() == 10);
+	// A daily quest claimed gives 100 XP, a weekly one 500. A save from before the Warpath starts the pass on the next
+	// Advance.
+	const std::string Daily = "{\"day\":" + std::to_string(T0 / Day) + ",\"rerolls\":0,\"chest\":false,\"counter\":0,\"list\":["
+		"{\"id\":\"q_train\",\"target\":3,\"progress\":3,\"claimed\":false},"
+		"{\"id\":\"q_gold\",\"target\":500,\"progress\":500,\"claimed\":false}]}";
+	Kingdom Q(Ct);
+	KD_CHECK(Q.Load(WithQuests(K.Save(), Daily), Error) && Q.WarpathSeason() == -1 && Q.ClaimWarpath(0, nullptr) == Error::BadId);
+	Q.Advance(T0 + 60);
+	KD_CHECK(Q.WarpathSeason() == 727 && Q.WarpathXp() == 0 && Q.ClaimQuest(0, nullptr) == Error::None && Q.WarpathXp() == 100);
+	KD_CHECK(Q.ClaimQuest(1, nullptr) == Error::None && Q.WarpathXp() == 200 && Q.ClaimQuest(1, nullptr) == Error::Nothing && Q.WarpathXp() == 200);
+	const std::string Weekly = "{\"week\":" + std::to_string((T0 / Day + 3) / 7) + ",\"rerolls\":0,\"chest\":false,\"list\":["
+		"{\"id\":\"w_gold\",\"target\":2000,\"progress\":2000,\"claimed\":false}]}";
+	KD_CHECK(Q.Load(WithWeekly(K.Save(), Weekly), Error) && Q.WarpathSeason() == -1);
+	Q.Advance(T0 + 60);
+	KD_CHECK(Q.WarpathSeason() == 727 && Q.ClaimWeekly(0, nullptr) == Error::None && Q.WarpathXp() == 500);
+
+	// At Castle 4 on Monday: a trial battle gives battle XP, a trial milestone 300.
+	Kingdom T(Ct);
+	KD_CHECK(T.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":4"), Error) && T.CastleLevel() == 4);
+	const int64_t Monday = (2911 * 7 - 3) * Day;
+	T.Advance(Monday + Hour);
+	KD_CHECK(T.WarpathSeason() == 727 && T.WarpathXp() == 20 && T.WarpathBattleXpToday() == 0);
+	KD_CHECK(T.StartTrial({}, 0, {}) == Error::None && T.FinishTrial(2, 3100, nullptr) == Error::None && T.WarpathXp() == 30);
+	KD_CHECK(T.ClaimTrialMilestone(0, nullptr) == Error::None && T.WarpathXp() == 330 && T.WarpathTier() == 0);
+	// Gems buy XP up to the next tier; a tier pays once, gold and food by the Castle's level.
+	const int64_t Gems = T.Amount(Res::Gems);
+	KD_CHECK(T.BuyWarpathTier() == Error::None && T.WarpathXp() == 1000 && T.WarpathTier() == 1 && T.Amount(Res::Gems) == Gems - 150);
+	Reward R;
+	KD_CHECK(T.ClaimWarpath(1, nullptr) == Error::NotReady && T.ClaimWarpath(0, &R) == Error::None && R.res[GoldI] == 4000 && R.relics.empty());
+	KD_CHECK(T.WarpathClaimed(0) && T.ClaimWarpath(0, nullptr) == Error::Nothing);
+	KD_CHECK(T.BuyWarpathTier() == Error::None && T.WarpathTier() == 2 && T.ClaimWarpath(1, &R) == Error::None && R.res[GemsI] == 5 && R.res[StonesI] == 6);
+	KD_CHECK(T.Amount(Res::Gems) == Gems - 300 + 5);
+	Kingdom U(Ct);
+	KD_CHECK(U.Load(T.Save(), Error) && U.Hash() == T.Hash() && U.Save() == T.Save() && U.WarpathClaimed(1) && !U.WarpathClaimed(2));
+	KD_CHECK(U.Load(Replace(T.Save(), "\"gems\":" + std::to_string(T.Amount(Res::Gems)), "\"gems\":149"), Error) && U.Amount(Res::Gems) == 149);
+	KD_CHECK(U.BuyWarpathTier() == Error::NotEnough && U.WarpathTier() == 2 && U.Amount(Res::Gems) == 149);
+
+	// Past the last tier, bonus chests; tier 50 pays a 4-star relic.
+	Kingdom B(Ct);
+	KD_CHECK(B.Load(WithWarpath(T.Save(), "{\"no\":727,\"xp\":54100,\"mask\":1,\"bonus\":0,\"day\":-1,\"dayXp\":0}"), Error));
+	KD_CHECK(B.WarpathTier() == 50 && B.WarpathBonusReady() == 2 && B.BuyWarpathTier() == Error::LimitReached && B.WarpathClaimed(0) && !B.WarpathClaimed(1));
+	KD_CHECK(B.ClaimWarpathBonus(&R) == Error::None && R.res[GemsI] == 5 && R.res[StonesI] == 6 && B.WarpathBonusReady() == 1);
+	KD_CHECK(B.ClaimWarpath(49, &R) == Error::None && R.relics.size() == 1 && B.FindRelic(R.relics[0])->rarity == 4 && R.res[GemsI] == 20);
+	// The end of the pass pays what was reached and not claimed: 180 gems of tiers, a chest and four relics.
+	const int64_t Gems2 = B.Amount(Res::Gems);
+	const size_t Relics = B.Relics().size();
+	B.Advance(End + Hour);
+	KD_CHECK(B.WarpathSeason() == 728 && B.WarpathXp() == 0 && B.WarpathTier() == 0 && !B.WarpathClaimed(0) && B.WarpathBonusReady() == 0);
+	KD_CHECK(B.WarpathPaidSeason() == 727 && B.WarpathPaid()[GemsI] == 185 && B.WarpathPaid()[ShardsI] == 10 && B.WarpathPaidRelics() == 4);
+	KD_CHECK(B.Amount(Res::Gems) >= Gems2 + 185 && B.Relics().size() == Relics + 4 && B.WarpathEnd() == End + 28 * Day);
+	B.Advance(End + 2 * Hour);
+	KD_CHECK(B.WarpathPaidSeason() == 727 && B.WarpathPaid()[GemsI] == 185 && B.WarpathSeason() == 728);
+	Kingdom B2(Ct);
+	KD_CHECK(B2.Load(B.Save(), Error) && B2.Hash() == B.Hash() && B2.Save() == B.Save() && B2.WarpathPaid()[GemsI] == 185 && B2.WarpathPaidRelics() == 4);
+	// A full inventory: tier relics wait for room (InventoryFull); at the end only the relic is lost.
+	std::string Many = RelicJson(1000, "atk", 1, 20, "[1]");
+	for (int I = 1; I < Ct.maxRelics; ++I)
+	{
+		Many += "," + RelicJson(1000 + I, "atk", 1, 20, "[1]");
+	}
+	Kingdom N(Ct);
+	N.NewGame(T0, 74);
+	const std::string Full = Replace(WithWarpath(N.Save(), "{\"no\":727,\"xp\":10000,\"mask\":0,\"bonus\":0,\"day\":-1,\"dayXp\":0}"), "\"relics\":[],\"relicAt\"", "\"relics\":[" + Many + "],\"relicAt\"");
+	Kingdom F(Ct);
+	KD_CHECK(F.Load(Full, Error) && static_cast<int>(F.Relics().size()) == Ct.maxRelics && F.WarpathTier() == 10);
+	KD_CHECK(F.ClaimWarpath(9, nullptr) == Error::InventoryFull && !F.WarpathClaimed(9) && F.ClaimWarpath(8, &R) == Error::None);
+	F.Advance(End + Hour);
+	KD_CHECK(F.WarpathSeason() == 728 && F.WarpathPaid()[GemsI] == 40 && F.WarpathPaid()[StonesI] == 21 && F.WarpathPaidRelics() == 0);
+	KD_CHECK(F.WarpathPaid()[GoldI] == 2000 && static_cast<int>(F.Relics().size()) == Ct.maxRelics);
+}
+
 void TestCalendars()
 {
 	const KingdomContent& Ct = Content();
@@ -2811,7 +2937,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath},
 	};
 	for (const auto& T : Tests)
 	{
