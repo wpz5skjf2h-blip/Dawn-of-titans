@@ -38,6 +38,15 @@ SquadSetup MakeSquad(const std::string& Troop, int Tier)
 	Q.tier = Tier;
 	return Q;
 }
+
+// The Marshal: the enemy's titan counts with its Power as the battle has it; a repeated squad of the plan is worth
+// DecayPct % of the one before (a counter army still mixes troops); a class of squads is a threat with a quarter of the
+// squads' Power; a troop hits it hard from GoodPct (the matrix has 1.3 for "strong against") and a class hits a squad
+// hard from BadPct.
+constexpr int64_t DecayPct = 90;
+constexpr int64_t ThreatPct = 25;
+constexpr int64_t GoodPct = 130;
+constexpr int64_t BadPct = 150;
 } // namespace
 
 void Kingdom::ResetRaids(int64_t Now)
@@ -287,13 +296,6 @@ int64_t Kingdom::BattleWinPermille(int64_t AttackSquads, int64_t AttackTitans, i
 
 MarshalAdvice Kingdom::Marshal(const SideSetup& Enemy, const std::vector<int>& Taken, const std::vector<bool>& Allowed) const
 {
-	// The enemy's titan counts with its Power as the battle has it; a repeated squad of the plan is worth DecayPct % of the
-	// one before (a counter army still mixes troops); a class of squads is a threat with a quarter of the squads' Power; a
-	// troop hits it hard from GoodPct (the matrix has 1.3 for "strong against") and a class hits a squad hard from BadPct.
-	constexpr int64_t DecayPct = 90;
-	constexpr int64_t ThreatPct = 25;
-	constexpr int64_t GoodPct = 130;
-	constexpr int64_t BadPct = 150;
 	MarshalAdvice Out;
 	const size_t N = C.troops.size();
 	Out.plan.assign(N, 0);
