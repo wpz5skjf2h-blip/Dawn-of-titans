@@ -284,6 +284,33 @@ struct RaidReport
 	int64_t shieldUntil = 0; // shield after a lost defense
 };
 
+/** What the Marshal says before a battle (master prompt 4.6 and 9.3), from the counter matrix (counters.json). */
+enum class MarshalTipKind : int32_t
+{
+	Bring = 1, // the camp has squads of a troop that hits this enemy class hard: take them
+	Train = 2, // the troop that would hit it hard is not in the camp: train it
+	Exposed = 3, // a squad taken is weak against this enemy class
+};
+
+struct MarshalTip
+{
+	MarshalTipKind kind = MarshalTipKind::Bring;
+	int troop = -1; // kingdom troop index
+	int enemyClass = -1; // the battle's DefenderClass (Titan for the enemy titan)
+	int pct = 100; // the counter multiplier in percent: the troop's against that class, or for Exposed that class's against it
+};
+
+/** The Marshal's advice and plan for one battle. */
+struct MarshalAdvice
+{
+	std::vector<MarshalTip> tips; // at most three, the strongest threat first
+	/** The Marshal's Plan: squads per troop from the camp, at most the battle slots in all; the troops that hit the
+	 *  enemy hardest for the hits they take, Power for Power, one squad at a time (a repeat counts a little less). */
+	std::vector<int> plan;
+	int64_t planScore = 0; // the plan's counter-weighted Power, and the same for the squads taken
+	int64_t takenScore = 0;
+};
+
 /** What a defense can expect now: its power, the raiders' and the chance to hold (for the UI). */
 struct RaidForecast
 {
@@ -867,6 +894,10 @@ public:
 	int64_t BattleWinPermille(int64_t AttackSquads, int64_t AttackTitans, int64_t DefenseSquads, int64_t DefenseTitans, const std::string& DefenseAi) const;
 	/** One side's Power for those odds: squads plus titans weighted, scaled by the AI profile (100% for a player). */
 	int64_t OddsPower(int64_t Squads, int64_t Titans, const std::string& Ai) const;
+	/** The Marshal (master prompt 4.6 and 9.3): tips against the enemy's squads and titan for the squads taken (per troop,
+	 *  allies' included) and the Marshal's Plan from the camp. Allowed (per troop, empty = all) keeps a trial's rule.
+	 *  Empty without the battle content. */
+	MarshalAdvice Marshal(const SideSetup& Enemy, const std::vector<int>& Taken, const std::vector<bool>& Allowed) const;
 
 private:
 	const LevelDef* CurrentLevel(const Building& B) const;

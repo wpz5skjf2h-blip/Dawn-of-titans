@@ -353,6 +353,16 @@ function invariants(st, add) {
 		const left = st.titans.filter((t) => !pw.top.some((x) => x[0] === t.id));
 		if (pw.top.length && (left.some((t) => t.pw > cut) || (pw.top.length < most && left.length))) add('bad', 'Сила королевства: не учтён титан посильнее');
 	}
+	// The Marshal of the open prepare screen (for the camp as it is): the plan fits the camp and the slots and scores at least the army taken.
+	const mr = K.prep && K.scoutRes;
+	const prepOpen = !!document.querySelector('#kSheet:not([hidden]) [data-act="prep-go"]');
+	if (prepOpen && mr && mr.plan && K.scoutText && K.scoutText.includes('|' + st.army.n.join() + '|') && !(K.prep.assault && st.assault.run)) {
+		const n = mr.plan.reduce((x, y) => x + y, 0);
+		if (n > st.army.slots || mr.plan.some((x, t) => x < 0 || x > st.army.n[t])) add('bad', 'План маршала не помещается в лагерь или в места: ' + mr.plan.join(','));
+		if (mr.mt.length > 3) add('bad', 'Советов маршала ' + mr.mt.length + ', а их не больше трёх');
+		const taken = K.prep.counts.reduce((x, y) => x + y, 0);
+		if (taken <= st.army.slots && K.prep.counts.every((x, t) => x <= st.army.n[t]) && mr.ps < mr.ts) add('bad', 'План маршала (' + mr.ps + ') слабее взятого войска (' + mr.ts + ')');
+	}
 }
 /** Returns [[level, text]] with level 'ok' | 'warn' | 'bad'; the kingdom is left as it was. */
 function runChecks() {

@@ -3095,6 +3095,151 @@ void TestScouting()
 	KD_CHECK(K.BattleWinPermille(50000, 100000, 50000, 50000, "") > K.BattleWinPermille(100000, 50000, 50000, 50000, ""));
 }
 
+/** The save with these squads in the camp (troop id, squads); the other troops have none. */
+std::string WithUnits(const std::string& Save, const std::vector<std::pair<const char*, int>>& Units)
+{
+	const size_t A = Save.find("\"units\":{");
+	const size_t B = A == std::string::npos ? A : Save.find('}', A);
+	if (B == std::string::npos)
+	{
+		std::printf("  (no army units in the save)\n");
+		return Save;
+	}
+	std::string Obj = "\"units\":{";
+	for (size_t I = 0; I < Units.size(); ++I)
+	{
+		Obj += (I ? ",\"" : "\"") + std::string(Units[I].first) + "\":" + std::to_string(Units[I].second);
+	}
+	return Save.substr(0, A) + Obj + Save.substr(B);
+}
+
+void TestMarshal()
+{
+	const KingdomContent& Ct = Content();
+	const size_t N = Ct.troops.size();
+	const int Mil = Troop("troop.militia");
+	const int Arc = Troop("troop.archers");
+	const int Spr = Troop("troop.spearmen");
+	const int Bal = Troop("troop.ballista");
+	const int Cav = static_cast<int>(DefenderClass::Cavalry);
+	const int Tit = static_cast<int>(DefenderClass::Titan);
+	const auto Squads = [](const char* Troop, int Count) {
+		SideSetup S;
+		for (int I = 0; I < Count; ++I)
+		{
+			SquadSetup Q;
+			Q.troopId = Troop;
+			Q.tier = 2;
+			S.squads.push_back(Q);
+		}
+		return S;
+	};
+	const auto Per = [N](std::vector<std::pair<int, int>> List) {
+		std::vector<int> V(N, 0);
+		for (const auto& X : List)
+		{
+			V[static_cast<size_t>(X.first)] = X.second;
+		}
+		return V;
+	};
+	const auto Sum = [](const std::vector<int>& V) { int S = 0; for (const int X : V) S += X; return S; };
+	Kingdom K(Ct);
+	K.NewGame(T0, 9);
+	std::string Save = Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":4");
+	Save = WithBuilding(Save, "army_camp", 3, 30);
+	Save = WithUnits(Save, {{"troop.militia", 3}, {"troop.archers", 3}, {"troop.spearmen", 3}, {"troop.swordsmen", 2}});
+	std::string Error;
+	KD_CHECK(K.Load(Save, Error));
+	const SideSetup Riders = Squads("troop.outriders", 4);
+	const std::vector<int> Default = Per({{Mil, 2}, {Arc, 2}});
+	// Without the battle content the Marshal is silent.
+	MarshalAdvice A = K.Marshal(Riders, Default, {});
+	KD_CHECK(A.tips.empty() && A.plan.size() == N && Sum(A.plan) == 0 && A.planScore == 0 && A.takenScore == 0);
+	K.SetBattleContent(&Battle());
+	const int Slots = K.BattleSlots();
+	KD_CHECK(Slots >= 4 && K.ArmyCount(Spr) == 3 && K.CastleLevel() == 4);
+	// Four squads of outriders against militia and archers: bring the spearmen (2.0 against cavalry, counters.json), and
+	// the archers are their easy prey (1.75). The plan takes every spearman, stays in the camp and the slots and beats the
+	// squads taken on the counter-weighted Power.
+	A = K.Marshal(Riders, Default, {});
+	KD_CHECK(A.tips.size() == 2);
+	KD_CHECK(A.tips[0].kind == MarshalTipKind::Bring && A.tips[0].troop == Spr && A.tips[0].enemyClass == Cav && A.tips[0].pct == 200);
+	KD_CHECK(A.tips[1].kind == MarshalTipKind::Exposed && A.tips[1].troop == Arc && A.tips[1].enemyClass == Cav && A.tips[1].pct == 175);
+	KD_CHECK(Sum(A.plan) == Slots && A.plan[static_cast<size_t>(Spr)] == 3 && A.plan[static_cast<size_t>(Arc)] == 0);
+	for (size_t T = 0; T < N; ++T)
+	{
+		KD_CHECK(A.plan[T] >= 0 && A.plan[T] <= K.ArmyCount(static_cast<int>(T)));
+	}
+	KD_CHECK(A.takenScore > 0 && A.planScore > A.takenScore * 3 / 2);
+	// The plan taken: no tips left, and the same score as the plan's.
+	const MarshalAdvice Again = K.Marshal(Riders, A.plan, {});
+	KD_CHECK(Again.tips.empty() && Again.plan == A.plan && Again.takenScore == A.planScore);
+	// The same call gives the same answer, and it changes nothing in the kingdom.
+	const uint64_t Hash = K.Hash();
+	const MarshalAdvice Twice = K.Marshal(Riders, Default, {});
+	KD_CHECK(Twice.plan == A.plan && Twice.planScore == A.planScore && Twice.tips.size() == A.tips.size() && K.Hash() == Hash);
+	// A trial that bars the spearmen: neither tip nor plan takes them, and nothing else hits cavalry hard.
+	std::vector<bool> NoSpears(N, true);
+	NoSpears[static_cast<size_t>(Spr)] = false;
+	A = K.Marshal(Riders, Default, NoSpears);
+	KD_CHECK(A.plan[static_cast<size_t>(Spr)] == 0 && A.tips.size() == 1 && A.tips[0].kind == MarshalTipKind::Exposed);
+	// No spearmen in the camp: train them (Castle 3 opens them); below Castle 3 nothing to say but the archers' risk.
+	Kingdom NoSp(Ct);
+	KD_CHECK(NoSp.Load(WithUnits(Save, {{"troop.militia", 3}, {"troop.archers", 3}}), Error));
+	NoSp.SetBattleContent(&Battle());
+	A = NoSp.Marshal(Riders, Default, {});
+	KD_CHECK(A.tips.size() == 2 && A.tips[0].kind == MarshalTipKind::Train && A.tips[0].troop == Spr && A.tips[1].kind == MarshalTipKind::Exposed);
+	KD_CHECK(A.plan[static_cast<size_t>(Spr)] == 0 && Sum(A.plan) == std::min(Slots, 6));
+	Kingdom Low(Ct);
+	KD_CHECK(Low.Load(Replace(WithUnits(Save, {{"troop.militia", 3}, {"troop.archers", 3}}), "\"def\":\"castle\",\"level\":4", "\"def\":\"castle\",\"level\":2"), Error));
+	Low.SetBattleContent(&Battle());
+	A = Low.Marshal(Riders, Default, {});
+	KD_CHECK(A.tips.size() == 1 && A.tips[0].kind == MarshalTipKind::Exposed);
+	// A titan behind the swordsmen: ballista crews from the camp hit it 2.0 (none can be trained here: no Jade council).
+	SideSetup Titan = Squads("troop.swordsmen", 2);
+	Titan.titan.present = true;
+	Titan.titan.titanId = "titan.talos";
+	Titan.titan.level = 20;
+	Titan.titan.stars = 2;
+	A = K.Marshal(Titan, Default, {});
+	for (const MarshalTip& T : A.tips)
+	{
+		KD_CHECK(T.enemyClass != Tit);
+	}
+	Kingdom Bl(Ct);
+	KD_CHECK(Bl.Load(WithUnits(Save, {{"troop.militia", 3}, {"troop.archers", 3}, {"troop.ballista", 1}}), Error));
+	Bl.SetBattleContent(&Battle());
+	A = Bl.Marshal(Titan, Default, {});
+	KD_CHECK(!A.tips.empty() && A.tips[0].kind == MarshalTipKind::Bring && A.tips[0].troop == Bal && A.tips[0].enemyClass == Tit && A.tips[0].pct == 200);
+	KD_CHECK(A.tips.size() <= 3 && A.plan[static_cast<size_t>(Bal)] == 1);
+	// Mixed enemies (the land battles' armies, a titan on some): the plan always scores at least the army taken, and once
+	// it is taken the Marshal has nothing to bring and nobody to warn about (the tips never argue with the plan).
+	const std::vector<std::vector<const char*>> Mixes = {{"troop.militia", "troop.spearmen", "troop.archers", "troop.outriders"},
+		{"troop.militia", "troop.spearmen", "troop.swordsmen", "troop.archers", "troop.outriders"}, {"troop.knights", "troop.knights", "troop.archers"},
+		{"troop.goliaths", "troop.pikemen", "troop.priests", "troop.grenadiers", "troop.panthers", "troop.knights"}, {"troop.archers", "troop.archers", "troop.grenadiers"}};
+	for (size_t I = 0; I < Mixes.size(); ++I)
+	{
+		SideSetup E;
+		for (const char* Id : Mixes[I])
+		{
+			SquadSetup Q;
+			Q.troopId = Id;
+			Q.tier = 2;
+			E.squads.push_back(Q);
+		}
+		E.titan = Titan.titan;
+		E.titan.present = I % 2 == 1;
+		const MarshalAdvice D = K.Marshal(E, Default, {});
+		KD_CHECK(D.tips.size() <= 3 && Sum(D.plan) <= Slots && D.planScore >= D.takenScore);
+		const MarshalAdvice P = K.Marshal(E, D.plan, {});
+		KD_CHECK(P.plan == D.plan && P.takenScore == D.planScore);
+		for (const MarshalTip& T : P.tips)
+		{
+			KD_CHECK(T.kind == MarshalTipKind::Train);
+		}
+	}
+}
+
 void TestAssault()
 {
 	const KingdomContent& Ct = Content();
@@ -3299,7 +3444,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal},
 	};
 	for (const auto& T : Tests)
 	{

@@ -2041,7 +2041,9 @@ EMSCRIPTEN_KEEPALIVE int dk_read_raids()
 /** Scouting before a battle (master prompt 9.3) from the scenario the battle would get (JSON text): each side's start
  *  Power as the battle counts it (titans and squads in the prompt's units, the simulation's / 100; spells 40 a level,
  *  master prompt 5.10), the odds Power of both sides and the chance to win in permille. */
-EMSCRIPTEN_KEEPALIVE const char* dk_scout(const char* ScenarioText)
+/** Scouting before a battle: both sides' start Power and the chance, and the Marshal's advice for the squads taken (per
+ *  troop, comma separated) with the troops a trial allows (bit per troop index, -1 = all). */
+EMSCRIPTEN_KEEPALIVE const char* dk_scout(const char* ScenarioText, const char* Taken, int AllowedMask)
 {
 	WebState& S = G();
 	Out O(S.Text);
@@ -2086,7 +2088,28 @@ EMSCRIPTEN_KEEPALIVE const char* dk_scout(const char* ScenarioText)
 		O.Key(Sd ? "def" : "att").Raw("{").Key("t").Int(Titans[Sd] / 100).Comma().Key("s").Int(Squads[Sd] / 100).Comma().Key("sp").Int(Spells[Sd]).Comma();
 		O.Key("odds").Int(K()->OddsPower(Squads[Sd], Titans[Sd], Sd ? DefAi : std::string()) / 100).Raw("},");
 	}
-	O.Key("win").Int(K()->BattleWinPermille(Squads[0], Titans[0], Squads[1], Titans[1], DefAi)).Raw("}");
+	O.Key("win").Int(K()->BattleWinPermille(Squads[0], Titans[0], Squads[1], Titans[1], DefAi)).Comma();
+	std::vector<bool> Allowed;
+	if (AllowedMask != -1)
+	{
+		for (int T = 0; T < 31; ++T)
+		{
+			Allowed.push_back(((AllowedMask >> T) & 1) != 0);
+		}
+	}
+	const dot::kingdom::MarshalAdvice M = K()->Marshal(Setup.sides[1], ParseInts(Taken), Allowed);
+	O.Key("mt").Raw("[");
+	for (size_t I = 0; I < M.tips.size(); ++I)
+	{
+		const dot::kingdom::MarshalTip& T = M.tips[I];
+		O.Raw(I ? ",[" : "[").Int(static_cast<int>(T.kind)).Comma().Int(T.troop).Comma().Int(T.enemyClass).Comma().Int(T.pct).Raw("]");
+	}
+	O.Raw("],").Key("plan").Raw("[");
+	for (size_t I = 0; I < M.plan.size(); ++I)
+	{
+		O.Raw(I ? "," : "").Int(M.plan[I]);
+	}
+	O.Raw("],").Key("ps").Int(M.planScore).Comma().Key("ts").Int(M.takenScore).Raw("}");
 	return S.Text.c_str();
 }
 
