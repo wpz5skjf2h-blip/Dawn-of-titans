@@ -1538,6 +1538,91 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Bj = Rules.Find("raidBoss"))
+	{
+		RaidBossRules& B = Out.raidBoss;
+		B.castle = std::max(1, Bj->GetInt("castle", B.castle));
+		B.days = std::max(1, std::min(6, Bj->GetInt("days", B.days)));
+		B.attempts = std::max(1, Bj->GetInt("attempts", B.attempts));
+		B.battleSec = std::max(10, std::min(600, Bj->GetInt("battleSec", B.battleSec)));
+		B.hpPct = std::max(0, std::min(5000, Bj->GetInt("hpPct", B.hpPct)));
+		B.poolPct = std::max<int64_t>(1, Bj->GetInt64("poolPct", B.poolPct));
+		B.memberHit = std::max<int64_t>(0, std::min<int64_t>(1000, Bj->GetInt64("memberHit", B.memberHit)));
+		B.memberStepPct = std::max(0, std::min(90, Bj->GetInt("memberStepPct", B.memberStepPct)));
+		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
+			ReadCost(&J, R.res);
+			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
+		};
+		bool bOk = true;
+		if (const JsonValue* Tiers = Bj->Find("tiers"))
+		{
+			for (size_t I = 0; I < Tiers->Size(); ++I)
+			{
+				const JsonValue& J = (*Tiers)[I];
+				RaidBossTier T;
+				T.level = std::max(1, J.GetInt("level", T.level));
+				T.stars = std::max(1, std::min(5, J.GetInt("stars", T.stars)));
+				T.escort = std::max(0, std::min(6, J.GetInt("escort", T.escort)));
+				T.troopTier = std::max(1, std::min(5, J.GetInt("troopTier", T.troopTier)));
+				if (const JsonValue* Chest = J.Find("chest"))
+				{
+					ReadReward(*Chest, T.chest);
+				}
+				B.tiers.push_back(T);
+			}
+		}
+		if (const JsonValue* Lt = Bj->Find("leagueTier"))
+		{
+			for (size_t I = 0; I < Lt->Size(); ++I)
+			{
+				const int T = (*Lt)[I].AsInt();
+				bOk = bOk && T >= 1 && T <= static_cast<int>(B.tiers.size());
+				B.leagueTier.push_back(T);
+			}
+		}
+		if (const JsonValue* Ph = Bj->Find("phases"))
+		{
+			for (size_t I = 0; I < Ph->Size(); ++I)
+			{
+				const int P = (*Ph)[I].AsInt();
+				bOk = bOk && P >= 1 && P <= 999 && (B.phases.empty() || P < B.phases.back());
+				B.phases.push_back(P);
+			}
+		}
+		B.husk = Bj->GetString("husk");
+		bOk = bOk && (B.phases.empty() || !B.husk.empty());
+		if (const JsonValue* Bosses = Bj->Find("bosses"))
+		{
+			for (size_t I = 0; I < Bosses->Size(); ++I)
+			{
+				const JsonValue& J = (*Bosses)[I];
+				RaidBossDef D;
+				D.id = J.GetString("id");
+				D.titan = Out.FindTitan(J.GetString("titan"));
+				D.escort = J.GetString("escort");
+				bOk = bOk && !D.id.empty() && D.titan >= 0;
+				B.bosses.push_back(D);
+			}
+		}
+		if (const JsonValue* Ms = Bj->Find("milestones"))
+		{
+			for (size_t I = 0; I < Ms->Size(); ++I)
+			{
+				const JsonValue& J = (*Ms)[I];
+				EventReward R;
+				ReadReward(J, R);
+				const int64_t Dmg = J.GetInt64("dmg", 0);
+				bOk = bOk && Dmg > 0 && Dmg <= 1000 && (B.milestones.empty() || Dmg > B.milestones.back().first);
+				B.milestones.emplace_back(Dmg, R);
+			}
+		}
+		if (!bOk || B.bosses.empty() || B.tiers.empty() || B.tiers.size() > 32 || B.milestones.size() > 32)
+		{
+			Error = "kingdom/kingdom.json: the raid boss needs bosses with ids and known titans, 1 to 32 tiers, leagueTier within them, "
+				"falling phases (1-999) with a husk troop and milestones of rising damage (1-1000)";
+			return false;
+		}
+	}
 	if (const JsonValue* Pj = Rules.Find("power"))
 	{
 		PowerRules& P = Out.power;

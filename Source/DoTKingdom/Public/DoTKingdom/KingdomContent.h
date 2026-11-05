@@ -470,6 +470,43 @@ struct AssaultRules
 	std::vector<AssaultBoon> boons;
 };
 
+/** A Raid Boss of the weekly list: a titan with an escort on its own battlefield. */
+struct RaidBossDef
+{
+	std::string id;
+	int titan = -1; // titan type (index)
+	std::string escort; // the escort's battle troop id (any troop of the battle content, the Hollow's too)
+};
+
+/** A Raid Boss tier: the boss's level and stars, its escort and the chest when it falls. */
+struct RaidBossTier
+{
+	int level = 10;
+	int stars = 1;
+	int escort = 1; // escort squads
+	int troopTier = 1; // their battle tier
+	EventReward chest;
+};
+
+/** Raid Boss (kingdom.json "raidBoss", master prompt 12.10): a weekly alliance event with a shared pool of health. */
+struct RaidBossRules
+{
+	int castle = 5; // Castle level it opens at
+	int days = 2; // open from Sunday for this many days
+	int attempts = 3; // battles a day
+	int battleSec = 120;
+	int hpPct = 300; // the boss's health over a titan's of its level
+	int64_t poolPct = 100; // the shared pool for each member, in % of the boss's health
+	int64_t memberHit = 250; // a computer member's battle at its league's tier, in tenths of a percent of the boss's health
+	int memberStepPct = 20; // less per tier above the league's (more below, up to twice)
+	std::vector<int> leagueTier; // the tier a computer alliance picks, by league
+	std::vector<int> phases; // pool left (‰), descending: each one reached adds a husk squad to the boss's side
+	std::string husk; // the husks' battle troop id
+	std::vector<RaidBossDef> bosses; // one a week, in turn
+	std::vector<RaidBossTier> tiers;
+	std::vector<std::pair<int64_t, EventReward>> milestones; // (damage in one battle, reward), ascending
+};
+
 /** Kingdom Power (kingdom.json "power", master prompt 7.7): what a building, a titan and a research level add. */
 struct PowerRules
 {
@@ -693,6 +730,7 @@ struct KingdomContent
 	TrialRules trials;
 	WarpathRules warpath;
 	AssaultRules assault;
+	RaidBossRules raidBoss;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;
