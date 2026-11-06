@@ -1584,6 +1584,11 @@ Troops used in Alliance War, Raid Boss and Conquest battles are **not lost**, an
 ### 12.8 Alliance Shop (Honor)
 Sigils, Ability Tomes, Starlight Shards (weekly limit), gear chests, Banner Silk, decorations.
 
+> **Implemented now (Honor):** Honor from helps given (+1), donations (5 a day from Keep (Castle) 4, 300 Gold or Food
+> × Castle for 10), Alliance War chests (+5 a star) and Raid Boss chests; it stays when the player leaves. The shop sells
+> what the kingdom has, with weekly limits: War Scrolls, portal stones, titan shards, 3★ and 4★ relics and divine gems,
+> no gems. Donations do not feed Alliance Tech yet (docs/M0_Notes.md §6я3).
+
 ### 12.9 Alliance War (weekly)
 - **Eligibility:** at least 10 members at Keep 10+. Leaders choose the roster size (10 / 15 / 20 / 25 / 30) and opt in.
 - **Matchmaking:** War Power (sum of the roster's defense Power) within ±10%, same roster size.

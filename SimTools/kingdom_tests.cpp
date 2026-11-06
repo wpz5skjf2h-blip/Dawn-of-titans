@@ -4278,8 +4278,10 @@ void TestAllianceWar()
 	const EventReward& Want = I4.result > 0 ? Ch.win : I4.result < 0 ? Ch.lose : Ch.draw;
 	const int64_t Gems = K.Amount(Res::Gems);
 	const int64_t Div = K.DivineGems();
+	const int64_t Hon = K.Honor();
 	Reward Got;
 	KD_CHECK(K.ClaimWarChest(&Got) == Error::None && K.WarChestClaimed() && K.ClaimWarChest(nullptr) == Error::Nothing);
+	KD_CHECK(Want.honor > 0 && Got.honor == Want.honor + 5 * 4 && K.Honor() == Hon + Got.honor); // and 5 Honor a star
 	KD_CHECK(Got.divine == Want.divine && K.DivineGems() == Div + Want.divine);
 	KD_CHECK(Got.res[GemsI] == Want.res[GemsI] && K.Amount(Res::Gems) == Gems + Want.res[GemsI] && Got.res[GoldI] == (Want.res[GoldI] + 150 * 4) * 6 && Got.res[FoodI] == 600 * 6);
 	KD_CHECK(static_cast<int>(Got.relics.size()) == (Want.relic > 0 ? 1 : 0));
@@ -4390,8 +4392,8 @@ void TestAllianceHelp()
 	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
 	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
 	// Master prompt 12.4: a help takes 1% of the whole time off (at least 60 s); 5 + ⌊Alliance Hall ÷ 2⌋ helps a timer,
-	// at most 15; 50 helps given a day. Ours: the Alliance Camp stands for the Hall, when the helps come, the members'
-	// asks and the gold and food paid for a help (times the Castle) in place of Honor.
+	// at most 15; 50 helps given a day; a help given earns Honor. Ours: the Alliance Camp stands for the Hall, when the
+	// helps come, the members' asks, the gold and food paid for a help (times the Castle) and its 1 Honor.
 	KD_CHECK(H.on && H.base == 5 && H.hallStep == 2 && H.max == 15 && H.cutPct == 1 && H.minCutSec == 60 && H.dailyCap == 50);
 	KD_CHECK(H.firstSec[0] == 30 && H.firstSec[1] == 120 && H.gapSec[0] == 20 && H.gapSec[1] == 300 && H.openHours == 2);
 	KD_CHECK(H.asksPerHour[0] == 1 && H.asksPerHour[1] == 3 && H.reward.res[GoldI] == 20 && H.reward.res[FoodI] == 20 && H.reward.relic == 0);
@@ -4493,6 +4495,7 @@ void TestAllianceHelp()
 	KD_CHECK(K.GiveHelp(&Given, &R) == Error::None && Given == static_cast<int>(Asks.size()) && K.HelpsGivenToday() == Given);
 	const int GivenFirst = Given;
 	KD_CHECK(R.res[GoldI] == Given * 20 * 6 && R.res[FoodI] == Given * 20 * 6 && K.Amount(Res::Gold) == Gold + R.res[GoldI]);
+	KD_CHECK(R.honor == Given && K.Honor() == Given); // 1 Honor a help
 	KD_CHECK(K.CheckGiveHelp().error == Error::Nothing && K.GiveHelp(&Given, nullptr) == Error::Nothing && Given == 0);
 	for (const AllyAsk& A : K.AllyAsks())
 	{
@@ -4553,6 +4556,123 @@ Kingdom BossKingdom(uint64_t Seed)
 	std::string Error;
 	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5"), Error) && L.CastleLevel() == 5);
 	return L;
+}
+
+/** Honor, donations and the Alliance Shop (master prompt 8.1, 12.5, 12.8): donations a day for Honor, a shop with
+ *  weekly limits, Honor kept outside an alliance, the save and the hash. */
+void TestHonor()
+{
+	const KingdomContent& Ct = Content();
+	const HonorRules& O = Ct.honor;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t FoodI = static_cast<size_t>(ResIndex(Res::Food));
+	const size_t StonesI = static_cast<size_t>(ResIndex(Res::Stones));
+	const size_t ShardsI = static_cast<size_t>(ResIndex(Res::Shards));
+	// Ours: from Castle 4 in an alliance; 5 donations a day of 300 gold or food times the Castle, 10 Honor each; six
+	// items; helps, war and boss chests pay Honor too.
+	KD_CHECK(O.on && O.castle == 4 && O.donatePerDay == 5 && O.donateCost[GoldI] == 300 && O.donateCost[FoodI] == 300 && O.donateHonor == 10);
+	KD_CHECK(O.shop.size() == 6 && O.shop[0].id == "scroll" && O.shop[0].price == 15 && O.shop[0].weekly == 10 && O.shop[0].scrolls == 1);
+	KD_CHECK(O.shop[1].pay.res[StonesI] == 5 && O.shop[2].pay.res[ShardsI] == 3 && O.shop[2].castle == 5 && O.shop[3].pay.relic == 3 && O.shop[3].weekly == 2);
+	KD_CHECK(O.shop[4].pay.divine == 15 && O.shop[4].castle == 10 && O.shop[5].pay.relic == 4 && O.shop[5].castle == 12 && O.shop[5].price == 300);
+	KD_CHECK(std::all_of(O.shop.begin(), O.shop.end(), [](const ShopItemDef& D) { return D.pay.honor == 0 && D.pay.res[static_cast<size_t>(ResIndex(Res::Gems))] == 0; }));
+	KD_CHECK(Ct.allianceHelp.reward.honor == 1 && Ct.allianceWar.star.honor == 5 && Ct.allianceWar.chests[0].win.honor == 50 && Ct.allianceWar.chests[5].lose.honor == 45);
+	KD_CHECK(Ct.raidBoss.tiers.size() == 10 && Ct.raidBoss.tiers[0].chest.honor == 10 && Ct.raidBoss.tiers[9].chest.honor == 50);
+
+	std::string Error;
+	// Outside an alliance: nothing to give, nothing to buy; the save has no Honor and hashes as before.
+	Kingdom Base = WarKingdom(150); // Castle 6
+	const uint64_t H0 = Base.Hash();
+	KD_CHECK(Base.Honor() == 0 && Base.DonationsToday() == 0 && Base.ShopBought(0) == 0 && Base.ShopBought(-1) == 0);
+	KD_CHECK(Base.CheckDonate(false).error == Error::NoAlliance && Base.Donate(true, nullptr) == Error::NoAlliance);
+	KD_CHECK(Base.CheckBuyShop(0).error == Error::NoAlliance && Base.BuyShop(0, nullptr) == Error::NoAlliance);
+	KD_CHECK(Base.CheckBuyShop(-1).error == Error::BadId && Base.CheckBuyShop(6).error == Error::BadId);
+	std::string Plain = Base.Save();
+	KD_CHECK(Plain.find("\"honor\":{") == std::string::npos);
+	Plain = Replace(Plain, "\"resources\":{\"gold\":" + std::to_string(Base.Amount(Res::Gold)) + ",\"food\":" + std::to_string(Base.Amount(Res::Food)),
+		"\"resources\":{\"gold\":10000,\"food\":3000");
+	const int Ally = HelpAlliance(Base, 5);
+	Kingdom K(Ct);
+	KD_CHECK(Ally >= 0 && K.Load(Plain, Error) && K.Amount(Res::Gold) == 10000 && K.Amount(Res::Food) == 3000 && K.Hash() != H0);
+	KD_CHECK(K.JoinAlliance(Ally) == Error::None);
+
+	// Donations: 1 800 gold or food each at Castle 6, 10 Honor, five a day.
+	Check Ck = K.CheckDonate(false);
+	KD_CHECK(Ck.error == Error::None && Ck.cost[GoldI] == 1800 && Ck.cost[FoodI] == 0);
+	Ck = K.CheckDonate(true);
+	KD_CHECK(Ck.error == Error::None && Ck.cost[FoodI] == 1800 && Ck.cost[GoldI] == 0);
+	Reward R;
+	KD_CHECK(K.Donate(true, &R) == Error::None && R.honor == 10 && K.Honor() == 10 && K.Amount(Res::Food) == 1200 && K.DonationsToday() == 1);
+	KD_CHECK(K.CheckDonate(true).error == Error::NotEnough && K.Donate(true, nullptr) == Error::NotEnough && K.Amount(Res::Food) == 1200 && K.Honor() == 10);
+	for (int I = 0; I < 4; ++I)
+	{
+		KD_CHECK(K.Donate(false, &R) == Error::None && R.honor == 10);
+	}
+	KD_CHECK(K.Honor() == 50 && K.DonationsToday() == 5 && K.Amount(Res::Gold) == 10000 - 4 * 1800);
+	Ck = K.CheckDonate(false);
+	KD_CHECK(Ck.error == Error::LimitReached && Ck.timeSec == (K.Now() / 86400 + 1) * 86400 - K.Now() && K.Donate(false, nullptr) == Error::LimitReached);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save() && L.Honor() == 50 && L.DonationsToday() == 5);
+		KD_CHECK(K.Save().find("\"honor\":{\"pts\":50,") != std::string::npos);
+	}
+	// The next day: five again.
+	const int64_t Tomorrow = (K.Now() / 86400 + 1) * 86400;
+	K.Advance(Tomorrow + 60);
+	KD_CHECK(K.DonationsToday() == 0 && K.CheckDonate(false).error == Error::None);
+
+	// The shop: a War Scroll for 15, ten a week; at the scroll maximum it waits.
+	const int64_t Scrolls = K.Scrolls();
+	KD_CHECK(K.BuyShop(0, &R) == Error::None && R.scrolls == 1 && K.Scrolls() == Scrolls + 1 && K.Honor() == 35 && K.ShopBought(0) == 1);
+	KD_CHECK(K.BuyShop(1, &R) == Error::None && R.res[StonesI] == 5 && K.Honor() == 10 && K.ShopBought(1) == 1);
+	KD_CHECK(K.CheckBuyShop(3).error == Error::NotEnough && K.BuyShop(3, nullptr) == Error::NotEnough && K.Honor() == 10);
+	// Items above the Castle are locked: divine gems from Castle 10, the 4-star relic from 12.
+	Ck = K.CheckBuyShop(4);
+	KD_CHECK(Ck.error == Error::Locked && Ck.castle == 10 && K.CheckBuyShop(5).castle == 12);
+	{
+		// Rich in Honor: the week's limit, then the next Monday; the relic needs room.
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(Replace(K.Save(), "\"honor\":{\"pts\":10,", "\"honor\":{\"pts\":5000,"), Error) && L.Honor() == 5000);
+		KD_CHECK(L.BuyShop(3, &R) == Error::None && R.relics.size() == 1 && L.BuyShop(3, &R) == Error::None && L.ShopBought(3) == 2);
+		Ck = L.CheckBuyShop(3);
+		const int64_t Monday = (L.Now() / 86400 + 3) / 7 * 7 * 86400 + 4 * 86400;
+		KD_CHECK(Ck.error == Error::LimitReached && Ck.timeSec == Monday - L.Now() && L.Honor() == 4800);
+		KD_CHECK(L.BuyShop(2, &R) == Error::None && R.res[ShardsI] == 3 && L.Honor() == 4750);
+		for (int I = 1; I < 10; ++I)
+		{
+			KD_CHECK(L.BuyShop(0, nullptr) == Error::None);
+		}
+		KD_CHECK(L.ShopBought(0) == 10 && L.CheckBuyShop(0).error == Error::LimitReached);
+		Kingdom M(Ct);
+		KD_CHECK(M.Load(L.Save(), Error) && M.Hash() == L.Hash() && M.Save() == L.Save() && M.ShopBought(0) == 10 && M.ShopBought(3) == 2);
+		M.Advance(Monday);
+		KD_CHECK(M.ShopBought(0) == 0 && M.ShopBought(3) == 0 && M.CheckBuyShop(3).error == Error::None && M.Honor() == L.Honor());
+		// A full relic inventory refuses the relic and takes nothing.
+		std::string Many = RelicJson(5000, "atk", 1, 20, "[1]");
+		for (int I = 1; I < Ct.maxRelics; ++I)
+		{
+			Many += "," + RelicJson(5000 + I, "atk", 1, 20, "[1]");
+		}
+		Kingdom Full(Ct);
+		const std::string Rich = Replace(K.Save(), "\"honor\":{\"pts\":10,", "\"honor\":{\"pts\":5000,");
+		KD_CHECK(Rich.find("\"relics\":[],\"relicAt\"") != std::string::npos);
+		KD_CHECK(Full.Load(Replace(Rich, "\"relics\":[],\"relicAt\"", "\"relics\":[" + Many + "],\"relicAt\""), Error) && static_cast<int>(Full.Relics().size()) == Ct.maxRelics);
+		KD_CHECK(Full.CheckBuyShop(3).error == Error::InventoryFull && Full.BuyShop(3, nullptr) == Error::InventoryFull && Full.Honor() == 5000 && Full.ShopBought(3) == 0);
+		// War Scrolls at their maximum: the scroll waits.
+		Kingdom S(Ct);
+		KD_CHECK(S.Load(Replace(M.Save(), "\"sweep\":{\"scrolls\":" + std::to_string(M.Scrolls()), "\"sweep\":{\"scrolls\":" + std::to_string(Ct.campaigns.scrollsMax)), Error) && S.Scrolls() == Ct.campaigns.scrollsMax);
+		KD_CHECK(S.CheckBuyShop(0).error == Error::StorageFull && S.BuyShop(0, nullptr) == Error::StorageFull);
+	}
+
+	// Honor stays when the player leaves; the shop and donations close.
+	KD_CHECK(K.LeaveAlliance() == Error::None && K.Honor() == 10 && K.CheckBuyShop(0).error == Error::NoAlliance && K.CheckDonate(false).error == Error::NoAlliance);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Honor() == 10);
+	}
+	// Below Castle 4 there is neither.
+	Kingdom Low(Ct);
+	Low.NewGame(T0, 151);
+	KD_CHECK(Low.CastleLevel() < 4 && Low.Save().find("\"honor\":{") == std::string::npos);
 }
 
 void TestRaidBoss()
@@ -4716,7 +4836,9 @@ void TestRaidBoss()
 	KD_CHECK(F.CheckBoss().error == Error::Nothing && F.CheckBoss().timeSec == Sunday + 7 * Day - F.Now() && F.StartBoss({}, 0, {}) == Error::Nothing);
 	const RaidBossTier& Tier = B.tiers[static_cast<size_t>(F.BossTier() - 1)];
 	const int64_t FGems = F.Amount(Res::Gems);
+	const int64_t FHonor = F.Honor();
 	KD_CHECK(F.ClaimBossChest(&R) == Error::None && R.res[GemsI] == Tier.chest.res[GemsI] && F.Amount(Res::Gems) == FGems + Tier.chest.res[GemsI]);
+	KD_CHECK(Tier.chest.honor > 0 && R.honor == Tier.chest.honor && F.Honor() == FHonor + Tier.chest.honor);
 	KD_CHECK(F.BossChestClaimed() && F.ClaimBossChest(nullptr) == Error::Nothing);
 	// A member who did not fight gets none.
 	Kingdom Idle(Ct);
@@ -4990,7 +5112,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor},
 	};
 	for (const auto& T : Tests)
 	{

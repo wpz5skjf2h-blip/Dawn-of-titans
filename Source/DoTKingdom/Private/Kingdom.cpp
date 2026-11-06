@@ -202,6 +202,11 @@ void Kingdom::ResetArmy()
 	{
 		NoteCodex(T.def);
 	}
+	HonorCount = 0;
+	DonateDay = 0;
+	DonateCount = 0;
+	ShopWeek = 0;
+	ShopBoughtList.assign(C.honor.shop.size(), 0);
 	RelicAt = Time;
 	RelicCounter = 0;
 	ResetSpellsAndRelics();
@@ -3360,6 +3365,157 @@ Error Kingdom::ClaimComeback(Reward* Out)
 	return Error::None;
 }
 
+// --- Honor, donations and the Alliance Shop (master prompt 8.1, 12.5, 12.8) --------------------------------
+
+int Kingdom::DonationsToday() const
+{
+	return DonateDay == FloorDiv(Time, 86400) ? DonateCount : 0;
+}
+
+Check Kingdom::CheckDonate(bool Food) const
+{
+	Check Out;
+	const HonorRules& O = C.honor;
+	if (!O.on || O.donatePerDay <= 0)
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+		return Out;
+	}
+	if (CastleLevel() < O.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = O.castle;
+		return Out;
+	}
+	if (DonationsToday() >= O.donatePerDay)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (FloorDiv(Time, 86400) + 1) * 86400 - Time;
+		return Out;
+	}
+	const size_t K = static_cast<size_t>(ResIndex(Food ? Res::Food : Res::Gold));
+	Out.cost[K] = O.donateCost[K] * std::max(1, CastleLevel());
+	if (Out.cost[K] <= 0)
+	{
+		Out.error = Error::BadId;
+	}
+	else if (Res_[K] < Out.cost[K])
+	{
+		Out.error = Error::NotEnough;
+	}
+	return Out;
+}
+
+Error Kingdom::Donate(bool Food, Reward* Out)
+{
+	const Check Ck = CheckDonate(Food);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const int64_t Day = FloorDiv(Time, 86400);
+	if (DonateDay != Day)
+	{
+		DonateDay = Day;
+		DonateCount = 0;
+	}
+	++DonateCount;
+	for (size_t K = 0; K < Res_.size(); ++K)
+	{
+		Res_[K] -= Ck.cost[K];
+	}
+	HonorCount += C.honor.donateHonor;
+	if (Out)
+	{
+		*Out = Reward();
+		Out->honor = C.honor.donateHonor;
+	}
+	return Error::None;
+}
+
+int Kingdom::ShopBought(int Item) const
+{
+	if (Item < 0 || Item >= static_cast<int>(ShopBoughtList.size()) || ShopWeek != WeekOf())
+	{
+		return 0;
+	}
+	return ShopBoughtList[static_cast<size_t>(Item)];
+}
+
+Check Kingdom::CheckBuyShop(int Item) const
+{
+	Check Out;
+	const HonorRules& O = C.honor;
+	if (!O.on || Item < 0 || Item >= static_cast<int>(O.shop.size()))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const ShopItemDef& D = O.shop[static_cast<size_t>(Item)];
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+	}
+	else if (CastleLevel() < std::max(O.castle, D.castle))
+	{
+		Out.error = Error::Locked;
+		Out.castle = std::max(O.castle, D.castle);
+	}
+	else if (ShopBought(Item) >= D.weekly)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = (WeekOf() + 1) * 7 * 86400 - 3 * 86400 - Time;
+	}
+	else if (HonorCount < D.price)
+	{
+		Out.error = Error::NotEnough;
+	}
+	else if (D.pay.relic > 0 && static_cast<int>(RelicList.size()) >= C.maxRelics)
+	{
+		Out.error = Error::InventoryFull;
+	}
+	else if (D.scrolls > 0 && ScrollCount >= C.campaigns.scrollsMax)
+	{
+		Out.error = Error::StorageFull;
+	}
+	return Out;
+}
+
+Error Kingdom::BuyShop(int Item, Reward* Out)
+{
+	const Check Ck = CheckBuyShop(Item);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	const ShopItemDef& D = C.honor.shop[static_cast<size_t>(Item)];
+	if (ShopWeek != WeekOf())
+	{
+		ShopWeek = WeekOf();
+		ShopBoughtList.assign(C.honor.shop.size(), 0);
+	}
+	ShopBoughtList.resize(C.honor.shop.size(), 0);
+	Reward R;
+	const Error E = PayEvent(D.pay, 0x73686f70ULL, static_cast<uint64_t>(ShopWeek) * 4096 + static_cast<uint64_t>(Item) * 128 + static_cast<uint64_t>(ShopBoughtList[static_cast<size_t>(Item)]), R);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	HonorCount -= D.price;
+	++ShopBoughtList[static_cast<size_t>(Item)];
+	R.scrolls = AddScrolls(D.scrolls);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
 // --- Codex and Lineage Resonance (master prompt 5.9) -------------------------------------------------
 
 void Kingdom::NoteCodex(int Def)
@@ -3784,6 +3940,8 @@ Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Re
 	PayGift(Res, R);
 	DivineCount += Pay.divine;
 	R.divine += Pay.divine;
+	HonorCount += Pay.honor;
+	R.honor += Pay.honor;
 	if (Pay.relic > 0)
 	{
 		const uint64_t H = Mix(Seed ^ Salt, Pick);
@@ -5668,6 +5826,7 @@ Error Kingdom::ClaimWarChest(Reward* Out)
 	{
 		Prize.res[I] += R.star.res[I] * W.myStars;
 	}
+	Prize.honor += R.star.honor * W.myStars;
 	Reward Got;
 	const Error E = PayEvent(Prize, 0x77617263686573ULL, static_cast<uint64_t>(WarNo), Got, true);
 	if (E != Error::None)
@@ -8867,6 +9026,32 @@ std::string Kingdom::Save() const
 		W.EndArray();
 		W.EndObject();
 	}
+	// Honor (optional): the balance, today's donations and this week's shop buys by item id.
+	if (C.honor.on && (HonorCount != 0 || DonateCount != 0 || std::any_of(ShopBoughtList.begin(), ShopBoughtList.end(), [](int N) { return N != 0; })))
+	{
+		W.Key("honor");
+		W.BeginObject();
+		W.Key("pts");
+		W.Int(HonorCount);
+		W.Key("day");
+		W.Int(DonateDay);
+		W.Key("don");
+		W.Int(DonateCount);
+		W.Key("week");
+		W.Int(ShopWeek);
+		W.Key("bought");
+		W.BeginObject();
+		for (size_t I = 0; I < C.honor.shop.size() && I < ShopBoughtList.size(); ++I)
+		{
+			if (ShopBoughtList[I] != 0)
+			{
+				W.Key(C.honor.shop[I].id.c_str());
+				W.Int(ShopBoughtList[I]);
+			}
+		}
+		W.EndObject();
+		W.EndObject();
+	}
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -9939,6 +10124,26 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Honor (saves before it have none); shop items the content no longer has are dropped.
+	HonorCount = 0;
+	DonateDay = 0;
+	DonateCount = 0;
+	ShopWeek = 0;
+	ShopBoughtList.assign(C.honor.shop.size(), 0);
+	if (const JsonValue* OJ = C.honor.on ? J.Find("honor") : nullptr)
+	{
+		HonorCount = std::max<int64_t>(0, OJ->GetInt64("pts", 0));
+		DonateDay = OJ->GetInt64("day", 0);
+		DonateCount = std::max(0, std::min(C.honor.donatePerDay, OJ->GetInt("don", 0)));
+		ShopWeek = OJ->GetInt64("week", 0);
+		if (const JsonValue* BJ = OJ->Find("bought"))
+		{
+			for (size_t I = 0; I < C.honor.shop.size(); ++I)
+			{
+				ShopBoughtList[I] = std::max(0, std::min(C.honor.shop[I].weekly, BJ->GetInt(C.honor.shop[I].id.c_str(), 0)));
+			}
+		}
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -10855,6 +11060,18 @@ uint64_t Kingdom::Hash() const
 		W.U64(CodexSeenMask);
 		W.U64(CodexPaidMask);
 		W.U64(CodexPageMask);
+	}
+	// And for Honor: only once there is some, or a donation or a buy.
+	if (HonorCount != 0 || DonateCount != 0 || std::any_of(ShopBoughtList.begin(), ShopBoughtList.end(), [](int N) { return N != 0; }))
+	{
+		W.I64(HonorCount);
+		W.I64(DonateDay);
+		W.I32(DonateCount);
+		W.I64(ShopWeek);
+		for (const int N : ShopBoughtList)
+		{
+			W.I32(N);
+		}
 	}
 	// And for Heroic missions: only once one is won or a Heroic chest opened.
 	for (size_t A = 0; A < HeroicStarList.size() || A < HeroicChestMask.size(); ++A)

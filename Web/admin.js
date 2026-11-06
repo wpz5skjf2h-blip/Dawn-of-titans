@@ -529,6 +529,26 @@ function invariants(st, add) {
 			if (tier !== wantTier) add('bad', 'Кодекс: резонанс «' + L.name + '» ступени ' + tier + ', а по счёту ' + wantTier);
 		});
 	}
+	// Honor: never below zero; today's donations and this week's buys within their limits; outside an alliance (or below
+	// the Castle) neither donations nor the shop; a buy offered only with the Honor for it.
+	const honr = rules().honor;
+	if (honr && st.honor && st.honor.on) {
+		const h = st.honor;
+		if (!(Number.isInteger(h.pts) && h.pts >= 0)) add('bad', 'Почёт: ' + h.pts);
+		if (!(h.don >= 0 && h.don <= honr.donate.perDay)) add('bad', 'Почёт: пожертвований сегодня ' + h.don + ' из ' + honr.donate.perDay);
+		if (h.shop.length !== honr.shop.length) add('bad', 'Лавка альянса: товаров ' + h.shop.length + ', а в правилах ' + honr.shop.length);
+		h.shop.forEach(([n, err], i) => {
+			const d = honr.shop[i];
+			if (!d) return;
+			if (!(n >= 0 && n <= d.weekly)) add('bad', 'Лавка альянса: «' + d.name + '» куплено ' + n + ' из ' + d.weekly);
+			if (st.ally.my < 0 && err !== 32) add('bad', 'Лавка альянса: вне альянса «' + d.name + '» даёт отказ ' + err);
+			if (err === 0 && (h.pts < d.price || n >= d.weekly || st.castle < Math.max(honr.castle, d.castle || 1))) add('bad', 'Лавка альянса: «' + d.name + '» продаётся при почёте ' + h.pts + ', куплено ' + n + ', Замок ' + st.castle);
+		});
+		for (const [ck, k] of [[h.dg, 0], [h.df, 1]]) {
+			if (st.ally.my < 0 && ck.err !== 32) add('bad', 'Пожертвование вне альянса: отказ ' + ck.err);
+			if (ck.err === 0 && (h.don >= honr.donate.perDay || st.res[k] < ck.cost[k] || ck.cost[k] !== honr.donate[k ? 'food' : 'gold'] * st.castle)) add('bad', 'Пожертвование открыто: сегодня ' + h.don + ', цена ' + ck.cost[k] + ', есть ' + st.res[k]);
+		}
+	}
 	// Comeback gift: only for a week or more away, from its Castle, and the absence ended no later than now.
 	const cbr = rules().comeback;
 	if (cbr && st.comeback) {
@@ -637,7 +657,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'помочь союзникам', 'башня титанов', 'подарок за возвращение']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'помочь союзникам', 'башня титанов', 'подарок за возвращение', 'лавка альянса']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -1056,6 +1076,46 @@ function runMonkey(steps, seed, keep) {
 			if (!page && st2.res[2] !== gems + rules().codex.entryGems[army().titans[i].stars - 1]) throw new Error('кодекс: запись ' + i + ' дала ' + (st2.res[2] - gems) + ' самоцветов');
 			return 0;
 		}],
+		['пожертвование', 2, (st) => {
+			if (!B.donate || !st.honor || !st.honor.on) return -1;
+			const food = r() < 0.5;
+			const k = food ? 1 : 0;
+			const ck = food ? st.honor.df : st.honor.dg;
+			const res = B.donate(food);
+			const st2 = B.state();
+			if (res.err !== ck.err) throw new Error('пожертвование ' + (food ? 'едой' : 'золотом') + ': отказ ' + res.err + ', а проверка ' + ck.err);
+			if (res.err !== 0) {
+				if (st2.res.join() !== st.res.join() || st2.honor.pts !== st.honor.pts || st2.honor.don !== st.honor.don) throw new Error('отказ пожертвования ' + res.err + ' всё же что-то изменил');
+				return res.err;
+			}
+			const R = rules().honor;
+			if (st2.honor.pts !== st.honor.pts + R.donate.honor || res.honor !== R.donate.honor || st2.honor.don !== st.honor.don + 1) throw new Error('пожертвование: почёт ' + st.honor.pts + ' → ' + st2.honor.pts + ', за день ' + st.honor.don + ' → ' + st2.honor.don);
+			if (st2.res[k] !== st.res[k] - ck.cost[k] || ck.cost[k] !== R.donate[food ? 'food' : 'gold'] * st.castle) throw new Error('пожертвование: ' + (food ? 'еды' : 'золота') + ' ' + st.res[k] + ' → ' + st2.res[k] + ' при цене ' + ck.cost[k]);
+			return 0;
+		}],
+		['лавка альянса', 2, (st) => {
+			if (!B.shopBuy || !st.honor || !st.honor.on) return -1;
+			const R = rules().honor;
+			// Mostly something the kingdom can buy; now and then anything, to see the refusal.
+			const can = st.honor.shop.map((x, i) => [x[1], i]).filter((x) => x[0] === 0).map((x) => x[1]);
+			const i = can.length && r() < 0.8 ? pick(can) : Math.floor(r() * R.shop.length);
+			const d = R.shop[i];
+			const want = st.honor.shop[i][1];
+			const res = B.shopBuy(i);
+			const st2 = B.state();
+			if (res.err !== want) throw new Error('лавка: «' + d.name + '» отказ ' + res.err + ', а проверка ' + want);
+			if (res.err !== 0) {
+				if (st2.res.join() !== st.res.join() || st2.honor.pts !== st.honor.pts || st2.relics.length !== st.relics.length || st2.scrolls !== st.scrolls) throw new Error('отказ лавки ' + res.err + ' всё же что-то изменил');
+				return res.err;
+			}
+			const p = d.pay || {};
+			if (st2.honor.pts !== st.honor.pts - d.price || st2.honor.shop[i][0] !== st.honor.shop[i][0] + 1) throw new Error('лавка: «' + d.name + '» почёт ' + st.honor.pts + ' → ' + st2.honor.pts + ', куплено ' + st.honor.shop[i][0] + ' → ' + st2.honor.shop[i][0]);
+			if ((p.stones || 0) !== st2.res[3] - st.res[3] || (p.shards || 0) !== st2.res[4] - st.res[4]) throw new Error('лавка: «' + d.name + '» дала камней ' + (st2.res[3] - st.res[3]) + ', осколков ' + (st2.res[4] - st.res[4]));
+			if (p.scrolls && st2.scrolls !== Math.min(rules().campaigns.sweep.max, st.scrolls + p.scrolls)) throw new Error('лавка: свитков ' + st.scrolls + ' → ' + st2.scrolls);
+			if (p.relic && st2.relics.length !== st.relics.length + 1) throw new Error('лавка: реликвий ' + st.relics.length + ' → ' + st2.relics.length);
+			if (p.divine && st2.divine.g !== st.divine.g + p.divine) throw new Error('лавка: божественных ' + st.divine.g + ' → ' + st2.divine.g);
+			return 0;
+		}],
 		['подарок за возвращение', 2, (st) => {
 			if (!B.comebackClaim || !st.comeback) return -1;
 			// A visit after a week or more away earns the gift (sometimes the week passes here); then mostly claim it.
@@ -1410,6 +1470,11 @@ function renderTab(tab) {
 			h += row('Кодекс титанов <b>' + open + ' из ' + st.codex.e.length + '</b>', b('codex-set', 'Открыть все', { n: 1 }) + b('codex-set', 'Сбросить', { n: 0 }),
 				'наград ждёт ' + (st.codex.e.filter((x) => x === 1).length + st.codex.p.filter((x) => x[0] === 1).length));
 		}
+		if (st.honor && st.honor.on) {
+			// Honor: a thousand to spend in the Alliance Shop, or none (today's donations and the week's buys start over).
+			h += row('Почёт <b>' + fmt(st.honor.pts) + '</b>', b('honor-set', '+1000', { n: 1 }) + b('honor-set', 'Обнулить', { n: 0 }),
+				'пожертвований сегодня ' + st.honor.don + (st.ally.my < 0 ? ', вне альянса' : ''));
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1670,6 +1735,10 @@ function act(a, el, n, id, i) {
 		s.spire = { top: Math.min(n, fixed), week: n > fixed ? week : -1, weekTop: n > fixed ? n : 0, at: 0 };
 	}, 'Башня: взято ' + n); break;
 	case 'codex-set': edit((s) => { s.codex = { seen: n ? army().titans.map((t) => t.id) : [], paid: [], pages: [] }; }, n ? 'Кодекс: все записи открыты' : 'Кодекс сброшен'); break;
+	case 'honor-set': edit((s) => {
+		if (n) s.honor = Object.assign({ day: 0, don: 0, week: 0, bought: {} }, s.honor || {}, { pts: ((s.honor && s.honor.pts) || 0) + 1000 });
+		else delete s.honor;
+	}, n ? 'Почёт +1000' : 'Почёт обнулён'); break;
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;
