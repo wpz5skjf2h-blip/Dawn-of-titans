@@ -1265,6 +1265,20 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// War Banners: silk, and per troop the banner's level, its bonus percent, the next level's silk and the check (its
+	// gold in cost).
+	{
+		O.Key("banners").Raw("{").Key("on").Raw(C.banners.on ? "true" : "false").Comma().Key("silk").Int(Km->Silk()).Comma().Key("list").Raw("[");
+		for (size_t I = 0; I < C.troops.size(); ++I)
+		{
+			const int T = static_cast<int>(I);
+			O.Raw(I ? "," : "").Raw("{").Key("lv").Int(Km->BannerLevel(T)).Comma().Key("pct").Int(Km->BannerPct(T)).Comma();
+			O.Key("silk").Int(Km->BannerSilkCost(T)).Comma().Key("ck");
+			WriteCheck(O, Km->CheckBanner(T));
+			O.Raw("}");
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1821,7 +1835,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
 	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
-	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma().Key("honor").Int(R.honor).Comma();
+	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma().Key("honor").Int(R.honor).Comma().Key("silk").Int(R.silk).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1953,6 +1967,12 @@ EMSCRIPTEN_KEEPALIVE const char* dk_shop_buy(int Item)
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->BuyShop(Item, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** Raises a troop's War Banner a level: the error code. */
+EMSCRIPTEN_KEEPALIVE int dk_banner_up(int Troop)
+{
+	return K() ? static_cast<int>(K()->UpgradeBanner(Troop)) : static_cast<int>(dot::kingdom::Error::BadId);
 }
 
 /** Sweeps a campaign mission won on 3 stars with this titan (0: none): the reward as for a battle. */

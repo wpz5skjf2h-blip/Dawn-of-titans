@@ -99,6 +99,9 @@ const ICONS = {
 	// Honor (the Alliance Shop's currency): a gold medal with a star, on a red ribbon.
 	honor: [['p', 'M7.5 2h3.5l1.4 6.2-2.9 1.6zM16.5 2H13l-1.4 6.2 2.9 1.6z', '#c0392b', '#6a1a10', 1.1], ['c', 12, 15, 6.5, '#f2c14e', '#8a5a14', 1.4],
 		['p', 'M12 11.3l1.1 2.3 2.5.3-1.8 1.7.5 2.5-2.3-1.2-2.3 1.2.5-2.5-1.8-1.7 2.5-.3z', '#fff3c4', '#8a5a14', 0.8]],
+	// Banner Silk (War Banners): a blue swallow-tail banner with a gold boss on its pole.
+	silk: [['p', 'M6 2.5v19', 'none', '#6a4a2a', 1.8], ['p', 'M6.8 4h11.6l-2.8 4.3 2.8 4.3H6.8z', '#3a6ad0', '#1a2a6a', 1.2],
+		['c', 11.6, 8.3, 1.9, '#f2c14e', '#8a5a14', 0.8], ['c', 6, 2.6, 1.2, '#f2c14e', '#8a5a14', 0.7]],
 };
 function iconSvg(kind) {
 	const parts = ICONS[kind].map((p) => p[0] === 'c'
@@ -219,6 +222,7 @@ class KingdomBridge {
 	codexClaim(i, page) { return JSON.parse(this.str(this.M._dk_codex_claim(i, page ? 1 : 0))); }
 	donate(food) { return JSON.parse(this.str(this.M._dk_donate(food ? 1 : 0))); }
 	shopBuy(i) { return JSON.parse(this.str(this.M._dk_shop_buy(i))); }
+	bannerUp(t) { return this.M._dk_banner_up(t); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
 	warStart(base, squads, titan, spells) {
 		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
@@ -2555,6 +2559,8 @@ function onAct(e) {
 	case 'help-ask-all': askHelpAll(); break;
 	case 'help-give': giveHelp(); break;
 	case 'ally-shop': openAllyShop(); break;
+	case 'banners': openBanners(); break;
+	case 'banner-up': upBanner(id); break;
 	case 'donate': donate(id === 1); break;
 	case 'shop-buy': buyAllyShop(id); break;
 	case 'daily-trial': openDaily(id); break;
@@ -3795,7 +3801,7 @@ function trialReady(st) {
 	K.rules.trials.milestones.forEach((m, i) => { if (!((tr.ms >> i) & 1) && tr.best >= m.score) n++; });
 	return n + (trialRankReady(st) ? 1 : 0);
 }
-const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.honor ? ' +' + fmt(r.honor) + ' ' + iconSvg('honor') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
+const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.honor ? ' +' + fmt(r.honor) + ' ' + iconSvg('honor') : '') + (r.silk ? ' +' + fmt(r.silk) + ' ' + iconSvg('silk') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
 /** The bracket: the lords by score with the kingdom before the lords it ties (as the kingdom counts its place). */
 function trialBoard(st) {
 	const rows = st.trial.lords.map((s, i) => ({ s, name: trialLordName(i) })).sort((a, b) => b.s - a.s);
@@ -4119,7 +4125,7 @@ function bossEnd(ctx, stars, retreat) {
 // ---------------------------------------------------------------------------------------------
 const DAILY_ID = 970000;
 const DAILY_ICONS = { gold_vault: 'ui.chest', essence_springs: 'mission.hunt', forge_depths: 'mission.siege', lineage: 'mission.elite', banner_grounds: 'ui.goal', hall_of_tomes: 'mission.boss' };
-const DAILY_PAY_RU = { gold: 'золото', food: 'еда', titanXp: 'опыт титана', relic: 'реликвии', shards: 'осколки', study: 'ускорение исследований' };
+const DAILY_PAY_RU = { gold: 'золото', food: 'еда', titanXp: 'опыт титана', relic: 'реликвии', shards: 'осколки', study: 'ускорение исследований', silk: 'знамённый шёлк' };
 const WEEKDAYS = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
 const WEEKDAYS_ON = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
 const dailyRules = () => K.rules.dailyTrials;
@@ -4187,7 +4193,7 @@ function dailyEnemyText(trial, tier, st) {
 function dailyPayText(trial, tier) {
 	const d = dailyDef(trial);
 	const a = d.amounts[tier - 1];
-	if (d.pay === 'gold' || d.pay === 'food' || d.pay === 'shards') return '+' + fmt(a) + ' ' + iconSvg(d.pay);
+	if (d.pay === 'gold' || d.pay === 'food' || d.pay === 'shards' || d.pay === 'silk') return '+' + fmt(a) + ' ' + iconSvg(d.pay);
 	if (d.pay === 'titanXp') return '+' + fmt(a) + ' опыта титану';
 	if (d.pay === 'relic') return 'реликвия ' + '★'.repeat(a);
 	return 'исследования −' + fmtDur(a * 60);
@@ -4944,6 +4950,7 @@ function shopPayText(d) {
 	if (p.scrolls) parts.push('+' + p.scrolls + ' ' + plural(p.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
 	for (const k of RES) if (p[k]) parts.push('+' + resAmount(k, p[k]));
 	if (p.divine) parts.push('+' + fmt(p.divine) + ' ' + plural(p.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
+	if (p.silk) parts.push('+' + fmt(p.silk) + ' знамённого шёлка');
 	if (p.relic) parts.push('реликвия ' + '★'.repeat(p.relic) + ' случайного вида');
 	return parts.join(', ');
 }
@@ -5330,6 +5337,7 @@ function rewardParts(r) {
 	if (r.scrolls) parts.push('+' + r.scrolls + ' ' + plural(r.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
 	if (r.divine) parts.push('+' + fmt(r.divine) + ' ' + plural(r.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
 	if (r.honor) parts.push('+' + fmt(r.honor) + ' почёта');
+	if (r.silk) parts.push('+' + fmt(r.silk) + ' знамённого шёлка');
 	return parts;
 }
 /** A toast for every quest that got done since the last state (same day, same week). */
@@ -5621,6 +5629,7 @@ function openProfile() {
 		const built = st.b.filter((b) => b.lv >= 1).length;
 		const troopLv = st.army.lv.reduce((s, l) => s + Math.max(0, l - 1), 0);
 		const spellLv = st.spells.lv.reduce((s, l) => s + Math.max(0, l - 1), 0);
+		const bannerLv = bannersOn(st) ? st.banners.list.reduce((s, x) => s + x.lv, 0) : 0;
 		const part = (p, sub, btns) => '<div class="pwPart"><span class="dot ' + p.cls + '"></span><div class="info"><b>' + p.name + ' · ' + fmt(pw[p.k]) + '</b><span>' + sub + '</span></div>' +
 			(btns ? '<div class="row">' + btns + '</div>' : '') + '</div>';
 		// The titans that count, strongest first, and how many more there are.
@@ -5651,7 +5660,7 @@ function openProfile() {
 			part(PW_PARTS[1], (pw.top.length ? R.titans + ' сильнейших по боевой силе с навыками и реликвиями' + (rest > 0 ? '; ещё ' + rest + ' ' + plural(rest, 'титан не входит', 'титана не входят', 'титанов не входят') : '')
 				: 'боевая сила титанов считается, когда загружены данные боя'), '<button class="btn" data-act="titans">Зал титанов</button>') +
 			(top ? '<div class="pwTop">' + top + '</div>' : '') +
-			part(PW_PARTS[2], R.research + ' за уровень: войска в Арсенале ' + troopLv + ', заклинания в Магической башне ' + spellLv,
+			part(PW_PARTS[2], R.research + ' за уровень: войска в Арсенале ' + troopLv + ', заклинания в Магической башне ' + spellLv + (bannerLv ? ', знамёна ' + bannerLv : ''),
 				(ownsBuilding(st, 'armoury') ? '<button class="btn" data-act="armoury">Арсенал</button>' : '') + (ownsBuilding(st, 'arcane_tower') ? '<button class="btn" data-act="arcane">Башня</button>' : '')) +
 			(codexOn(st) ? part(PW_PARTS[3], codexRules().power + ' за каждую запись: открыто ' + st.codex.e.filter((x) => x > 0).length + ' из ' + st.codex.e.length, '<button class="btn" data-act="codex">Кодекс</button>') : '') +
 			achLine +
@@ -6496,6 +6505,9 @@ function landScenario(w, prep) {
 		const sq = { troop: tr.id, tier: lvl.tier, pos, facingDeg: 0, formation: 'Line' };
 		const share = prep.shares ? prep.shares[i] : 100;
 		if (share > 0 && share < 100) sq.count = Math.max(1, Math.round(((K.squadSize[tr.id] || 20) * share) / 100));
+		// The player's own squads carry their troop's War Banner (the allies' do not).
+		const bp = i < prep.squads.length && bannersOn(K.st) ? K.st.banners.list[t].pct : 0;
+		if (bp > 0) sq.bonus = { hpPct: bp, atkPct: bp };
 		return sq;
 	});
 	// The Assault's boons, on top of the titan's relics and skills.
@@ -6838,7 +6850,8 @@ function openArmy() {
 	select(null);
 	openSheet(() => {
 		const a = K.st.army;
-		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + a.lv[t] + '</b><span>' +
+		const bl = (t) => (bannersOn(K.st) && K.st.banners.list[t].lv ? ' · знамя ' + K.st.banners.list[t].lv : '');
+		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + a.lv[t] + bl(t) + '</b><span>' +
 			esc(TROOP_NOTE[tr.id] || '') + '</span></div><b class="count">×' + a.n[t] + '</b></div>');
 		const titans = K.st.titans.slice().sort((x, y) => K.army.titans[y.def].stars * 100 + y.lv - (K.army.titans[x.def].stars * 100 + x.lv)).slice(0, 4)
 			.map((t) => '<span class="chip">' + mini(titanGlyph(t)) + esc(titanName(t)) + ' ' + starsHtml(K.army.titans[t.def].stars) + ' ур. ' + t.lv + '</span>').join('');
@@ -6847,7 +6860,8 @@ function openArmy() {
 			rows.join('') +
 			'<p class="fine">' + (a.surv >= 100 ? 'Лазарета нет: каждый раненый отряд после боя погибает, как в оригинале. Лазарет (Замок 7) возвращает отряды, сохранившие ≥ 85% бойцов.'
 				: 'Лазарет возвращает отряды, сохранившие не меньше ' + a.surv + '% бойцов; остальные погибают.') + '</p>' +
-			'<div class="actions"><button class="btn primary" data-act="barracks">Казармы</button><button class="btn" data-act="armoury">Арсенал</button></div>' +
+			'<div class="actions"><button class="btn primary" data-act="barracks">Казармы</button><button class="btn" data-act="armoury">Арсенал</button>' +
+			(bannersOn(K.st) ? '<button class="btn" data-act="banners">' + iconSvg('silk') + 'Знамёна</button>' : '') + '</div>' +
 			'<h3>Заклинания: ' + K.st.spells.total + (K.st.spells.cap ? ' из ' + K.st.spells.cap : '') + '</h3><div class="toggles">' +
 			K.army.spells.map((d, i) => (K.st.spells.stock[i] ? '<span class="chip">' + mini(d.id) + esc(d.name) + ' ×' + K.st.spells.stock[i] + '</span>' : '')).join('') + '</div>' +
 			'<div class="actions"><button class="btn" data-act="forge">Кузня заклинаний</button><button class="btn" data-act="arcane">Магическая башня</button></div>' +
@@ -6855,7 +6869,7 @@ function openArmy() {
 			'<div class="actions"><button class="btn" data-act="titans">Зал титанов</button><button class="btn" data-act="relics">Храм реликвий</button></div>' +
 			loadoutsHtml(K.st) +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['army', a.n.join(), a.lv.join(), a.total, a.cap, a.queue.length, K.st.spells.stock.join(), K.st.titans.map((t) => t.id + ':' + t.lv + ':' + t.pw).join(), loKey(K.st),
+		return { key: ['army', a.n.join(), a.lv.join(), bannersOn(K.st) ? K.st.banners.list.map((x) => x.lv).join() : '', a.total, a.cap, a.queue.length, K.st.spells.stock.join(), K.st.titans.map((t) => t.id + ':' + t.lv + ':' + t.pw).join(), loKey(K.st),
 			(K.st.loadouts || []).map((lo, i) => isArmed('lo-del:' + i)).join()].join('|'), html };
 	});
 }
@@ -6942,7 +6956,7 @@ function openArmoury() {
 			'<p class="fine">Улучшение поднимает уровень войска: все его отряды становятся сильнее, новые стоят дороже. Предел уровня задаёт Арсенал (сейчас ' + a.maxLv + '). Одно улучшение за раз.</p>' +
 			(rs.t >= 0 ? '<div class="uprow"><span>Улучшается: ' + mini(K.army.troops[rs.t].id) + esc(K.army.troops[rs.t].name) + ' → ур. ' + (a.lv[rs.t] + 1) + '</span><b data-live="rleft"></b></div><div class="progress"><i data-live="rbar"></i></div>' +
 				'<div class="actions"><button class="btn" data-act="skip-research" data-gems="' + rs.g + '">' + (isArmed('rskip') ? 'Подтвердить ' : 'Завершить сразу ') + '<span data-live="rgems"></span></button></div>' : '') +
-			rows.join('') + '<div class="actions">' + closeBtn + '</div>';
+			rows.join('') + '<div class="actions">' + (bannersOn(K.st) ? '<button class="btn" data-act="banners">' + iconSvg('silk') + 'Знамёна</button>' : '') + closeBtn + '</div>';
 		return {
 			key: ['armoury', a.lv.join(), rs.t, a.upg.map((c) => c.err + ':' + c.g).join(), K.army.troops.map((x, t) => isArmed('ut:' + t)).join(), isArmed('rskip')].join('|'), html,
 			live(el) {
@@ -6956,6 +6970,57 @@ function openArmoury() {
 			},
 		};
 	});
+}
+// --- War Banners (master prompt 6.5) ---
+const bannerRules = () => K.rules.banners;
+const bannersOn = (st) => !!(st && st.banners && st.banners.on && bannerRules());
+/** Health and damage percent of a banner at this level (the perks included). */
+function bannerPctAt(lv) {
+	const b = bannerRules();
+	return lv * (b.pct || 0) + (b.perkLevels || []).filter((p) => lv >= p).length * (b.perkPct || 0);
+}
+function openBanners() {
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const bn = st.banners;
+		const b = bannerRules();
+		const max = b.silk.length;
+		const perks = (b.perkLevels || []).join('-м и ') + '-м';
+		const rows = K.army.troops.map((tr, t) => {
+			const x = bn.list[t];
+			const ck = x.ck;
+			const ok = ck.err === E.None;
+			let btn;
+			if (x.lv >= max) btn = '<button class="btn" disabled>Макс. уровень</button>';
+			else if (ck.err === E.Locked) btn = '<button class="btn" disabled>С Замка ' + b.castle + '</button>';
+			else btn = '<button class="btn' + (ok ? ' primary' : '') + '" data-act="banner-up" data-id="' + t + '"' + (ok ? '' : ' disabled') + '>Поднять <span class="cost' + (bn.silk < x.silk ? ' short' : '') + '">' +
+				iconSvg('silk') + fmtShort(x.silk) + '</span> ' + costHtml(ck.cost, st.res) + '</button>';
+			const why = ck.err === E.NotEnough ? (bn.silk < x.silk ? 'Нужно ещё ' + fmt(x.silk - bn.silk) + ' шёлка' : missingText(ck.cost)) : ck.err !== E.None && ck.err !== E.MaxLevel && ck.err !== E.Locked ? errText(ck.err, ck) : '';
+			const next = x.lv < max ? 'на ур. ' + (x.lv + 1) + ': +' + bannerPctAt(x.lv + 1) + '%' : 'знамя на вершине';
+			return '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · знамя ' + x.lv + ' из ' + max + '</b><span>' +
+				(x.pct ? '+' + x.pct + '% здоровья и урона' : 'без прибавки') + ' · ' + next + '</span>' + (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</div>' + btn + '</div>';
+		});
+		const html = sheetTitle(iconSvg('silk'), 'Боевые знамёна') +
+			'<p class="fine">У каждого войска своё знамя. Каждый уровень даёт всем его отрядам +' + b.pct + '% здоровья и урона в любом бою и в обороне города, на ' + perks + ' уровнях ещё по +' + b.perkPct +
+			'%. Знамёна поднимают шёлком и золотом. Шёлк приносят Знамённое поле (испытание пятницы и воскресенья), сундуки войны альянсов и рейдового босса, лавка альянса.</p>' +
+			'<div class="costline"><span>Шёлк</span><b>' + iconSvg('silk') + fmt(bn.silk) + '</b><span>Золото</span><b>' + iconSvg('gold') + fmtShort(st.res[0]) + '</b></div>' +
+			(st.castle < b.castle ? '<p class="note">Знамёна откроются на Замке ' + b.castle + '.</p>' : '') +
+			rows.join('') + '<div class="actions"><button class="btn" data-act="armoury">Арсенал</button>' + closeBtn + '</div>';
+		return { key: ['banners', bn.silk, bn.list.map((x) => x.lv + ':' + x.ck.err).join(), st.res[0] >> 4, st.castle].join('|'), html };
+	});
+}
+function upBanner(t) {
+	const x = K.st.banners.list[t];
+	if (!x) return;
+	const tr = K.army.troops[t];
+	const code = K.bridge.bannerUp(t);
+	if (code === E.NotEnough && K.st.banners.silk < x.silk) {
+		toast('Нужно ещё ' + fmt(x.silk - K.st.banners.silk) + ' знамённого шёлка', 'bad');
+		return;
+	}
+	run(code, 'Знамя поднято: ' + tr.name + ', ур. ' + (x.lv + 1) + ' (+' + bannerPctAt(x.lv + 1) + '% здоровья и урона)', x.ck);
 }
 function fusionPreview(target, picks) {
 	const f = K.army.fusion;

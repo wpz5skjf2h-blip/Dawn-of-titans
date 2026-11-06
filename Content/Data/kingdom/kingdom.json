@@ -240,7 +240,7 @@
   // its own `castle`; "pay" is what it gives (gold and food as they are, "scrolls" War Scrolls, "relic" a relic of that
   // rarity, "divine" divine gems). The prompt names sigils, tomes, Starlight Shards (weekly limit), gear chests and
   // Banner Silk; ours sell what the kingdom has. Prices and limits are ours: about 700 Honor a week for an active player
-  // against about 1,100 for the whole shop, so a week asks for a choice. No gems.
+  // against about 1,200 for the whole shop, so a week asks for a choice. No gems.
   "honor": {
     "castle": 4,
     "donate": { "perDay": 5, "gold": 300, "food": 300, "honor": 10 },
@@ -250,8 +250,25 @@
       { "id": "shards",  "name": "Осколки титанов",         "price": 50,  "weekly": 3,  "castle": 5, "pay": { "shards": 3 } },
       { "id": "relic3",  "name": "Реликвия ★★★",            "price": 100, "weekly": 2,  "pay": { "relic": 3 } },
       { "id": "divine",  "name": "Божественные самоцветы",  "price": 150, "weekly": 1,  "castle": 10, "pay": { "divine": 15 } },
-      { "id": "relic4",  "name": "Реликвия ★★★★",           "price": 300, "weekly": 1,  "castle": 12, "pay": { "relic": 4 } }
+      { "id": "relic4",  "name": "Реликвия ★★★★",           "price": 300, "weekly": 1,  "castle": 12, "pay": { "relic": 4 } },
+      { "id": "silk",    "name": "Знамённый шёлк",          "price": 20,  "weekly": 5,  "castle": 7,  "pay": { "silk": 3 } }
     ]
+  },
+
+  // War Banners (master prompt 6.5): every troop has a banner, levels 1-20, raised for Banner Silk and gold; +1% health
+  // and attack per level for that troop's squads in every battle, and perks at levels 10 and 20. The prompt's perks are
+  // a troop's own (two more soldiers for Militia, fire arrows for Archers...); ours are `perkPct` more health and attack
+  // at each of `perkLevels`, so a banner at 20 gives +24%. From Castle `castle`; "silk" and "gold" are the costs of
+  // levels 1 to 20 (gold as it is, not by the Castle). Silk comes from the Banner Grounds (the Daily Trial), Alliance War
+  // and Raid Boss chests and the Alliance Shop (the prompt's PvP and event chests are not here). A banner level counts
+  // as a research level in Kingdom Power. All troops at 20 take about 5,300 silk: a year or so of an active player.
+  "banners": {
+    "castle": 7,
+    "pct": 1,
+    "perkLevels": [10, 20],
+    "perkPct": 2,
+    "silk": [5, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 23, 26, 29, 32, 36, 40, 45, 50],
+    "gold": [300, 400, 500, 650, 800, 1000, 1200, 1500, 1800, 2200, 2600, 3000, 3500, 4000, 4600, 5200, 6000, 7000, 8000, 9000]
   },
 
   // Titan Monuments and XP Arenas (the original, version 1.8, wiki Announcements): monuments replaced the old shard
@@ -741,11 +758,11 @@
   // 3 attempts a day each, 10 difficulty tiers, a tier won on 3 stars can be swept). From Castle 3. Free of stones, and
   // nothing is lost in them (no casualties, spells or titan XP), as in the Titan Trials. A tier opens at its Castle
   // level once the tier before it is won in that trial. A win pays the tier's amount whatever the stars; a sweep pays it
-  // at once and spends an attempt. The game has no essence, ore, sigils, silk or tomes, so: Gold Vault pays gold,
+  // at once and spends an attempt. The game has no essence, ore, sigils or tomes, so: Gold Vault pays gold,
   // Essence Springs titan XP to the titan that fought (a sweep: to the titan picked), Forge Depths a relic of the tier's
-  // rarity, Lineage Trial titan shards (half as many again with a titan of the week's lineage), Banner Grounds food,
+  // rarity, Lineage Trial titan shards (half as many again with a titan of the week's lineage), Banner Grounds Banner Silk,
   // Hall of Tomes minutes off the research running in the Armoury and in the Arcane Tower. "day": 0 Monday ... 5
-  // Saturday; "pay": gold, food, titanXp, relic, shards or study; "amounts": one a tier. The lineages ("lineages" above)
+  // Saturday; "pay": gold, food, titanXp, relic, shards, study or silk; "amounts": one a tier. The lineages ("lineages" above)
   // turn weekly.
   // For the web client only: "name", "note", "map", "ai", "timerSec", "enemy" (troops repeated over the squads of the
   // tier's battle level), "squads" (at most this many), "titans" (the enemy titan by the tier's rarity, 1 to 4 stars;
@@ -787,11 +804,11 @@
         "note": "Полевая битва с титаном рода этой недели. Титан того же рода в вашем войске приносит больше осколков",
         "enemy": ["troop.swordsmen", "troop.archers", "troop.spearmen", "troop.knights", "troop.priests", "troop.outriders"],
         "amounts": [1, 1, 2, 2, 3, 3, 4, 5, 6, 8] },
-      { "id": "banner_grounds", "day": 4, "pay": "food", "name": "Знамённое поле", "map": "map.highvale_01", "ai": "veteran",
+      { "id": "banner_grounds", "day": 4, "pay": "silk", "name": "Знамённое поле", "map": "map.highvale_01", "ai": "veteran",
         "note": "Полевая битва под знамёнами: конница врага рвётся к вашим стягам",
         "enemy": ["troop.knights", "troop.spearmen", "troop.archers", "troop.outriders", "troop.swordsmen", "troop.archers"],
         "titans": ["titan.cyclops", "titan.perun", "titan.artemis", "titan.veles"],
-        "amounts": [4000, 6000, 10000, 16000, 25000, 36000, 50000, 68000, 90000, 120000] },
+        "amounts": [2, 3, 4, 5, 6, 8, 10, 12, 15, 18] },
       { "id": "hall_of_tomes", "day": 5, "pay": "study", "name": "Зал фолиантов", "map": "map.ruins_01", "ai": "veteran", "squads": 3, "hpPct": 50,
         "note": "Хранитель зала и его жрецы. Знания из фолиантов сокращают исследования, которые идут в Оружейной и в Магической башне",
         "enemy": ["troop.priests", "troop.swordsmen", "troop.priests"], "titans": ["titan.cyclops", "titan.loki", "titan.hecate", "titan.veles"],
@@ -906,16 +923,16 @@
         "note": "Сурт в пепле и углях: земля под ним горит, гренадеры бросают огонь" }
     ],
     "tiers": [
-      { "level": 10, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 2, "stones": 4, "honor": 10 } },
-      { "level": 15, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 3, "stones": 5, "honor": 12 } },
-      { "level": 20, "stars": 2, "escort": 1, "troopTier": 1, "chest": { "gems": 4, "stones": 6, "honor": 15 } },
-      { "level": 25, "stars": 2, "escort": 2, "troopTier": 2, "chest": { "gems": 5, "stones": 6, "relic": 2, "honor": 18 } },
-      { "level": 30, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 6, "stones": 8, "honor": 20 } },
-      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 7, "stones": 8, "relic": 3, "divine": 5, "honor": 25 } },
-      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 8, "stones": 10, "divine": 6, "honor": 30 } },
-      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 9, "stones": 10, "relic": 3, "divine": 8, "honor": 35 } },
-      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 10, "stones": 12, "divine": 10, "honor": 40 } },
-      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 12, "stones": 12, "relic": 4, "divine": 12, "honor": 50 } }
+      { "level": 10, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 2, "stones": 4, "honor": 10, "silk": 2 } },
+      { "level": 15, "stars": 1, "escort": 1, "troopTier": 1, "chest": { "gems": 3, "stones": 5, "honor": 12, "silk": 3 } },
+      { "level": 20, "stars": 2, "escort": 1, "troopTier": 1, "chest": { "gems": 4, "stones": 6, "honor": 15, "silk": 4 } },
+      { "level": 25, "stars": 2, "escort": 2, "troopTier": 2, "chest": { "gems": 5, "stones": 6, "relic": 2, "honor": 18, "silk": 5 } },
+      { "level": 30, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 6, "stones": 8, "honor": 20, "silk": 6 } },
+      { "level": 35, "stars": 3, "escort": 2, "troopTier": 2, "chest": { "gems": 7, "stones": 8, "relic": 3, "divine": 5, "honor": 25, "silk": 7 } },
+      { "level": 40, "stars": 4, "escort": 2, "troopTier": 2, "chest": { "gems": 8, "stones": 10, "divine": 6, "honor": 30, "silk": 8 } },
+      { "level": 45, "stars": 4, "escort": 3, "troopTier": 3, "chest": { "gems": 9, "stones": 10, "relic": 3, "divine": 8, "honor": 35, "silk": 10 } },
+      { "level": 50, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 10, "stones": 12, "divine": 10, "honor": 40, "silk": 12 } },
+      { "level": 55, "stars": 5, "escort": 3, "troopTier": 3, "chest": { "gems": 12, "stones": 12, "relic": 4, "divine": 12, "honor": 50, "silk": 15 } }
     ],
     "milestones": [
       { "dmg": 50,  "gold": 200 },
@@ -979,12 +996,12 @@
     ],
     "maps": ["map.highvale_01", "map.forest_01", "map.lake_01", "map.mountain_01", "map.ruins_01"],
     "chests": [
-      { "win": { "gems": 8,  "stones": 6,  "relic": 1, "honor": 50 }, "draw": { "gems": 6,  "stones": 4, "honor": 35 }, "lose": { "gems": 4,  "stones": 3, "honor": 20 } },
-      { "win": { "gems": 10, "stones": 8,  "relic": 2, "honor": 60 }, "draw": { "gems": 7,  "stones": 5, "honor": 40 }, "lose": { "gems": 5,  "stones": 4, "honor": 25 } },
-      { "win": { "gems": 12, "stones": 9,  "relic": 2, "honor": 70 }, "draw": { "gems": 8,  "stones": 6, "honor": 50 }, "lose": { "gems": 6,  "stones": 4, "honor": 30 } },
-      { "win": { "gems": 15, "stones": 10, "relic": 3, "divine": 10, "honor": 80 }, "draw": { "gems": 10, "stones": 7, "divine": 5, "honor": 55 }, "lose": { "gems": 7,  "stones": 5, "honor": 35 } },
-      { "win": { "gems": 18, "stones": 12, "relic": 3, "divine": 15, "honor": 90 }, "draw": { "gems": 12, "stones": 8, "divine": 8, "honor": 60 }, "lose": { "gems": 9,  "stones": 6, "honor": 40 } },
-      { "win": { "gems": 22, "stones": 14, "relic": 4, "divine": 20, "honor": 100 }, "draw": { "gems": 15, "stones": 10, "divine": 10, "honor": 70 }, "lose": { "gems": 11, "stones": 7, "honor": 45 } }
+      { "win": { "gems": 8,  "stones": 6,  "relic": 1, "honor": 50, "silk": 10 }, "draw": { "gems": 6,  "stones": 4, "honor": 35, "silk": 6 }, "lose": { "gems": 4,  "stones": 3, "honor": 20, "silk": 3 } },
+      { "win": { "gems": 10, "stones": 8,  "relic": 2, "honor": 60, "silk": 12 }, "draw": { "gems": 7,  "stones": 5, "honor": 40, "silk": 8 }, "lose": { "gems": 5,  "stones": 4, "honor": 25, "silk": 4 } },
+      { "win": { "gems": 12, "stones": 9,  "relic": 2, "honor": 70, "silk": 15 }, "draw": { "gems": 8,  "stones": 6, "honor": 50, "silk": 10 }, "lose": { "gems": 6,  "stones": 4, "honor": 30, "silk": 5 } },
+      { "win": { "gems": 15, "stones": 10, "relic": 3, "divine": 10, "honor": 80, "silk": 18 }, "draw": { "gems": 10, "stones": 7, "divine": 5, "honor": 55, "silk": 12 }, "lose": { "gems": 7,  "stones": 5, "honor": 35, "silk": 6 } },
+      { "win": { "gems": 18, "stones": 12, "relic": 3, "divine": 15, "honor": 90, "silk": 22 }, "draw": { "gems": 12, "stones": 8, "divine": 8, "honor": 60, "silk": 14 }, "lose": { "gems": 9,  "stones": 6, "honor": 40, "silk": 8 } },
+      { "win": { "gems": 22, "stones": 14, "relic": 4, "divine": 20, "honor": 100, "silk": 26 }, "draw": { "gems": 15, "stones": 10, "divine": 10, "honor": 70, "silk": 17 }, "lose": { "gems": 11, "stones": 7, "honor": 45, "silk": 10 } }
     ],
     "star": { "gold": 150, "food": 150, "honor": 5 }
   },

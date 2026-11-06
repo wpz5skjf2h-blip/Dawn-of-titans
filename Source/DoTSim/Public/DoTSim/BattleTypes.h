@@ -25,6 +25,9 @@ struct SquadSetup
 	Formation formation = Formation::Line;
 	Stance stance = Stance::Aggressive;
 	bool stanceSet = false;
+	/** The squad's own bonuses (the kingdom's War Banners), percent, added to the side's. */
+	int hpPct = 0;
+	int atkPct = 0;
 };
 
 struct TitanSetup

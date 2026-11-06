@@ -417,6 +417,7 @@ struct EventReward
 	int relic = 0;
 	int64_t divine = 0; // divine gems
 	int64_t honor = 0; // Honor (the Alliance Shop's currency)
+	int64_t silk = 0; // Banner Silk (War Banners)
 };
 
 /** One Titan Trial (master prompt 10.4): a fixed rule for the player's side and a fixed enemy army. */
@@ -445,7 +446,7 @@ struct TrialRules
 };
 
 /** What a Daily Trial pays (its amount a tier). */
-enum class DailyPay : uint8_t { Gold, Food, TitanXp, Relic, Shards, Study };
+enum class DailyPay : uint8_t { Gold, Food, TitanXp, Relic, Shards, Study, Silk };
 
 /** One Daily Trial (master prompt 10.3): its weekday and its reward by tier. */
 struct DailyTrialDef
@@ -644,6 +645,20 @@ struct HonorRules
 	ResArray donateCost{}; // gold or food for one donation, times the Castle
 	int64_t donateHonor = 0; // Honor for one donation
 	std::vector<ShopItemDef> shop;
+};
+
+/** War Banners (kingdom.json "banners", master prompt 6.5): one banner a troop, raised a level at a time for Banner
+ *  Silk and gold; each level gives the troop's squads health and damage, and some levels a perk on top. */
+struct BannerRules
+{
+	bool on = false; // the block is in the content
+	int castle = 1; // banners open at this Castle
+	int pctPerLevel = 1; // health and damage, percent, for each level
+	std::vector<int> perkLevels; // levels that add perkPct more
+	int perkPct = 0;
+	std::vector<int64_t> silk; // the cost of each level (index 0: level 1)
+	std::vector<int64_t> gold;
+	int MaxLevel() const { return static_cast<int>(silk.size()); }
 };
 
 /** A titan lineage (kingdom.json "lineages", master prompt 2.3): its titans, and what its full Codex page pays. */
@@ -951,6 +966,7 @@ struct KingdomContent
 	std::vector<int> lineageOf; // by titan index: its lineage, -1 none
 	CodexRules codex;
 	HonorRules honor;
+	BannerRules banners;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

@@ -207,6 +207,8 @@ void Kingdom::ResetArmy()
 	DonateCount = 0;
 	ShopWeek = 0;
 	ShopBoughtList.assign(C.honor.shop.size(), 0);
+	SilkCount = 0;
+	BannerList.assign(C.troops.size(), 0);
 	RelicAt = Time;
 	RelicCounter = 0;
 	ResetSpellsAndRelics();
@@ -3516,6 +3518,80 @@ Error Kingdom::BuyShop(int Item, Reward* Out)
 	return Error::None;
 }
 
+// --- War Banners (master prompt 6.5) -----------------------------------------------------------------
+
+int Kingdom::BannerLevel(int Troop) const
+{
+	return Troop >= 0 && Troop < static_cast<int>(BannerList.size()) ? BannerList[static_cast<size_t>(Troop)] : 0;
+}
+
+int Kingdom::BannerPct(int Troop) const
+{
+	const BannerRules& B = C.banners;
+	const int L = BannerLevel(Troop);
+	int Pct = L * B.pctPerLevel;
+	for (const int P : B.perkLevels)
+	{
+		if (L >= P)
+		{
+			Pct += B.perkPct;
+		}
+	}
+	return Pct;
+}
+
+int64_t Kingdom::BannerSilkCost(int Troop) const
+{
+	const int L = BannerLevel(Troop);
+	return L >= 0 && L < C.banners.MaxLevel() ? C.banners.silk[static_cast<size_t>(L)] : 0;
+}
+
+Check Kingdom::CheckBanner(int Troop) const
+{
+	Check Out;
+	const BannerRules& B = C.banners;
+	if (!B.on || Troop < 0 || Troop >= static_cast<int>(BannerList.size()))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	const int L = BannerLevel(Troop);
+	if (CastleLevel() < B.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = B.castle;
+		return Out;
+	}
+	if (L >= B.MaxLevel())
+	{
+		Out.error = Error::MaxLevel;
+		return Out;
+	}
+	const size_t G = static_cast<size_t>(ResIndex(Res::Gold));
+	Out.cost[G] = B.gold[static_cast<size_t>(L)];
+	if (Res_[G] < Out.cost[G] || SilkCount < B.silk[static_cast<size_t>(L)])
+	{
+		Out.error = Error::NotEnough;
+	}
+	return Out;
+}
+
+Error Kingdom::UpgradeBanner(int Troop)
+{
+	const Check Ck = CheckBanner(Troop);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	SilkCount -= BannerSilkCost(Troop);
+	for (size_t K = 0; K < Res_.size(); ++K)
+	{
+		Res_[K] -= Ck.cost[K];
+	}
+	++BannerList[static_cast<size_t>(Troop)];
+	return Error::None;
+}
+
 // --- Codex and Lineage Resonance (master prompt 5.9) -------------------------------------------------
 
 void Kingdom::NoteCodex(int Def)
@@ -3942,6 +4018,8 @@ Error Kingdom::PayEvent(const EventReward& Pay, uint64_t Salt, uint64_t Pick, Re
 	R.divine += Pay.divine;
 	HonorCount += Pay.honor;
 	R.honor += Pay.honor;
+	SilkCount += Pay.silk;
+	R.silk += Pay.silk;
 	if (Pay.relic > 0)
 	{
 		const uint64_t H = Mix(Seed ^ Salt, Pick);
@@ -4351,6 +4429,9 @@ Error Kingdom::PayDaily(int Trial, int Tier, int32_t TitanId, uint64_t Pick, Rew
 	}
 	case DailyPay::Relic:
 		Pay.relic = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(5, Amount)));
+		break;
+	case DailyPay::Silk:
+		Pay.silk = Amount;
 		break;
 	case DailyPay::TitanXp:
 		SettleLands(); // the titan may level up: its lands produce at the old rate until now
@@ -9052,6 +9133,26 @@ std::string Kingdom::Save() const
 		W.EndObject();
 		W.EndObject();
 	}
+	// War Banners (only once there is silk or a banner).
+	if (C.banners.on && (SilkCount != 0 || std::any_of(BannerList.begin(), BannerList.end(), [](int N) { return N != 0; })))
+	{
+		W.Key("banners");
+		W.BeginObject();
+		W.Key("silk");
+		W.Int(SilkCount);
+		W.Key("lv");
+		W.BeginObject();
+		for (size_t I = 0; I < C.troops.size() && I < BannerList.size(); ++I)
+		{
+			if (BannerList[I] != 0)
+			{
+				W.Key(C.troops[I].id.c_str());
+				W.Int(BannerList[I]);
+			}
+		}
+		W.EndObject();
+		W.EndObject();
+	}
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -10144,6 +10245,20 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// War Banners (saves before them have none); levels are clamped to the content's.
+	SilkCount = 0;
+	BannerList.assign(C.troops.size(), 0);
+	if (const JsonValue* BJ = C.banners.on ? J.Find("banners") : nullptr)
+	{
+		SilkCount = std::max<int64_t>(0, BJ->GetInt64("silk", 0));
+		if (const JsonValue* LJ = BJ->Find("lv"))
+		{
+			for (size_t I = 0; I < C.troops.size(); ++I)
+			{
+				BannerList[I] = std::max(0, std::min(C.banners.MaxLevel(), LJ->GetInt(C.troops[I].id.c_str(), 0)));
+			}
+		}
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -11069,6 +11184,15 @@ uint64_t Kingdom::Hash() const
 		W.I32(DonateCount);
 		W.I64(ShopWeek);
 		for (const int N : ShopBoughtList)
+		{
+			W.I32(N);
+		}
+	}
+	// And War Banners: only once there is silk or a banner.
+	if (SilkCount != 0 || std::any_of(BannerList.begin(), BannerList.end(), [](int N) { return N != 0; }))
+	{
+		W.I64(SilkCount);
+		for (const int N : BannerList)
 		{
 			W.I32(N);
 		}
