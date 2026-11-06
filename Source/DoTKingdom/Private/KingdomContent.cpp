@@ -63,6 +63,17 @@ void ReadCost(const JsonValue* Cost, ResArray& Out)
 		}
 	}
 }
+/** An event's pay: resources, a relic's rarity (1-5, 0 none), divine gems and Honor. */
+void ReadEventReward(const JsonValue* J, EventReward& R)
+{
+	ReadCost(J, R.res);
+	if (J && J->IsObject())
+	{
+		R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
+		R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
+		R.honor = std::max<int64_t>(0, J->GetInt64("honor", 0));
+	}
+}
 void ReadInts(const JsonValue* List, std::vector<int64_t>& Out)
 {
 	Out.clear();
@@ -1404,9 +1415,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		T.attempts = std::max(1, Tj->GetInt("attempts", T.attempts));
 		T.bracket = std::max(2, Tj->GetInt("bracket", T.bracket));
 		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
-			ReadCost(&J, R.res);
-			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
-			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
+			ReadEventReward(&J, R);
 		};
 		bool bOk = true;
 		for (const char* Key : {"milestones", "ranks"})
@@ -1499,9 +1508,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			}
 			if (const JsonValue* Pj = J.Find("page"))
 			{
-				ReadCost(Pj, L.page.res);
-				L.page.relic = std::max(0, std::min(5, Pj->GetInt("relic", 0)));
-				L.page.divine = std::max<int64_t>(0, Pj->GetInt64("divine", 0));
+				ReadEventReward(Pj, L.page);
 			}
 			bOk = bOk && !L.id.empty() && !L.titans.empty();
 			for (const LineageDef& Other : Out.lineages)
@@ -1613,9 +1620,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			W.trialXp = std::max<int64_t>(0, Xp->GetInt64("trial", W.trialXp));
 		}
 		const auto ReadPay = [](const JsonValue& J, EventReward& R) {
-			ReadCost(&J, R.res);
-			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
-			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
+			ReadEventReward(&J, R);
 		};
 		if (const JsonValue* B = Wj->Find("bonus"))
 		{
@@ -1667,9 +1672,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				S.titan = J.GetBool("titan", false);
 				if (const JsonValue* Pay = J.Find("reward"))
 				{
-					ReadCost(Pay, S.reward.res);
-					S.reward.relic = std::max(0, std::min(5, Pay->GetInt("relic", 0)));
-					S.reward.divine = std::max<int64_t>(0, Pay->GetInt64("divine", 0));
+					ReadEventReward(Pay, S.reward);
 				}
 				bOk = bOk && (S.extra == 0 || !A.garrison.empty());
 				A.stages.push_back(S);
@@ -1709,9 +1712,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		B.memberHit = std::max<int64_t>(0, std::min<int64_t>(1000, Bj->GetInt64("memberHit", B.memberHit)));
 		B.memberStepPct = std::max(0, std::min(90, Bj->GetInt("memberStepPct", B.memberStepPct)));
 		const auto ReadReward = [](const JsonValue& J, EventReward& R) {
-			ReadCost(&J, R.res);
-			R.relic = std::max(0, std::min(5, J.GetInt("relic", 0)));
-			R.divine = std::max<int64_t>(0, J.GetInt64("divine", 0));
+			ReadEventReward(&J, R);
 		};
 		bool bOk = true;
 		if (const JsonValue* Tiers = Bj->Find("tiers"))
@@ -1798,9 +1799,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		const auto ReadWarReward = [](const JsonValue* J, EventReward& R) {
 			if (J)
 			{
-				ReadCost(J, R.res);
-				R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
-				R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
+				ReadEventReward(J, R);
 			}
 		};
 		bool bOk = true;
@@ -1886,9 +1885,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		const auto ReadPay = [](const JsonValue* J, EventReward& R) {
 			if (J)
 			{
-				ReadCost(J, R.res);
-				R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
-				R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
+				ReadEventReward(J, R);
 			}
 		};
 		if (const JsonValue* B = Sj->Find("bands"))
@@ -1914,9 +1911,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		ComebackRules& Cb = Out.comeback;
 		Cb.days = std::max(0, std::min(365, Cj->GetInt("days", 0)));
 		Cb.castle = std::max(1, std::min(100, Cj->GetInt("castle", 1)));
-		ReadCost(Cj, Cb.gift.res);
-		Cb.gift.relic = std::max(0, std::min(5, Cj->GetInt("relic", 0)));
-		Cb.gift.divine = std::max<int64_t>(0, Cj->GetInt64("divine", 0));
+		ReadEventReward(Cj, Cb.gift);
 		Cb.scrolls = std::max<int64_t>(0, Cj->GetInt64("scrolls", 0));
 	}
 	if (const JsonValue* Xj = Rules.Find("codex"))
@@ -1954,6 +1949,48 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Oj = Rules.Find("honor"))
+	{
+		HonorRules& O = Out.honor;
+		O.on = true;
+		O.castle = std::max(1, std::min(100, Oj->GetInt("castle", O.castle)));
+		if (const JsonValue* Dj = Oj->Find("donate"))
+		{
+			ReadCost(Dj, O.donateCost);
+			O.donatePerDay = std::max(0, std::min(100, Dj->GetInt("perDay", 0)));
+			O.donateHonor = std::max<int64_t>(0, Dj->GetInt64("honor", 0));
+		}
+		bool bOk = true;
+		if (const JsonValue* Sj = Oj->Find("shop"))
+		{
+			for (size_t I = 0; I < Sj->Size() && I < 32; ++I)
+			{
+				const JsonValue& J = (*Sj)[I];
+				ShopItemDef D;
+				D.id = J.GetString("id");
+				D.price = J.GetInt64("price", 0);
+				D.weekly = J.GetInt("weekly", 1);
+				D.castle = std::max(1, std::min(100, J.GetInt("castle", 1)));
+				ReadEventReward(J.Find("pay"), D.pay);
+				D.pay.honor = 0;
+				if (const JsonValue* Pj = J.Find("pay"))
+				{
+					D.scrolls = std::max<int64_t>(0, Pj->GetInt64("scrolls", 0));
+				}
+				bOk = bOk && !D.id.empty() && D.price > 0 && D.weekly >= 1 && D.weekly <= 100;
+				for (const ShopItemDef& Other : O.shop)
+				{
+					bOk = bOk && Other.id != D.id;
+				}
+				O.shop.push_back(D);
+			}
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: honor shop items need distinct ids, a price over 0 and 1-100 a week";
+			return false;
+		}
+	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
 		AllianceHelpRules& H = Out.allianceHelp;
@@ -1987,7 +2024,7 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		H.asksPerHour = {{static_cast<int>(AskLo), static_cast<int>(AskHi)}};
 		if (const JsonValue* Rw = Hj->Find("reward"))
 		{
-			ReadCost(Rw, H.reward.res);
+			ReadEventReward(Rw, H.reward);
 		}
 		if (!bOk)
 		{

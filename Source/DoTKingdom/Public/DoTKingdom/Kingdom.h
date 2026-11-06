@@ -233,6 +233,7 @@ struct Reward
 	int64_t studySec = 0; // research time a Daily Trial took off (each research running)
 	int64_t scrolls = 0; // War Scrolls a quest chest gave
 	int64_t divine = 0; // divine gems an event paid
+	int64_t honor = 0; // Honor
 };
 
 /** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */
@@ -862,6 +863,26 @@ public:
 	int64_t ComebackSince() const { return ComebackSec > 0 ? ComebackAt - ComebackSec : 0; }
 	/** Claims the gift: Nothing when none waits; a relic without room in the inventory is lost. */
 	Error ClaimComeback(Reward* Out);
+
+	// --- Honor, donations and the Alliance Shop (master prompt 8.1, 12.5, 12.8) ---
+	// Honor is the player's own alliance currency: helps given, donations, Alliance War and Raid Boss chests pay it (as
+	// the content says), and it stays when the player leaves. In an alliance, from the content's Castle, the player gives
+	// gold or food a few times a day for Honor and spends Honor in the Alliance Shop, each item a few times a week.
+	int64_t Honor() const { return HonorCount; }
+	/** Donations made today (UTC). */
+	int DonationsToday() const;
+	/** BadId (no Honor in the content), NoAlliance, Locked (Castle too low: castle), LimitReached (the day's donations:
+	 *  timeSec to the next day), NotEnough (the gold or food: cost). */
+	Check CheckDonate(bool Food) const;
+	/** Gives the alliance gold (or food) for Honor. */
+	Error Donate(bool Food, Reward* Out);
+	/** How many of a shop item (index into the content's shop) the player bought this week (from Monday 00:00 UTC). */
+	int ShopBought(int Item) const;
+	/** BadId (no such item), NoAlliance, Locked (Castle too low: castle), LimitReached (the week's: timeSec to the next
+	 *  week), NotEnough (Honor), InventoryFull (a relic without room), StorageFull (War Scrolls at their maximum). */
+	Check CheckBuyShop(int Item) const;
+	/** Buys a shop item for Honor. */
+	Error BuyShop(int Item, Reward* Out);
 
 	// --- Codex and Lineage Resonance (master prompt 5.9) ---
 	// Every titan kind ever bound opens its Codex entry (paid once by its stars, Kingdom Power for each); a lineage whose
@@ -1540,6 +1561,11 @@ private:
 	uint64_t CodexSeenMask = 0; // titan kinds ever bound (bit = index into the content's titans)
 	uint64_t CodexPaidMask = 0; // entries paid
 	uint64_t CodexPageMask = 0; // lineage pages paid
+	int64_t HonorCount = 0;
+	int64_t DonateDay = 0; // the UTC day of DonateCount
+	int DonateCount = 0; // donations made that day
+	int64_t ShopWeek = 0; // the week of ShopBoughtList
+	std::vector<int> ShopBoughtList; // by shop item: bought that week
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;

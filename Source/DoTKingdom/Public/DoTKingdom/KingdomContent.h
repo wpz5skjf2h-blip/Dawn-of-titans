@@ -416,6 +416,7 @@ struct EventReward
 	ResArray res{};
 	int relic = 0;
 	int64_t divine = 0; // divine gems
+	int64_t honor = 0; // Honor (the Alliance Shop's currency)
 };
 
 /** One Titan Trial (master prompt 10.4): a fixed rule for the player's side and a fixed enemy army. */
@@ -621,6 +622,28 @@ struct ComebackRules
 	int castle = 1; // from this Castle
 	EventReward gift; // gold and food are times the Castle
 	int64_t scrolls = 0; // War Scrolls
+};
+
+/** An Alliance Shop item (master prompt 12.8): what it pays for its Honor price, a few times a week, from a Castle. */
+struct ShopItemDef
+{
+	std::string id;
+	int64_t price = 0; // Honor
+	int weekly = 1; // how many a week (Monday 00:00 UTC)
+	int castle = 1;
+	EventReward pay; // gold and food as they are
+	int64_t scrolls = 0; // War Scrolls
+};
+
+/** Honor, donations and the Alliance Shop (kingdom.json "honor", master prompt 8.1, 12.5, 12.8). */
+struct HonorRules
+{
+	bool on = false; // the block is in the content
+	int castle = 1; // donations and the shop open at this Castle (in an alliance)
+	int donatePerDay = 0;
+	ResArray donateCost{}; // gold or food for one donation, times the Castle
+	int64_t donateHonor = 0; // Honor for one donation
+	std::vector<ShopItemDef> shop;
 };
 
 /** A titan lineage (kingdom.json "lineages", master prompt 2.3): its titans, and what its full Codex page pays. */
@@ -927,6 +950,7 @@ struct KingdomContent
 	std::vector<LineageDef> lineages;
 	std::vector<int> lineageOf; // by titan index: its lineage, -1 none
 	CodexRules codex;
+	HonorRules honor;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

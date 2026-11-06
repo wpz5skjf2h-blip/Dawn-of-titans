@@ -1249,6 +1249,22 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// Honor: the balance, today's donations, the checks for giving gold and food, and per shop item (kingdom.json order)
+	// how many were bought this week, the error buying one now and its time.
+	{
+		O.Key("honor").Raw("{").Key("on").Raw(C.honor.on ? "true" : "false").Comma().Key("pts").Int(Km->Honor()).Comma();
+		O.Key("don").Int(Km->DonationsToday()).Comma().Key("dg");
+		WriteCheck(O, Km->CheckDonate(false));
+		O.Comma().Key("df");
+		WriteCheck(O, Km->CheckDonate(true));
+		O.Comma().Key("shop").Raw("[");
+		for (size_t I = 0; I < C.honor.shop.size(); ++I)
+		{
+			const dot::kingdom::Check Ck = Km->CheckBuyShop(static_cast<int>(I));
+			O.Raw(I ? "," : "").Raw("[").Int(Km->ShopBought(static_cast<int>(I))).Comma().Int(static_cast<int>(Ck.error)).Comma().Int(Ck.timeSec).Raw("]");
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1805,7 +1821,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("gems").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Gems))]).Comma();
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
 	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
-	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma();
+	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma().Key("honor").Int(R.honor).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1920,6 +1936,22 @@ EMSCRIPTEN_KEEPALIVE const char* dk_codex_claim(int Index, int Page)
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = !K() ? dot::kingdom::Error::BadId : Page ? K()->ClaimCodexPage(Index, &R) : K()->ClaimCodex(Index, &R);
+	return RewardJson(E, R);
+}
+
+/** Gives the alliance gold (or, with Food set, food) for Honor: the reward (honor). */
+EMSCRIPTEN_KEEPALIVE const char* dk_donate(int Food)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->Donate(Food != 0, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** Buys an Alliance Shop item (index into kingdom.json honor.shop) for Honor: the reward. */
+EMSCRIPTEN_KEEPALIVE const char* dk_shop_buy(int Item)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->BuyShop(Item, &R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

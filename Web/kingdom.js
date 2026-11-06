@@ -96,6 +96,9 @@ const ICONS = {
 	// A divine gem (the Eternal Shrine): a rose crystal in a golden halo.
 	divine: [['c', 12, 12, 10, 'none', '#f2d15a', 1.3], ['p', 'M12 3.2l6 8.8-6 8.8-6-8.8z', '#f7a8d8', '#8a2a6a', 1.4],
 		['p', 'M6 12h12M12 3.2v17.6', 'none', '#fff0fa', 0.9]],
+	// Honor (the Alliance Shop's currency): a gold medal with a star, on a red ribbon.
+	honor: [['p', 'M7.5 2h3.5l1.4 6.2-2.9 1.6zM16.5 2H13l-1.4 6.2 2.9 1.6z', '#c0392b', '#6a1a10', 1.1], ['c', 12, 15, 6.5, '#f2c14e', '#8a5a14', 1.4],
+		['p', 'M12 11.3l1.1 2.3 2.5.3-1.8 1.7.5 2.5-2.3-1.2-2.3 1.2.5-2.5-1.8-1.7 2.5-.3z', '#fff3c4', '#8a5a14', 0.8]],
 };
 function iconSvg(kind) {
 	const parts = ICONS[kind].map((p) => p[0] === 'c'
@@ -214,6 +217,8 @@ class KingdomBridge {
 	spireFinish(stars) { return JSON.parse(this.str(this.M._dk_spire_finish(stars))); }
 	comebackClaim() { return JSON.parse(this.str(this.M._dk_comeback_claim())); }
 	codexClaim(i, page) { return JSON.parse(this.str(this.M._dk_codex_claim(i, page ? 1 : 0))); }
+	donate(food) { return JSON.parse(this.str(this.M._dk_donate(food ? 1 : 0))); }
+	shopBuy(i) { return JSON.parse(this.str(this.M._dk_shop_buy(i))); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
 	warStart(base, squads, titan, spells) {
 		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
@@ -2549,6 +2554,9 @@ function onAct(e) {
 	case 'help-ask': askHelp(+el.dataset.kind, id); break;
 	case 'help-ask-all': askHelpAll(); break;
 	case 'help-give': giveHelp(); break;
+	case 'ally-shop': openAllyShop(); break;
+	case 'donate': donate(id === 1); break;
+	case 'shop-buy': buyAllyShop(id); break;
 	case 'daily-trial': openDaily(id); break;
 	case 'daily-go': startDaily(id, +el.dataset.t || 1); break;
 	case 'daily-sweep': sweepDaily(id, +el.dataset.t || 1); break;
@@ -3787,7 +3795,7 @@ function trialReady(st) {
 	K.rules.trials.milestones.forEach((m, i) => { if (!((tr.ms >> i) & 1) && tr.best >= m.score) n++; });
 	return n + (trialRankReady(st) ? 1 : 0);
 }
-const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
+const eventPay = (r) => resPlus(RES.map((k) => r[k] || 0)) + (r.divine ? ' +' + fmt(r.divine) + ' ' + iconSvg('divine') : '') + (r.honor ? ' +' + fmt(r.honor) + ' ' + iconSvg('honor') : '') + (r.relic ? ' + реликвия ' + '★'.repeat(r.relic) : '');
 /** The bracket: the lords by score with the kingdom before the lords it ties (as the kingdom counts its place). */
 function trialBoard(st) {
 	const rows = st.trial.lords.map((s, i) => ({ s, name: trialLordName(i) })).sort((a, b) => b.s - a.s);
@@ -4807,8 +4815,8 @@ function helpBtnKey(st, kind, id) {
 	const c = st.help.can.find((x) => x[0] === kind && x[1] === id);
 	return [st.ally.my, a ? a[5] + ':' + a[6] + ':' + a[8] : '', c ? c[3] : ''].join();
 }
-/** The pay for helps given (gold and food times the Castle). */
-const helpPay = (st, n) => eventPay({ gold: (helpRules().reward.gold || 0) * st.castle * n, food: (helpRules().reward.food || 0) * st.castle * n });
+/** The pay for helps given (gold and food times the Castle, and Honor). */
+const helpPay = (st, n) => eventPay({ gold: (helpRules().reward.gold || 0) * st.castle * n, food: (helpRules().reward.food || 0) * st.castle * n, honor: (helpRules().reward.honor || 0) * n });
 function helpCard(st) {
 	if (!helpOn(st) || st.ally.my < 0) return '';
 	const ask = helpAskable(st).length;
@@ -4864,7 +4872,7 @@ function openHelp() {
 		}
 		const html = sheetTitle(icoHtml('ui.alliance', 'food land'), 'Помощь альянса') + intro + body +
 			'<p class="fine">Из мастер-промпта: процент, минимум, число помощей и предел ' + R.dailyCap + ' в день. В оригинале помощи не было. Наше: Лагерь альянса вместо Зала альянса, ускорение земель и отдыха титанов, ' +
-			'а вместо очков чести (для магазина альянса, которого пока нет) — золото и еда. Пока нет сервера, союзники — компьютер: первый откликается через ' + R.firstSec[0] + '–' + R.firstSec[1] + ' с, следующие — с перерывами до ' + Math.round(R.gapSec[1] / 60) + ' мин.</p>' +
+			'а кроме почёта для лавки альянса — ещё золото и еда. Пока нет сервера, союзники — компьютер: первый откликается через ' + R.firstSec[0] + '–' + R.firstSec[1] + ' с, следующие — с перерывами до ' + Math.round(R.gapSec[1] / 60) + ' мин.</p>' +
 			'<div class="actions">' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
 		return {
 			key: ['help', inAlly, helpKey(st)].join('|'), html,
@@ -4909,6 +4917,120 @@ function giveHelp() {
 		return;
 	}
 	toast('Вы помогли союзникам: ' + n + ' ' + plural(n, 'раз', 'раза', 'раз') + ' · ' + rewardParts(r).join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+// ---------------------------------------------------------------------------------------------
+// Honor, donations and the Alliance Shop (master prompt 8.1, 12.5, 12.8)
+// ---------------------------------------------------------------------------------------------
+const honorRules = () => K.rules.honor || null;
+const honorOn = (st) => !!(honorRules() && st && st.honor && st.honor.on);
+const honorAmount = (n) => fmt(n) + ' ' + iconSvg('honor');
+/** Donations left today that the kingdom can pay, and shop items it can buy now. */
+function honorReady(st) {
+	if (!honorOn(st) || st.ally.my < 0) return 0;
+	const h = st.honor;
+	return (h.dg.err === E.None || h.df.err === E.None ? 1 : 0) + h.shop.filter((x) => x[1] === E.None).length;
+}
+function honorKey(st) {
+	if (!honorOn(st)) return '';
+	const h = st.honor;
+	return [h.pts, h.don, h.dg.err, h.df.err, h.shop.map((x) => x[0] + ':' + x[1]).join('.')].join();
+}
+/** What a shop item gives, in words. */
+function shopPayText(d) {
+	const p = d.pay || {};
+	const parts = [];
+	if (p.scrolls) parts.push('+' + p.scrolls + ' ' + plural(p.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
+	for (const k of RES) if (p[k]) parts.push('+' + resAmount(k, p[k]));
+	if (p.divine) parts.push('+' + fmt(p.divine) + ' ' + plural(p.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
+	if (p.relic) parts.push('реликвия ' + '★'.repeat(p.relic) + ' случайного вида');
+	return parts.join(', ');
+}
+function shopErrText(code, item, t) {
+	switch (code) {
+	case E.NotEnough: return 'Нужно ещё ' + fmt(Math.max(0, item.price - ((K.st.honor && K.st.honor.pts) || 0))) + ' почёта';
+	case E.LimitReached: return 'Куплено всё на неделю: снова через ' + fmtDur(t);
+	case E.Locked: return 'С Замка ' + Math.max(honorRules().castle, item.castle || 1);
+	case E.StorageFull: return 'Боевых свитков максимум';
+	default: return errText(code);
+	}
+}
+function honorCard(st) {
+	if (!honorOn(st) || st.ally.my < 0) return '';
+	const R = honorRules();
+	const h = st.honor;
+	const n = honorReady(st);
+	const locked = st.castle < R.castle;
+	const sub = locked ? 'пожертвования и лавка — с Замка ' + R.castle : 'пожертвований сегодня ' + h.don + ' из ' + R.donate.perDay + (n ? ' · можно взять в лавке: ' + h.shop.filter((x) => x[1] === E.None).length : '');
+	return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml('ui.chest', 'gold land') + '<div class="info"><b>Лавка альянса · ' + honorAmount(h.pts) + '</b><span>' + esc(sub) + '</span></div>' +
+		'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="ally-shop">' + (n ? 'Открыть · ' + n : 'Открыть') + '</button></div></div>';
+}
+function openAllyShop() {
+	if (!honorOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = honorRules();
+		const h = st.honor;
+		const inAlly = st.ally.my >= 0;
+		const intro = '<p class="fine">Почёт — ваша личная валюта альянса. Его дают помощь союзникам (+' + ((K.rules.allianceHelp && K.rules.allianceHelp.reward.honor) || 0) + ' за каждую), пожертвования, сундук войны альянсов (и каждая ваша звезда в ней) и сундук рейдового босса. ' +
+			'Почёт остаётся с вами, даже если выйти из альянса, а тратить его можно в лавке своего альянса.</p>';
+		let body;
+		if (!inAlly) {
+			body = '<p>Лавка и пожертвования — для участников альянса. Вступите в альянс или основайте свой.</p><div class="actions"><button class="btn primary" data-act="alliance">Альянсы</button></div>';
+		} else {
+			const donBtn = (food) => {
+				const ck = food ? h.df : h.dg;
+				const k = food ? 'food' : 'gold';
+				const cost = (R.donate[k] || 0) * st.castle;
+				if (ck.err === E.None) return '<button class="btn primary" data-act="donate" data-id="' + (food ? 1 : 0) + '">' + fmtShort(cost) + ' ' + iconSvg(k) + ' → +' + R.donate.honor + ' ' + iconSvg('honor') + '</button>';
+				const why = ck.err === E.LimitReached ? 'Снова через ' + fmtDur(ck.t) : ck.err === E.NotEnough ? 'Не хватает: ' + fmtShort(cost) + ' ' + iconSvg(k) : ck.err === E.Locked ? 'С Замка ' + ck.c : esc(errText(ck.err, ck));
+				return '<button class="btn" disabled>' + why + '</button>';
+			};
+			const donCard = '<div class="landCard' + (h.dg.err === E.None || h.df.err === E.None ? ' ready' : '') + '">' + icoHtml('ui.alliance', 'food land') + '<div class="info"><b>Пожертвование альянсу</b>' +
+				'<span>Сегодня ' + h.don + ' из ' + R.donate.perDay + '. Каждое — ' + R.donate.honor + ' почёта за ' + fmtShort((R.donate.gold || 0) * st.castle) + ' золота или ' + fmtShort((R.donate.food || 0) * st.castle) + ' еды (по уровню Замка).</span></div>' +
+				'<div class="row">' + (h.dg.err === E.LimitReached ? donBtn(false) : donBtn(false) + donBtn(true)) + '</div></div>';
+			const cards = R.shop.map((d, i) => {
+				const [bought, err, t] = h.shop[i];
+				const btn = err === E.None ? '<button class="btn primary" data-act="shop-buy" data-id="' + i + '">Купить · ' + honorAmount(d.price) + '</button>'
+					: '<button class="btn" disabled>' + esc(shopErrText(err, d, t)) + '</button>';
+				return '<div class="shopCard' + (err === E.Locked || err === E.LimitReached ? ' off' : '') + '"><b>' + esc(d.name || d.id) + '</b><span class="meta">' + esc(shopPayText(d)) + '</span>' +
+					'<span class="meta"><span>Цена ' + honorAmount(d.price) + '</span><span>за неделю ' + bought + ' из ' + d.weekly + '</span></span><div class="row">' + btn + '</div></div>';
+			});
+			body = '<div class="costline"><span>Почёт</span><b>' + honorAmount(h.pts) + '</b><span>лимиты лавки обновляются в понедельник (00:00 UTC)</span></div>' +
+				donCard + '<h3>Лавка</h3><div class="shopGrid">' + cards.join('') + '</div>';
+		}
+		const html = sheetTitle(icoHtml('ui.chest', 'gold land'), 'Лавка альянса') + intro + body +
+			'<p class="fine">Из мастер-промпта: почёт за помощь, пожертвования и войну альянсов, лавка альянса за почёт с недельными лимитами. В оригинале этого не было. Наше: товары (свитки, камни, осколки, реликвии, божественные самоцветы вместо сигилов, книг и знамён, которых в игре нет), цены, лимиты и почёт с босса; пожертвования пока не идут в технологии альянса.</p>' +
+			'<div class="actions">' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return { key: ['shop', inAlly, st.castle, st.res[0] >> 8, st.res[1] >> 8, honorKey(st)].join('|'), html };
+	});
+}
+function donate(food) {
+	const r = K.bridge.donate(food);
+	if (r.err !== E.None) {
+		toast(r.err === E.NotEnough ? 'Не хватает ' + (food ? 'еды' : 'золота') : r.err === E.LimitReached ? 'На сегодня пожертвований больше нет' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('Пожертвование альянсу: +' + r.honor + ' почёта', 'gold');
+	persist();
+	refresh(true);
+}
+function buyAllyShop(i) {
+	const d = honorRules().shop[i];
+	const r = K.bridge.shopBuy(i);
+	if (r.err !== E.None) {
+		toast(shopErrText(r.err, d, 0).replace(/: снова через.*/, ''), 'bad');
+		refresh(true);
+		return;
+	}
+	const parts = rewardParts(r);
+	if (r.shards) parts.push('+' + resAmount('shards', r.shards));
+	toast('Лавка альянса: ' + (d.name || d.id) + (parts.length ? ' · ' + parts.join(', ') : ''), 'gold');
+	if (r.relics && r.relics.length) armyToast(r, []);
 	persist();
 	refresh(true);
 }
@@ -5207,6 +5329,7 @@ function rewardParts(r) {
 	if (r.stones) parts.push('+' + fmt(r.stones) + ' камней портала');
 	if (r.scrolls) parts.push('+' + r.scrolls + ' ' + plural(r.scrolls, 'боевой свиток', 'боевых свитка', 'боевых свитков'));
 	if (r.divine) parts.push('+' + fmt(r.divine) + ' ' + plural(r.divine, 'божественный самоцвет', 'божественных самоцвета', 'божественных самоцветов'));
+	if (r.honor) parts.push('+' + fmt(r.honor) + ' почёта');
 	return parts;
 }
 /** A toast for every quest that got done since the last state (same day, same week). */
@@ -8091,12 +8214,12 @@ function allianceMine(st, data) {
 		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
 		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
 		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
-		helpCard(st) + bossCard(st) + warCard(st) +
+		helpCard(st) + honorCard(st) + bossCard(st) + warCard(st) +
 		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
 		body +
 		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
 	return {
-		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st)].join('|'), html,
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st), honorKey(st)].join('|'), html,
 		live(el) {
 			const d = K.allyData || data;
 			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));
