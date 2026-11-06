@@ -623,6 +623,36 @@ struct ComebackRules
 	int64_t scrolls = 0; // War Scrolls
 };
 
+/** A titan lineage (kingdom.json "lineages", master prompt 2.3): its titans, and what its full Codex page pays. */
+struct LineageDef
+{
+	std::string id;
+	std::string name;
+	std::vector<int> titans; // indices into the content's titans
+	EventReward page;
+};
+
+/** A Lineage Resonance tier (master prompt 5.9): with `count` kinds of a lineage's titans at the Codex level or higher
+ *  in the Hall, every titan of that lineage gets these bonuses (percents). */
+struct ResonanceTier
+{
+	int count = 0;
+	int hpPct = 0;
+	int atkPct = 0;
+	int armorPct = 0;
+};
+
+/** The Codex (kingdom.json "codex", master prompt 5.9): an entry for every titan ever bound, paid once by its stars, a
+ *  page for every lineage paid once it is full, Kingdom Power per entry, and Lineage Resonance. */
+struct CodexRules
+{
+	bool on = false;
+	std::array<int64_t, 4> entryGems{}; // an entry's gems by the titan's stars (1 to 4)
+	int64_t power = 0; // Kingdom Power per entry
+	int level = 20; // the titan level Resonance counts from
+	std::vector<ResonanceTier> resonance; // by rising count
+};
+
 /** Ten floors of the Titan Spire (kingdom.json "spire" bands): every floor pays `pay` gold (odd floors) or food (even
  *  floors) times the Castle the first time it falls, the middle floor adds `middle`, the top floor `top`. The battle
  *  itself (its level, titan, bonuses and the band's modifier) is the client's. */
@@ -894,6 +924,9 @@ struct KingdomContent
 	DivineRules divine;
 	SpireRules spire;
 	ComebackRules comeback;
+	std::vector<LineageDef> lineages;
+	std::vector<int> lineageOf; // by titan index: its lineage, -1 none
+	CodexRules codex;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

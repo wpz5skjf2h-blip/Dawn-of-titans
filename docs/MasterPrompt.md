@@ -904,6 +904,11 @@ Requirements: the titan is at its level cap, plus the costs below. Ascension kee
   - 6 titans → +6% HP, +4% ATK, +2% armor.
 - **Codex:** each titan bound for the first time grants a lore entry, +5 Kingdom Power and a small reward. Completing a lineage page grants a portrait frame and a Lineage Sigil.
 
+> **Implemented now (Codex):** every titan kind first bound opens its lore entry (+5 Kingdom Power, 5/10/20/40 gems by
+> stars); a lineage with all entries open pays its page (gems and a 4★ relic, or divine gems) in place of the frame and
+> Sigil. Resonance uses the 2/4/6 tiers but counts kinds at level 20+ (our titans stop at 4★); lineages are Olympus,
+> Aesir, and Nav and Prav (docs/M0_Notes.md §6я2).
+
 ### 5.10 Titan Power (display and matchmaking)
 ```
 Squad Power = Σ over soldiers of sqrt(EHP × DPS)                where EHP = HP ÷ (1 − Armor)

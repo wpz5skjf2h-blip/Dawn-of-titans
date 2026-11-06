@@ -213,6 +213,7 @@ class KingdomBridge {
 	}
 	spireFinish(stars) { return JSON.parse(this.str(this.M._dk_spire_finish(stars))); }
 	comebackClaim() { return JSON.parse(this.str(this.M._dk_comeback_claim())); }
+	codexClaim(i, page) { return JSON.parse(this.str(this.M._dk_codex_claim(i, page ? 1 : 0))); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
 	warStart(base, squads, titan, spells) {
 		return this.M.ccall('dk_war_start', 'number', ['number', 'string', 'number', 'string'], [base, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
@@ -2574,6 +2575,10 @@ function onAct(e) {
 	case 'campaign': openCampaign(el.dataset.id !== undefined ? id : undefined); break;
 	case 'comeback-claim': claimComeback(); break;
 	case 'comeback-open': openComeback(); break;
+	case 'codex': openCodex(); break;
+	case 'codex-tab': openCodex(id); break;
+	case 'codex-claim': claimCodex(id, false); break;
+	case 'codex-page': claimCodex(id, true); break;
 	case 'camp-mode': openCampaign(campaignAct(K.st, id === 1), id === 1); break;
 	case 'mission': startMission(Math.floor(id / 100), id % 100); break;
 	case 'mission-sweep': sweepMission(Math.floor(id / 100), id % 100); break;
@@ -4110,6 +4115,8 @@ const DAILY_PAY_RU = { gold: 'золото', food: 'еда', titanXp: 'опыт 
 const WEEKDAYS = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
 const WEEKDAYS_ON = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
 const dailyRules = () => K.rules.dailyTrials;
+/** The titan lineages (kingdom.json "lineages"; older content kept them in the daily trials). */
+const lineageList = () => K.rules.lineages || (K.rules.dailyTrials && K.rules.dailyTrials.lineages) || [];
 const dailyDef = (i) => dailyRules().list[i];
 const dailyTierDef = (t) => dailyRules().tiers[Math.max(1, Math.min(t, dailyRules().tiers.length)) - 1];
 const dailyOn = (st) => !!(dailyRules() && st.daily && st.daily.list.length);
@@ -4128,7 +4135,7 @@ function dailyOpensIn(st, i) {
 }
 /** Whether a titan (index into army.json) is of this week's lineage. */
 function dailyKin(st, def) {
-	const line = dailyRules().lineages[st.daily.line];
+	const line = lineageList()[st.daily.line];
 	return !!line && line.titans.includes(K.army.titans[def].id);
 }
 /** The enemy titan of a tier: the trial's titan of the tier's rarity (the Lineage Trial: of the week's lineage, the
@@ -4138,7 +4145,7 @@ function dailyTitan(trial, tier, st) {
 	const t = dailyTierDef(tier);
 	let id = null;
 	if (d.pay === 'shards') {
-		const line = dailyRules().lineages[st.daily.line];
+		const line = lineageList()[st.daily.line];
 		const kin = line ? line.titans.map((x) => K.army.titans.find((y) => y.id === x)).filter(Boolean).sort((x, y) => x.stars - y.stars) : [];
 		const fit = kin.filter((x) => x.stars <= t.titanStars);
 		id = fit.length ? fit[fit.length - 1].id : kin.length ? kin[0].id : null;
@@ -4242,7 +4249,7 @@ function openDaily(trial) {
 function dailyListSheet(st) {
 	const R = dailyRules();
 	const locked = st.castle < R.castle;
-	const line = R.lineages[st.daily.line];
+	const line = lineageList()[st.daily.line];
 	const rows = R.list.map((d, i) => {
 		const x = st.daily.list[i];
 		const won = x.stars.filter((v) => v > 0).length;
@@ -4269,7 +4276,7 @@ function dailyTrialSheet(st, i) {
 	const pick = dailyPickTitan(st, i);
 	const shown = Math.max(1, x.top);
 	const field = dailyField(d);
-	const line = R.lineages[st.daily.line];
+	const line = lineageList()[st.daily.line];
 	const status = locked ? '<p>Испытания открываются с Замка ' + R.castle + '.</p>'
 		: x.open ? '<div class="costline"><span>Попыток сегодня</span><b>' + x.left + ' из ' + R.attempts + '</b><span>новые через <span data-live="daily">' + fmtDur(dailyDayLeft()) + '</span></span></div>'
 			: '<div class="costline"><span>Откроется ' + WEEKDAYS_ON[d.day] + ' или в воскресенье</span><b data-live="dailyOpen">' + fmtDur(dailyOpensIn(st, i)) + '</b></div>';
@@ -5461,6 +5468,7 @@ const PW_PARTS = [
 	{ k: 'b', name: 'Постройки', cls: 'pb' },
 	{ k: 't', name: 'Титаны', cls: 'pt' },
 	{ k: 'r', name: 'Исследования', cls: 'pr' },
+	{ k: 'c', name: 'Кодекс', cls: 'pc' },
 ];
 /** Power on the HUD: whole up to 10 000, then thousands with one decimal. */
 function fmtPower(n) {
@@ -5522,10 +5530,11 @@ function openProfile() {
 			(top ? '<div class="pwTop">' + top + '</div>' : '') +
 			part(PW_PARTS[2], R.research + ' за уровень: войска в Арсенале ' + troopLv + ', заклинания в Магической башне ' + spellLv,
 				(ownsBuilding(st, 'armoury') ? '<button class="btn" data-act="armoury">Арсенал</button>' : '') + (ownsBuilding(st, 'arcane_tower') ? '<button class="btn" data-act="arcane">Башня</button>' : '')) +
+			(codexOn(st) ? part(PW_PARTS[3], codexRules().power + ' за каждую запись: открыто ' + st.codex.e.filter((x) => x > 0).length + ' из ' + st.codex.e.length, '<button class="btn" data-act="codex">Кодекс</button>') : '') +
 			achLine +
-			'<p class="fine">Силу растят стройки и их уровни, уровни титанов, реликвии и возвышение, исследования войск и заклинаний. Формула из мастер-промта (7.7); в оригинале Dawn of Titans силы королевства не было, там рейтинг по очкам победы.</p>' +
+			'<p class="fine">Силу растят стройки и их уровни, уровни титанов, реликвии и возвышение, исследования войск и заклинаний, записи Кодекса. Формула из мастер-промта (7.7); в оригинале Dawn of Titans силы королевства не было, там рейтинг по очкам победы.</p>' +
 			'<div class="actions">' + closeBtn + '</div>';
-		return { key: ['profile', pw.total, pw.b, pw.t, pw.r, pw.top.join(';'), st.titans.length, st.castle, st.res[5], lgName, st.ally.my, ach >= 0 ? st.ach.t[ach] + ':' + achReady(st, ach) : ''].join('|'), html };
+		return { key: ['profile', pw.total, pw.b, pw.t, pw.r, pw.c, pw.top.join(';'), st.titans.length, st.castle, st.res[5], lgName, st.ally.my, ach >= 0 ? st.ach.t[ach] + ':' + achReady(st, ach) : ''].join('|'), html };
 	});
 }
 
@@ -6838,6 +6847,14 @@ function fusionPreview(target, picks) {
 	}
 	return { xp, food };
 }
+/** The titan's lineage and its Resonance, as a line of its card. */
+function titanResonance(st, t) {
+	if (!codexOn(st)) return '';
+	const li = lineageOfDef(t.def);
+	if (li < 0) return '';
+	const tier = st.codex.p[li][2];
+	return '<span class="meta">Род: ' + esc(lineageList()[li].name) + (tier ? ' · резонанс ' + resonanceText(codexRules().resonance[tier - 1]) : '') + '</span>';
+}
 function openTitans() {
 	cancelPlace();
 	select(null);
@@ -6870,7 +6887,7 @@ function openTitans() {
 				'<span class="meta">' + esc(d.classRu) + ' · ур. ' + t.lv + ' из ' + t.max + (t.asc ? ' · возвышен' : '') + (t.sslots ? ' · навыки ' + (t.skills || []).length + '/' + t.sslots : '') +
 				(t.pw ? ' · сила ' + fmt(t.pw) : '') + '</span>' +
 				'<div class="progress"><i style="width:' + (t.lv >= t.max ? 100 : Math.round((100 * t.xp) / Math.max(1, t.next))) + '%"></i></div>' +
-				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' +
+				'<span class="meta">' + esc(titanAbil(d.id).join(' · ')) + '</span>' + titanResonance(st, t) +
 				'<span class="meta" data-live="tr' + t.id + '"></span><div class="row">' + act + '</div></div>';
 		});
 		// The rest of the roster, greyed out: the original showed every titan you could still summon.
@@ -6894,12 +6911,112 @@ function openTitans() {
 			'Титана на пределе уровня можно возвысить за осколки из руин и еду: ещё 10 уровней, слот реликвии и навык, как в оригинале. ' + (canFuse ? 'Слияние за еду переносит силу ненужных титанов в выбранного и может открыть ему слот навыка или поднять навык, как в оригинале.' : 'Слияние откроется на Замке ' + st.fuseCastle + '.') + '</p>' +
 			head + '<div class="shopGrid">' + cards.join('') + '</div>' +
 			(locked.length && !fz ? '<h3>Ещё не призваны</h3><p class="fine">Новых титанов дают алтари Храма реликвий: бесплатный раз в сутки, серебряный и золотой за самоцветы. Попробовать любого титана можно в меню боя, раздел «Ваш титан».</p><div class="shopGrid">' + locked.join('') + '</div>' : '') +
-			'<div class="actions"><button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
+			'<div class="actions">' + (codexOn(st) ? '<button class="btn' + (codexReady(st) ? ' primary' : '') + '" data-act="codex">Кодекс' + (codexReady(st) ? ' · ' + codexReady(st) : '') + '</button>' : '') +
+			'<button class="btn" data-act="relic-inv">Реликвии (' + st.relics.length + ')</button><button class="btn" data-act="relics">Храм реликвий</button>' + closeBtn + '</div>';
 		return {
-			key: ['titans', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id) + ':' + (t.skills || []).join('.') + ':' + t.pw).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
+			key: ['titans', codexOn(st) ? JSON.stringify(st.codex.p) + codexReady(st) : '', st.titans.map((t) => t.id + ':' + t.lv + ':' + t.xp + ':' + (t.rec > nowF()) + ':' + isArmed('tr:' + t.id) + ':' + t.relics.length + ':' + t.asc + ':' + t.ack.err + ':' + isArmed('asc:' + t.id) + ':' + (t.skills || []).join('.') + ':' + t.pw).join(), st.res[4], st.relics.length, fz ? fz.target + '>' + fz.picks.join('.') : '', isArmed('fuse'), st.res[0] >> 8, st.res[1] >> 8].join('|'), html,
 			live(el) { for (const t of K.st.titans) liveTitan(el, t); },
 		};
 	});
+}
+// ---------------------------------------------------------------------------------------------
+// Codex and Lineage Resonance (master prompt 5.9): an entry for every titan kind ever bound, paid once by its stars; a
+// page for every lineage, paid once it is full; Resonance for a lineage's titans by its kinds at the Codex level.
+// ---------------------------------------------------------------------------------------------
+const codexRules = () => K.rules.codex || null;
+const codexOn = (st) => !!(st && st.codex && st.codex.on && codexRules() && lineageList().length);
+/** Entries and pages waiting to be paid. */
+function codexReady(st) {
+	if (!codexOn(st)) return 0;
+	return st.codex.e.filter((x) => x === 1).length + st.codex.p.filter((x) => x[0] === 1).length;
+}
+/** The lineage of a titan kind (index into army.json), -1 none. */
+const lineageOfDef = (def) => lineageList().findIndex((L) => L.titans.includes(K.army.titans[def].id));
+/** A Resonance tier's bonuses in words. */
+function resonanceText(t) {
+	const parts = [];
+	if (t.hp) parts.push('+' + t.hp + '% здоровья');
+	if (t.atk) parts.push('+' + t.atk + '% урона');
+	if (t.armor) parts.push('+' + t.armor + '% брони');
+	return parts.join(', ');
+}
+/** What a lineage page pays. */
+function codexPageText(pg) {
+	const parts = [];
+	const r = RES.map((k) => (pg && pg[k]) || 0);
+	if (r.some((v) => v > 0)) parts.push(resPlus(r));
+	if (pg && pg.relic) parts.push('реликвия ' + '★'.repeat(pg.relic));
+	if (pg && pg.divine) parts.push('+' + pg.divine + ' ' + iconSvg('divine') + ' божественных');
+	return parts.join(', ');
+}
+function openCodex(line) {
+	if (!codexOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	if (line !== undefined) K.codexTab = line;
+	if (!(K.codexTab >= 0 && K.codexTab < lineageList().length)) {
+		// The first lineage with something to take, else the first.
+		const st = K.st;
+		K.codexTab = Math.max(0, lineageList().findIndex((L, k) => st.codex.p[k][0] === 1 || L.titans.some((id) => st.codex.e[titanIx(id)] === 1)));
+	}
+	openSheet(() => {
+		const st = K.st;
+		const X = codexRules();
+		const lines = lineageList();
+		const li = K.codexTab;
+		const L = lines[li];
+		const [page, cnt, tier] = st.codex.p[li];
+		const tabs = '<div class="shopTabs">' + lines.map((x, k) => {
+			const n = x.titans.filter((id) => st.codex.e[titanIx(id)] === 1).length + (st.codex.p[k][0] === 1 ? 1 : 0);
+			return '<button class="' + (k === li ? 'on' : '') + '" data-act="codex-tab" data-id="' + k + '">' + esc(x.name) + (n ? ' · ' + n : '') + '</button>';
+		}).join('') + '</div>';
+		const open = L.titans.filter((id) => st.codex.e[titanIx(id)] > 0).length;
+		// Resonance: the tier reached, and the next one this lineage can reach.
+		const tiers = (X.resonance || []).filter((t) => t.count <= L.titans.length);
+		const next = tiers[tier];
+		const resCard = '<div class="landCard' + (tier ? ' won' : '') + '">' + icoHtml('ui.power', 'bld other') + '<div class="info"><b>Резонанс рода' + (tier ? ': ' + resonanceText(X.resonance[tier - 1]) : '') + '</b>' +
+			'<span>Разных титанов рода на ' + X.level + '-м уровне и выше в Зале: ' + cnt + ' из ' + L.titans.length + '. ' +
+			(next ? 'С ' + next.count + ' — ' + resonanceText(next) + ' каждому титану рода.' : tier ? 'Это высший резонанс для рода из ' + L.titans.length + ' титанов.' : '') + '</span></div></div>';
+		const pageBtn = page === 2 ? '<span class="tag">получено</span>' : page === 1 ? '<button class="btn primary" data-act="codex-page" data-id="' + li + '">Забрать</button>'
+			: '<button class="btn" disabled>Записей ' + open + ' из ' + L.titans.length + '</button>';
+		const pageCard = '<div class="landCard' + (page === 2 ? ' won' : '') + '">' + icoHtml('ui.chest', 'gold land') + '<div class="info"><b>Страница «' + esc(L.name) + '»</b>' +
+			'<span>Все записи рода: ' + codexPageText(L.page) + '</span></div><div class="row">' + pageBtn + '</div></div>';
+		const cards = L.titans.map((id) => {
+			const i = titanIx(id);
+			const d = K.army.titans[i];
+			const e = st.codex.e[i];
+			const own = st.titans.filter((t) => t.def === i);
+			const best = own.reduce((m, t) => Math.max(m, t.lv), 0);
+			const gems = (X.entryGems || [])[d.stars - 1] || 0;
+			if (!e) {
+				return '<div class="titanCard locked"><div class="head">' + titanIcon({ def: i }) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
+					'<span class="meta">' + esc(d.classRu) + ' · запись закрыта</span><span class="meta">Откроется, когда титан придёт в Зал: на алтаре, в календаре или в святилище. Награда +' + gems + ' ' + iconSvg('gems') + '</span></div>';
+			}
+			const act = e === 1 ? '<button class="btn primary" data-act="codex-claim" data-id="' + i + '">Забрать +' + gems + ' ' + iconSvg('gems') + '</button>' : '<span class="tag">награда получена</span>';
+			return '<div class="titanCard"><div class="head">' + titanIcon({ def: i }) + '<div class="nm"><b>' + esc(d.name) + '</b>' + starsHtml(d.stars) + '</div></div>' +
+				'<span class="meta">' + esc(d.classRu) + ' · ' + (own.length ? 'в Зале, ур. ' + best + (best >= X.level ? ' · в резонансе' : '') : 'в Зале нет') + '</span>' +
+				'<p class="lore">' + esc((X.lore && X.lore[id]) || '') + '</p><div class="row">' + act + '</div></div>';
+		});
+		const html = sheetTitle(buildingIconById('hall_of_titans'), 'Кодекс титанов') + tabs +
+			'<p class="fine">Кодекс хранит записи о каждом титане, что приходил в ваш Зал, даже если его потом отдали в слияние. Запись даёт награду по звёздам и +' + X.power +
+			' к силе королевства, полная страница рода — свою награду. Резонанс: чем больше разных титанов рода дошли до ' + X.level + '-го уровня, тем сильнее все титаны этого рода в бою.</p>' +
+			resCard + pageCard + '<div class="shopGrid">' + cards.join('') + '</div>' +
+			'<div class="actions"><button class="btn" data-act="titans">Зал титанов</button>' + closeBtn + '</div>';
+		return { key: ['codex', li, JSON.stringify(st.codex), st.titans.map((t) => t.def + ':' + t.lv).join()].join('|'), html };
+	});
+}
+function claimCodex(i, page) {
+	const r = K.bridge.codexClaim(i, page);
+	if (r.err !== E.None) {
+		toast(r.err === E.InventoryFull ? 'Склад реликвий полон: освободите место для реликвии страницы' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	const what = page ? 'Страница «' + lineageList()[i].name + '»' : 'Запись «' + K.army.titans[i].name + '»';
+	toast(what + ': ' + rewardParts(r).join(', '), 'gold');
+	if (r.relics && r.relics.length) armyToast(r, []);
+	persist();
+	refresh(true);
 }
 function openRelics() {
 	cancelPlace();

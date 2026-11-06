@@ -671,6 +671,49 @@
     ]
   },
 
+  // Titan lineages (master prompt 2.3: the Lineage Trial takes one a week in turn, the Codex keeps a page for each). Our
+  // titans come from three myths: Olympus, the Aesir and the Slavic Nav and Prav. "page": what a full Codex page pays.
+  "lineages": [
+    { "id": "olympus", "name": "Олимп", "titans": ["titan.talos", "titan.minotaur", "titan.cyclops", "titan.atlas", "titan.hecate", "titan.artemis"],
+      "page": { "gems": 60, "relic": 4 } },
+    { "id": "aesir",   "name": "Асы",   "titans": ["titan.ymir", "titan.loki", "titan.surtr", "titan.tyr", "titan.thor"],
+      "page": { "gems": 60, "relic": 4 } },
+    { "id": "nav",     "name": "Навь и Правь", "titans": ["titan.perun", "titan.veles"],
+      "page": { "gems": 40, "divine": 40 } }
+  ],
+
+  // The Codex and Lineage Resonance (master prompt 5.9; the original had neither). Every titan kind bound for the first
+  // time opens its entry: a lore page, `power` Kingdom Power and `entryGems` by its stars (1★ to 4★), taken once in
+  // the Codex; a lineage with all its entries open pays its page. Resonance: with `count` kinds of a lineage at `level`
+  // or higher in the Hall, every titan of that lineage gets the tier's health, damage and armor (percents, added to the
+  // relics' and skills'). The prompt counts 4★ titans; ours top out at 4★ and only two are, so the level counts.
+  // "lore" is for the web client only. Numbers are ours: 215 gems for all entries, 160 more for the pages.
+  "codex": {
+    "entryGems": [5, 10, 20, 40],
+    "power": 5,
+    "level": 20,
+    "resonance": [
+      { "count": 2, "hp": 2 },
+      { "count": 4, "hp": 4, "atk": 2 },
+      { "count": 6, "hp": 6, "atk": 4, "armor": 2 }
+    ],
+    "lore": {
+      "titan.talos": "Бронзовый великан, выкованный Гефестом, трижды в день обходил берега Крита. В его единственной жиле течёт ихор, и пока цел бронзовый гвоздь в пяте, Талос не знает усталости.",
+      "titan.minotaur": "Сын критского быка, рождённый в позоре и запертый в Лабиринте. Годы во тьме сделали его яростным: он идёт напролом и не ищет обходных путей.",
+      "titan.cyclops": "Одноглазые кузнецы сковали Зевсу его молнии. Циклоп привык держать удар у горна и держит его в строю, прикрывая тех, кто стоит позади.",
+      "titan.atlas": "Титан, обречённый держать небосвод на своих плечах. Тот, кто выдержал тяжесть неба, выдержит и натиск любой армии.",
+      "titan.hecate": "Владычица перекрёстков, ключей и лунной магии. Факелы Гекаты освещают пути, которыми не ходят живые, и выжигают тех, кто встал на её дороге.",
+      "titan.artemis": "Охотница с серебряным луком, сестра Аполлона. Её стрела не знает промаха, а гнев не знает пощады к тем, кто нарушил её покой.",
+      "titan.ymir": "Первый из великанов, рождённый там, где огонь Муспельхейма встретил льды Нифльхейма. Из его тела боги сотворили мир, и в каждом камне ещё дремлет его сила.",
+      "titan.surtr": "Огненный великан, страж Муспельхейма. С пылающим мечом он ждёт Рагнарёка, чтобы поджечь мир, а пока испытывает этот меч на чужих армиях.",
+      "titan.thor": "Сын Одина, громовержец Асгарда. Мьёльнир возвращается в его руку после каждого броска, а там, где прошёл Тор, остаются лишь обломки и запах грозы.",
+      "titan.loki": "Обманщик и оборотень, названый брат Одина. Локи приходит туда, где его не ждут, и бьёт прежде, чем враг поймёт, откуда он взялся.",
+      "titan.tyr": "Бог права и честного боя, отдавший руку Фенриру ради клятвы богов. Тюр не отступает и прикрывает тех, кто сражается рядом с ним.",
+      "titan.perun": "Громовник Прави, хозяин молний и дубов. Его топор раскалывает скалы, а гнев обрушивается на врагов, как летняя гроза.",
+      "titan.veles": "Хозяин Нави, покровитель скота, мудрости и колдовства. Велес вечно спорит с Перуном, но в бою его чары связывают врагов по рукам и ногам."
+    }
+  },
+
   // Daily Trials (master prompt 10.3: six trials, one a weekday from Monday to Saturday and all of them on Sunday;
   // 3 attempts a day each, 10 difficulty tiers, a tier won on 3 stars can be swept). From Castle 3. Free of stones, and
   // nothing is lost in them (no casualties, spells or titan XP), as in the Titan Trials. A tier opens at its Castle
@@ -679,7 +722,8 @@
   // Essence Springs titan XP to the titan that fought (a sweep: to the titan picked), Forge Depths a relic of the tier's
   // rarity, Lineage Trial titan shards (half as many again with a titan of the week's lineage), Banner Grounds food,
   // Hall of Tomes minutes off the research running in the Armoury and in the Arcane Tower. "day": 0 Monday ... 5
-  // Saturday; "pay": gold, food, titanXp, relic, shards or study; "amounts": one a tier. Lineages turn weekly.
+  // Saturday; "pay": gold, food, titanXp, relic, shards or study; "amounts": one a tier. The lineages ("lineages" above)
+  // turn weekly.
   // For the web client only: "name", "note", "map", "ai", "timerSec", "enemy" (troops repeated over the squads of the
   // tier's battle level), "squads" (at most this many), "titans" (the enemy titan by the tier's rarity, 1 to 4 stars;
   // none: no titan; the Lineage Trial takes the week's lineage), "hpPct" (the enemy titan's extra health), "fort" (the
@@ -700,11 +744,6 @@
       { "castle": 16, "level": 9, "titanLevel": 40, "titanStars": 4, "bonus": 0 },
       { "castle": 18, "level": 9, "titanLevel": 45, "titanStars": 4, "bonus": 20 },
       { "castle": 20, "level": 9, "titanLevel": 50, "titanStars": 4, "bonus": 40 }
-    ],
-    "lineages": [
-      { "id": "olympus", "name": "Олимп", "titans": ["titan.talos", "titan.minotaur", "titan.cyclops", "titan.atlas", "titan.hecate", "titan.artemis"] },
-      { "id": "aesir",   "name": "Асы",   "titans": ["titan.ymir", "titan.loki", "titan.surtr", "titan.tyr", "titan.thor"] },
-      { "id": "nav",     "name": "Навь и Правь", "titans": ["titan.perun", "titan.veles"] }
     ],
     "list": [
       { "id": "gold_vault", "day": 0, "pay": "gold", "name": "Золотая казна", "map": "map.highvale_01", "ai": "warlord", "timerSec": 150,

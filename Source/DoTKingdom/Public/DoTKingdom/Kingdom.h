@@ -357,6 +357,7 @@ struct KingdomPowerInfo
 	int64_t buildings = 0; // building × L^1.5 for each building, the Castle's castleMul times
 	int64_t titans = 0; // the strongest titans' battle Power with their relics; 0 without the battle content
 	int64_t research = 0; // per troop level from the Armoury and spell level from the Arcane Tower
+	int64_t codex = 0; // per Codex entry open
 	int64_t total = 0;
 	std::vector<std::pair<int32_t, int64_t>> top; // the titans counted (id, Power), strongest first
 };
@@ -611,7 +612,9 @@ public:
 	int64_t TitanRelicBonus(int32_t TitanId, RelicStat Stat) const;
 	/** What a titan's skills add to a stat, tenths of a percent (not capped). */
 	int64_t TitanSkillBonus(int32_t TitanId, RelicStat Stat) const;
-	/** Relics and skills together, capped per effect: what the titan takes into battle. */
+	/** What the titan's Lineage Resonance adds to a stat, tenths of a percent (master prompt 5.9). */
+	int64_t TitanResonanceBonus(int32_t TitanId, RelicStat Stat) const;
+	/** Relics, skills and Resonance together, capped per effect: what the titan takes into battle. */
 	int64_t TitanBonus(int32_t TitanId, RelicStat Stat) const;
 	/** Skill slots of a titan: the content's slots, one more once ascended (0 without skills in the content). */
 	int SkillSlots(const TitanState& T) const;
@@ -859,6 +862,28 @@ public:
 	int64_t ComebackSince() const { return ComebackSec > 0 ? ComebackAt - ComebackSec : 0; }
 	/** Claims the gift: Nothing when none waits; a relic without room in the inventory is lost. */
 	Error ClaimComeback(Reward* Out);
+
+	// --- Codex and Lineage Resonance (master prompt 5.9) ---
+	// Every titan kind ever bound opens its Codex entry (paid once by its stars, Kingdom Power for each); a lineage whose
+	// entries are all open pays its page once. Resonance: with enough kinds of a lineage at the Codex level in the Hall,
+	// every titan of that lineage gets its tier's bonuses (added to the relics' and skills').
+	/** Whether this titan kind (index into the content's titans) was ever bound. */
+	bool CodexSeen(int Def) const;
+	/** Whether its entry was paid. */
+	bool CodexClaimed(int Def) const;
+	/** Whether a lineage's page was paid. */
+	bool CodexPageClaimed(int Line) const;
+	/** Entries open. */
+	int CodexEntries() const;
+	/** Pays an open entry: BadId (no such titan or no Codex), Locked (never bound), Nothing (paid already). */
+	Error ClaimCodex(int Def, Reward* Out);
+	/** Pays a full page: BadId, NotReady (an entry of the lineage is not open), Nothing (paid already), InventoryFull
+	 *  (its relic has no room; nothing is paid). */
+	Error ClaimCodexPage(int Line, Reward* Out);
+	/** Kinds of the lineage's titans in the Hall at the Codex level or higher. */
+	int ResonanceCount(int Line) const;
+	/** The Resonance tier the lineage has reached (0: none; else an index + 1 into the content's tiers). */
+	int ResonanceTier(int Line) const;
 
 	// Sweeps (master prompt 4.19): a mission won on 3 stars is resolved at once for a War Scroll and its march food. It
 	// counts as a 3-star repeat win with no losses: the titan sent gets its XP and rests, the loot table is rolled, and
@@ -1330,6 +1355,10 @@ private:
 	void StartSkills(TitanState& T) const;
 	/** What a titan's working relics add to a stat before the cap. */
 	int64_t TitanRelicSum(int32_t TitanId, RelicStat Stat) const;
+	/** Opens the Codex entry of a titan kind just bound. */
+	void NoteCodex(int Def);
+	/** The titan kinds in the Hall now (bit = index into the content's titans). */
+	uint64_t OwnedKinds() const;
 	/** Brings the quests of the day Time is in (when the day has changed), and of the week. */
 	void RollQuests();
 	/** Whether the pool quest can come to this kingdom now. */
@@ -1508,6 +1537,9 @@ private:
 	int SpireAt = 0;
 	int64_t ComebackSec = 0; // the absence that earned the gift waiting (0: none)
 	int64_t ComebackAt = 0; // when it ended
+	uint64_t CodexSeenMask = 0; // titan kinds ever bound (bit = index into the content's titans)
+	uint64_t CodexPaidMask = 0; // entries paid
+	uint64_t CodexPageMask = 0; // lineage pages paid
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;
