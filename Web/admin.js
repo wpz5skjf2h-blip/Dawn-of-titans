@@ -549,6 +549,25 @@ function invariants(st, add) {
 			if (ck.err === 0 && (h.don >= honr.donate.perDay || st.res[k] < ck.cost[k] || ck.cost[k] !== honr.donate[k ? 'food' : 'gold'] * st.castle)) add('bad', 'Пожертвование открыто: сегодня ' + h.don + ', цена ' + ck.cost[k] + ', есть ' + st.res[k]);
 		}
 	}
+	// War Banners: silk never below zero; a banner within its levels, its bonus and next cost as the rules say; a level
+	// offered only from the Castle, below the top and with the silk and gold for it.
+	const bnr = rules().banners;
+	if (bnr && st.banners && st.banners.on) {
+		const bn = st.banners;
+		const max = bnr.silk.length;
+		if (!(Number.isInteger(bn.silk) && bn.silk >= 0)) add('bad', 'Знамённый шёлк: ' + bn.silk);
+		if (bn.list.length !== army().troops.length) add('bad', 'Знамёна: ' + bn.list.length + ' при ' + army().troops.length + ' войсках');
+		bn.list.forEach((x, t) => {
+			const name = (army().troops[t] || {}).name || t;
+			const want = x.lv * bnr.pct + (bnr.perkLevels || []).filter((p) => x.lv >= p).length * (bnr.perkPct || 0);
+			if (!(x.lv >= 0 && x.lv <= max)) add('bad', 'Знамя «' + name + '»: уровень ' + x.lv + ' из ' + max);
+			if (x.pct !== want) add('bad', 'Знамя «' + name + '»: прибавка ' + x.pct + '%, а по правилам ' + want + '%');
+			if (x.silk !== (x.lv < max ? bnr.silk[x.lv] : 0)) add('bad', 'Знамя «' + name + '»: шёлка на следующий уровень ' + x.silk);
+			const ok = st.castle >= bnr.castle && x.lv < max && bn.silk >= x.silk && st.res[0] >= bnr.gold[x.lv];
+			if ((x.ck.err === 0) !== ok) add('bad', 'Знамя «' + name + '»: проверка ' + x.ck.err + ' при Замке ' + st.castle + ', ур. ' + x.lv + ', шёлке ' + bn.silk + ', золоте ' + st.res[0]);
+			if (st.castle < bnr.castle && x.ck.err !== 6) add('bad', 'Знамя «' + name + '» ниже Замка ' + bnr.castle + ': отказ ' + x.ck.err);
+		});
+	}
 	// Comeback gift: only for a week or more away, from its Castle, and the absence ended no later than now.
 	const cbr = rules().comeback;
 	if (cbr && st.comeback) {
@@ -1116,6 +1135,25 @@ function runMonkey(steps, seed, keep) {
 			if (p.divine && st2.divine.g !== st.divine.g + p.divine) throw new Error('лавка: божественных ' + st.divine.g + ' → ' + st2.divine.g);
 			return 0;
 		}],
+		['знамя', 2, (st) => {
+			if (!B.bannerUp || !st.banners || !st.banners.on) return -1;
+			const R = rules().banners;
+			// Mostly a banner the kingdom can raise; now and then any, to see the refusal.
+			const can = st.banners.list.map((x, i) => [x.ck.err, i]).filter((x) => x[0] === 0).map((x) => x[1]);
+			const t = can.length && r() < 0.8 ? pick(can) : Math.floor(r() * st.banners.list.length);
+			const x = st.banners.list[t];
+			const code = B.bannerUp(t);
+			const st2 = B.state();
+			if (code !== x.ck.err) throw new Error('знамя ' + t + ': отказ ' + code + ', а проверка ' + x.ck.err);
+			const y = st2.banners.list[t];
+			if (code !== 0) {
+				if (st2.res.join() !== st.res.join() || st2.banners.silk !== st.banners.silk || y.lv !== x.lv) throw new Error('отказ знамени ' + code + ' всё же что-то изменил');
+				return code;
+			}
+			if (y.lv !== x.lv + 1 || st2.banners.silk !== st.banners.silk - x.silk || st2.res[0] !== st.res[0] - R.gold[x.lv]) throw new Error('знамя ' + t + ': ур. ' + x.lv + ' → ' + y.lv + ', шёлк ' + st.banners.silk + ' → ' + st2.banners.silk + ', золото ' + st.res[0] + ' → ' + st2.res[0]);
+			if (st2.power.r !== st.power.r + (rules().power ? rules().power.research : 25)) throw new Error('знамя: мощь исследований ' + st.power.r + ' → ' + st2.power.r);
+			return 0;
+		}],
 		['подарок за возвращение', 2, (st) => {
 			if (!B.comebackClaim || !st.comeback) return -1;
 			// A visit after a week or more away earns the gift (sometimes the week passes here); then mostly claim it.
@@ -1475,6 +1513,11 @@ function renderTab(tab) {
 			h += row('Почёт <b>' + fmt(st.honor.pts) + '</b>', b('honor-set', '+1000', { n: 1 }) + b('honor-set', 'Обнулить', { n: 0 }),
 				'пожертвований сегодня ' + st.honor.don + (st.ally.my < 0 ? ', вне альянса' : ''));
 		}
+		if (st.banners && st.banners.on) {
+			// War Banners: a thousand silk to raise them, or none (and every banner back to 0).
+			h += row('Знамённый шёлк <b>' + fmt(st.banners.silk) + '</b>', b('silk-set', '+1000', { n: 1 }) + b('silk-set', 'Обнулить', { n: 0 }),
+				'знамён поднято ' + st.banners.list.reduce((a, x) => a + x.lv, 0) + (st.castle < rules().banners.castle ? ', откроются на Замке ' + rules().banners.castle : ''));
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1739,6 +1782,10 @@ function act(a, el, n, id, i) {
 		if (n) s.honor = Object.assign({ day: 0, don: 0, week: 0, bought: {} }, s.honor || {}, { pts: ((s.honor && s.honor.pts) || 0) + 1000 });
 		else delete s.honor;
 	}, n ? 'Почёт +1000' : 'Почёт обнулён'); break;
+	case 'silk-set': edit((s) => {
+		if (n) s.banners = Object.assign({ lv: {} }, s.banners || {}, { silk: ((s.banners && s.banners.silk) || 0) + 1000 });
+		else delete s.banners;
+	}, n ? 'Шёлк +1000' : 'Шёлк и знамёна обнулены'); break;
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;

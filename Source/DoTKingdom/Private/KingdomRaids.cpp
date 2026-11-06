@@ -216,6 +216,9 @@ void Kingdom::RaidArmies(int32_t LandId, int Level, uint64_t Pick, int64_t At, S
 				--Home[static_cast<size_t>(T)];
 				const TroopType& Troop = C.troops[static_cast<size_t>(T)];
 				Defense.squads.push_back(MakeSquad(Troop.id, Troop.levels[static_cast<size_t>(TroopLevel(T) - 1)].tier));
+				// The troop's War Banner goes with it.
+				Defense.squads.back().hpPct = BannerPct(T);
+				Defense.squads.back().atkPct = BannerPct(T);
 				++Mine;
 			}
 		}
@@ -786,6 +789,10 @@ KingdomPowerInfo Kingdom::KingdomPower() const
 	for (const int L : SpellLevelList)
 	{
 		Out.research += (L - 1) * P.research;
+	}
+	for (const int L : BannerList)
+	{
+		Out.research += L * P.research; // War Banners
 	}
 	Out.codex = C.codex.on ? CodexEntries() * C.codex.power : 0;
 	Out.total = Out.buildings + Out.titans + Out.research + Out.codex;

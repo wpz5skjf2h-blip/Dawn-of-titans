@@ -3,6 +3,7 @@
 
 #include "DoTSim/Hash.h"
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace dot
@@ -130,6 +131,11 @@ bool ParseSide(const JsonValue& J, SideSetup& Out, bool bAttacker, std::string& 
 			S.troopId = Q.GetString("troop");
 			S.tier = Q.GetInt("tier", 1);
 			S.count = Q.GetInt("count", 0);
+			if (const JsonValue* Bonus = Q.Find("bonus"))
+			{
+				S.hpPct = std::max(0, std::min(1000, Bonus->GetInt("hpPct", 0)));
+				S.atkPct = std::max(0, std::min(1000, Bonus->GetInt("atkPct", 0)));
+			}
 			if (!ReadVec(Q, "pos", "posRaw", S.position))
 			{
 				Error = "squad '" + S.troopId + "' needs pos";
@@ -253,6 +259,16 @@ void WriteSide(JsonWriter& W, const SideSetup& S)
 		W.Int(Q.tier);
 		W.Key("count");
 		W.Int(Q.count);
+		if (Q.hpPct || Q.atkPct)
+		{
+			W.Key("bonus");
+			W.BeginObject();
+			W.Key("hpPct");
+			W.Int(Q.hpPct);
+			W.Key("atkPct");
+			W.Int(Q.atkPct);
+			W.EndObject();
+		}
 		WriteVecRaw(W, "posRaw", Q.position);
 		WriteVecRaw(W, "facingRaw", Q.facing);
 		W.Key("formation");

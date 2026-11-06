@@ -72,6 +72,7 @@ void ReadEventReward(const JsonValue* J, EventReward& R)
 		R.relic = std::max(0, std::min(5, J->GetInt("relic", 0)));
 		R.divine = std::max<int64_t>(0, J->GetInt64("divine", 0));
 		R.honor = std::max<int64_t>(0, J->GetInt64("honor", 0));
+		R.silk = std::max<int64_t>(0, J->GetInt64("silk", 0));
 	}
 }
 void ReadInts(const JsonValue* List, std::vector<int64_t>& Out)
@@ -1571,9 +1572,9 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 				T.id = J.GetString("id");
 				T.day = J.GetInt("day", -1);
 				const std::string Pay = J.GetString("pay");
-				static const char* const PayNames[] = {"gold", "food", "titanXp", "relic", "shards", "study"};
+				static const char* const PayNames[] = {"gold", "food", "titanXp", "relic", "shards", "study", "silk"};
 				bool bPay = false;
-				for (int K = 0; K < 6; ++K)
+				for (int K = 0; K < 7; ++K)
 				{
 					if (Pay == PayNames[K])
 					{
@@ -1990,6 +1991,33 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			Error = "kingdom/kingdom.json: honor shop items need distinct ids, a price over 0 and 1-100 a week";
 			return false;
 		}
+	}
+	if (const JsonValue* Bj = Rules.Find("banners"))
+	{
+		BannerRules& B = Out.banners;
+		B.castle = std::max(1, std::min(100, Bj->GetInt("castle", B.castle)));
+		B.pctPerLevel = std::max(0, std::min(100, Bj->GetInt("pct", B.pctPerLevel)));
+		B.perkPct = std::max(0, std::min(100, Bj->GetInt("perkPct", 0)));
+		ReadInts(Bj->Find("silk"), B.silk);
+		ReadInts(Bj->Find("gold"), B.gold);
+		std::vector<int64_t> Perks;
+		ReadInts(Bj->Find("perkLevels"), Perks);
+		bool bOk = !B.silk.empty() && B.silk.size() == B.gold.size() && B.silk.size() <= 100;
+		for (size_t I = 0; I < B.silk.size(); ++I)
+		{
+			bOk = bOk && B.silk[I] >= 0 && B.gold[I] >= 0;
+		}
+		for (const int64_t L : Perks)
+		{
+			bOk = bOk && L >= 1 && L <= static_cast<int64_t>(B.silk.size());
+			B.perkLevels.push_back(static_cast<int>(L));
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: banners need silk and gold costs of the same length (1-100 levels) and perk levels within them";
+			return false;
+		}
+		B.on = true;
 	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
