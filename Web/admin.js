@@ -995,8 +995,9 @@ function runMonkey(steps, seed, keep) {
 			if (!B.conqStart || !st.conq) return -1;
 			const c = st.conq;
 			const map = conqHexes();
-			// Now and then a tile past the map or none, which must be refused.
-			const t = Math.floor(r() * (map.length + 2)) - 1;
+			// Mostly a tile next to the alliance's land; now and then any tile, one past the map or none, which may be refused.
+			const near = c.on ? map.map((h, k) => k).filter((k) => map[k].kind !== 0 && c.tiles[k][0] !== 0 && map[k].adj.some((j) => c.tiles[j][0] === 0)) : [];
+			const t = near.length && r() < 0.75 ? pick(near) : Math.floor(r() * (map.length + 2)) - 1;
 			const squads = [];
 			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
 			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
