@@ -1369,7 +1369,9 @@ function runMonkey(steps, seed, keep) {
 				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
 				// The end of a Warpath pass pays what was reached and not claimed, on top of full vaults too.
 				const wpPaid = !!(st.wp && st2.wp && st2.wp.paid.no !== st.wp.paid.no);
-				resourceCaps(st, st2, note, REWARDS.has(act[0]) || wpPaid);
+				// A season event beginning pays what the one before of its kind left unclaimed.
+				const sevPaid = !!(st.sev && st2.sev && st2.sev.some((v, e) => st.sev[e] && v.no !== st.sev[e].no && st.sev[e].mine >= 0));
+				resourceCaps(st, st2, note, REWARDS.has(act[0]) || wpPaid || sevPaid);
 				if (st.wp && st2.wp && st2.wp.no === st.wp.no && (st2.wp.xp < st.wp.xp || st2.wp.got.replace(/0/g, '').length < st.wp.got.replace(/0/g, '').length)) {
 					note('bad', 'Путь войны откатился: опыт ' + st.wp.xp + ' → ' + st2.wp.xp);
 				}
