@@ -4011,7 +4011,7 @@ void TestDailyTrials()
 	// rising Castle levels, three lineages, no gems.
 	KD_CHECK(D.castle == 3 && D.attempts == 3 && D.lineageBonusPct == 50 && D.tierCastle.size() == 10 && D.lineages.size() == 3 && D.list.size() == 6);
 	KD_CHECK(D.tierCastle.front() == 3 && D.tierCastle.back() == 20 && D.lineages[2] == std::vector<int>({Ct.FindTitan("titan.perun"), Ct.FindTitan("titan.veles")}));
-	const DailyPay Pays[] = {DailyPay::Gold, DailyPay::TitanXp, DailyPay::Relic, DailyPay::Shards, DailyPay::Food, DailyPay::Study};
+	const DailyPay Pays[] = {DailyPay::Gold, DailyPay::TitanXp, DailyPay::Relic, DailyPay::Shards, DailyPay::Silk, DailyPay::Study};
 	for (size_t I = 0; I < D.list.size(); ++I)
 	{
 		KD_CHECK(D.list[I].day == static_cast<int>(I) && D.list[I].pay == Pays[I] && D.list[I].amounts.size() == 10);
@@ -4073,11 +4073,12 @@ void TestDailyTrials()
 		KD_CHECK(L.DailyOpen(I) && L.DailyAttemptsLeft(I) == 3 && L.CheckDaily(I, 1).error == Error::None);
 	}
 	KD_CHECK(L.CheckDaily(0, 2).error == Error::Locked);
-	// Gold Vault: gold on top of full vaults. Banner Grounds: food.
+	// Gold Vault: gold on top of full vaults. Banner Grounds: Banner Silk.
 	const int64_t Gold = L.Amount(Res::Gold);
 	KD_CHECK(L.StartDaily(0, 1, {Militia}, 0, {}) == Error::None && L.FinishDaily(1, &R) == Error::None && R.res[GoldI] == 4000 && L.Amount(Res::Gold) == Gold + 4000);
 	KD_CHECK(L.DailyStars(0, 1) == 1 && L.SweepDaily(0, 1, 0, nullptr) == Error::NotReady);
-	KD_CHECK(L.StartDaily(4, 1, {}, 0, {}) == Error::None && L.FinishDaily(2, &R) == Error::None && R.res[FoodI] == 4000 && R.res[StonesI] == 0);
+	const int64_t Silk = L.Silk();
+	KD_CHECK(L.StartDaily(4, 1, {}, 0, {}) == Error::None && L.FinishDaily(2, &R) == Error::None && R.silk == 2 && L.Silk() == Silk + 2 && R.res[FoodI] == 0 && R.res[StonesI] == 0);
 	// Essence Springs: only with a titan, whose XP grows by the tier's amount; a sweep gives it to the titan picked.
 	const int64_t Xp = L.Titans()[0].xp;
 	const int Level = L.Titans()[0].level;
@@ -4279,9 +4280,11 @@ void TestAllianceWar()
 	const int64_t Gems = K.Amount(Res::Gems);
 	const int64_t Div = K.DivineGems();
 	const int64_t Hon = K.Honor();
+	const int64_t WarSilk = K.Silk();
 	Reward Got;
 	KD_CHECK(K.ClaimWarChest(&Got) == Error::None && K.WarChestClaimed() && K.ClaimWarChest(nullptr) == Error::Nothing);
 	KD_CHECK(Want.honor > 0 && Got.honor == Want.honor + 5 * 4 && K.Honor() == Hon + Got.honor); // and 5 Honor a star
+	KD_CHECK(Want.silk > 0 && Got.silk == Want.silk && K.Silk() == WarSilk + Want.silk);
 	KD_CHECK(Got.divine == Want.divine && K.DivineGems() == Div + Want.divine);
 	KD_CHECK(Got.res[GemsI] == Want.res[GemsI] && K.Amount(Res::Gems) == Gems + Want.res[GemsI] && Got.res[GoldI] == (Want.res[GoldI] + 150 * 4) * 6 && Got.res[FoodI] == 600 * 6);
 	KD_CHECK(static_cast<int>(Got.relics.size()) == (Want.relic > 0 ? 1 : 0));
@@ -4571,7 +4574,7 @@ void TestHonor()
 	// Ours: from Castle 4 in an alliance; 5 donations a day of 300 gold or food times the Castle, 10 Honor each; six
 	// items; helps, war and boss chests pay Honor too.
 	KD_CHECK(O.on && O.castle == 4 && O.donatePerDay == 5 && O.donateCost[GoldI] == 300 && O.donateCost[FoodI] == 300 && O.donateHonor == 10);
-	KD_CHECK(O.shop.size() == 6 && O.shop[0].id == "scroll" && O.shop[0].price == 15 && O.shop[0].weekly == 10 && O.shop[0].scrolls == 1);
+	KD_CHECK(O.shop.size() == 7 && O.shop[0].id == "scroll" && O.shop[0].price == 15 && O.shop[0].weekly == 10 && O.shop[0].scrolls == 1);
 	KD_CHECK(O.shop[1].pay.res[StonesI] == 5 && O.shop[2].pay.res[ShardsI] == 3 && O.shop[2].castle == 5 && O.shop[3].pay.relic == 3 && O.shop[3].weekly == 2);
 	KD_CHECK(O.shop[4].pay.divine == 15 && O.shop[4].castle == 10 && O.shop[5].pay.relic == 4 && O.shop[5].castle == 12 && O.shop[5].price == 300);
 	KD_CHECK(std::all_of(O.shop.begin(), O.shop.end(), [](const ShopItemDef& D) { return D.pay.honor == 0 && D.pay.res[static_cast<size_t>(ResIndex(Res::Gems))] == 0; }));
@@ -4585,7 +4588,7 @@ void TestHonor()
 	KD_CHECK(Base.Honor() == 0 && Base.DonationsToday() == 0 && Base.ShopBought(0) == 0 && Base.ShopBought(-1) == 0);
 	KD_CHECK(Base.CheckDonate(false).error == Error::NoAlliance && Base.Donate(true, nullptr) == Error::NoAlliance);
 	KD_CHECK(Base.CheckBuyShop(0).error == Error::NoAlliance && Base.BuyShop(0, nullptr) == Error::NoAlliance);
-	KD_CHECK(Base.CheckBuyShop(-1).error == Error::BadId && Base.CheckBuyShop(6).error == Error::BadId);
+	KD_CHECK(Base.CheckBuyShop(-1).error == Error::BadId && Base.CheckBuyShop(7).error == Error::BadId);
 	std::string Plain = Base.Save();
 	KD_CHECK(Plain.find("\"honor\":{") == std::string::npos);
 	Plain = Replace(Plain, "\"resources\":{\"gold\":" + std::to_string(Base.Amount(Res::Gold)) + ",\"food\":" + std::to_string(Base.Amount(Res::Food)),
@@ -4628,6 +4631,8 @@ void TestHonor()
 	// Items above the Castle are locked: divine gems from Castle 10, the 4-star relic from 12.
 	Ck = K.CheckBuyShop(4);
 	KD_CHECK(Ck.error == Error::Locked && Ck.castle == 10 && K.CheckBuyShop(5).castle == 12);
+	// Banner Silk from Castle 7.
+	KD_CHECK(O.shop[6].id == "silk" && O.shop[6].pay.silk == 3 && K.CheckBuyShop(6).error == Error::Locked && K.CheckBuyShop(6).castle == 7);
 	{
 		// Rich in Honor: the week's limit, then the next Monday; the relic needs room.
 		Kingdom L(Ct);
@@ -4673,6 +4678,98 @@ void TestHonor()
 	Kingdom Low(Ct);
 	Low.NewGame(T0, 151);
 	KD_CHECK(Low.CastleLevel() < 4 && Low.Save().find("\"honor\":{") == std::string::npos);
+}
+
+/** War Banners (master prompt 6.5): a banner a troop, levels 1-20 for Banner Silk and gold from Castle 7, health and
+ *  damage for the troop's squads (more at 10 and 20), the Garrison's squads too, Kingdom Power, the save and the hash. */
+void TestBanners()
+{
+	const KingdomContent& Ct = Content();
+	const BannerRules& B = Ct.banners;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	// The prompt: levels 1-20, +1% health and attack a level, perks at 10 and 20. Ours: the perks are 2% more each, from
+	// Castle 7, 411 silk a banner.
+	KD_CHECK(B.on && B.castle == 7 && B.pctPerLevel == 1 && B.MaxLevel() == 20 && B.perkLevels == std::vector<int>({10, 20}) && B.perkPct == 2);
+	KD_CHECK(B.silk.front() == 5 && B.silk.back() == 50 && B.gold.front() == 300 && B.gold.back() == 9000 && B.gold.size() == 20);
+	int64_t SilkAll = B.silk[0];
+	for (size_t I = 1; I < B.silk.size(); ++I)
+	{
+		KD_CHECK(B.silk[I] >= B.silk[I - 1] && B.gold[I] > B.gold[I - 1]);
+		SilkAll += B.silk[I];
+	}
+	KD_CHECK(SilkAll == 411);
+	// Silk: the Banner Grounds, the war and boss chests, the Alliance Shop.
+	KD_CHECK(Ct.dailyTrials.list[4].id == "banner_grounds" && Ct.dailyTrials.list[4].pay == DailyPay::Silk && Ct.dailyTrials.list[4].amounts.back() == 18);
+	KD_CHECK(Ct.allianceWar.chests[0].win.silk == 10 && Ct.allianceWar.chests[5].lose.silk == 10 && Ct.raidBoss.tiers[0].chest.silk == 2 && Ct.raidBoss.tiers[9].chest.silk == 15);
+
+	std::string Error;
+	// A new kingdom: no silk, no banners, and below Castle 7.
+	Kingdom N(Ct);
+	N.NewGame(T0, 171);
+	const int Mil = Troop("troop.militia");
+	const int Kn = Troop("troop.knights");
+	const int Count = static_cast<int>(Ct.troops.size());
+	KD_CHECK(N.Silk() == 0 && N.BannerLevel(Mil) == 0 && N.BannerPct(Mil) == 0 && N.BannerSilkCost(Mil) == 5 && N.BannerLevel(-1) == 0 && N.BannerLevel(Count) == 0);
+	KD_CHECK(N.CheckBanner(-1).error == Error::BadId && N.CheckBanner(Count).error == Error::BadId);
+	KD_CHECK(N.CheckBanner(Mil).error == Error::Locked && N.CheckBanner(Mil).castle == 7 && N.UpgradeBanner(Mil) == Error::Locked);
+	KD_CHECK(N.Save().find("\"banners\":{") == std::string::npos);
+
+	// Castle 7, a Garrison, 12 000 gold and 1 000 silk.
+	std::string Base = WithBuilding(N.Save(), "garrison", 5, 30);
+	Base = Replace(Base, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":7");
+	Base = Replace(Base, "\"gold\":2500", "\"gold\":10000");
+	Kingdom Plain(Ct);
+	KD_CHECK(Plain.Load(Base, Error) && Plain.CastleLevel() == 7 && Plain.Amount(Res::Gold) == 10000);
+	Kingdom K(Ct);
+	KD_CHECK(K.Load(Replace(Base, "{", "{\"banners\":{\"silk\":1000,\"lv\":{}},"), Error) && K.Silk() == 1000 && K.Hash() != Plain.Hash());
+	K.SetBattleContent(&Battle());
+	Plain.SetBattleContent(&Battle());
+	const int64_t Research = K.KingdomPower().research;
+	KD_CHECK(Research == Plain.KingdomPower().research);
+	// A level: 5 silk and 300 gold, +1%.
+	Check Ck = K.CheckBanner(Mil);
+	KD_CHECK(Ck.error == Error::None && Ck.cost[GoldI] == 300);
+	KD_CHECK(K.UpgradeBanner(Mil) == Error::None && K.BannerLevel(Mil) == 1 && K.BannerPct(Mil) == 1 && K.Silk() == 995 && K.Amount(Res::Gold) == 9700);
+	KD_CHECK(K.KingdomPower().research == Research + Ct.power.research);
+	// To level 9 (8 150 gold in all); level 10's 2 200 gold are more than is left.
+	for (int L = 2; L <= 9; ++L)
+	{
+		KD_CHECK(K.UpgradeBanner(Mil) == Error::None && K.BannerLevel(Mil) == L);
+	}
+	KD_CHECK(K.Silk() == 1000 - 76 && K.Amount(Res::Gold) == 10000 - 8150 && K.BannerPct(Mil) == 9 && K.BannerSilkCost(Mil) == 16);
+	Ck = K.CheckBanner(Mil);
+	KD_CHECK(Ck.error == Error::NotEnough && Ck.cost[GoldI] == 2200 && K.UpgradeBanner(Mil) == Error::NotEnough && K.BannerLevel(Mil) == 9 && K.Silk() == 924);
+	// The save keeps it; the city's defense with banner-raised militia is stronger.
+	KD_CHECK(K.Save().find("\"banners\":{\"silk\":924,\"lv\":{\"troop.militia\":9}}") != std::string::npos);
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save() && L.BannerLevel(Mil) == 9 && L.Silk() == 924);
+	KD_CHECK(K.SetGarrison({Mil}, 0) == Error::None && Plain.SetGarrison({Mil}, 0) == Error::None);
+	KD_CHECK(K.Forecast(0).defense > Plain.Forecast(0).defense);
+	// Rich: level 10 adds the perk (12%), level 20 the second (24%) and is the top.
+	Kingdom R(Ct);
+	KD_CHECK(R.Load(Replace(K.Save(), "\"gold\":1850", "\"gold\":200000"), Error) && R.Amount(Res::Gold) == 200000);
+	KD_CHECK(R.UpgradeBanner(Mil) == Error::None && R.BannerLevel(Mil) == 10 && R.BannerPct(Mil) == 12);
+	for (int Lv = 11; Lv <= 20; ++Lv)
+	{
+		KD_CHECK(R.UpgradeBanner(Mil) == Error::None);
+	}
+	KD_CHECK(R.BannerLevel(Mil) == 20 && R.BannerPct(Mil) == 24 && R.BannerSilkCost(Mil) == 0 && R.Silk() == 1000 - 411);
+	KD_CHECK(R.CheckBanner(Mil).error == Error::MaxLevel && R.UpgradeBanner(Mil) == Error::MaxLevel);
+	KD_CHECK(R.KingdomPower().research == Research + 20 * Ct.power.research);
+	// Silk short: knights wait.
+	Kingdom S(Ct);
+	KD_CHECK(S.Load(Replace(R.Save(), "\"silk\":589", "\"silk\":4"), Error) && S.Silk() == 4 && S.CheckBanner(Kn).error == Error::NotEnough && S.UpgradeBanner(Kn) == Error::NotEnough);
+	// A saved level above the content's top loads as the top; a troop the content does not have is dropped.
+	Kingdom T(Ct);
+	KD_CHECK(T.Load(Replace(R.Save(), "\"troop.militia\":20", "\"troop.militia\":99,\"troop.unknown\":3"), Error) && T.BannerLevel(Mil) == 20 && T.Hash() == R.Hash());
+	// The squads' bonus: power with it is higher, and a battle scenario keeps it.
+	SquadSetup Q;
+	Q.troopId = "troop.militia";
+	Q.tier = 1;
+	const int64_t Weak = SquadPower(Battle(), Q);
+	Q.hpPct = 24;
+	Q.atkPct = 24;
+	KD_CHECK(SquadPower(Battle(), Q) > Weak * 6 / 5);
 }
 
 void TestRaidBoss()
@@ -4837,8 +4934,10 @@ void TestRaidBoss()
 	const RaidBossTier& Tier = B.tiers[static_cast<size_t>(F.BossTier() - 1)];
 	const int64_t FGems = F.Amount(Res::Gems);
 	const int64_t FHonor = F.Honor();
+	const int64_t FSilk = F.Silk();
 	KD_CHECK(F.ClaimBossChest(&R) == Error::None && R.res[GemsI] == Tier.chest.res[GemsI] && F.Amount(Res::Gems) == FGems + Tier.chest.res[GemsI]);
 	KD_CHECK(Tier.chest.honor > 0 && R.honor == Tier.chest.honor && F.Honor() == FHonor + Tier.chest.honor);
+	KD_CHECK(Tier.chest.silk > 0 && R.silk == Tier.chest.silk && F.Silk() == FSilk + Tier.chest.silk);
 	KD_CHECK(F.BossChestClaimed() && F.ClaimBossChest(nullptr) == Error::Nothing);
 	// A member who did not fight gets none.
 	Kingdom Idle(Ct);
@@ -5112,7 +5211,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners},
 	};
 	for (const auto& T : Tests)
 	{

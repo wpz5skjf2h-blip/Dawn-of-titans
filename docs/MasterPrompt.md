@@ -1038,6 +1038,12 @@ Each troop type has one War Banner, levels 1–20, upgraded with Banner Silk + G
 | Chainbreakers | Bound at 4 chains | Each chain also gives −10% titan armor |
 | War Priests | Aura heals titans 0.5% HP/s | Revives 1 fallen soldier every 5 s |
 
+> **Implemented now:** banners for all troops, levels 1–20 from Keep (Castle) 7 for 5–50 Banner Silk and 300–9,000 Gold
+> a level; +1% HP and ATK a level for the player's own squads in every battle and in the city's defense; the per-troop
+> perks are simplified to +2% more at levels 10 and 20 (+24% at 20). A banner level counts as a research level in
+> Kingdom Power. Silk comes from Banner Grounds, Alliance War and Raid Boss chests and the Alliance Shop (docs/M0_Notes.md
+> §6я4).
+
 ### 6.6 Army size, squad slots and recovery
 - **War Camps:** 1 at Keep 1, 2 at Keep 6, 3 at Keep 12. Capacity per camp = `60 × 1.10^(L − 1)` points (level 25 ≈ 591).
 - **Squad slots in battle:** 3 at start · 4 at Keep 3 · 5 with research Command I (Keep 6) · 6 with Command II (Keep 12) · +1 Reinforcement slot from the alliance (Alliance Hall level 3).

@@ -36,7 +36,15 @@ int64_t SquadPower(const SimContent& Content, const SquadSetup& Squad)
 	const TroopDef& TD = Content.troops[static_cast<size_t>(TroopIndex)];
 	const int Tier = std::max(1, std::min(static_cast<int>(TD.tiers.size()), Squad.tier));
 	const TroopTierDef& TierDef = TD.tiers[static_cast<size_t>(Tier - 1)];
-	const int64_t PerSoldier = ComputePower(TD.hp * TierDef.hpMult, TD.armor + TierDef.armorAdd, TD.atk * TierDef.atkMult, TD.attackIntervalTicks, 1);
+	Fix64 Hp = TD.hp * TierDef.hpMult;
+	Fix64 Atk = TD.atk * TierDef.atkMult;
+	if (Squad.hpPct > 0 || Squad.atkPct > 0)
+	{
+		// The squad's own bonuses (War Banners); the side's relic bonuses are not counted here.
+		Hp = Hp * fx::Pct(100 + Squad.hpPct);
+		Atk = Atk * fx::Pct(100 + Squad.atkPct);
+	}
+	const int64_t PerSoldier = ComputePower(Hp, TD.armor + TierDef.armorAdd, Atk, TD.attackIntervalTicks, 1);
 	return PerSoldier * (Squad.count > 0 ? Squad.count : TD.squadSize);
 }
 
@@ -245,11 +253,13 @@ bool BattleSimulation::BuildSide(Side S, const SideSetup& SS, std::string& Error
 		Sq.id = static_cast<int32_t>(SquadsList.size()) + 1;
 		Sq.side = S;
 		InitSquadStats(Sq, TroopIndex, Q.tier);
-		if (SS.troopHpPct > 0 || SS.troopAtkPct > 0)
+		const int HpPct = SS.troopHpPct + Q.hpPct;
+		const int AtkPct = SS.troopAtkPct + Q.atkPct;
+		if (HpPct > 0 || AtkPct > 0)
 		{
-			// Relics on the titan that strengthen the whole army.
-			Sq.hp = Sq.hp * fx::Pct(100 + SS.troopHpPct);
-			Sq.atk = Sq.atk * fx::Pct(100 + SS.troopAtkPct);
+			// Relics on the titan that strengthen the whole army, and the squad's own (War Banners).
+			Sq.hp = Sq.hp * fx::Pct(100 + HpPct);
+			Sq.atk = Sq.atk * fx::Pct(100 + AtkPct);
 			Sq.powerPerSoldier = ComputePower(Sq.hp, Sq.armor, Sq.atk, Sq.interval, 1);
 		}
 		Sq.formation = TD.AllowsFormation(Q.formation) ? Q.formation : Formation::Line;

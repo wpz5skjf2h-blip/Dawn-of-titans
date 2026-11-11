@@ -234,6 +234,7 @@ struct Reward
 	int64_t scrolls = 0; // War Scrolls a quest chest gave
 	int64_t divine = 0; // divine gems an event paid
 	int64_t honor = 0; // Honor
+	int64_t silk = 0; // Banner Silk
 };
 
 /** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */
@@ -357,7 +358,7 @@ struct KingdomPowerInfo
 {
 	int64_t buildings = 0; // building × L^1.5 for each building, the Castle's castleMul times
 	int64_t titans = 0; // the strongest titans' battle Power with their relics; 0 without the battle content
-	int64_t research = 0; // per troop level from the Armoury and spell level from the Arcane Tower
+	int64_t research = 0; // per troop level from the Armoury, spell level from the Arcane Tower and War Banner level
 	int64_t codex = 0; // per Codex entry open
 	int64_t total = 0;
 	std::vector<std::pair<int32_t, int64_t>> top; // the titans counted (id, Power), strongest first
@@ -883,6 +884,23 @@ public:
 	Check CheckBuyShop(int Item) const;
 	/** Buys a shop item for Honor. */
 	Error BuyShop(int Item, Reward* Out);
+
+	// --- War Banners (master prompt 6.5) ---
+	// Every troop has a banner, raised a level at a time for Banner Silk and gold from the content's Castle; each level
+	// gives that troop's squads health and damage in every battle (some levels more), and counts as research in Kingdom
+	// Power. Silk comes from the Banner Grounds, the Alliance War and Raid Boss chests and the Alliance Shop.
+	int64_t Silk() const { return SilkCount; }
+	/** The banner's level of a troop (index into the army's troops); 0 none. */
+	int BannerLevel(int Troop) const;
+	/** Health and damage percent the troop's squads get from its banner. */
+	int BannerPct(int Troop) const;
+	/** Banner Silk for the troop's next level (0 at the top). */
+	int64_t BannerSilkCost(int Troop) const;
+	/** BadId (no banners or no such troop), Locked (Castle too low: castle), MaxLevel, NotEnough (the gold in cost, or
+	 *  the silk: BannerSilkCost). */
+	Check CheckBanner(int Troop) const;
+	/** Raises the troop's banner a level. */
+	Error UpgradeBanner(int Troop);
 
 	// --- Codex and Lineage Resonance (master prompt 5.9) ---
 	// Every titan kind ever bound opens its Codex entry (paid once by its stars, Kingdom Power for each); a lineage whose
@@ -1566,6 +1584,8 @@ private:
 	int DonateCount = 0; // donations made that day
 	int64_t ShopWeek = 0; // the week of ShopBoughtList
 	std::vector<int> ShopBoughtList; // by shop item: bought that week
+	int64_t SilkCount = 0; // Banner Silk
+	std::vector<int> BannerList; // by troop: the banner's level
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).
 	int64_t ScrollCount = 0;
 	uint64_t LootRolls = 0;
