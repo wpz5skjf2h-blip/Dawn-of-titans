@@ -613,7 +613,8 @@ void Kingdom::RunRaid(int64_t At)
 		const int64_t Pct = StarsPct(Rep.stars);
 		if (L)
 		{
-			const int64_t Take = L->stored * R.landStealPct * Pct / 10000;
+			// Alliance Tech keeps a share of it.
+			const int64_t Take = L->stored * R.landStealPct * Pct / 10000 * (100 - std::min(100, TechValue(TechKind::Guard))) / 100;
 			L->stored -= Take;
 			Rep.lost[static_cast<size_t>(ResIndex(C.landTypes[static_cast<size_t>(L->type)].resource))] = Take;
 			L->shieldUntil = At + R.landShieldSec;
@@ -624,7 +625,7 @@ void Kingdom::RunRaid(int64_t At)
 			// Gold and food above what the reserves protect, and a share of the VP (wiki 1.8: 5%).
 			for (const Res X : {Res::Gold, Res::Food})
 			{
-				const int64_t Take = std::max<int64_t>(0, Amount(X) - Protected(X)) * R.stealPct * Pct / 10000;
+				const int64_t Take = std::max<int64_t>(0, Amount(X) - Protected(X)) * R.stealPct * Pct / 10000 * (100 - std::min(100, TechValue(TechKind::Guard))) / 100;
 				Res_[static_cast<size_t>(ResIndex(X))] -= Take;
 				Rep.lost[static_cast<size_t>(ResIndex(X))] = Take;
 			}

@@ -661,6 +661,29 @@ struct BannerRules
 	int MaxLevel() const { return static_cast<int>(silk.size()); }
 };
 
+/** What an Alliance Tech does, by level: Help more helps on each timer; Reinforce levels on allies' squads; Guard percent
+ *  less lost to raids; War percent more health and attack for the player's squads in Alliance War battles; Boss percent
+ *  more Raid Boss damage. */
+enum class TechKind : uint8_t { Help, Reinforce, Guard, War, Boss };
+
+struct TechDef
+{
+	std::string id;
+	TechKind kind = TechKind::Help;
+	int per = 0; // the effect of each level
+};
+
+/** Alliance Tech (kingdom.json "allianceTech", master prompt 12.5): what the members' donations research. */
+struct AllianceTechRules
+{
+	bool on = false;
+	int64_t points = 0; // tech points a donation gives
+	std::vector<int64_t> costs; // points each level takes (index 0: level 1)
+	std::vector<int> baseLevels; // by alliance league: the levels its other members have researched
+	std::vector<TechDef> list;
+	int MaxLevel() const { return static_cast<int>(costs.size()); }
+};
+
 /** A titan lineage (kingdom.json "lineages", master prompt 2.3): its titans, and what its full Codex page pays. */
 struct LineageDef
 {
@@ -967,6 +990,7 @@ struct KingdomContent
 	CodexRules codex;
 	HonorRules honor;
 	BannerRules banners;
+	AllianceTechRules allianceTech;
 	PowerRules power;
 	/** (amount, gems) points; gems for missing resources are interpolated linearly. */
 	std::vector<std::pair<int64_t, int64_t>> gemsForResources;

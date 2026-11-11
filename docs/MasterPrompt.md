@@ -1579,6 +1579,12 @@ If the Leader is inactive for 14 days, leadership passes automatically to the mo
 - Members donate Gold or Food to Alliance Tech (daily cap) and earn Honor and Alliance XP.
 - **Alliance Tech** examples: +production, +help count, +reinforcement tier, +5% raid loot protection, +3% troop HP in Alliance War, +Raid Boss damage, +member cap.
 
+> **Implemented now (Alliance Tech):** every donation also gives 10 points to one of five techs (the one picked, or the
+> lowest one not at the top), five levels each for 100–800 points: +1 help a timer, +1 reinforcement level, −4% raid
+> losses, +2% health and attack of the player's squads in Alliance War, +3% Raid Boss damage a level. Alliances of the
+> higher leagues have levels already (1–3); the player's points stay with the alliance. Production and member cap are
+> left out (docs/M0_Notes.md §6я5).
+
 ### 12.6 Reinforcements
 - From Alliance Hall level 3, a member can donate one squad (taken from their own inventory) into your **Reinforcement slot**. Requests have a 20-minute cooldown.
 - The reinforcement squad can be deployed during the first 60 s of any attack (except event modes) and also defends your Rampart. It is consumed after use.
@@ -1593,7 +1599,7 @@ Sigils, Ability Tomes, Starlight Shards (weekly limit), gear chests, Banner Silk
 > **Implemented now (Honor):** Honor from helps given (+1), donations (5 a day from Keep (Castle) 4, 300 Gold or Food
 > × Castle for 10), Alliance War chests (+5 a star) and Raid Boss chests; it stays when the player leaves. The shop sells
 > what the kingdom has, with weekly limits: War Scrolls, portal stones, titan shards, 3★ and 4★ relics and divine gems,
-> no gems. Donations do not feed Alliance Tech yet (docs/M0_Notes.md §6я3).
+> no gems. Donations feed Alliance Tech too (12.5; docs/M0_Notes.md §6я3, §6я5).
 
 ### 12.9 Alliance War (weekly)
 - **Eligibility:** at least 10 members at Keep 10+. Leaders choose the roster size (10 / 15 / 20 / 25 / 30) and opt in.

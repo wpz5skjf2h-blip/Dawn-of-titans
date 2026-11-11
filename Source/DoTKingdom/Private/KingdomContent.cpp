@@ -2019,6 +2019,57 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		}
 		B.on = true;
 	}
+	if (const JsonValue* Tj = Rules.Find("allianceTech"))
+	{
+		AllianceTechRules& T = Out.allianceTech;
+		T.points = std::max<int64_t>(0, Tj->GetInt64("points", 0));
+		ReadInts(Tj->Find("costs"), T.costs);
+		std::vector<int64_t> Base;
+		ReadInts(Tj->Find("baseLevels"), Base);
+		bool bOk = T.points > 0 && !T.costs.empty() && T.costs.size() <= 20;
+		for (const int64_t Cost : T.costs)
+		{
+			bOk = bOk && Cost > 0;
+		}
+		for (const int64_t L : Base)
+		{
+			bOk = bOk && L >= 0 && L <= static_cast<int64_t>(T.costs.size());
+			T.baseLevels.push_back(static_cast<int>(L));
+		}
+		static const char* const KindNames[] = {"help", "reinforce", "guard", "war", "boss"};
+		if (const JsonValue* Lj = Tj->Find("list"))
+		{
+			for (size_t I = 0; I < Lj->Size() && I < 16; ++I)
+			{
+				const JsonValue& J = (*Lj)[I];
+				TechDef D;
+				D.id = J.GetString("id");
+				D.per = J.GetInt("per", 0);
+				const std::string Kind = J.GetString("kind");
+				bool bKind = false;
+				for (int K = 0; K < 5; ++K)
+				{
+					if (Kind == KindNames[K])
+					{
+						D.kind = static_cast<TechKind>(K);
+						bKind = true;
+					}
+				}
+				bOk = bOk && !D.id.empty() && bKind && D.per > 0 && D.per <= 100;
+				for (const TechDef& Other : T.list)
+				{
+					bOk = bOk && Other.id != D.id && Other.kind != D.kind;
+				}
+				T.list.push_back(D);
+			}
+		}
+		if (!bOk || T.list.empty())
+		{
+			Error = "kingdom/kingdom.json: allianceTech needs points, level costs over 0, base levels within them and techs of distinct ids and kinds";
+			return false;
+		}
+		T.on = true;
+	}
 	if (const JsonValue* Hj = Rules.Find("allianceHelp"))
 	{
 		AllianceHelpRules& H = Out.allianceHelp;

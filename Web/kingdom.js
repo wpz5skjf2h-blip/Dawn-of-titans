@@ -220,7 +220,7 @@ class KingdomBridge {
 	spireFinish(stars) { return JSON.parse(this.str(this.M._dk_spire_finish(stars))); }
 	comebackClaim() { return JSON.parse(this.str(this.M._dk_comeback_claim())); }
 	codexClaim(i, page) { return JSON.parse(this.str(this.M._dk_codex_claim(i, page ? 1 : 0))); }
-	donate(food) { return JSON.parse(this.str(this.M._dk_donate(food ? 1 : 0))); }
+	donate(food, tech) { return JSON.parse(this.str(this.M._dk_donate(food ? 1 : 0, tech == null ? -1 : tech))); }
 	shopBuy(i) { return JSON.parse(this.str(this.M._dk_shop_buy(i))); }
 	bannerUp(t) { return this.M._dk_banner_up(t); }
 	dailySweep(trial, tier, titan) { return JSON.parse(this.str(this.M._dk_daily_sweep(trial, tier, titan || 0))); }
@@ -2562,6 +2562,8 @@ function onAct(e) {
 	case 'banners': openBanners(); break;
 	case 'banner-up': upBanner(id); break;
 	case 'donate': donate(id === 1); break;
+	case 'donate-tech': donate(id % 2 === 1, id >> 1); break;
+	case 'tech': openTech(); break;
 	case 'shop-buy': buyAllyShop(id); break;
 	case 'daily-trial': openDaily(id); break;
 	case 'daily-go': startDaily(id, +el.dataset.t || 1); break;
@@ -4106,14 +4108,17 @@ function bossDamage() {
 	}
 }
 function bossEnd(ctx, stars, retreat) {
-	const dmg = bossDamage();
-	const r = K.bridge.bossFinish(stars, dmg);
+	const raw = bossDamage();
+	// The alliance's boss tech adds to it (the kingdom counts it so).
+	const up = techOn(K.st) ? K.st.tech.boss : 0;
+	const dmg = Math.min(1000, Math.floor((raw * (100 + up)) / 100));
+	const r = K.bridge.bossFinish(stars, raw);
 	persist();
 	refresh(true);
 	if (r.err !== E.None) return;
 	const parts = rewardParts(r);
 	const b = K.st.boss;
-	toast((retreat ? 'Отступление: ' : 'Бой с боссом: ') + 'босс потерял ' + pctOf(dmg) + ' здоровья' + (parts.length ? ', награда ' + parts.join(', ') : '') +
+	toast((retreat ? 'Отступление: ' : 'Бой с боссом: ') + 'босс потерял ' + pctOf(dmg) + ' здоровья' + (up && raw > 0 ? ' (+' + up + '% от технологий альянса)' : '') + (parts.length ? ', награда ' + parts.join(', ') : '') +
 		(b.fell ? '. Босс повержен!' : '. В запасе осталось ' + Math.round((100 * Math.max(0, b.pool - b.dmg)) / Math.max(1, b.pool)) + '%'), dmg > 0 ? 'gold' : 'bad');
 	openBoss();
 }
@@ -4997,7 +5002,8 @@ function openAllyShop() {
 				return '<button class="btn" disabled>' + why + '</button>';
 			};
 			const donCard = '<div class="landCard' + (h.dg.err === E.None || h.df.err === E.None ? ' ready' : '') + '">' + icoHtml('ui.alliance', 'food land') + '<div class="info"><b>Пожертвование альянсу</b>' +
-				'<span>Сегодня ' + h.don + ' из ' + R.donate.perDay + '. Каждое — ' + R.donate.honor + ' почёта за ' + fmtShort((R.donate.gold || 0) * st.castle) + ' золота или ' + fmtShort((R.donate.food || 0) * st.castle) + ' еды (по уровню Замка).</span></div>' +
+				'<span>Сегодня ' + h.don + ' из ' + R.donate.perDay + '. Каждое — ' + R.donate.honor + ' почёта за ' + fmtShort((R.donate.gold || 0) * st.castle) + ' золота или ' + fmtShort((R.donate.food || 0) * st.castle) + ' еды (по уровню Замка)' +
+				(techOn(st) && st.tech.auto >= 0 ? ' и ' + techRules().points + ' очков в технологию «' + esc(techRules().list[st.tech.auto].name) + '»' : '') + '.</span></div>' +
 				'<div class="row">' + (h.dg.err === E.LimitReached ? donBtn(false) : donBtn(false) + donBtn(true)) + '</div></div>';
 			const cards = R.shop.map((d, i) => {
 				const [bought, err, t] = h.shop[i];
@@ -5010,19 +5016,21 @@ function openAllyShop() {
 				donCard + '<h3>Лавка</h3><div class="shopGrid">' + cards.join('') + '</div>';
 		}
 		const html = sheetTitle(icoHtml('ui.chest', 'gold land'), 'Лавка альянса') + intro + body +
-			'<p class="fine">Из мастер-промпта: почёт за помощь, пожертвования и войну альянсов, лавка альянса за почёт с недельными лимитами. В оригинале этого не было. Наше: товары (свитки, камни, осколки, реликвии, божественные самоцветы вместо сигилов, книг и знамён, которых в игре нет), цены, лимиты и почёт с босса; пожертвования пока не идут в технологии альянса.</p>' +
-			'<div class="actions">' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
-		return { key: ['shop', inAlly, st.castle, st.res[0] >> 8, st.res[1] >> 8, honorKey(st)].join('|'), html };
+			'<p class="fine">Из мастер-промпта: почёт за помощь, пожертвования и войну альянсов, лавка альянса за почёт с недельными лимитами. В оригинале этого не было. Наше: товары (свитки, камни, осколки, реликвии, божественные самоцветы вместо сигилов и книг, которых в игре нет), цены, лимиты и почёт с босса; пожертвования идут ещё и в технологии альянса.</p>' +
+			'<div class="actions">' + (inAlly && techOn(st) ? '<button class="btn" data-act="tech">Технологии</button>' : '') + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return { key: ['shop', inAlly, st.castle, st.res[0] >> 8, st.res[1] >> 8, honorKey(st), techKey(st)].join('|'), html };
 	});
 }
-function donate(food) {
-	const r = K.bridge.donate(food);
+function donate(food, tech) {
+	const r = K.bridge.donate(food, tech);
 	if (r.err !== E.None) {
-		toast(r.err === E.NotEnough ? 'Не хватает ' + (food ? 'еды' : 'золота') : r.err === E.LimitReached ? 'На сегодня пожертвований больше нет' : errText(r.err), 'bad');
+		toast(r.err === E.NotEnough ? 'Не хватает ' + (food ? 'еды' : 'золота') : r.err === E.LimitReached ? 'На сегодня пожертвований больше нет' : r.err === E.MaxLevel ? 'Технология уже на вершине' : errText(r.err), 'bad');
 		refresh(true);
 		return;
 	}
-	toast('Пожертвование альянсу: +' + r.honor + ' почёта', 'gold');
+	const td = r.tech >= 0 && techRules() ? techRules().list[r.tech] : null;
+	const was = td && K.st.tech ? K.st.tech.list[r.tech].lv : 0;
+	toast('Пожертвование альянсу: +' + r.honor + ' почёта' + (td ? ', +' + r.techPts + ' очков в «' + td.name + '»' + (r.techLv > was ? ' · уровень ' + r.techLv + '!' : '') : ''), 'gold');
 	persist();
 	refresh(true);
 }
@@ -5040,6 +5048,85 @@ function buyAllyShop(i) {
 	if (r.relics && r.relics.length) armyToast(r, []);
 	persist();
 	refresh(true);
+}
+// --- Alliance Tech (master prompt 12.5) ---
+const techRules = () => K.rules.allianceTech || null;
+const techOn = (st) => !!(techRules() && st && st.tech && st.tech.on && st.tech.list.length === techRules().list.length);
+const TECH_ICONS = { help: 'ui.alliance', reinforce: 'ui.army', guard: 'ui.chest', war: 'ui.attack', boss: 'mission.boss' };
+/** What a tech does at value v (its level times its effect a level), in words. */
+function techEffect(d, v) {
+	switch (d.kind) {
+	case 'help': return '+' + v + ' ' + plural(v, 'помощь', 'помощи', 'помощей') + ' на каждый таймер';
+	case 'reinforce': return '+' + v + ' к уровню отрядов подкрепления';
+	case 'guard': return '−' + v + '% потерь от набегов';
+	case 'war': return '+' + v + '% здоровья и урона ваших отрядов в войне альянсов';
+	case 'boss': return '+' + v + '% урона рейдовому боссу';
+	default: return '+' + v;
+	}
+}
+function techKey(st) {
+	return techOn(st) ? [st.tech.auto, st.tech.list.map((x) => x.lv + ':' + x.mine).join('.')].join() : '';
+}
+function techCard(st) {
+	if (!techOn(st) || st.ally.my < 0) return '';
+	const T = techRules();
+	const lv = st.tech.list.reduce((s, x) => s + x.lv, 0);
+	const max = T.costs.length * T.list.length;
+	const a = st.tech.auto;
+	const sub = 'изучено ' + lv + ' из ' + max + ' уровней' + (a >= 0 ? ' · пожертвования идут в «' + T.list[a].name + '»' : ' · всё изучено');
+	return '<div class="landCard">' + icoHtml('ui.crystal', 'shards land') + '<div class="info"><b>Технологии альянса</b><span>' + esc(sub) + '</span></div>' +
+		'<div class="row"><button class="btn" data-act="tech">Открыть</button></div></div>';
+}
+function openTech() {
+	if (!techOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const T = techRules();
+		const R = honorRules();
+		const h = st.honor;
+		const max = T.costs.length;
+		const inAlly = st.ally.my >= 0;
+		const tier = inAlly ? st.ally.tier : 0;
+		const base = (T.baseLevels || [])[Math.max(0, Math.min(tier, (T.baseLevels || []).length - 1))] || 0;
+		const intro = '<p class="fine">Каждое пожертвование альянсу даёт ещё и ' + T.points + ' очков в технологию: в ту, что вы выберете, или в самую отстающую. Технологии действуют, пока вы в альянсе. ' +
+			'Ваши очки остаются за альянсом: вернётесь — они снова ваши (свой альянс уносит их с собой, когда его распускают).</p>';
+		let body;
+		if (!inAlly) {
+			body = '<p>Технологии есть только у альянса. Вступите в альянс или основайте свой.</p><div class="actions"><button class="btn primary" data-act="alliance">Альянсы</button></div>';
+		} else {
+			const league = K.rules.alliances.leagues[tier];
+			const locked = st.castle < R.castle;
+			const btn = (i, food) => {
+				const ck = food ? h.df : h.dg;
+				const k = food ? 'food' : 'gold';
+				const cost = (R.donate[k] || 0) * st.castle;
+				if (ck.err === E.None) return '<button class="btn primary" data-act="donate-tech" data-id="' + (i * 2 + (food ? 1 : 0)) + '">' + fmtShort(cost) + ' ' + iconSvg(k) + ' → +' + T.points + '</button>';
+				return food && ck.err === h.dg.err && ck.err !== E.NotEnough ? '' : '<button class="btn" disabled>' + (ck.err === E.LimitReached ? 'Снова через ' + fmtDur(ck.t) : ck.err === E.NotEnough ? 'Не хватает ' + iconSvg(k) : ck.err === E.Locked ? 'С Замка ' + ck.c : esc(errText(ck.err, ck))) + '</button>';
+			};
+			const rows = T.list.map((d, i) => {
+				const x = st.tech.list[i];
+				const top = x.lv >= max;
+				const from = T.costs.slice(0, x.lv).reduce((s, c) => s + c, 0);
+				const pct = top ? 100 : Math.round((100 * (x.pts - from)) / Math.max(1, x.need - from));
+				const now = x.lv ? techEffect(d, x.lv * d.per) : 'пока не действует';
+				const next = top ? 'на вершине' : 'на ур. ' + (x.lv + 1) + ': ' + techEffect(d, (x.lv + 1) * d.per);
+				const buttons = top ? '<button class="btn" disabled>Макс. уровень</button>' : btn(i, false) + btn(i, true);
+				return '<div class="troopRow">' + icoHtml(TECH_ICONS[d.kind] || 'ui.crystal', (x.lv ? 'gold' : 'shards') + ' land') + '<div class="info"><b>' + esc(d.name) + ' · ур. ' + x.lv + ' из ' + max + (st.tech.auto === i ? ' · следующая' : '') + '</b>' +
+					'<span>' + esc(d.note || '') + '</span><span>Сейчас: ' + esc(now) + ' · ' + esc(next) + '</span>' +
+					'<span class="meta">' + (top ? fmt(x.pts) + ' очков' : fmt(x.pts) + ' / ' + fmt(x.need) + ' очков') + (x.mine ? ' · ваших ' + fmt(x.mine) : '') + '</span>' +
+					'<div class="progress thin"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div></div><div class="row">' + buttons + '</div></div>';
+			});
+			body = '<div class="costline"><span>Пожертвований сегодня</span><b>' + h.don + ' из ' + R.donate.perDay + '</b><span>каждое +' + R.donate.honor + ' ' + iconSvg('honor') + ' и +' + T.points + ' очков</span></div>' +
+				(base ? '<p class="fine">' + esc(league.name) + ': участники альянса уже изучили каждую технологию до уровня ' + base + '.</p>' : '') +
+				(locked ? '<p class="note">Пожертвования — с Замка ' + R.castle + '. Технологии альянса уже действуют.</p>' : '') + rows.join('');
+		}
+		const html = sheetTitle(icoHtml('ui.crystal', 'shards land'), 'Технологии альянса') + intro + body +
+			'<p class="fine">Из мастер-промпта: пожертвования золотом и едой идут в технологии альянса, а те дают больше помощи, сильнее подкрепления, защиту от набегов, силу в войне альянсов и урон по боссу. В оригинале их не было. Наше: пять технологий по пять уровней, цены в очках и уровни, уже изученные в лигах повыше.</p>' +
+			'<div class="actions">' + (inAlly ? '<button class="btn" data-act="ally-shop">Лавка альянса</button><button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return { key: ['tech', inAlly, tier, st.castle, st.res[0] >> 8, st.res[1] >> 8, honorKey(st), techKey(st)].join('|'), html };
+	});
 }
 /** Helps that came since the last state: one by name, several summed up. */
 function announceHelp(prev, st) {
@@ -6506,7 +6593,8 @@ function landScenario(w, prep) {
 		const share = prep.shares ? prep.shares[i] : 100;
 		if (share > 0 && share < 100) sq.count = Math.max(1, Math.round(((K.squadSize[tr.id] || 20) * share) / 100));
 		// The player's own squads carry their troop's War Banner (the allies' do not).
-		const bp = i < prep.squads.length && bannersOn(K.st) ? K.st.banners.list[t].pct : 0;
+		// In Alliance War battles they also have the alliance's war tech.
+		const bp = i < prep.squads.length ? (bannersOn(K.st) ? K.st.banners.list[t].pct : 0) + (wb >= 0 && techOn(K.st) ? K.st.tech.war : 0) : 0;
 		if (bp > 0) sq.bonus = { hpPct: bp, atkPct: bp };
 		return sq;
 	});
@@ -8279,12 +8367,12 @@ function allianceMine(st, data) {
 		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
 		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
 		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
-		helpCard(st) + honorCard(st) + bossCard(st) + warCard(st) +
+		helpCard(st) + honorCard(st) + techCard(st) + bossCard(st) + warCard(st) +
 		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
 		body +
 		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
 	return {
-		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st), honorKey(st)].join('|'), html,
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st), honorKey(st), techKey(st)].join('|'), html,
 		live(el) {
 			const d = K.allyData || data;
 			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));

@@ -235,6 +235,9 @@ struct Reward
 	int64_t divine = 0; // divine gems an event paid
 	int64_t honor = 0; // Honor
 	int64_t silk = 0; // Banner Silk
+	int tech = -1; // the Alliance Tech a donation went to
+	int64_t techPts = 0; // and its points
+	int techLevel = 0; // that tech's level after it
 };
 
 /** A saved army for battles (master prompt 4.6, S13): a titan, squads (a troop index each) and spells (indices). */
@@ -873,10 +876,11 @@ public:
 	/** Donations made today (UTC). */
 	int DonationsToday() const;
 	/** BadId (no Honor in the content), NoAlliance, Locked (Castle too low: castle), LimitReached (the day's donations:
-	 *  timeSec to the next day), NotEnough (the gold or food: cost). */
-	Check CheckDonate(bool Food) const;
-	/** Gives the alliance gold (or food) for Honor. */
-	Error Donate(bool Food, Reward* Out);
+	 *  timeSec to the next day), NotEnough (the gold or food: cost); for a Tech picked (-1: none), BadId (no such tech)
+	 *  and MaxLevel (it is at the top). */
+	Check CheckDonate(bool Food, int Tech = -1) const;
+	/** Gives the alliance gold (or food) for Honor and points in a tech (the one picked, or TechAuto). */
+	Error Donate(bool Food, Reward* Out, int Tech = -1);
 	/** How many of a shop item (index into the content's shop) the player bought this week (from Monday 00:00 UTC). */
 	int ShopBought(int Item) const;
 	/** BadId (no such item), NoAlliance, Locked (Castle too low: castle), LimitReached (the week's: timeSec to the next
@@ -884,6 +888,25 @@ public:
 	Check CheckBuyShop(int Item) const;
 	/** Buys a shop item for Honor. */
 	Error BuyShop(int Item, Reward* Out);
+
+	// --- Alliance Tech (master prompt 12.5) ---
+	// A donation also researches the alliance's tech: its points go to the tech the player picks (or the lowest one not
+	// at the top). An alliance has the levels its league's members researched, and the player's points stay with it.
+	// While a member: more helps on each timer, stronger allies' squads, less lost to raids, stronger squads in Alliance
+	// War battles, more Raid Boss damage.
+	int TechCount() const { return static_cast<int>(C.allianceTech.list.size()); }
+	/** The current alliance's level of a tech (0 outside one). */
+	int TechLevel(int Tech) const;
+	/** The current alliance's points in a tech: its members' and the player's. */
+	int64_t TechPoints(int Tech) const;
+	/** The player's own points in the current alliance's tech. */
+	int64_t TechMine(int Tech) const;
+	/** The points the tech's next level needs in all (0 at the top or outside an alliance). */
+	int64_t TechNeed(int Tech) const;
+	/** The tech a donation goes to without a pick: the lowest level not at the top, the first of those; -1 none. */
+	int TechAuto() const;
+	/** The effect of the current alliance's tech of this kind: its level times the effect a level (0 outside one). */
+	int TechValue(TechKind Kind) const;
 
 	// --- War Banners (master prompt 6.5) ---
 	// Every troop has a banner, raised a level at a time for Banner Silk and gold from the content's Castle; each level
@@ -1584,6 +1607,10 @@ private:
 	int DonateCount = 0; // donations made that day
 	int64_t ShopWeek = 0; // the week of ShopBoughtList
 	std::vector<int> ShopBoughtList; // by shop item: bought that week
+	// Alliance Tech: the player's points by alliance index, by tech.
+	std::vector<std::pair<int, std::vector<int64_t>>> TechPtsList;
+	const std::vector<int64_t>* MyTechPts(int Index) const;
+	int64_t TechBase(int Index, int Tech) const;
 	int64_t SilkCount = 0; // Banner Silk
 	std::vector<int> BannerList; // by troop: the banner's level
 	// War Scrolls held, and loot table rolls so far (repeat wins and sweeps).

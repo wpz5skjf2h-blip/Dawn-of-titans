@@ -1279,6 +1279,18 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// Alliance Tech: the tech a donation without a pick goes to, the war and boss techs' effects, and per tech
+	// (kingdom.json order) its level, the alliance's points, the player's own and the next level's total (0 at the top).
+	{
+		O.Key("tech").Raw("{").Key("on").Raw(C.allianceTech.on ? "true" : "false").Comma().Key("auto").Int(Km->TechAuto()).Comma();
+		O.Key("war").Int(Km->TechValue(dot::kingdom::TechKind::War)).Comma().Key("boss").Int(Km->TechValue(dot::kingdom::TechKind::Boss)).Comma().Key("list").Raw("[");
+		for (int I = 0; I < Km->TechCount(); ++I)
+		{
+			O.Raw(I ? "," : "").Raw("{").Key("lv").Int(Km->TechLevel(I)).Comma().Key("pts").Int(Km->TechPoints(I)).Comma();
+			O.Key("mine").Int(Km->TechMine(I)).Comma().Key("need").Int(Km->TechNeed(I)).Raw("}");
+		}
+		O.Raw("]},");
+	}
 	// Daily quests: each quest's pool index, target and progress, rerolls left, the chest, when the day ends.
 	O.Key("quests").Raw("{").Key("list").Raw("[");
 	for (size_t I = 0; I < Km->Quests().size(); ++I)
@@ -1836,6 +1848,7 @@ const char* RewardJson(dot::kingdom::Error E, const dot::kingdom::Reward& R)
 	O.Key("stones").Int(R.res[static_cast<size_t>(dot::kingdom::ResIndex(dot::kingdom::Res::Stones))]).Comma();
 	O.Key("first").Int(R.firstClear ? 1 : 0).Comma().Key("newTitan").Int(R.newTitan).Comma().Key("study").Int(R.studySec).Comma();
 	O.Key("scrolls").Int(R.scrolls).Comma().Key("divine").Int(R.divine).Comma().Key("honor").Int(R.honor).Comma().Key("silk").Int(R.silk).Comma();
+	O.Key("tech").Int(R.tech).Comma().Key("techPts").Int(R.techPts).Comma().Key("techLv").Int(R.techLevel).Comma();
 	O.Key("relics").Raw("[");
 	for (size_t I = 0; I < R.relics.size(); ++I)
 	{
@@ -1953,11 +1966,12 @@ EMSCRIPTEN_KEEPALIVE const char* dk_codex_claim(int Index, int Page)
 	return RewardJson(E, R);
 }
 
-/** Gives the alliance gold (or, with Food set, food) for Honor: the reward (honor). */
-EMSCRIPTEN_KEEPALIVE const char* dk_donate(int Food)
+/** Gives the alliance gold (or, with Food set, food) for Honor and points in an Alliance Tech (Tech; -1: the lowest):
+ *  the reward (honor, and the tech, its points and its level now). */
+EMSCRIPTEN_KEEPALIVE const char* dk_donate(int Food, int Tech)
 {
 	dot::kingdom::Reward R;
-	const dot::kingdom::Error E = K() ? K()->Donate(Food != 0, &R) : dot::kingdom::Error::BadId;
+	const dot::kingdom::Error E = K() ? K()->Donate(Food != 0, &R, Tech) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 
