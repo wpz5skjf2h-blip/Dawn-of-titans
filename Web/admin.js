@@ -184,6 +184,24 @@ const army = () => kd().K.army;
 const defs = () => kd().K.defs;
 const rules = () => kd().K.rules;
 const goalText = (g) => g.name.replace('{n}', fmt(g.n || 1));
+/** The Conquest map as the kingdom lays it (kingdom.json "conquest" rings): kinds 0 fortress, 1 plains, 2 fort, 3 shrine,
+ *  4 sanctum, and each tile's neighbours. */
+function conqHexes() {
+	const R = rules().conquest;
+	const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+	const tiles = [];
+	(R && R.rings || []).forEach((kinds, ring) => {
+		let q = -ring;
+		let r = ring;
+		for (let i = 0; i < kinds.length; i++) {
+			tiles.push({ kind: 'HPFSC'.indexOf(kinds[i]), q, r, adj: [] });
+			if (ring > 0) { const d = dirs[Math.floor(i / ring)]; q += d[0]; r += d[1]; }
+		}
+	});
+	tiles.forEach((a) => tiles.forEach((b, j) => { if (a !== b && Math.abs(b.q - a.q) <= 1 && Math.abs(b.r - a.r) <= 1 && Math.abs(b.q - a.q + b.r - a.r) <= 1) a.adj.push(j); }));
+	return tiles;
+}
+const CONQ_KEYS = ['home', 'plains', 'fort', 'shrine', 'sanctum'];
 function defIndex(id) { return defs().findIndex((d) => d.id === id); }
 function castleOf(s) { const c = s.buildings.find((b) => b.def === 'castle'); return c ? c.level : 1; }
 /** Highest level of a building the Castle allows (the Castle itself: its last level). */
@@ -409,6 +427,40 @@ function invariants(st, add) {
 			if (wa.mine < 0 || wa.mine > 3 * wr.attacks || wa.mine < wa.us[wa.me][5]) add('bad', 'Война альянсов: ваших звёзд ' + wa.mine + ', в счёт ' + wa.us[wa.me][5]);
 		}
 		if (st.pendingWar >= 0 && !inBattle()) add('warn', 'Висит незавершённая атака на войне альянсов');
+	}
+	// Conquest: its days, the tokens within the stock, a map only in an alliance; on it every fortress its slot's, Control
+	// within the kind's, a place for each alliance, the shrines' attack as held, the player's stars within the attacks.
+	const qr = rules().conquest;
+	const cq = st.conq;
+	if (qr && cq) {
+		if (!(cq.ph >= 0 && cq.ph <= 2) || cq.end !== cq.start + qr.days * 86400 || (cq.ph > 0 && cq.next !== cq.start + qr.weeks * 7 * 86400)) add('bad', 'Завоевание: фаза ' + cq.ph + ', дни ' + [cq.start, cq.end, cq.next].join(' / '));
+		if (cq.tok < 0 || cq.tok > qr.tokens || cq.tokIn < 0 || cq.tokIn > qr.tokenSec || (cq.tok < qr.tokens) !== (cq.tokIn > 0)) add('bad', 'Завоевание: жетонов ' + cq.tok + ' из ' + qr.tokens + ', следующий через ' + cq.tokIn);
+		if (st.ally.my < 0 && (cq.on || cq.al.length || cq.tiles.length)) add('bad', 'Вне альянса есть карта Завоевания');
+		if (cq.attacks < 0 || cq.stars < 0 || cq.stars > 3 * cq.attacks || cq.taken < 0 || cq.taken > cq.attacks) add('bad', 'Завоевание: атак ' + cq.attacks + ', звёзд ' + cq.stars + ', взято ' + cq.taken);
+		if (cq.chest && cq.ph !== 2) add('bad', 'Завоевание: сундук открыт до конца');
+		if (cq.on) {
+			const map = conqHexes();
+			const n = cq.al.length;
+			const homes = map.map((h, t) => (h.kind === 0 ? t : -1)).filter((t) => t >= 0);
+			if (n < 2 || n > homes.length || cq.al[0][0] !== st.ally.my || new Set(cq.al.map((a) => a[0])).size !== n) add('bad', 'Завоевание: альянсы ' + cq.al.map((a) => a[0]).join(', ') + ' (ваш ' + st.ally.my + ')');
+			if (cq.tiles.length !== map.length) add('bad', 'Завоевание: клеток ' + cq.tiles.length + ' из ' + map.length);
+			const places = cq.al.map((a) => a[4]).sort((x, y) => x - y);
+			if (places.some((p, i) => p !== i + 1) || cq.al.some((a) => a[3] < 0)) add('bad', 'Завоевание: места ' + places.join(', '));
+			let atk = 0;
+			cq.tiles.forEach((x, t) => {
+				const h = map[t];
+				if (!h) return;
+				const kd0 = qr.tiles[CONQ_KEYS[h.kind]] || {};
+				const nm = 'Завоевание, клетка ' + (t + 1) + ': ';
+				if (x[0] < -1 || x[0] >= n) add('bad', nm + 'хозяин ' + x[0]);
+				if (h.kind === 0 && (x[0] !== (homes.indexOf(t) < n ? homes.indexOf(t) : -1) || x[1] !== 0)) add('bad', nm + 'крепость у ' + x[0] + ', контроль ' + x[1]);
+				if (h.kind !== 0 && !(x[1] > 0 && x[1] <= kd0.control)) add('bad', nm + 'контроль ' + x[1] + ' из ' + kd0.control);
+				if (x[2] > cq.end + qr.truceSec) add('bad', nm + 'перемирие после конца');
+				if (x[0] === 0) atk += kd0.atkPct || 0;
+			});
+			if (atk !== cq.atk) add('bad', 'Завоевание: атака святилищ ' + cq.atk + '%, а по клеткам ' + atk + '%');
+		}
+		if (cq.at >= 0 && !inBattle()) add('warn', 'Висит незавершённая атака в Завоевании');
 	}
 	// Alliance help: helps a timer within the rules, asks only of running timers with their ends, the time taken within the
 	// helps, no help late, the members' asks open, today's helps within the cap; nothing outside an alliance.
@@ -939,6 +991,35 @@ function runMonkey(steps, seed, keep) {
 			return err;
 		}],
 		['сундук войны', 1, () => (B.warChest ? B.warChest().err : -1)],
+		['атака в Завоевании', 3, (st) => {
+			if (!B.conqStart || !st.conq) return -1;
+			const c = st.conq;
+			const map = conqHexes();
+			// Now and then a tile past the map or none, which must be refused.
+			const t = Math.floor(r() * (map.length + 2)) - 1;
+			const squads = [];
+			st.army.n.forEach((n, k) => { for (let j = 0; j < n && squads.length < st.army.slots; j++) if (r() < 0.6) squads.push(k); });
+			const ti = r() < 0.85 ? pick(st.titans.filter((y) => y.rec <= st.now)) : null;
+			const spells = st.spells.stock.map((n, k) => k).filter((k) => st.spells.stock[k] > 0 && r() < 0.5).slice(0, st.spells.kinds);
+			const army = st.army.n.join();
+			const stock = st.spells.stock.join();
+			const code = B.conqStart(t, squads, ti ? ti.id : 0, spells);
+			if (code !== 0) return code;
+			const x = c.tiles[t];
+			const legal = c.on && c.ph === 1 && c.tok > 0 && st.castle >= rules().conquest.castle && x && map[t].kind !== 0 && x[0] !== 0 && x[2] <= st.now && map[t].adj.some((j) => c.tiles[j][0] === 0);
+			if (!legal) throw new Error('атака в Завоевании началась: клетка ' + t + (x ? ' у ' + x[0] + ', перемирие до ' + x[2] : ' вне карты') + ', фаза ' + c.ph + ', жетонов ' + c.tok);
+			const st1 = B.state();
+			if (st1.conq.at !== t || st1.conq.tok !== c.tok - 1) throw new Error('атака в Завоевании: висит ' + st1.conq.at + ', жетонов ' + c.tok + ' → ' + st1.conq.tok);
+			const stars = Math.floor(r() * 4);
+			const err = B.conqFinish(stars).err;
+			// Nothing is lost; the stars count for the player.
+			const st2 = B.state();
+			if (st2.army.n.join() !== army || st2.spells.stock.join() !== stock) throw new Error('атака в Завоевании забрала отряды или заклинания');
+			if (st2.conq.at >= 0) throw new Error('атака в Завоевании осталась незавершённой');
+			if (st2.conq.no === c.no && st2.conq.on && (st2.conq.attacks !== c.attacks + 1 || st2.conq.stars !== c.stars + stars)) throw new Error('Завоевание: атак ' + c.attacks + ' → ' + st2.conq.attacks + ', звёзд ' + c.stars + ' + ' + stars + ' → ' + st2.conq.stars);
+			return err;
+		}],
+		['сундук Завоевания', 1, () => (B.conqChest ? B.conqChest().err : -1)],
 		['просьба о помощи', 3, (st) => {
 			if (!B.helpAsk || !st.help) return -1;
 			// A running timer, now and then a wrong kind or one that is not running.
@@ -1564,6 +1645,12 @@ function renderTab(tab) {
 			h += row('Технологии альянса <b>' + st.tech.list.reduce((a, x) => a + x.lv, 0) + ' из ' + rules().allianceTech.costs.length * st.tech.list.length + '</b>',
 				b('tech-set', 'Изучить все', { n: 1 }) + b('tech-set', 'Сбросить', { n: 0 }), st.ally.my < 0 ? 'вне альянса: только сброс' : 'ваших очков ' + fmt(st.tech.list.reduce((a, x) => a + x.mine, 0)));
 		}
+		if (st.conq && rules().conquest) {
+			// Conquest: March Tokens for this Conquest, all of them or none (the clock starts now).
+			const cr = rules().conquest;
+			h += row('Жетоны похода <b>' + st.conq.tok + ' из ' + cr.tokens + '</b>', b('conq-tok', 'Полный запас', { n: cr.tokens }) + b('conq-tok', 'Ни одного', { n: 0 }),
+				st.conq.ph === 1 ? 'Завоевание идёт, конец через ' + fmtDur(st.conq.end - st.now) : 'следующее через ' + fmtDur((st.conq.ph === 0 ? st.conq.start : st.conq.next) - st.now));
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1845,6 +1932,13 @@ function act(a, el, n, id, i) {
 		}, n ? 'Технологии альянса изучены' : 'Технологии альянса сброшены');
 		break;
 	}
+	case 'conq-tok': edit((s, st) => {
+		const c = s.conquest || { no: -1, key: -1, league: 0, ids: [], mem: [], hits: [], chest: false, at: -1 };
+		c.tokNo = st.conq.no;
+		c.tok = n;
+		c.tokAt = st.now;
+		s.conquest = c;
+	}, n ? 'Жетонов похода: ' + n : 'Жетоны похода кончились'); break;
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;

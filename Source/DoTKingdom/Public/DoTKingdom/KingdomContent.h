@@ -589,6 +589,61 @@ struct AllianceWarRules
 	EventReward star; // for each star of the player's attacks (gold and food times the Castle)
 };
 
+/** A Conquest tile's kind (kingdom.json "conquest" rings: H, P, F, S, C). */
+enum class ConquestKind : uint8_t
+{
+	Home, // an alliance's fortress, never taken
+	Plains,
+	Fort,
+	Shrine,
+	Sanctum,
+	Count
+};
+
+/** What a kind of Conquest tile gives and how it is held. */
+struct ConquestKindDef
+{
+	int64_t pts = 0; // Conquest Points an hour to its holder
+	int control = 0; // Control a tile of this kind has when taken (stars take it away)
+	int tier = 0; // its garrison's tier over the league's war tier
+	int fort = 0; // % more health for its garrison (web)
+	int atkPct = 0; // % more attack for its holder's squads in Conquest battles
+};
+
+/** A tile of the Conquest map: its kind, axial hex coordinates and neighbours (indices into the map). */
+struct ConquestHex
+{
+	ConquestKind kind = ConquestKind::Plains;
+	int q = 0;
+	int r = 0;
+	std::vector<int> adj;
+};
+
+/** Conquest (kingdom.json "conquest", master prompt 12.11): a week of every few in which the player's alliance and
+ *  the nearest ones of its league take tiles of a hex map for points. */
+struct ConquestRules
+{
+	int castle = 8; // Castle level the player attacks from
+	int weeks = 4; // a Conquest every this many weeks (counted as the Warpath, from a Monday)
+	int week = 2; // which of them (0 the first)
+	int days = 7; // from Monday 00:00 UTC
+	int tokens = 6; // March Tokens held at most (and at the start)
+	int64_t tokenSec = 7200; // a token comes back after this
+	int64_t truceSec = 3600; // a tile just taken cannot be attacked for this long
+	int starControl = 10; // Control a star takes
+	int marchPct = 0; // a computer alliance's marches an hour: its members times this / 100 (the fraction by chance)
+	std::vector<int> starPct; // computer marches: the chance (%) behind their stars, by league
+	int tierPct = 10; // taken from it for each tier of the tile's garrison
+	std::array<ConquestKindDef, static_cast<size_t>(ConquestKind::Count)> kinds{};
+	std::vector<ConquestHex> map; // ring by ring from the centre
+	std::vector<int> homes; // the fortresses, in map order: alliance slot k starts at homes[k]
+	int sanctum = -1; // the Titan Sanctum's tile (-1: none)
+	std::vector<EventReward> chests; // by place (gold and food times the Castle)
+	bool On() const { return !map.empty(); }
+	int Slots() const { return static_cast<int>(homes.size()); }
+	const ConquestKindDef& Kind(ConquestKind K) const { return kinds[static_cast<size_t>(K)]; }
+};
+
 /** Army loadouts (kingdom.json "loadouts"): how many a kingdom keeps (0: none). */
 struct LoadoutRules
 {
@@ -980,6 +1035,7 @@ struct KingdomContent
 	AssaultRules assault;
 	RaidBossRules raidBoss;
 	AllianceWarRules allianceWar;
+	ConquestRules conquest;
 	AllianceHelpRules allianceHelp;
 	LoadoutRules loadouts;
 	DivineRules divine;

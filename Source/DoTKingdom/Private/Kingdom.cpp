@@ -155,6 +155,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ResetAssault();
 	ResetBoss();
 	ResetWar();
+	ResetConquest();
 	ResetHelp();
 	QuestCounter = 0;
 	RollQuests();
@@ -2334,7 +2335,7 @@ Error Kingdom::BeginBattle(int32_t Target, bool Capture, int64_t Cost, const std
 	NoteQuest(QuestEvent::Stones, Cost);
 	NoteQuest(Target > 0 ? QuestEvent::Raid : Target <= -MissionBase ? QuestEvent::Mission
 			: Target == TrialPending || Target == AssaultPending || Target == BossPending || Target == DailyPending || Target == WarPending
-				|| Target == SpirePending ? QuestEvent::Count
+				|| Target == SpirePending || Target == ConquestPending ? QuestEvent::Count
 			: QuestEvent::Site, 1);
 	return Error::None;
 }
@@ -6051,6 +6052,488 @@ Error Kingdom::ClaimWarChest(Reward* Out)
 	return Error::None;
 }
 
+// --- Conquest -------------------------------------------------------------------------------------------
+
+int64_t Kingdom::ConqNoNow() const
+{
+	const ConquestRules& Q = C.conquest;
+	return FloorDiv(std::max<int64_t>(0, Time) / 86400 - ConqStartDay(0), static_cast<int64_t>(Q.weeks) * 7);
+}
+
+Kingdom::ConqSnap Kingdom::ConqSnapNow() const
+{
+	ConqSnap S;
+	const ConquestRules& Q = C.conquest;
+	if (!ConquestContent() || AllianceIdx < 0)
+	{
+		return S;
+	}
+	S.key = BossKey();
+	S.league = std::max(0, std::min(AllianceTier(AllianceIdx), static_cast<int>(Q.starPct.size()) - 1));
+	// An own alliance's recruits march as they come (the map works them out hour by hour), the rest as they are.
+	S.ids.push_back(AllianceIdx);
+	S.members.push_back(HasOwnAlliance() ? 0 : AllianceSize(AllianceIdx));
+	// The rivals: the computer alliances nearest the league, in an order of the event's own between equals.
+	const uint64_t Base = Mix(Mix(Seed ^ 0x636f6e7172697673ULL, static_cast<uint64_t>(S.key)), static_cast<uint64_t>(ConqNoNow()));
+	std::vector<std::pair<uint64_t, int>> List;
+	for (int I = 0; I < BaseAlliances(); ++I)
+	{
+		if (I != AllianceIdx)
+		{
+			const uint64_t Dist = static_cast<uint64_t>(std::abs(AllianceTier(I) - S.league));
+			List.push_back({(Dist << 32) | (Mix(Base, static_cast<uint64_t>(I)) & 0xffffffffULL), I});
+		}
+	}
+	std::sort(List.begin(), List.end());
+	for (size_t I = 0; I < List.size() && static_cast<int>(S.ids.size()) < Q.Slots(); ++I)
+	{
+		S.ids.push_back(List[I].second);
+		S.members.push_back(AllianceSize(List[I].second));
+	}
+	return S;
+}
+
+bool Kingdom::ConqMine() const
+{
+	return ConqNo >= 0 && ConqNo == ConqNoNow() && ConqSaved.key >= 0 && ConqSaved.key == BossKey();
+}
+
+Kingdom::ConqSnap Kingdom::ConqSnapOf() const
+{
+	return ConqMine() ? ConqSaved : ConqSnapNow();
+}
+
+int Kingdom::ConqTokens(int64_t* NextIn) const
+{
+	const ConquestRules& Q = C.conquest;
+	if (NextIn)
+	{
+		*NextIn = 0;
+	}
+	if (ConqTokNo != ConqNoNow())
+	{
+		return Q.tokens;
+	}
+	const int64_t Since = std::max<int64_t>(0, Time - ConqTokAt);
+	const int Have = static_cast<int>(std::min<int64_t>(Q.tokens, ConqTok + Since / Q.tokenSec));
+	if (NextIn && Have < Q.tokens)
+	{
+		*NextIn = Q.tokenSec - Since % Q.tokenSec;
+	}
+	return Have;
+}
+
+void Kingdom::SimConquest(const ConqSnap& S, int64_t Start, int64_t Until, const std::vector<ConqHit>& Hits, ConquestInfo& Out) const
+{
+	const ConquestRules& Q = C.conquest;
+	const int N = std::min(static_cast<int>(S.ids.size()), Q.Slots());
+	const int T = static_cast<int>(Q.map.size());
+	Out.tiles.assign(static_cast<size_t>(T), ConquestTile());
+	Out.points.assign(static_cast<size_t>(N), 0);
+	Out.stars = 0;
+	Out.taken = 0;
+	for (int I = 0; I < T; ++I)
+	{
+		Out.tiles[static_cast<size_t>(I)].control = Q.Kind(Q.map[static_cast<size_t>(I)].kind).control;
+	}
+	for (int K = 0; K < N; ++K)
+	{
+		Out.tiles[static_cast<size_t>(Q.homes[static_cast<size_t>(K)])].owner = K;
+	}
+	std::vector<ConqHit> List = Hits;
+	std::stable_sort(List.begin(), List.end(), [](const ConqHit& X, const ConqHit& Y) { return X.at < Y.at; });
+	size_t NextHit = 0;
+	// A tile loses Control for each star; at none it is the attacker's, with all its Control and a truce.
+	const auto Take = [&Q, &Out](int Slot, int Tile, int Stars, int64_t At) {
+		ConquestTile& X = Out.tiles[static_cast<size_t>(Tile)];
+		X.control -= Stars * Q.starControl;
+		if (X.control > 0)
+		{
+			return false;
+		}
+		X.owner = Slot;
+		X.control = Q.Kind(Q.map[static_cast<size_t>(Tile)].kind).control;
+		X.truceUntil = At + Q.truceSec;
+		return true;
+	};
+	const auto Borders = [&Q, &Out](int Slot, int Tile) {
+		for (const int A : Q.map[static_cast<size_t>(Tile)].adj)
+		{
+			if (Out.tiles[static_cast<size_t>(A)].owner == Slot)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	// The player's attacks count where they end (a tile taken meanwhile by someone else or in its truce keeps its stars
+	// out of the map, not out of the player's count).
+	const auto ApplyHits = [&](int64_t Before, bool bAll) {
+		while (NextHit < List.size() && (bAll || List[NextHit].at < Before))
+		{
+			const ConqHit& X = List[NextHit++];
+			Out.stars += X.stars;
+			if (N == 0 || X.tile < 0 || X.tile >= T || Q.map[static_cast<size_t>(X.tile)].kind == ConquestKind::Home)
+			{
+				continue;
+			}
+			const ConquestTile& Y = Out.tiles[static_cast<size_t>(X.tile)];
+			if (Y.owner != 0 && Y.truceUntil <= X.at && Take(0, X.tile, X.stars, X.at))
+			{
+				++Out.taken;
+			}
+		}
+	};
+	const uint64_t Base = Mix(Mix(Seed ^ 0x636f6e7175657374ULL, static_cast<uint64_t>(S.key)), static_cast<uint64_t>(Out.no));
+	const int Pct = Q.starPct.empty() ? 50 : Q.starPct[static_cast<size_t>(std::max(0, std::min(S.league, static_cast<int>(Q.starPct.size()) - 1)))];
+	const int Hours = Q.days * 24;
+	for (int H = 1; H <= Hours && N > 0; ++H)
+	{
+		const int64_t At = Start + static_cast<int64_t>(H) * 3600;
+		if (At > Until)
+		{
+			break;
+		}
+		ApplyHits(At, false);
+		const uint64_t Hh = Mix(Base, static_cast<uint64_t>(H));
+		for (int J = 0; J < N; ++J)
+		{
+			const int K = (J + H) % N;
+			const uint64_t Hk = Mix(Hh, static_cast<uint64_t>(K) + 1);
+			const int Members = K == 0 && S.ids[0] >= BaseAlliances() ? RecruitsAt(At) : S.members[static_cast<size_t>(K)];
+			const int Hundredths = Members * Q.marchPct;
+			const int Marches = Hundredths / 100 + (static_cast<int>(Hk % 100) < Hundredths % 100 ? 1 : 0);
+			for (int M = 0; M < Marches; ++M)
+			{
+				const uint64_t Hm = Mix(Hk, static_cast<uint64_t>(M) + 1);
+				int Best = -1;
+				int64_t BestScore = -1;
+				for (int I = 0; I < T; ++I)
+				{
+					const ConquestHex& Hex = Q.map[static_cast<size_t>(I)];
+					const ConquestTile& Y = Out.tiles[static_cast<size_t>(I)];
+					if (Hex.kind == ConquestKind::Home || Y.owner == K || Y.truceUntil > At || !Borders(K, I))
+					{
+						continue;
+					}
+					// The most for the least Control left, each alliance with its own eye for it.
+					const ConquestKindDef& D = Q.Kind(Hex.kind);
+					const int64_t Score = (D.pts * 10 + D.atkPct * 4 + 5) * 1000 * (80 + static_cast<int64_t>(Mix(Hm, static_cast<uint64_t>(I)) % 41))
+						/ std::max(1, Y.control);
+					if (Score > BestScore)
+					{
+						BestScore = Score;
+						Best = I;
+					}
+				}
+				if (Best < 0)
+				{
+					break;
+				}
+				const int Tier = Q.Kind(Q.map[static_cast<size_t>(Best)].kind).tier;
+				const int Roll = static_cast<int>((Hm >> 24) % 100);
+				Take(K, Best, std::max(0, std::min(3, (Pct - Tier * Q.tierPct + Roll) / 50)), At);
+			}
+		}
+		// Points for what is held at the hour; the sanctum's holder gets its neighbours twice.
+		const int Holy = Q.sanctum >= 0 ? Out.tiles[static_cast<size_t>(Q.sanctum)].owner : -1;
+		for (int I = 0; I < T; ++I)
+		{
+			const int Owner = Out.tiles[static_cast<size_t>(I)].owner;
+			if (Owner < 0)
+			{
+				continue;
+			}
+			int64_t Pts = Q.Kind(Q.map[static_cast<size_t>(I)].kind).pts;
+			if (Holy == Owner && I != Q.sanctum)
+			{
+				const std::vector<int>& Adj = Q.map[static_cast<size_t>(Q.sanctum)].adj;
+				Pts *= std::find(Adj.begin(), Adj.end(), I) != Adj.end() ? 2 : 1;
+			}
+			Out.points[static_cast<size_t>(Owner)] += Pts;
+		}
+	}
+	ApplyHits(0, true);
+}
+
+ConquestInfo Kingdom::Conquest() const
+{
+	ConquestInfo W;
+	const ConquestRules& Q = C.conquest;
+	if (!ConquestContent())
+	{
+		return W;
+	}
+	const int64_t Day = std::max<int64_t>(0, Time) / 86400;
+	W.no = ConqNoNow();
+	const int64_t StartDay = ConqStartDay(std::max<int64_t>(0, W.no));
+	W.startAt = StartDay * 86400;
+	W.endAt = W.startAt + static_cast<int64_t>(Q.days) * 86400;
+	W.nextAt = W.no < 0 ? W.startAt : ConqStartDay(W.no + 1) * 86400;
+	W.phase = W.no < 0 || Day < StartDay ? 0 : Day < StartDay + Q.days ? 1 : 2;
+	W.tokens = ConqTokens(&W.tokenIn);
+	const ConqSnap S = ConqSnapOf();
+	const bool bMine = ConqMine();
+	if (S.key < 0 || S.ids.empty() || W.phase == 0 || (W.phase == 2 && !bMine))
+	{
+		return W;
+	}
+	W.on = true;
+	W.league = S.league;
+	W.alliances = S.ids;
+	const int64_t Until = std::min(Time, W.endAt);
+	const std::vector<ConqHit> NoHits;
+	const std::vector<ConqHit>& Hits = bMine ? ConqHits : NoHits;
+	// The map changes only at the hours and with the player's attacks: the last one worked out stands until then.
+	uint64_t Key = Mix(Mix(Seed ^ 0x636f6e636163ULL, static_cast<uint64_t>(W.no)), static_cast<uint64_t>(S.key));
+	Key = Mix(Key, static_cast<uint64_t>(S.league));
+	for (size_t I = 0; I < S.ids.size(); ++I)
+	{
+		Key = Mix(Mix(Key, static_cast<uint64_t>(S.ids[I])), static_cast<uint64_t>(S.members[I]));
+	}
+	Key = Mix(Key, static_cast<uint64_t>(std::max<int64_t>(-1, FloorDiv(Until - W.startAt, 3600))));
+	Key = Mix(Key, Hits.size());
+	if (!Hits.empty())
+	{
+		Key = Mix(Mix(Mix(Key, static_cast<uint64_t>(Hits.back().at)), static_cast<uint64_t>(Hits.back().tile)), static_cast<uint64_t>(Hits.back().stars));
+	}
+	if (ConqMemo.valid && ConqMemo.key == Key)
+	{
+		const ConquestInfo& M = ConqMemo.info;
+		W.tiles = M.tiles;
+		W.points = M.points;
+		W.stars = M.stars;
+		W.taken = M.taken;
+	}
+	else
+	{
+		SimConquest(S, W.startAt, Until, Hits, W);
+		ConqMemo.key = Key;
+		ConqMemo.valid = true;
+		ConqMemo.info = W;
+	}
+	const int N = static_cast<int>(W.points.size());
+	W.place.assign(static_cast<size_t>(N), 1);
+	for (int I = 0; I < N; ++I)
+	{
+		for (int J = 0; J < N; ++J)
+		{
+			const int64_t A = W.points[static_cast<size_t>(I)];
+			const int64_t B = W.points[static_cast<size_t>(J)];
+			if (B > A || (B == A && J < I))
+			{
+				++W.place[static_cast<size_t>(I)];
+			}
+		}
+	}
+	for (size_t I = 0; I < W.tiles.size(); ++I)
+	{
+		if (W.tiles[I].owner == 0)
+		{
+			W.atkPct += Q.Kind(Q.map[I].kind).atkPct;
+		}
+	}
+	W.attacks = static_cast<int>(Hits.size());
+	return W;
+}
+
+Check Kingdom::CheckConquest(int Tile) const
+{
+	Check Out;
+	const ConquestRules& Q = C.conquest;
+	if (!ConquestContent() || Tile >= static_cast<int>(Q.map.size()))
+	{
+		Out.error = Error::BadId;
+		return Out;
+	}
+	if (AllianceIdx < 0)
+	{
+		Out.error = Error::NoAlliance;
+		return Out;
+	}
+	if (CastleLevel() < Q.castle)
+	{
+		Out.error = Error::Locked;
+		Out.castle = Q.castle;
+		return Out;
+	}
+	const ConquestInfo W = Conquest();
+	if (W.phase != 1 || !W.on)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = std::max<int64_t>(1, (W.phase == 0 ? W.startAt : W.nextAt) - Time);
+		return Out;
+	}
+	if (W.tokens <= 0)
+	{
+		Out.error = Error::LimitReached;
+		Out.timeSec = W.tokenIn;
+		return Out;
+	}
+	if (Tile < 0)
+	{
+		return Out;
+	}
+	const ConquestTile& Y = W.tiles[static_cast<size_t>(Tile)];
+	if (Q.map[static_cast<size_t>(Tile)].kind == ConquestKind::Home || Y.owner == 0)
+	{
+		Out.error = Error::Nothing;
+		return Out;
+	}
+	bool bNext = false;
+	for (const int A : Q.map[static_cast<size_t>(Tile)].adj)
+	{
+		bNext = bNext || W.tiles[static_cast<size_t>(A)].owner == 0;
+	}
+	if (!bNext)
+	{
+		Out.error = Error::NotAllowed;
+	}
+	else if (Y.truceUntil > Time)
+	{
+		Out.error = Error::NotReady;
+		Out.timeSec = Y.truceUntil - Time;
+	}
+	return Out;
+}
+
+void Kingdom::ResetConquest()
+{
+	ConqNo = -1;
+	ConqSaved = ConqSnap();
+	ConqHits.clear();
+	bConqChest = false;
+	ConqTokNo = -1;
+	ConqTok = 0;
+	ConqTokAt = 0;
+	ConqAt = -1;
+	ConqMemo = ConqCache();
+}
+
+Error Kingdom::StartConquest(int Tile, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells)
+{
+	if (Tile < 0)
+	{
+		return Error::BadId;
+	}
+	if (Pending != 0)
+	{
+		return Error::Busy;
+	}
+	const Check Ck = CheckConquest(Tile);
+	if (Ck.error != Error::None)
+	{
+		return Ck.error;
+	}
+	int64_t Unused = 0;
+	const int Have = ConqTokens(&Unused);
+	const Error E = BeginBattle(ConquestPending, false, 0, Squads, TitanId, Spells, false);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	const ConquestRules& Q = C.conquest;
+	const int64_t No = ConqNoNow();
+	if (!ConqMine())
+	{
+		// The first attack of this Conquest in this alliance: its rivals and league hold for the week from now (they
+		// change only as a season ends, on a Monday), and attacks made elsewhere stay there.
+		ConqNo = No;
+		ConqSaved = ConqSnapNow();
+		ConqHits.clear();
+		bConqChest = false;
+	}
+	// A token goes at the start, whatever the end; a full stock starts its clock again now.
+	if (ConqTokNo != No || Have >= Q.tokens)
+	{
+		ConqTokAt = Time;
+	}
+	else
+	{
+		ConqTokAt += std::max<int64_t>(0, Time - ConqTokAt) / Q.tokenSec * Q.tokenSec;
+	}
+	ConqTokNo = No;
+	ConqTok = Have - 1;
+	ConqAt = Tile;
+	return Error::None;
+}
+
+Error Kingdom::FinishConquest(int Stars, Reward* Out)
+{
+	if (Pending != ConquestPending)
+	{
+		return Error::NoAttack;
+	}
+	Pending = 0;
+	Stars = std::max(0, std::min(3, Stars));
+	if (Stars > 0)
+	{
+		NoteQuest(QuestEvent::Win, 1);
+		NoteQuest(QuestEvent::ThreeStars, Stars >= 3 ? 1 : 0);
+	}
+	Reward R;
+	R.squadsBack = static_cast<int>(PendingArmy.size());
+	PendingArmy.clear();
+	PendingTitanId = 0;
+	PendingSpellList.clear();
+	PendingReinforce.clear();
+	UnblockQueue(Time);
+	UnblockCraft(Time);
+	// The attack counts in the Conquest it began in, for the alliance it began in, by its last second.
+	const int64_t End = (ConqStartDay(ConqNo) + C.conquest.days) * 86400;
+	if (ConqMine() && ConqAt >= 0 && ConqAt < static_cast<int>(C.conquest.map.size()) && ConqHits.size() < 200)
+	{
+		ConqHits.push_back({std::min(Time, End - 1), ConqAt, Stars});
+	}
+	ConqAt = -1;
+	AddWarpathXp(C.warpath.battleXp, true);
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+bool Kingdom::ConquestChestClaimed() const
+{
+	return bConqChest && ConqMine();
+}
+
+Error Kingdom::ClaimConquestChest(Reward* Out)
+{
+	const ConquestRules& Q = C.conquest;
+	if (!ConquestContent())
+	{
+		return Error::BadId;
+	}
+	if (ConquestChestClaimed())
+	{
+		return Error::Nothing;
+	}
+	const ConquestInfo W = Conquest();
+	if (Pending == ConquestPending || W.phase != 2)
+	{
+		return Error::NotReady;
+	}
+	if (!ConqMine() || ConqHits.empty() || !W.on || W.place.empty())
+	{
+		return Error::NotAllowed;
+	}
+	const int Place = std::max(1, std::min(static_cast<int>(Q.chests.size()), W.place[0]));
+	Reward Got;
+	const Error E = PayEvent(Q.chests[static_cast<size_t>(Place - 1)], 0x636f6e63686573ULL, static_cast<uint64_t>(ConqNo), Got, true);
+	if (E != Error::None)
+	{
+		return E;
+	}
+	bConqChest = true;
+	if (Out)
+	{
+		*Out = Got;
+	}
+	return Error::None;
+}
+
 // --- Alliance help --------------------------------------------------------------------------------------
 
 namespace
@@ -9557,6 +10040,55 @@ std::string Kingdom::Save() const
 	W.Key("at");
 	W.Int(WarAt);
 	W.EndObject();
+	// Conquest (optional, only once the player has attacked in one): the alliances of the first attack, the
+	// player's attacks as [time, tile, stars], the chest, the March Tokens and the pending attack's tile.
+	if (ConqNo >= 0 || ConqTokNo >= 0 || ConqAt >= 0)
+	{
+		W.Key("conquest");
+		W.BeginObject();
+		W.Key("no");
+		W.Int(ConqNo);
+		W.Key("key");
+		W.Int(ConqSaved.key);
+		W.Key("league");
+		W.Int(ConqSaved.league);
+		W.Key("ids");
+		W.BeginArray();
+		for (const int X : ConqSaved.ids)
+		{
+			W.Int(X);
+		}
+		W.EndArray();
+		W.Key("mem");
+		W.BeginArray();
+		for (const int X : ConqSaved.members)
+		{
+			W.Int(X);
+		}
+		W.EndArray();
+		W.Key("hits");
+		W.BeginArray();
+		for (const ConqHit& X : ConqHits)
+		{
+			W.BeginArray();
+			W.Int(X.at);
+			W.Int(X.tile);
+			W.Int(X.stars);
+			W.EndArray();
+		}
+		W.EndArray();
+		W.Key("chest");
+		W.Bool(bConqChest);
+		W.Key("tokNo");
+		W.Int(ConqTokNo);
+		W.Key("tok");
+		W.Int(ConqTok);
+		W.Key("tokAt");
+		W.Int(ConqTokAt);
+		W.Key("at");
+		W.Int(ConqAt);
+		W.EndObject();
+	}
 	// Alliance help (optional): asks of timers still running as [kind, id, at, start, end, total, got, max, next, helper,
 	// cut], helps got as [at, kind, id, member, cut], the members' asks helped and the helps given on a day.
 	W.Key("help");
@@ -10704,6 +11236,50 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		WarUsed = std::max(0, std::min(WR.attacks, WarJ->GetInt("used", 0)));
 		WarAt = std::max(-1, std::min(WR.rosterMax - 1, WarJ->GetInt("at", -1)));
 	}
+	// Conquest (saves before it have attacked in none).
+	ResetConquest();
+	if (const JsonValue* QJ = J.Find("conquest"); QJ && ConquestContent())
+	{
+		const ConquestRules& Q = C.conquest;
+		ConqNo = std::max<int64_t>(-1, QJ->GetInt64("no", -1));
+		ConqSaved.key = std::max<int64_t>(-1, QJ->GetInt64("key", -1));
+		ConqSaved.league = QJ->GetInt("league", 0);
+		const JsonValue* IdsJ = QJ->Find("ids");
+		const JsonValue* MemJ = QJ->Find("mem");
+		bool bOk = ConqSaved.key >= 0 && IdsJ && MemJ && IdsJ->IsArray() && MemJ->IsArray() && IdsJ->Size() == MemJ->Size()
+			&& IdsJ->Size() >= 1 && static_cast<int>(IdsJ->Size()) <= Q.Slots() && ConqSaved.league >= 0
+			&& ConqSaved.league < static_cast<int>(Q.starPct.size());
+		for (size_t I = 0; bOk && I < IdsJ->Size(); ++I)
+		{
+			// Slot 0 may be an own alliance (the index after the computer ones); the rest are computer alliances.
+			const int Id = (*IdsJ)[I].AsInt(-1);
+			const int Mem = (*MemJ)[I].AsInt(-1);
+			bOk = Id >= 0 && Id < BaseAlliances() + (I == 0 ? 1 : 0) && Mem >= 0 && Mem <= 1000
+				&& std::find(ConqSaved.ids.begin(), ConqSaved.ids.end(), Id) == ConqSaved.ids.end();
+			ConqSaved.ids.push_back(Id);
+			ConqSaved.members.push_back(Mem);
+		}
+		if (!bOk)
+		{
+			ConqSaved = ConqSnap();
+		}
+		if (const JsonValue* HitsJ = QJ->Find("hits"); HitsJ && HitsJ->IsArray() && ConqSaved.key >= 0)
+		{
+			for (size_t I = 0; I < HitsJ->Size() && ConqHits.size() < 200; ++I)
+			{
+				const JsonValue& H = (*HitsJ)[I];
+				if (H.IsArray() && H.Size() == 3 && H[1].AsInt(-1) >= 0 && H[1].AsInt(-1) < static_cast<int>(Q.map.size()))
+				{
+					ConqHits.push_back({H[0].AsInt64(0), H[1].AsInt(0), std::max(0, std::min(3, H[2].AsInt(0)))});
+				}
+			}
+		}
+		bConqChest = QJ->GetBool("chest", false);
+		ConqTokNo = std::max<int64_t>(-1, QJ->GetInt64("tokNo", -1));
+		ConqTok = std::max(0, std::min(Q.tokens, QJ->GetInt("tok", 0)));
+		ConqTokAt = QJ->GetInt64("tokAt", 0);
+		ConqAt = std::max(-1, std::min(static_cast<int>(Q.map.size()) - 1, QJ->GetInt("at", -1)));
+	}
 	// Alliance help (saves before it have asked for nothing).
 	ResetHelp();
 	if (const JsonValue* HelpJ = J.Find("help"); HelpJ && C.allianceHelp.on)
@@ -10825,6 +11401,7 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 				: Pending == DailyPending ? DailyAt < 0 || DailyAt >= DailyCount() || DailyAtTier < 1 || DailyAtTier > DailyTiers()
 				: Pending == WarPending ? !WarContent() || WarAt < 0
 				: Pending == SpirePending ? C.spire.castle <= 0 || SpireAt < 1
+				: Pending == ConquestPending ? !ConquestContent() || ConqAt < 0
 				: Pending == AssaultPending ? !AssaultRunning() || !AsOffer.empty()
 				: Mission >= 0 ? !ValidMission(Mission / 100, Mission % 100) : -Pending > static_cast<int32_t>(C.sites.list.size()))
 		{
@@ -11237,6 +11814,31 @@ uint64_t Kingdom::Hash() const
 		W.I64(WarUsedNo);
 		W.I32(WarUsed);
 		W.I32(WarAt);
+	}
+	// The same for the Conquest.
+	if (ConqNo >= 0 || ConqTokNo >= 0 || ConqAt >= 0)
+	{
+		W.I64(ConqNo);
+		W.I64(ConqSaved.key);
+		W.I32(ConqSaved.league);
+		W.I32(static_cast<int32_t>(ConqSaved.ids.size()));
+		for (size_t I = 0; I < ConqSaved.ids.size(); ++I)
+		{
+			W.I32(ConqSaved.ids[I]);
+			W.I32(ConqSaved.members[I]);
+		}
+		W.I32(static_cast<int32_t>(ConqHits.size()));
+		for (const ConqHit& X : ConqHits)
+		{
+			W.I64(X.at);
+			W.I32(X.tile);
+			W.I32(X.stars);
+		}
+		W.U32(bConqChest ? 1u : 0u);
+		W.I64(ConqTokNo);
+		W.I32(ConqTok);
+		W.I64(ConqTokAt);
+		W.I32(ConqAt);
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)
