@@ -5866,7 +5866,7 @@ function sevBlock(st, e) {
 	const rankBtn = v.rk ? '<button class="btn" disabled>Награда за место получена</button>'
 		: sevRankReady(st, e) ? '<button class="btn primary" data-act="sev-rank" data-id="' + e + '">Забрать награду за ' + v.place + '-е место</button>'
 			: over ? '<button class="btn" disabled>' + (pts > 0 ? 'За это место награды нет' : 'Вы не набрали очков') + '</button>'
-				: '<button class="btn" disabled>Награда за место — после конца события</button>';
+				: '<button class="btn" disabled>Награда за место — после недели</button>';
 	const board = sevBoard(st, e);
 	const me = board.findIndex((r) => r.me);
 	let prev = -1;
