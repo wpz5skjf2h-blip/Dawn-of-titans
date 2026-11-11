@@ -568,6 +568,34 @@ function invariants(st, add) {
 			if (st.castle < bnr.castle && x.ck.err !== 6) add('bad', 'Знамя «' + name + '» ниже Замка ' + bnr.castle + ': отказ ' + x.ck.err);
 		});
 	}
+	// Alliance Tech: a level as its points say (within the top), the next level's total, the player's points within the
+	// alliance's; outside an alliance nothing; the tech donations go to is the first of the lowest; the war and boss
+	// effects are their level times the effect a level.
+	const tcr = rules().allianceTech;
+	if (tcr && st.tech && st.tech.on) {
+		const tc = st.tech;
+		const max = tcr.costs.length;
+		if (tc.list.length !== tcr.list.length) add('bad', 'Технологии альянса: ' + tc.list.length + ', а в правилах ' + tcr.list.length);
+		let low = -1;
+		tc.list.forEach((x, i) => {
+			const d = tcr.list[i];
+			if (!d) return;
+			let lv = 0;
+			let sum = 0;
+			while (lv < max && x.pts >= sum + tcr.costs[lv]) sum += tcr.costs[lv++];
+			if (x.lv !== lv) add('bad', 'Технология «' + d.name + '»: уровень ' + x.lv + ' при ' + x.pts + ' очках, а по правилам ' + lv);
+			if (x.need !== (st.ally.my < 0 || lv >= max ? 0 : sum + tcr.costs[lv])) add('bad', 'Технология «' + d.name + '»: до следующего уровня ' + x.need);
+			if (!(x.mine >= 0 && x.mine <= x.pts)) add('bad', 'Технология «' + d.name + '»: ваших очков ' + x.mine + ' из ' + x.pts);
+			if (st.ally.my < 0 && (x.lv || x.pts || x.mine)) add('bad', 'Технология «' + d.name + '» вне альянса: ур. ' + x.lv + ', очков ' + x.pts);
+			if (x.lv < max && (low < 0 || x.lv < tc.list[low].lv)) low = i;
+		});
+		if (tc.auto !== (st.ally.my < 0 ? -1 : low)) add('bad', 'Технологии альянса: пожертвования идут в ' + tc.auto + ', а должны в ' + low);
+		for (const k of ['war', 'boss']) {
+			const i = tcr.list.findIndex((d) => d.kind === k);
+			const want = i >= 0 && tc.list[i] ? tc.list[i].lv * tcr.list[i].per : 0;
+			if (tc[k] !== want) add('bad', 'Технологии альянса: «' + k + '» даёт ' + tc[k] + '%, а по уровню ' + want + '%');
+		}
+	}
 	// Comeback gift: only for a week or more away, from its Castle, and the absence ended no later than now.
 	const cbr = rules().comeback;
 	if (cbr && st.comeback) {
@@ -1100,12 +1128,25 @@ function runMonkey(steps, seed, keep) {
 			const food = r() < 0.5;
 			const k = food ? 1 : 0;
 			const ck = food ? st.honor.df : st.honor.dg;
-			const res = B.donate(food);
+			// Half of them to an Alliance Tech picked at random (one at the top is refused).
+			const tr = rules().allianceTech;
+			const tc = tr && st.tech && st.tech.on ? st.tech : null;
+			const tech = tc && r() < 0.5 ? Math.floor(r() * tc.list.length) : -1;
+			const top = tech >= 0 && tc.list[tech].lv >= tr.costs.length;
+			const want = top && ck.err !== 32 && ck.err !== 6 && ck.err !== 7 ? 2 : ck.err;
+			const res = B.donate(food, tech);
 			const st2 = B.state();
-			if (res.err !== ck.err) throw new Error('пожертвование ' + (food ? 'едой' : 'золотом') + ': отказ ' + res.err + ', а проверка ' + ck.err);
+			if (res.err !== want) throw new Error('пожертвование ' + (food ? 'едой' : 'золотом') + (tech >= 0 ? ' в технологию ' + tech : '') + ': отказ ' + res.err + ', а проверка ' + want);
 			if (res.err !== 0) {
-				if (st2.res.join() !== st.res.join() || st2.honor.pts !== st.honor.pts || st2.honor.don !== st.honor.don) throw new Error('отказ пожертвования ' + res.err + ' всё же что-то изменил');
+				if (st2.res.join() !== st.res.join() || st2.honor.pts !== st.honor.pts || st2.honor.don !== st.honor.don || (tc && st2.tech.list.map((x) => x.mine).join() !== tc.list.map((x) => x.mine).join())) throw new Error('отказ пожертвования ' + res.err + ' всё же что-то изменил');
 				return res.err;
+			}
+			if (tc) {
+				const to = tech >= 0 ? tech : tc.auto;
+				if (res.tech !== to || res.techPts !== (to >= 0 ? tr.points : 0)) throw new Error('пожертвование: в технологию ' + res.tech + ' (+' + res.techPts + '), а должно в ' + to);
+				const got = st2.tech.list.map((x, i) => x.mine - tc.list[i].mine);
+				if (got.some((g, i) => g !== (i === to ? tr.points : 0))) throw new Error('пожертвование: очки технологий изменились на ' + got.join());
+				if (to >= 0 && res.techLv !== st2.tech.list[to].lv) throw new Error('пожертвование: уровень ' + res.techLv + ', а в королевстве ' + st2.tech.list[to].lv);
 			}
 			const R = rules().honor;
 			if (st2.honor.pts !== st.honor.pts + R.donate.honor || res.honor !== R.donate.honor || st2.honor.don !== st.honor.don + 1) throw new Error('пожертвование: почёт ' + st.honor.pts + ' → ' + st2.honor.pts + ', за день ' + st.honor.don + ' → ' + st2.honor.don);
@@ -1518,6 +1559,11 @@ function renderTab(tab) {
 			h += row('Знамённый шёлк <b>' + fmt(st.banners.silk) + '</b>', b('silk-set', '+1000', { n: 1 }) + b('silk-set', 'Обнулить', { n: 0 }),
 				'знамён поднято ' + st.banners.list.reduce((a, x) => a + x.lv, 0) + (st.castle < rules().banners.castle ? ', откроются на Замке ' + rules().banners.castle : ''));
 		}
+		if (st.tech && st.tech.on && rules().allianceTech) {
+			// Alliance Tech: the player's points for every tech of the current alliance to the top, or none anywhere.
+			h += row('Технологии альянса <b>' + st.tech.list.reduce((a, x) => a + x.lv, 0) + ' из ' + rules().allianceTech.costs.length * st.tech.list.length + '</b>',
+				b('tech-set', 'Изучить все', { n: 1 }) + b('tech-set', 'Сбросить', { n: 0 }), st.ally.my < 0 ? 'вне альянса: только сброс' : 'ваших очков ' + fmt(st.tech.list.reduce((a, x) => a + x.mine, 0)));
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1786,6 +1832,19 @@ function act(a, el, n, id, i) {
 		if (n) s.banners = Object.assign({ lv: {} }, s.banners || {}, { silk: ((s.banners && s.banners.silk) || 0) + 1000 });
 		else delete s.banners;
 	}, n ? 'Шёлк +1000' : 'Шёлк и знамёна обнулены'); break;
+	case 'tech-set': {
+		edit((s, st) => {
+			const my = st.ally.my;
+			if (n && my < 0) { toast('Сначала вступите в альянс', 'bad'); return false; }
+			const tr = rules().allianceTech;
+			const all = tr.costs.reduce((a, c) => a + c, 0);
+			const rest = (s.allianceTech || []).filter((e) => n && e.a !== my);
+			if (n) rest.push({ a: my, pts: Object.fromEntries(tr.list.map((x) => [x.id, all])) });
+			if (rest.length) s.allianceTech = rest;
+			else delete s.allianceTech;
+		}, n ? 'Технологии альянса изучены' : 'Технологии альянса сброшены');
+		break;
+	}
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;

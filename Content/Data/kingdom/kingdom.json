@@ -235,9 +235,9 @@
   // player's own alliance currency and stays when the player leaves. It comes from helps given ("allianceHelp" reward),
   // from donations, from the Alliance War chest (and each star of the player's attacks) and from the Raid Boss chest.
   // In an alliance, from Castle `castle`: `donate.perDay` donations a day (00:00 UTC), each of `donate.gold` gold or
-  // `donate.food` food times the Castle, for `donate.honor` Honor (the prompt's donations go to Alliance Tech, which is
-  // not here yet); the shop sells each item `weekly` times a week (from Monday 00:00 UTC) for its `price` in Honor, from
-  // its own `castle`; "pay" is what it gives (gold and food as they are, "scrolls" War Scrolls, "relic" a relic of that
+  // `donate.food` food times the Castle, for `donate.honor` Honor (and points in Alliance Tech, "allianceTech" below);
+  // the shop sells each item `weekly` times a week (from Monday 00:00 UTC) for its `price` in Honor, from its own
+  // `castle`; "pay" is what it gives (gold and food as they are, "scrolls" War Scrolls, "relic" a relic of that
   // rarity, "divine" divine gems). The prompt names sigils, tomes, Starlight Shards (weekly limit), gear chests and
   // Banner Silk; ours sell what the kingdom has. Prices and limits are ours: about 700 Honor a week for an active player
   // against about 1,200 for the whole shop, so a week asks for a choice. No gems.
@@ -269,6 +269,34 @@
     "perkPct": 2,
     "silk": [5, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 23, 26, 29, 32, 36, 40, 45, 50],
     "gold": [300, 400, 500, 650, 800, 1000, 1200, 1500, 1800, 2200, 2600, 3000, 3500, 4000, 4600, 5200, 6000, 7000, 8000, 9000]
+  },
+
+  // Alliance Tech (master prompt 12.5: members donate gold or food to the alliance's tech; its examples are more
+  // production, more helps, a better reinforcement tier, 5% raid loot protection, 3% troop health in Alliance War, more
+  // Raid Boss damage, more members). Ours: every donation ("honor" donate) also gives `points` to one tech, the one the
+  // player picks or the lowest one not at the top; a level takes `costs` points (5 levels, 2 000 points a tech). An
+  // alliance has `baseLevels` (by its league) researched by its other members, and the player's points stay with it
+  // (an own alliance's go when it is disbanded). Effects while a member, `per` a level: help, more helps on each timer
+  // (still within allianceHelp max and the members); reinforce, levels on the allies' squads sent (past the Armoury's
+  // limit too); guard, percent less gold, food and land stock lost to raids; war, percent more health and attack for the
+  // player's squads in Alliance War battles; boss, percent more Raid Boss damage. Production and the member cap are left
+  // out: the first would change the pace of the whole economy, the second the leagues and the wars.
+  "allianceTech": {
+    "points": 10,
+    "costs": [100, 200, 350, 550, 800],
+    "baseLevels": [0, 0, 1, 1, 2, 3],
+    "list": [
+      { "id": "help",  "kind": "help",      "per": 1, "name": "Взаимовыручка",
+        "note": "Каждый таймер получает больше помощи союзников" },
+      { "id": "camp",  "kind": "reinforce", "per": 1, "name": "Подмога",
+        "note": "Отряды, которые присылают союзники, выше уровнем" },
+      { "id": "guard", "kind": "guard",     "per": 4, "name": "Казначейская стража",
+        "note": "Набеги уносят меньше золота, еды и запасов земель" },
+      { "id": "war",   "kind": "war",       "per": 2, "name": "Боевое братство",
+        "note": "Ваши отряды сильнее в боях войны альянсов" },
+      { "id": "boss",  "kind": "boss",      "per": 3, "name": "Гнев на исполина",
+        "note": "Больше урона рейдовому боссу" }
+    ]
   },
 
   // Titan Monuments and XP Arenas (the original, version 1.8, wiki Announcements): monuments replaced the old shard

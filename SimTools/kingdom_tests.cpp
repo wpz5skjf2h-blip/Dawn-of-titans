@@ -4772,6 +4772,210 @@ void TestBanners()
 	KD_CHECK(SquadPower(Battle(), Q) > Weak * 6 / 5);
 }
 
+/** The save with the player's Alliance Tech points put in (the save must have none). */
+std::string WithTech(const std::string& Save, const std::string& Tech)
+{
+	KD_CHECK(Save.find("\"allianceTech\":") == std::string::npos);
+	return Replace(Save, ",\"quests\":{", ",\"allianceTech\":" + Tech + ",\"quests\":{");
+}
+
+/** Alliance Tech (master prompt 12.5): donations research the alliance's tech, five techs of five levels, levels its
+ *  league has already, the player's points kept with the alliance, the effects (helps, reinforcements, raids, the Raid
+ *  Boss), the save and the hash. */
+void TestAllianceTech()
+{
+	const KingdomContent& Ct = Content();
+	const AllianceTechRules& T = Ct.allianceTech;
+	// Ours: 10 points a donation, 100-800 a level (2 000 a tech), the leagues' levels, five techs of distinct kinds.
+	KD_CHECK(T.on && T.points == 10 && T.costs == std::vector<int64_t>({100, 200, 350, 550, 800}) && T.MaxLevel() == 5);
+	KD_CHECK(T.baseLevels == std::vector<int>({0, 0, 1, 1, 2, 3}) && T.baseLevels.size() == Ct.alliances.leagues.size());
+	KD_CHECK(T.list.size() == 5 && T.list[0].id == "help" && T.list[0].kind == TechKind::Help && T.list[0].per == 1);
+	KD_CHECK(T.list[1].kind == TechKind::Reinforce && T.list[2].kind == TechKind::Guard && T.list[2].per == 4);
+	KD_CHECK(T.list[3].kind == TechKind::War && T.list[3].per == 2 && T.list[4].kind == TechKind::Boss && T.list[4].per == 3);
+	const int Help = 0;
+	const int Camp = 1;
+	const int War = 3;
+	const int BossT = 4;
+
+	std::string Error;
+	// Outside an alliance there is no tech, and donations have no tech to pick.
+	Kingdom Base = WarKingdom(180); // Castle 6
+	const uint64_t H0 = Base.Hash();
+	KD_CHECK(Base.TechCount() == 5 && Base.TechAuto() == -1 && Base.TechValue(TechKind::Help) == 0 && Base.TechValue(TechKind::Boss) == 0);
+	for (int I = -1; I <= 5; ++I)
+	{
+		KD_CHECK(Base.TechLevel(I) == 0 && Base.TechPoints(I) == 0 && Base.TechMine(I) == 0 && Base.TechNeed(I) == 0);
+	}
+	KD_CHECK(Base.CheckDonate(false, 5).error == Error::BadId && Base.CheckDonate(false, -2).error == Error::BadId && Base.CheckDonate(false, 0).error == Error::NoAlliance);
+	KD_CHECK(Base.Save().find("\"allianceTech\":") == std::string::npos);
+
+	// An alliance of each league has its levels; the player has given nothing to it.
+	{
+		Kingdom Rich = WithVp(181, 20000);
+		std::vector<bool> Seen(T.baseLevels.size(), false);
+		for (int A = 0; A < Rich.AllianceCount(); ++A)
+		{
+			const int Tier = Rich.Alliance(A).tier;
+			if (Tier < 0 || Tier >= static_cast<int>(Seen.size()) || Seen[static_cast<size_t>(Tier)] || Rich.CheckJoin(A).error != Error::None)
+			{
+				continue;
+			}
+			Seen[static_cast<size_t>(Tier)] = true;
+			Kingdom J(Ct);
+			KD_CHECK(J.Load(Rich.Save(), Error) && J.JoinAlliance(A) == Error::None);
+			const int Lv = T.baseLevels[static_cast<size_t>(Tier)];
+			int64_t Pts = 0;
+			for (int L = 0; L < Lv; ++L)
+			{
+				Pts += T.costs[static_cast<size_t>(L)];
+			}
+			for (int I = 0; I < J.TechCount(); ++I)
+			{
+				KD_CHECK(J.TechLevel(I) == Lv && J.TechPoints(I) == Pts && J.TechMine(I) == 0 && J.TechNeed(I) == Pts + T.costs[static_cast<size_t>(Lv)]);
+			}
+			KD_CHECK(J.TechAuto() == 0 && J.TechValue(TechKind::Guard) == 4 * Lv && J.TechValue(TechKind::War) == 2 * Lv);
+		}
+		KD_CHECK(std::count(Seen.begin(), Seen.end(), true) >= 3 && Seen[0]);
+	}
+
+	// A bronze alliance: no levels yet. Gold and food for some donations.
+	std::string Plain = Replace(Base.Save(), "\"resources\":{\"gold\":" + std::to_string(Base.Amount(Res::Gold)) + ",\"food\":" + std::to_string(Base.Amount(Res::Food)),
+		"\"resources\":{\"gold\":20000,\"food\":20000");
+	int Ally = -1;
+	for (int A = 0; A < Base.AllianceCount() && Ally < 0; ++A)
+	{
+		Ally = Base.CheckJoin(A).error == Error::None && Base.Alliance(A).tier == 0 ? A : -1;
+	}
+	Kingdom K(Ct);
+	KD_CHECK(Ally >= 0 && K.Load(Plain, Error) && K.JoinAlliance(Ally) == Error::None && K.TechLevel(Help) == 0 && K.TechAuto() == Help);
+	KD_CHECK(K.TechNeed(Help) == 100 && K.CheckDonate(false, War).error == Error::None && K.Hash() != H0);
+	const std::string Before = K.Save();
+	// A donation without a pick goes to the first of the lowest levels; a pick goes where it is told.
+	Reward R;
+	KD_CHECK(K.Donate(false, &R) == Error::None && R.honor == 10 && R.tech == Help && R.techPts == 10 && R.techLevel == 0);
+	KD_CHECK(K.TechMine(Help) == 10 && K.TechPoints(Help) == 10 && K.TechLevel(Help) == 0 && K.TechAuto() == Help);
+	KD_CHECK(K.Donate(true, &R, War) == Error::None && R.tech == War && R.techPts == 10 && K.TechMine(War) == 10 && K.TechAuto() == Help);
+	KD_CHECK(K.Save().find(",\"allianceTech\":[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":10,\"war\":10}}],\"quests\":{") != std::string::npos);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.Hash() == K.Hash() && L.Save() == K.Save() && L.TechMine(War) == 10);
+		// Without the points the kingdom hashes differently.
+		Kingdom M(Ct);
+		std::string NoTech = K.Save();
+		const size_t P0 = NoTech.find(",\"allianceTech\":");
+		NoTech.erase(P0, NoTech.find(",\"quests\":{") - P0);
+		KD_CHECK(M.Load(NoTech, Error) && M.TechMine(War) == 0 && M.Hash() != K.Hash());
+	}
+
+	// Points from before: 95 in help, a donation raises it to level 1 (one more help a timer).
+	Kingdom N(Ct);
+	KD_CHECK(N.Load(WithTech(Before, "[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":95}}]"), Error) && N.TechMine(Help) == 95 && N.TechLevel(Help) == 0);
+	const int Helps = N.HelpLimit();
+	KD_CHECK(N.Donate(false, &R) == Error::None && R.tech == Help && R.techLevel == 1 && N.TechLevel(Help) == 1 && N.TechNeed(Help) == 300);
+	KD_CHECK(N.TechValue(TechKind::Help) == 1 && N.HelpLimit() == std::min(Helps + 1, Ct.allianceHelp.max) && N.TechAuto() == Camp);
+	// At the top: a pick of it is refused; without a pick the donation goes elsewhere; with all at the top, nowhere.
+	Kingdom Top(Ct);
+	KD_CHECK(Top.Load(WithTech(Before, "[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":2000,\"camp\":5000}}]"), Error));
+	KD_CHECK(Top.TechLevel(Help) == 5 && Top.TechLevel(Camp) == 5 && Top.TechNeed(Help) == 0 && Top.TechPoints(Camp) == 5000);
+	KD_CHECK(Top.CheckDonate(false, Help).error == Error::MaxLevel && Top.Donate(false, nullptr, Help) == Error::MaxLevel && Top.TechAuto() == 2);
+	Kingdom All(Ct);
+	KD_CHECK(All.Load(WithTech(Before, "[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":2000,\"camp\":2000,\"guard\":2000,\"war\":2000,\"boss\":2000}}]"), Error));
+	KD_CHECK(All.TechAuto() == -1 && All.TechValue(TechKind::Guard) == 20 && All.TechValue(TechKind::War) == 10 && All.TechValue(TechKind::Boss) == 15);
+	KD_CHECK(All.Donate(false, &R) == Error::None && R.honor == 10 && R.tech == -1 && R.techPts == 0 && All.Save().find("\"pts\":{\"help\":2000,\"camp\":2000,") != std::string::npos);
+	// Points of an alliance that is gone, of a tech that is gone, or below 0 do not load; a second entry for the same
+	// alliance neither.
+	Kingdom Odd(Ct);
+	KD_CHECK(Odd.Load(WithTech(Before, "[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":-5,\"war\":30,\"gone\":9}},{\"a\":" + std::to_string(Ally) +
+		",\"pts\":{\"help\":500}},{\"a\":999,\"pts\":{\"help\":500}}]"), Error));
+	KD_CHECK(Odd.TechMine(Help) == 0 && Odd.TechMine(War) == 30 && Odd.Save().find(",\"allianceTech\":[{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"war\":30}}],") != std::string::npos);
+
+	// Leaving: no tech outside; the points stay with the alliance for a return.
+	KD_CHECK(K.LeaveAlliance() == Error::None && K.TechLevel(War) == 0 && K.TechMine(War) == 0 && K.TechAuto() == -1);
+	KD_CHECK(K.Save().find("\"allianceTech\":[{\"a\":" + std::to_string(Ally) + ",") != std::string::npos);
+	KD_CHECK(K.JoinAlliance(Ally) == Error::None && K.TechMine(War) == 10 && K.TechMine(Help) == 10);
+	// An own alliance starts with none, and its points go when it is disbanded.
+	KD_CHECK(K.LeaveAlliance() == Error::None && K.CreateAlliance("Дом Рассвета", "ДОМ") == Error::None && K.TechLevel(Help) == 0 && K.TechAuto() == Help);
+	const int Own = K.MyAlliance();
+	KD_CHECK(Own == K.AllianceCount() - 1 && Own != Ally && K.Donate(false, &R, BossT) == Error::None && R.tech == BossT && K.TechMine(BossT) == 10);
+	KD_CHECK(K.Save().find("{\"a\":" + std::to_string(Own) + ",\"pts\":{\"boss\":10}}") != std::string::npos);
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.MyAlliance() == Own && L.TechMine(BossT) == 10 && L.Hash() == K.Hash() && L.Save() == K.Save());
+	}
+	KD_CHECK(K.LeaveAlliance() == Error::None && K.Save().find("{\"a\":" + std::to_string(Own) + ",") == std::string::npos);
+	KD_CHECK(K.Save().find("{\"a\":" + std::to_string(Ally) + ",\"pts\":{\"help\":10,\"war\":10}}") != std::string::npos);
+
+	// Reinforcements: two levels more with the camp tech at 2, past the Armoury's limit too.
+	{
+		Kingdom Q0 = WithVp(64, 1000, "alliance_camp");
+		int Pick = -1;
+		for (int I = 0; I < Q0.AllianceCount() && Pick < 0; ++I)
+		{
+			Pick = Q0.CheckJoin(I).error == Error::None ? I : -1;
+		}
+		KD_CHECK(Pick >= 0 && Q0.JoinAlliance(Pick) == Error::None);
+		const int Tier = Q0.Alliance(Pick).tier;
+		KD_CHECK(Tier >= 0 && T.baseLevels[static_cast<size_t>(Tier)] == 0);
+		Kingdom Q(Ct);
+		KD_CHECK(Q.Load(WithTech(Q0.Save(), "[{\"a\":" + std::to_string(Pick) + ",\"pts\":{\"camp\":300}}]"), Error) && Q.TechLevel(Camp) == 2);
+		KD_CHECK(Q0.RequestReinforcements() == Error::None && Q.RequestReinforcements() == Error::None && Q.Reinforcements().size() == Q0.Reinforcements().size());
+		const int League = Ct.alliances.leagues[static_cast<size_t>(Tier)].troopLevel;
+		for (size_t I = 0; I < Q.Reinforcements().size(); ++I)
+		{
+			const Reinforcement& Rf = Q.Reinforcements()[I];
+			KD_CHECK(Q0.Reinforcements()[I].level == std::min(League, Q0.MaxTroopLevel()));
+			KD_CHECK(Rf.level == std::min(std::min(League + 2, Q.MaxTroopLevel() + 2), Ct.troops[static_cast<size_t>(Rf.troop)].MaxLevel()));
+			KD_CHECK(Rf.level == Q0.Reinforcements()[I].level + 2);
+		}
+	}
+
+	// Raids: a lost defense of the city at three stars takes 20% less with the guard tech at the top.
+	{
+		Kingdom N0(Ct);
+		N0.NewGame(T0, 61);
+		std::string Raid = WithBuilding(WithBuilding(N0.Save(), "garrison", 5, 30), "gold_reserve", 1, 34);
+		Raid = Replace(Raid, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":6");
+		Raid = Replace(Raid, "\"gold\":2500", "\"gold\":12000");
+		Raid = Replace(Raid, "\"food\":2500", "\"food\":10000");
+		Raid = Replace(Raid, "\"shards\":0,\"vp\":0", "\"shards\":0,\"vp\":1000");
+		Kingdom A0(Ct);
+		KD_CHECK(A0.Load(Raid, Error));
+		int In = -1;
+		for (int I = 0; I < A0.AllianceCount() && In < 0; ++I)
+		{
+			In = A0.CheckJoin(I).error == Error::None && T.baseLevels[static_cast<size_t>(std::max(0, A0.Alliance(I).tier))] == 0 ? I : -1;
+		}
+		KD_CHECK(In >= 0 && A0.JoinAlliance(In) == Error::None);
+		for (const char* Pts : {"{\"help\":1}", "{\"guard\":2000}"})
+		{
+			Kingdom C(Ct);
+			KD_CHECK(C.Load(WithTech(A0.Save(), "[{\"a\":" + std::to_string(In) + ",\"pts\":" + Pts + "}]"), Error));
+			C.SetBattleContent(&Battle());
+			const int Keep = 100 - C.TechValue(TechKind::Guard);
+			C.Advance(T0 + 24 * Hour);
+			KD_CHECK(C.Raids().size() == 1 && C.Raids()[0].stars == 3 && C.Raids()[0].landId == 0);
+			KD_CHECK(C.Raids()[0].lost[static_cast<size_t>(ResIndex(Res::Gold))] == (12000 - 2000) * 20 / 100 * Keep / 100);
+			KD_CHECK(C.Raids()[0].lost[static_cast<size_t>(ResIndex(Res::Food))] == 10000 * 20 / 100 * Keep / 100);
+			KD_CHECK(Keep == (Pts[2] == 'g' ? 80 : 100));
+		}
+	}
+
+	// The Raid Boss: 15% more damage with the boss tech at the top, still at most the boss's whole health a battle.
+	{
+		const int64_t Day = 86400;
+		const int64_t Sunday = ((T0 / Day - 3) / 7 * 7 + 3 + 7) * Day;
+		Kingdom B0 = BossKingdom(85);
+		KD_CHECK(B0.JoinAlliance(0) == Error::None && B0.Alliance(0).tier == 0);
+		Kingdom B(Ct);
+		KD_CHECK(B.Load(WithTech(B0.Save(), "[{\"a\":0,\"pts\":{\"boss\":2000}}]"), Error) && B.TechValue(TechKind::Boss) == 15);
+		B.Advance(Sunday + Hour);
+		const int Militia = Troop("troop.militia");
+		KD_CHECK(B.StartBoss({Militia}, 0, {}) == Error::None && B.FinishBoss(0, 320, nullptr) == Error::None && B.BossMyDamage() == 368);
+		KD_CHECK(B.StartBoss({}, 0, {}) == Error::None && B.FinishBoss(0, 900, nullptr) == Error::None && B.BossMyDamage() == 368 + 1000);
+		KD_CHECK(B.StartBoss({}, 0, {}) == Error::None && B.FinishBoss(0, -50, nullptr) == Error::None && B.BossMyDamage() == 1368);
+	}
+}
+
 void TestRaidBoss()
 {
 	const KingdomContent& Ct = Content();
@@ -5211,7 +5415,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners}, {"AllianceTech", TestAllianceTech},
 	};
 	for (const auto& T : Tests)
 	{

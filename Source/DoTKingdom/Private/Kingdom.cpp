@@ -209,6 +209,7 @@ void Kingdom::ResetArmy()
 	ShopBoughtList.assign(C.honor.shop.size(), 0);
 	SilkCount = 0;
 	BannerList.assign(C.troops.size(), 0);
+	TechPtsList.clear();
 	RelicAt = Time;
 	RelicCounter = 0;
 	ResetSpellsAndRelics();
@@ -1907,7 +1908,8 @@ Error Kingdom::LeaveAlliance()
 	}
 	if (HasOwnAlliance())
 	{
-		// An own alliance is disbanded: its recruits leave too.
+		// An own alliance is disbanded: its recruits leave too, and its tech is gone.
+		TechPtsList.erase(std::remove_if(TechPtsList.begin(), TechPtsList.end(), [this](const std::pair<int, std::vector<int64_t>>& P) { return P.first == BaseAlliances(); }), TechPtsList.end());
 		AllianceTiers.resize(static_cast<size_t>(BaseAlliances()));
 		OwnName.clear();
 		OwnTag.clear();
@@ -1995,7 +1997,9 @@ Error Kingdom::RequestReinforcements()
 	}
 	const std::vector<AllianceLeagueDef>& Leagues = C.alliances.leagues;
 	const int Tier = std::max(0, std::min(static_cast<int>(Leagues.size()) - 1, AllianceTier(AllianceIdx)));
-	const int Level = std::max(1, std::min(Leagues[static_cast<size_t>(Tier)].troopLevel, MaxTroopLevel()));
+	// Alliance Tech raises their level, past the Armoury's too.
+	const int TechUp = TechValue(TechKind::Reinforce);
+	const int Level = std::max(1, std::min(Leagues[static_cast<size_t>(Tier)].troopLevel + TechUp, MaxTroopLevel() + TechUp));
 	const int Senders = AllianceSize(AllianceIdx);
 	const int Free = ReinforceCapacity() - static_cast<int>(ReinforceList.size());
 	int64_t At = Time;
@@ -3374,11 +3378,11 @@ int Kingdom::DonationsToday() const
 	return DonateDay == FloorDiv(Time, 86400) ? DonateCount : 0;
 }
 
-Check Kingdom::CheckDonate(bool Food) const
+Check Kingdom::CheckDonate(bool Food, int Tech) const
 {
 	Check Out;
 	const HonorRules& O = C.honor;
-	if (!O.on || O.donatePerDay <= 0)
+	if (!O.on || O.donatePerDay <= 0 || Tech < -1 || Tech >= TechCount())
 	{
 		Out.error = Error::BadId;
 		return Out;
@@ -3400,6 +3404,11 @@ Check Kingdom::CheckDonate(bool Food) const
 		Out.timeSec = (FloorDiv(Time, 86400) + 1) * 86400 - Time;
 		return Out;
 	}
+	if (Tech >= 0 && TechLevel(Tech) >= C.allianceTech.MaxLevel())
+	{
+		Out.error = Error::MaxLevel;
+		return Out;
+	}
 	const size_t K = static_cast<size_t>(ResIndex(Food ? Res::Food : Res::Gold));
 	Out.cost[K] = O.donateCost[K] * std::max(1, CastleLevel());
 	if (Out.cost[K] <= 0)
@@ -3413,9 +3422,9 @@ Check Kingdom::CheckDonate(bool Food) const
 	return Out;
 }
 
-Error Kingdom::Donate(bool Food, Reward* Out)
+Error Kingdom::Donate(bool Food, Reward* Out, int Tech)
 {
-	const Check Ck = CheckDonate(Food);
+	const Check Ck = CheckDonate(Food, Tech);
 	if (Ck.error != Error::None)
 	{
 		return Ck.error;
@@ -3432,12 +3441,131 @@ Error Kingdom::Donate(bool Food, Reward* Out)
 		Res_[K] -= Ck.cost[K];
 	}
 	HonorCount += C.honor.donateHonor;
+	// The tech points: to the tech picked, or the lowest one not at the top.
+	const int To = Tech >= 0 ? Tech : TechAuto();
+	const int64_t Pts = To >= 0 ? C.allianceTech.points : 0;
+	if (Pts > 0)
+	{
+		auto It = std::find_if(TechPtsList.begin(), TechPtsList.end(), [this](const std::pair<int, std::vector<int64_t>>& P) { return P.first == AllianceIdx; });
+		if (It == TechPtsList.end())
+		{
+			TechPtsList.emplace_back(AllianceIdx, std::vector<int64_t>(static_cast<size_t>(TechCount()), 0));
+			It = TechPtsList.end() - 1;
+		}
+		It->second.resize(static_cast<size_t>(TechCount()), 0);
+		It->second[static_cast<size_t>(To)] += Pts;
+	}
 	if (Out)
 	{
 		*Out = Reward();
 		Out->honor = C.honor.donateHonor;
+		Out->tech = To;
+		Out->techPts = Pts;
+		Out->techLevel = To >= 0 ? TechLevel(To) : 0;
 	}
 	return Error::None;
+}
+
+// --- Alliance Tech (master prompt 12.5) ------------------------------------------------------------------
+
+const std::vector<int64_t>* Kingdom::MyTechPts(int Index) const
+{
+	for (const auto& P : TechPtsList)
+	{
+		if (P.first == Index)
+		{
+			return &P.second;
+		}
+	}
+	return nullptr;
+}
+
+int64_t Kingdom::TechBase(int Index, int Tech) const
+{
+	// The levels the alliance's league has researched without the player.
+	const AllianceTechRules& T = C.allianceTech;
+	if (!T.on || Index < 0 || Tech < 0 || Tech >= TechCount() || T.baseLevels.empty())
+	{
+		return 0;
+	}
+	const int Tier = std::max(0, std::min(static_cast<int>(T.baseLevels.size()) - 1, AllianceTier(Index)));
+	int64_t Pts = 0;
+	for (int L = 0; L < T.baseLevels[static_cast<size_t>(Tier)] && L < T.MaxLevel(); ++L)
+	{
+		Pts += T.costs[static_cast<size_t>(L)];
+	}
+	return Pts;
+}
+
+int64_t Kingdom::TechMine(int Tech) const
+{
+	const std::vector<int64_t>* Mine = AllianceIdx >= 0 ? MyTechPts(AllianceIdx) : nullptr;
+	return Mine && Tech >= 0 && Tech < static_cast<int>(Mine->size()) ? (*Mine)[static_cast<size_t>(Tech)] : 0;
+}
+
+int64_t Kingdom::TechPoints(int Tech) const
+{
+	return AllianceIdx >= 0 && Tech >= 0 && Tech < TechCount() ? TechBase(AllianceIdx, Tech) + TechMine(Tech) : 0;
+}
+
+int Kingdom::TechLevel(int Tech) const
+{
+	if (AllianceIdx < 0 || Tech < 0 || Tech >= TechCount())
+	{
+		return 0;
+	}
+	const AllianceTechRules& T = C.allianceTech;
+	int64_t Left = TechPoints(Tech);
+	int L = 0;
+	while (L < T.MaxLevel() && Left >= T.costs[static_cast<size_t>(L)])
+	{
+		Left -= T.costs[static_cast<size_t>(L)];
+		++L;
+	}
+	return L;
+}
+
+int64_t Kingdom::TechNeed(int Tech) const
+{
+	const AllianceTechRules& T = C.allianceTech;
+	const int L = TechLevel(Tech);
+	if (AllianceIdx < 0 || Tech < 0 || Tech >= TechCount() || L >= T.MaxLevel())
+	{
+		return 0;
+	}
+	int64_t Need = 0;
+	for (int K = 0; K <= L; ++K)
+	{
+		Need += T.costs[static_cast<size_t>(K)];
+	}
+	return Need;
+}
+
+int Kingdom::TechAuto() const
+{
+	int Best = -1;
+	for (int I = 0; I < TechCount(); ++I)
+	{
+		const int L = TechLevel(I);
+		if (L < C.allianceTech.MaxLevel() && (Best < 0 || L < TechLevel(Best)))
+		{
+			Best = I;
+		}
+	}
+	return AllianceIdx >= 0 ? Best : -1;
+}
+
+int Kingdom::TechValue(TechKind Kind) const
+{
+	for (int I = 0; I < TechCount(); ++I)
+	{
+		const TechDef& D = C.allianceTech.list[static_cast<size_t>(I)];
+		if (D.kind == Kind)
+		{
+			return TechLevel(I) * D.per;
+		}
+	}
+	return 0;
 }
 
 int Kingdom::ShopBought(int Item) const
@@ -5440,7 +5568,8 @@ Error Kingdom::FinishBoss(int Stars, int64_t DamagePermille, Reward* Out)
 	PendingReinforce.clear();
 	UnblockQueue(Time);
 	UnblockCraft(Time);
-	const int64_t Dmg = std::max<int64_t>(0, std::min<int64_t>(1000, DamagePermille));
+	// Alliance Tech adds to the damage the battle did.
+	const int64_t Dmg = std::max<int64_t>(0, std::min<int64_t>(1000, std::max<int64_t>(0, DamagePermille) * (100 + TechValue(TechKind::Boss)) / 100));
 	// The battle counts for the alliance it began in (the player may have left it since).
 	if (BossMine() && BossHits.size() < 64)
 	{
@@ -5960,7 +6089,8 @@ int Kingdom::HelpLimit() const
 	// The Alliance Camp stands for the prompt's Alliance Hall.
 	const LevelDef* Camp = C.allianceCamp >= 0 ? BuildingLevel(C.allianceCamp) : nullptr;
 	const int Hall = Camp ? Camp->level : 0;
-	return std::max(0, std::min(std::min(H.max, H.base + Hall / H.hallStep), HelpMembers(Time)));
+	// Alliance Tech adds helps, within the content's maximum and the members.
+	return std::max(0, std::min(std::min(H.max, H.base + Hall / H.hallStep + TechValue(TechKind::Help)), HelpMembers(Time)));
 }
 
 int64_t Kingdom::HelpCut(int64_t Total) const
@@ -9153,6 +9283,42 @@ std::string Kingdom::Save() const
 		W.EndObject();
 		W.EndObject();
 	}
+	// Alliance Tech: the player's points by alliance, by tech id (only those with some).
+	{
+		bool bAny = false;
+		for (const auto& P : TechPtsList)
+		{
+			bAny = bAny || std::any_of(P.second.begin(), P.second.end(), [](int64_t N) { return N != 0; });
+		}
+		if (C.allianceTech.on && bAny)
+		{
+			W.Key("allianceTech");
+			W.BeginArray();
+			for (const auto& P : TechPtsList)
+			{
+				if (!std::any_of(P.second.begin(), P.second.end(), [](int64_t N) { return N != 0; }))
+				{
+					continue;
+				}
+				W.BeginObject();
+				W.Key("a");
+				W.Int(P.first);
+				W.Key("pts");
+				W.BeginObject();
+				for (size_t I = 0; I < P.second.size() && I < C.allianceTech.list.size(); ++I)
+				{
+					if (P.second[I] != 0)
+					{
+						W.Key(C.allianceTech.list[I].id.c_str());
+						W.Int(P.second[I]);
+					}
+				}
+				W.EndObject();
+				W.EndObject();
+			}
+			W.EndArray();
+		}
+	}
 	// Daily quests (optional): today's quests by pool id.
 	W.Key("quests");
 	W.BeginObject();
@@ -10259,6 +10425,27 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 			}
 		}
 	}
+	// Alliance Tech (saves before it have none); alliances that are gone and techs the content no longer has are dropped.
+	TechPtsList.clear();
+	if (const JsonValue* TJ = C.allianceTech.on ? J.Find("allianceTech") : nullptr)
+	{
+		for (size_t I = 0; I < TJ->Size() && TechPtsList.size() < 64; ++I)
+		{
+			const JsonValue& E = (*TJ)[I];
+			const int A = E.GetInt("a", -1);
+			const JsonValue* PJ = E.Find("pts");
+			if (A < 0 || A >= AllianceCount() || !PJ || MyTechPts(A))
+			{
+				continue;
+			}
+			std::vector<int64_t> Pts(static_cast<size_t>(TechCount()), 0);
+			for (size_t K = 0; K < Pts.size(); ++K)
+			{
+				Pts[K] = std::max<int64_t>(0, PJ->GetInt64(C.allianceTech.list[K].id.c_str(), 0));
+			}
+			TechPtsList.emplace_back(A, Pts);
+		}
+	}
 	// Daily quests (saves before them roll today's quests on the next Advance); quests the pool no longer has are dropped.
 	QuestDay = -1;
 	QuestList.clear();
@@ -11186,6 +11373,18 @@ uint64_t Kingdom::Hash() const
 		for (const int N : ShopBoughtList)
 		{
 			W.I32(N);
+		}
+	}
+	// And Alliance Tech: only once the player gave points.
+	for (const auto& P : TechPtsList)
+	{
+		if (std::any_of(P.second.begin(), P.second.end(), [](int64_t N) { return N != 0; }))
+		{
+			W.I32(P.first);
+			for (const int64_t N : P.second)
+			{
+				W.I64(N);
+			}
 		}
 	}
 	// And War Banners: only once there is silk or a banner.
