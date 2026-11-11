@@ -462,6 +462,33 @@ function invariants(st, add) {
 		}
 		if (cq.at >= 0 && !inBattle()) add('warn', 'Висит незавершённая атака в Завоевании');
 	}
+	// Season events: their days, points only in the player's event and within what the lords allow, the place as the
+	// bracket gives it, milestones paid only once reached, the rank reward only after the week.
+	const svr = rules().seasonEvents;
+	if (svr && st.sev) {
+		if (st.sev.length !== svr.list.length) add('bad', 'Событий сезона ' + st.sev.length + ' из ' + svr.list.length);
+		st.sev.forEach((v, e) => {
+			const d = svr.list[e];
+			if (!d) return;
+			const nm = 'Событие «' + d.name + '»: ';
+			const pars = d.par.map((x) => x[1]);
+			if (v.end !== v.start + svr.days * 86400 || v.next !== v.start + svr.weeks * 7 * 86400 || (v.on === 1) !== (st.now >= v.start && st.now < v.end) || v.start > st.now) {
+				add('bad', nm + 'дни ' + [v.start, v.end, v.next].join(' / ') + ', идёт ' + v.on + ', сейчас ' + st.now);
+			}
+			if (v.mine > v.no) add('bad', nm + 'очки события ' + v.mine + ' при событии ' + v.no);
+			if (v.pts < 0 || (v.mine !== v.no && v.pts !== 0)) add('bad', nm + 'очков ' + v.pts + ' (событие ' + v.mine + ' из ' + v.no + ')');
+			if (!pars.includes(v.par)) add('bad', nm + 'норма ' + v.par + ' не из таблицы');
+			if (v.lords.length !== svr.bracket - 1 || v.lords.some((x) => x < 0 || x > Math.floor((v.par * 26) / 10))) add('bad', nm + 'очки лордов ' + v.lords.length + ' шт., до ' + Math.max(0, ...v.lords));
+			const place = 1 + v.lords.filter((x) => x > v.pts).length;
+			if (v.place !== place) add('bad', nm + 'место ' + v.place + ', а по таблице ' + place);
+			d.milestones.forEach((m, i) => {
+				if ((v.ms >> i) & 1 && v.pts < Math.max(1, Math.floor((v.par * m.pct) / 100))) add('bad', nm + 'рубеж ' + (i + 1) + ' получен при ' + v.pts + ' очках');
+			});
+			if (v.ms >> d.milestones.length) add('bad', nm + 'лишние рубежи ' + v.ms);
+			if (v.rk && (v.on || v.pts <= 0)) add('bad', nm + 'награда за место получена до конца или без очков');
+			if (v.mine === v.no && v.no >= 0 && st.castle < svr.castle) add('warn', nm + 'есть очки ниже Замка ' + svr.castle);
+		});
+	}
 	// Alliance help: helps a timer within the rules, asks only of running timers with their ends, the time taken within the
 	// helps, no help late, the members' asks open, today's helps within the cap; nothing outside an alliance.
 	const hr = rules().allianceHelp;
@@ -756,7 +783,7 @@ function runMonkey(steps, seed, keep) {
 	const seen = new Set();
 	const kindOf = (txt) => txt.replace(/[#\d][\d\s,]*/g, '#');
 	// Actions that pay a reward, which may go on top of full vaults.
-	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'атака в Завоевании', 'сундук Завоевания', 'помочь союзникам', 'башня титанов', 'подарок за возвращение', 'лавка альянса']);
+	const REWARDS = new Set(['цель', 'задание', 'сундук заданий', 'достижение', 'календарь новичка', 'календарь месяца', 'недельное задание', 'недельный сундук', 'награда испытания', 'место в испытании', 'путь войны', 'сундук пути', 'штурм', 'рейдовый босс', 'сундук альянса', 'ежедневное испытание', 'зачистка испытания', 'атака на войне', 'сундук войны', 'атака в Завоевании', 'сундук Завоевания', 'награда события', 'помочь союзникам', 'башня титанов', 'подарок за возвращение', 'лавка альянса']);
 	// Breaks the kingdom already had (an admin edit, say) are not the random play's.
 	invariants(B.state(), (l, txt) => seen.add(kindOf(txt)));
 	let done = 0;
@@ -1021,6 +1048,19 @@ function runMonkey(steps, seed, keep) {
 			return err;
 		}],
 		['сундук Завоевания', 1, () => (B.conqChest ? B.conqChest().err : -1)],
+		['награда события', 2, (st) => {
+			if (!B.seasonMs || !st.sev || !st.sev.length) return -1;
+			// A milestone or the rank of an event, now and then a wrong one.
+			const e = Math.floor(r() * (st.sev.length + 1)) - (r() < 0.1 ? 1 : 0);
+			const v = st.sev[e];
+			const ms = rules().seasonEvents.list[e] ? rules().seasonEvents.list[e].milestones.length : 1;
+			const res = r() < 0.3 ? B.seasonRank(e) : B.seasonMs(e, Math.floor(r() * (ms + 1)));
+			if (res.err === 0 && v) {
+				const st2 = B.state();
+				if (st2.sev[e].ms === v.ms && st2.sev[e].rk === v.rk) throw new Error('награда события ' + e + ' выдана, а отметки нет');
+			}
+			return res.err;
+		}],
 		['просьба о помощи', 3, (st) => {
 			if (!B.helpAsk || !st.help) return -1;
 			// A running timer, now and then a wrong kind or one that is not running.
@@ -1329,7 +1369,9 @@ function runMonkey(steps, seed, keep) {
 				landStores(st, st2, note, act[0] === 'сбор' || act[0] === 'сбор с земли');
 				// The end of a Warpath pass pays what was reached and not claimed, on top of full vaults too.
 				const wpPaid = !!(st.wp && st2.wp && st2.wp.paid.no !== st.wp.paid.no);
-				resourceCaps(st, st2, note, REWARDS.has(act[0]) || wpPaid);
+				// A season event beginning pays what the one before of its kind left unclaimed.
+				const sevPaid = !!(st.sev && st2.sev && st2.sev.some((v, e) => st.sev[e] && v.no !== st.sev[e].no && st.sev[e].mine >= 0));
+				resourceCaps(st, st2, note, REWARDS.has(act[0]) || wpPaid || sevPaid);
 				if (st.wp && st2.wp && st2.wp.no === st.wp.no && (st2.wp.xp < st.wp.xp || st2.wp.got.replace(/0/g, '').length < st.wp.got.replace(/0/g, '').length)) {
 					note('bad', 'Путь войны откатился: опыт ' + st.wp.xp + ' → ' + st2.wp.xp);
 				}
@@ -1652,6 +1694,17 @@ function renderTab(tab) {
 			h += row('Жетоны похода <b>' + st.conq.tok + ' из ' + cr.tokens + '</b>', b('conq-tok', 'Полный запас', { n: cr.tokens }) + b('conq-tok', 'Ни одного', { n: 0 }),
 				st.conq.ph === 1 ? 'Завоевание идёт, конец через ' + fmtDur(st.conq.end - st.now) : 'следующее через ' + fmtDur((st.conq.ph === 0 ? st.conq.start : st.conq.next) - st.now));
 		}
+		if (st.sev && st.sev.length && rules().seasonEvents) {
+			// Season events: points for the event that runs (or ran last), a par more or none.
+			const svr = rules().seasonEvents;
+			st.sev.forEach((v, e) => {
+				const d = svr.list[e];
+				const mine = v.mine === v.no ? v.pts : 0;
+				h += row('«' + d.name + '» <b>' + fmt(mine) + ' очков</b>', b('sev-pts', '+ норма', { n: e * 10 + 1 }) + b('sev-pts', 'Обнулить', { n: e * 10 }),
+					(v.on ? 'идёт, конец через ' + fmtDur(v.end - st.now) : 'следующее через ' + fmtDur(v.next - st.now)) + ', норма ' + fmt(v.par) + ', место ' + v.place +
+					(st.castle < svr.castle ? ', очки с Замка ' + svr.castle : ''));
+			});
+		}
 		if (st.comeback && rules().comeback && rules().comeback.days) {
 			// The comeback gift: give one as after a week away (plus a day), or take back the one waiting.
 			const cbd = rules().comeback.days;
@@ -1940,6 +1993,22 @@ function act(a, el, n, id, i) {
 		c.tokAt = st.now;
 		s.conquest = c;
 	}, n ? 'Жетонов похода: ' + n : 'Жетоны похода кончились'); break;
+	case 'sev-pts': {
+		const e = Math.floor(n / 10);
+		const d = rules().seasonEvents.list[e];
+		const par = kd() ? kd().K.bridge.state().sev[e].par : 0;
+		edit((s, st) => {
+			const v = st.sev[e];
+			const list = (s.seasonEvents || []).filter((x) => x.id !== d.id);
+			const old = (s.seasonEvents || []).find((x) => x.id === d.id && x.no === v.no);
+			const x = old || { id: d.id, no: v.no, castle: st.castle, points: 0, ms: 0, rank: false };
+			x.points = n % 10 ? x.points + v.par : 0;
+			if (!(n % 10)) { x.ms = 0; x.rank = false; }
+			list.push(x);
+			s.seasonEvents = list;
+		}, n % 10 ? '«' + d.name + '»: +' + fmt(par) + ' очков' : '«' + d.name + '»: очки обнулены');
+		break;
+	}
 	case 'cb-set': edit((s, st) => {
 		if (n) s.comeback = { away: (rules().comeback.days + 1) * 86400, at: st.now };
 		else delete s.comeback;

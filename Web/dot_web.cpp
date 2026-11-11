@@ -1484,6 +1484,33 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("]},");
 	}
+	// Season events, by kind: the event that runs now or ran last (no), on, its start and end, the next one's start, the
+	// event the player's points belong to (mine), points, par, place, milestones paid (bits), the rank reward paid and
+	// the lords' points.
+	{
+		O.Key("sev").Raw("[");
+		for (int E = 0; E < Km->SeasonEventCount(); ++E)
+		{
+			const int64_t No = Km->SeasonEventNo(E);
+			O.Raw(E ? ",{" : "{").Key("no").Int(No).Comma().Key("on").Int(Km->SeasonEventOn(E) ? 1 : 0).Comma();
+			O.Key("start").Int(Km->SeasonEventStart(E, No)).Comma().Key("end").Int(Km->SeasonEventEnd(E, No)).Comma();
+			O.Key("next").Int(Km->SeasonEventStart(E, No + 1)).Comma().Key("mine").Int(Km->SeasonEventMine(E)).Comma();
+			O.Key("pts").Int(Km->SeasonEventPoints(E)).Comma().Key("par").Int(Km->SeasonEventPar(E)).Comma();
+			O.Key("place").Int(Km->SeasonEventPlace(E)).Comma();
+			int64_t Mask = 0;
+			for (int I = 0; I < 32; ++I)
+			{
+				Mask |= Km->SeasonMilestoneClaimed(E, I) ? (int64_t{1} << I) : 0;
+			}
+			O.Key("ms").Int(Mask).Comma().Key("rk").Int(Km->SeasonRankClaimed(E) ? 1 : 0).Comma().Key("lords").Raw("[");
+			for (int L = 0; L < C.seasonEvents.bracket - 1; ++L)
+			{
+				O.Raw(L ? "," : "").Int(Km->SeasonLordPoints(E, L));
+			}
+			O.Raw("]}");
+		}
+		O.Raw("],");
+	}
 	// Alliance help: helps a timer could get now, the asks of running timers as [kind, id, at, end, total, got, max, next,
 	// cut], every running timer as [kind, id, end, what asking would say], the helps got lately as [at, kind, id, member,
 	// cut], the members' open asks as [no, member, kind, at, until, helped], helps given today and what giving would say.
@@ -2219,6 +2246,22 @@ EMSCRIPTEN_KEEPALIVE const char* dk_conq_chest()
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimConquestChest(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
+}
+
+/** Claims milestone I of season event E. */
+EMSCRIPTEN_KEEPALIVE const char* dk_season_ms(int E, int I)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error Err = K() ? K()->ClaimSeasonMilestone(E, I, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(Err, R);
+}
+
+/** Claims the rank reward of season event E. */
+EMSCRIPTEN_KEEPALIVE const char* dk_season_rank(int E)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error Err = K() ? K()->ClaimSeasonRank(E, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(Err, R);
 }
 
 /** Asks the alliance to help with a running timer (Kind: 0 building, 1 land, 2 Armoury research, 3 Arcane Tower
