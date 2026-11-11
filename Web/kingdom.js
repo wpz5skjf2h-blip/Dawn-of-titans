@@ -5843,7 +5843,7 @@ function sevBlock(st, e) {
 	const timer = v.on ? v.end - nowF() : v.next - nowF();
 	const status = '<div class="costline"><span>' + (v.on ? 'До конца события' : 'Следующее через') + '</span><b data-live="sev' + e + '">' + fmtDur(Math.max(0, timer)) + '</b>' +
 		(v.on || over ? '<span>' + (pts > 0 ? 'место ' + v.place + ' из ' + R.bracket : 'очков пока нет') + '</span>' : '') + '</div>';
-	let html = '<h3>' + esc(d.name) + '</h3><p>Очки дают ' + esc(sevRules(e)) + '. Считается время, которое стоит у работы, без ускорений и реликвий.</p>' + status;
+	let html = '<h3>' + esc(d.name) + '</h3><p>Очки дают ' + esc(sevRules(e)) + '. Считается полное время работы, без ускорений и реликвий.</p>' + status;
 	if (locked) return html + '<p class="fine">Очки считаются с Замка ' + R.castle + '.</p>';
 	if (!v.on && !mine) return html + '<p class="fine">Событие идёт ' + R.days + ' ' + plural(R.days, 'день', 'дня', 'дней') + ' с понедельника 00:00 UTC.</p>';
 	html += '<div class="costline"><span>Очки' + (over ? ' за прошлое событие' : '') + '</span><b>' + fmt(pts) + '</b><span>норма ' + fmt(v.par) + '</span></div>';
