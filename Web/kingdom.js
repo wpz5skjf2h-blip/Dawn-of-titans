@@ -4857,7 +4857,7 @@ function conqEnemyText(st, t) {
 	if (en.length) {
 		const kinds = en.filter((x, k) => en.indexOf(x) === k).map((x) => TROOP_RU[x] || x);
 		parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' +
-			(bonus.atkPct || bonus.hpPct ? ', ' + (bonus.atkPct === bonus.hpPct ? 'здоровья и урона +' + bonus.hpPct + '%' : 'урона +' + bonus.atkPct + '%, здоровья +' + bonus.hpPct + '%') : ''));
+			(bonus.atkPct === bonus.hpPct ? (bonus.hpPct ? ', здоровья и урона +' + bonus.hpPct + '%' : '') : (bonus.atkPct ? ', урона +' + bonus.atkPct + '%' : '') + (bonus.hpPct ? ', здоровья +' + bonus.hpPct + '%' : '')));
 	}
 	return parts.join('; ') || 'никого';
 }
