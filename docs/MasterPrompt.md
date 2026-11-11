@@ -1671,6 +1671,14 @@ Every event is content data (`EventDef`, 19.6) and needs no client update:
 | Community Goal | occasional | A worldwide target ("Defeat 10 million Hollow husks"); everyone gets the reward if the world succeeds |
 | Login events | 7-day and 28-day | 13.6 |
 
+> **Implemented now (Kingdom Rush, Training Grounds):** from Castle 3, in weeks 1 and 4 of every four (counted as the
+> Warpath, from Monday 00:00 UTC, 7 days). Kingdom Rush gives a point a minute of the nominal time of constructions,
+> land upgrades and troop and spell research as they start; Training Grounds 10 points a minute of training time of each
+> squad leaving the Barracks and a point a minute of troop research. Five milestones are shares of a par by Castle level
+> (fixed at the event's first point); a bracket of 50 with computer lords pays by place after the week; what is left
+> unclaimed is paid when the next event of the kind begins (docs/M0_Notes.md §6я7). The other events of the catalog are
+> not done yet.
+
 ### 13.3 Season calendar (4 weeks)
 | Week | Highlights |
 |---|---|
