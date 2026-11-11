@@ -5022,11 +5022,13 @@ function openConquest() {
 			const chestBtn = c.chest ? '<button class="btn" disabled>Сундук открыт</button>'
 				: conqChestReady(st) ? '<button class="btn primary" data-act="conq-chest">Открыть сундук · ' + place + '-е место</button>'
 					: '<button class="btn" disabled>' + (c.ph < 2 ? 'Сундук — после Завоевания' : 'Сундук — тем, кто атаковал') + '</button>';
-			const chest = '<h3>Сундук Завоевания</h3><div class="cmp">' + R.chests.map((x, i) => '<span class="k' + (i + 1 === place ? ' on' : '') + '">' + (i + 1) + '-е место</span><span class="v">' + conqChestPay(st, i + 1) + '</span><span class="n"></span>').join('') + '</div>' +
-				'<p class="fine">Сундук — по месту альянса в конце недели. Его открывает каждый, кто атаковал, до следующего Завоевания.</p><div class="actions">' + chestBtn + '</div>';
+			// The first place's chest, the alliance's own and the last one's.
+			const shown = [...new Set([1, place, c.al.length])].sort((x, y) => x - y);
+			const chest = '<h3>Сундук Завоевания</h3><div class="cmp">' + shown.map((n) => '<span class="k' + (n === place ? ' on' : '') + '">' + n + '-е место' + (n === place ? ' (ваше)' : '') + '</span><span class="v">' + conqChestPay(st, n) + '</span><span class="n"></span>').join('') + '</div>' +
+				'<p class="fine">Сундук — по месту альянса в конце недели: чем выше место, тем богаче. Его открывает каждый, кто атаковал, до следующего Завоевания.</p><div class="actions">' + chestBtn + '</div>';
 			body = timer + tokens + mine + (locked ? '<p class="fine">Атаки в Завоевании открываются с Замка ' + R.castle + '. Альянс воюет и без вас.</p>' : '') +
 				'<div class="cqwrap">' + conqMapSvg(st, sel) + '</div>' +
-				'<p class="fine cqlegend"><span class="cqk can"></span>можно атаковать <span class="cqk truce"></span>перемирие · флаг — крепость, башня — форт, ромб — святилище, звезда — Санктум</p>' +
+				'<p class="fine cqlegend"><span class="cqk own"></span>ваш альянс <span class="cqk can"></span>можно атаковать <span class="cqk truce"></span>перемирие · флаг — крепость, башня — форт, ромб — святилище, звезда — Санктум</p>' +
 				conqTileHtml(st, sel) +
 				'<h3>Альянсы: очки Завоевания</h3><div class="league">' + rank + '</div>' + chest;
 			K.conqShown = sel;
