@@ -6548,14 +6548,15 @@ constexpr uint64_t SeasonLordSalt = 0x7365617365ULL;
 constexpr uint64_t SeasonPaySalt = 0x7365617061ULL;
 
 /** A computer lord's points in a season event: a tenth or so never play, the rest reach a share of the par over a part
- *  of the week (ours; spread so that the par sits near the middle of the bracket). */
+ *  of the week, hour by hour (ours; spread so that the par sits near the middle of the bracket). */
 int64_t SeasonLordAt(uint64_t H, int64_t Par, int64_t Start, int64_t Days, int64_t At)
 {
 	const uint64_t Roll = H % 100;
 	const int64_t Spread = static_cast<int64_t>((H >> 8) % 1000);
 	const int64_t Pct = Roll < 12 ? 0 : Roll < 40 ? 10 + Spread % 50 : Roll < 75 ? 60 + Spread % 60 : Roll < 93 ? 120 + Spread % 60 : 180 + Spread % 80;
 	const int64_t Span = std::max<int64_t>(3600, Days * 86400 * (60 + static_cast<int64_t>((H >> 24) % 41)) / 100);
-	const int64_t Done = std::max<int64_t>(0, std::min(Span, At - Start));
+	// They post their points on the hour, so the bracket changes hourly.
+	const int64_t Done = std::max<int64_t>(0, std::min(Span, (At - Start) / 3600 * 3600));
 	return Par * Pct / 100 * Done / Span;
 }
 
