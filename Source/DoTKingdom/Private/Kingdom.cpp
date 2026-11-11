@@ -156,6 +156,7 @@ void Kingdom::NewGame(int64_t Now, uint64_t InSeed)
 	ResetBoss();
 	ResetWar();
 	ResetConquest();
+	SeasonEvs.clear();
 	ResetHelp();
 	QuestCounter = 0;
 	RollQuests();
@@ -1046,6 +1047,7 @@ Error Kingdom::Build(int Def, int X, int Y, bool UseGems, int32_t* OutId)
 		*OutId = B.id;
 	}
 	NoteQuest(QuestEvent::Upgrade, 1);
+	NoteSeason(SeasonAct::Build, L.timeSec, Time);
 	return Error::None;
 }
 
@@ -1073,11 +1075,13 @@ Error Kingdom::Upgrade(int32_t Id, bool UseGems)
 	B->upgrading = true;
 	B->startAt = Time;
 	B->finishAt = Time + Next->timeSec;
+	const int64_t Sec = Next->timeSec;
 	if (Next->timeSec <= 0)
 	{
 		Complete(*B, Time);
 	}
 	NoteQuest(QuestEvent::Upgrade, 1);
+	NoteSeason(SeasonAct::Build, Sec, Time);
 	return Error::None;
 }
 
@@ -1344,6 +1348,7 @@ Error Kingdom::UpgradeLand(int32_t Id, bool UseGems)
 		}
 	}
 	NoteQuest(QuestEvent::Upgrade, 1);
+	NoteSeason(SeasonAct::Build, Ck.timeSec, Time);
 	return Error::None;
 }
 
@@ -3967,6 +3972,7 @@ void Kingdom::RollQuests()
 	RollAssault();
 	RollBoss();
 	RollWar();
+	RollSeasonEvents();
 }
 
 void Kingdom::NoteQuest(QuestEvent Event, int64_t Amount)
@@ -6534,6 +6540,304 @@ Error Kingdom::ClaimConquestChest(Reward* Out)
 	return Error::None;
 }
 
+// --- Season events ------------------------------------------------------------------------------------
+
+namespace
+{
+constexpr uint64_t SeasonLordSalt = 0x7365617365ULL;
+constexpr uint64_t SeasonPaySalt = 0x7365617061ULL;
+
+/** A computer lord's points in a season event: a tenth or so never play, the rest reach a share of the par over a part
+ *  of the week (ours; spread so that the par sits near the middle of the bracket). */
+int64_t SeasonLordAt(uint64_t H, int64_t Par, int64_t Start, int64_t Days, int64_t At)
+{
+	const uint64_t Roll = H % 100;
+	const int64_t Spread = static_cast<int64_t>((H >> 8) % 1000);
+	const int64_t Pct = Roll < 12 ? 0 : Roll < 40 ? 10 + Spread % 50 : Roll < 75 ? 60 + Spread % 60 : Roll < 93 ? 120 + Spread % 60 : 180 + Spread % 80;
+	const int64_t Span = std::max<int64_t>(3600, Days * 86400 * (60 + static_cast<int64_t>((H >> 24) % 41)) / 100);
+	const int64_t Done = std::max<int64_t>(0, std::min(Span, At - Start));
+	return Par * Pct / 100 * Done / Span;
+}
+
+/** Every milestone of an event, as bits. */
+uint32_t SeasonFullMask(const SeasonEventDef& D)
+{
+	const size_t N = std::min<size_t>(32, D.milestones.size());
+	return N >= 32 ? 0xffffffffu : (1u << N) - 1u;
+}
+} // namespace
+
+int64_t Kingdom::SeasonNoAt(int E, int64_t At) const
+{
+	if (E < 0 || E >= SeasonEventCount())
+	{
+		return -1;
+	}
+	const SeasonEventRules& S = C.seasonEvents;
+	const int64_t Day = std::max<int64_t>(0, At) / 86400 + 3; // days since the Monday before the epoch
+	const int64_t Week = Day / 7;
+	return Week % S.weeks == C.seasonEvents.list[static_cast<size_t>(E)].week && Day % 7 < S.days ? Week / S.weeks : -1;
+}
+
+int64_t Kingdom::SeasonEventNo(int E) const
+{
+	if (E < 0 || E >= SeasonEventCount())
+	{
+		return -1;
+	}
+	const SeasonEventRules& S = C.seasonEvents;
+	const int64_t Week = WeekOf();
+	return Week / S.weeks - (Week % S.weeks >= S.list[static_cast<size_t>(E)].week ? 0 : 1);
+}
+
+int64_t Kingdom::SeasonEventStart(int E, int64_t No) const
+{
+	if (E < 0 || E >= SeasonEventCount())
+	{
+		return 0;
+	}
+	return ((No * C.seasonEvents.weeks + C.seasonEvents.list[static_cast<size_t>(E)].week) * 7 - 3) * 86400;
+}
+
+int64_t Kingdom::SeasonEventEnd(int E, int64_t No) const
+{
+	return SeasonEventStart(E, No) + static_cast<int64_t>(C.seasonEvents.days) * 86400;
+}
+
+bool Kingdom::SeasonEventOn(int E) const { return SeasonNoAt(E, Time) >= 0; }
+
+int64_t Kingdom::SeasonEventMine(int E) const
+{
+	return E >= 0 && E < static_cast<int>(SeasonEvs.size()) ? SeasonEvs[static_cast<size_t>(E)].no : -1;
+}
+
+int64_t Kingdom::SeasonEventPoints(int E) const
+{
+	const int64_t No = SeasonEventNo(E);
+	return No >= 0 && SeasonEventMine(E) == No ? SeasonEvs[static_cast<size_t>(E)].points : 0;
+}
+
+int64_t Kingdom::SeasonEventPar(int E) const
+{
+	const int64_t No = SeasonEventNo(E);
+	const int Castle = No >= 0 && SeasonEventMine(E) == No ? SeasonEvs[static_cast<size_t>(E)].castle : CastleLevel();
+	return C.seasonEvents.Par(E, Castle);
+}
+
+int64_t Kingdom::SeasonEventGoal(int E, int I) const
+{
+	if (E < 0 || E >= SeasonEventCount() || I < 0 || I >= static_cast<int>(C.seasonEvents.list[static_cast<size_t>(E)].milestones.size()))
+	{
+		return 0;
+	}
+	return std::max<int64_t>(1, SeasonEventPar(E) * C.seasonEvents.list[static_cast<size_t>(E)].milestones[static_cast<size_t>(I)].first / 100);
+}
+
+int64_t Kingdom::SeasonLordPoints(int E, int Lord) const
+{
+	const int64_t No = SeasonEventNo(E);
+	if (No < 0 || Lord < 0 || Lord >= C.seasonEvents.bracket - 1)
+	{
+		return 0;
+	}
+	const uint64_t H = Mix(Seed ^ SeasonLordSalt, (static_cast<uint64_t>(No) * 8 + static_cast<uint64_t>(E)) * 256 + static_cast<uint64_t>(Lord));
+	return SeasonLordAt(H, SeasonEventPar(E), SeasonEventStart(E, No), C.seasonEvents.days, Time);
+}
+
+int Kingdom::SeasonEventPlace(int E) const
+{
+	const int64_t Mine = SeasonEventPoints(E);
+	int Place = 1;
+	for (int L = 0; L < C.seasonEvents.bracket - 1; ++L)
+	{
+		Place += SeasonLordPoints(E, L) > Mine ? 1 : 0;
+	}
+	return Place;
+}
+
+int Kingdom::SeasonRankReward(int E, int Place) const
+{
+	if (E < 0 || E >= SeasonEventCount())
+	{
+		return -1;
+	}
+	const auto& Ranks = C.seasonEvents.list[static_cast<size_t>(E)].ranks;
+	for (size_t I = 0; I < Ranks.size(); ++I)
+	{
+		if (Place >= 1 && Place <= Ranks[I].first)
+		{
+			return static_cast<int>(I);
+		}
+	}
+	return -1;
+}
+
+bool Kingdom::SeasonMilestoneClaimed(int E, int I) const
+{
+	const int64_t No = SeasonEventNo(E);
+	return No >= 0 && SeasonEventMine(E) == No && I >= 0 && I < 32 && ((SeasonEvs[static_cast<size_t>(E)].mask >> I) & 1u) != 0;
+}
+
+bool Kingdom::SeasonRankClaimed(int E) const
+{
+	const int64_t No = SeasonEventNo(E);
+	return No >= 0 && SeasonEventMine(E) == No && SeasonEvs[static_cast<size_t>(E)].rank;
+}
+
+Error Kingdom::ClaimSeasonMilestone(int E, int I, Reward* Out)
+{
+	if (E < 0 || E >= SeasonEventCount() || I < 0 || I >= static_cast<int>(C.seasonEvents.list[static_cast<size_t>(E)].milestones.size()))
+	{
+		return Error::BadId;
+	}
+	if (SeasonMilestoneClaimed(E, I))
+	{
+		return Error::Nothing;
+	}
+	if (SeasonEventPoints(E) < SeasonEventGoal(E, I))
+	{
+		return Error::NotReady;
+	}
+	SeasonEvState& St = SeasonEvs[static_cast<size_t>(E)];
+	Reward R;
+	const Error Err = PayEvent(C.seasonEvents.list[static_cast<size_t>(E)].milestones[static_cast<size_t>(I)].second, SeasonPaySalt,
+		(static_cast<uint64_t>(St.no) * 8 + static_cast<uint64_t>(E)) * 64 + static_cast<uint64_t>(I), R, true);
+	if (Err != Error::None)
+	{
+		return Err;
+	}
+	St.mask |= 1u << I;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+Error Kingdom::ClaimSeasonRank(int E, Reward* Out)
+{
+	if (E < 0 || E >= SeasonEventCount())
+	{
+		return Error::BadId;
+	}
+	const int64_t No = SeasonEventNo(E);
+	if (No < 0 || SeasonEventOn(E))
+	{
+		return Error::NotReady;
+	}
+	if (SeasonRankClaimed(E) || SeasonEventPoints(E) <= 0)
+	{
+		return Error::Nothing;
+	}
+	const int Pick = SeasonRankReward(E, SeasonEventPlace(E));
+	if (Pick < 0)
+	{
+		return Error::Nothing;
+	}
+	SeasonEvState& St = SeasonEvs[static_cast<size_t>(E)];
+	Reward R;
+	const Error Err = PayEvent(C.seasonEvents.list[static_cast<size_t>(E)].ranks[static_cast<size_t>(Pick)].second, SeasonPaySalt,
+		(static_cast<uint64_t>(St.no) * 8 + static_cast<uint64_t>(E)) * 64 + 63, R, true);
+	if (Err != Error::None)
+	{
+		return Err;
+	}
+	St.rank = true;
+	if (Out)
+	{
+		*Out = R;
+	}
+	return Error::None;
+}
+
+void Kingdom::PaySeasonLeft(int E)
+{
+	SeasonEvState& St = SeasonEvs[static_cast<size_t>(E)];
+	if (St.no < 0)
+	{
+		return;
+	}
+	const SeasonEventDef& D = C.seasonEvents.list[static_cast<size_t>(E)];
+	const int64_t Par = C.seasonEvents.Par(E, St.castle);
+	const uint64_t Pick = (static_cast<uint64_t>(St.no) * 8 + static_cast<uint64_t>(E)) * 64;
+	Reward R;
+	for (size_t I = 0; I < D.milestones.size() && I < 32; ++I)
+	{
+		if (((St.mask >> I) & 1u) == 0 && St.points >= std::max<int64_t>(1, Par * D.milestones[I].first / 100))
+		{
+			// A relic without room in the inventory is the only thing that can be lost, as at the Warpath's end.
+			EventReward Pay = D.milestones[I].second;
+			Pay.relic = static_cast<int>(RelicList.size()) < C.maxRelics ? Pay.relic : 0;
+			PayEvent(Pay, SeasonPaySalt, Pick + I, R, true);
+			St.mask |= 1u << I;
+		}
+	}
+	// Only for an event over (the next of its kind has begun), so its lords are final.
+	if (!St.rank && St.points > 0)
+	{
+		int Place = 1;
+		for (int L = 0; L < C.seasonEvents.bracket - 1; ++L)
+		{
+			const uint64_t H = Mix(Seed ^ SeasonLordSalt, (static_cast<uint64_t>(St.no) * 8 + static_cast<uint64_t>(E)) * 256 + static_cast<uint64_t>(L));
+			Place += SeasonLordAt(H, Par, SeasonEventStart(E, St.no), C.seasonEvents.days, SeasonEventEnd(E, St.no)) > St.points ? 1 : 0;
+		}
+		const int Rk = SeasonRankReward(E, Place);
+		if (Rk >= 0)
+		{
+			EventReward Pay = D.ranks[static_cast<size_t>(Rk)].second;
+			Pay.relic = static_cast<int>(RelicList.size()) < C.maxRelics ? Pay.relic : 0;
+			PayEvent(Pay, SeasonPaySalt, Pick + 63, R, true);
+		}
+	}
+	St.mask = SeasonFullMask(D);
+	St.rank = true;
+}
+
+void Kingdom::OpenSeasonEvent(int E, int64_t No)
+{
+	SeasonEvs.resize(C.seasonEvents.list.size());
+	SeasonEvState& St = SeasonEvs[static_cast<size_t>(E)];
+	if (St.no == No)
+	{
+		return;
+	}
+	PaySeasonLeft(E);
+	St = SeasonEvState();
+	St.no = No;
+	St.castle = CastleLevel();
+}
+
+void Kingdom::NoteSeason(SeasonAct Act, int64_t Sec, int64_t At)
+{
+	if (Sec <= 0 || CastleLevel() < C.seasonEvents.castle)
+	{
+		return;
+	}
+	for (int E = 0; E < SeasonEventCount(); ++E)
+	{
+		const int64_t Rate = C.seasonEvents.list[static_cast<size_t>(E)].points[static_cast<size_t>(Act)];
+		const int64_t No = Rate > 0 ? SeasonNoAt(E, At) : -1;
+		if (No >= 0)
+		{
+			OpenSeasonEvent(E, No);
+			SeasonEvs[static_cast<size_t>(E)].points += Rate * Sec / 60;
+		}
+	}
+}
+
+void Kingdom::RollSeasonEvents()
+{
+	// An event over once the next of its kind has begun: what it left unclaimed is paid.
+	for (int E = 0; E < static_cast<int>(SeasonEvs.size()) && E < SeasonEventCount(); ++E)
+	{
+		SeasonEvState& St = SeasonEvs[static_cast<size_t>(E)];
+		if (St.no >= 0 && SeasonEventNo(E) > St.no && (St.mask != SeasonFullMask(C.seasonEvents.list[static_cast<size_t>(E)]) || !St.rank))
+		{
+			PaySeasonLeft(E);
+		}
+	}
+}
+
 // --- Alliance help --------------------------------------------------------------------------------------
 
 namespace
@@ -7385,6 +7689,12 @@ int Kingdom::SurvivalPct() const
 	return L && L->survival > 0 ? static_cast<int>(L->survival) : 100;
 }
 
+int64_t Kingdom::BaseTrainSec(int Troop) const
+{
+	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
+	return T.levels[static_cast<size_t>(std::max(1, std::min(TroopLevel(Troop), T.MaxLevel())) - 1)].trainSec;
+}
+
 int64_t Kingdom::TrainSec(int Troop) const
 {
 	const TroopType& T = C.troops[static_cast<size_t>(Troop)];
@@ -7419,6 +7729,7 @@ void Kingdom::ProcessQueue(int64_t Until)
 			break;
 		}
 		Army[static_cast<size_t>(Queue.front())] += 1;
+		NoteSeason(SeasonAct::Train, BaseTrainSec(Queue.front()), Done);
 		Queue.erase(Queue.begin());
 		QueuePaid.erase(QueuePaid.begin());
 		QueueStart = Done;
@@ -7556,6 +7867,7 @@ Error Kingdom::SkipTraining()
 	for (int64_t I = 0; I < Room && !Queue.empty(); ++I)
 	{
 		Army[static_cast<size_t>(Queue.front())] += 1;
+		NoteSeason(SeasonAct::Train, BaseTrainSec(Queue.front()), Time);
 		Queue.erase(Queue.begin());
 		QueuePaid.erase(QueuePaid.begin());
 	}
@@ -7679,6 +7991,8 @@ Error Kingdom::UpgradeTroop(int Troop, bool UseGems)
 		Research = -1;
 	}
 	NoteQuest(QuestEvent::Upgrade, 1);
+	NoteSeason(SeasonAct::Research, Ck.timeSec, Time);
+	NoteSeason(SeasonAct::Drill, Ck.timeSec, Time);
 	return Error::None;
 }
 
@@ -8505,6 +8819,7 @@ Error Kingdom::UpgradeSpell(int Spell, bool UseGems)
 	Lab.until = Time + Ck.timeSec;
 	SpellLabs.push_back(Lab);
 	NoteQuest(QuestEvent::Upgrade, 1);
+	NoteSeason(SeasonAct::Research, Ck.timeSec, Time);
 	return Error::None;
 }
 
@@ -10089,6 +10404,36 @@ std::string Kingdom::Save() const
 		W.Int(ConqAt);
 		W.EndObject();
 	}
+	// Season events (optional, only once the player has earned points in one): by kind, the event, the Castle level
+	// of its par, the points, the milestones paid (bits) and the rank reward.
+	if (std::any_of(SeasonEvs.begin(), SeasonEvs.end(), [](const SeasonEvState& X) { return X.no >= 0; }))
+	{
+		W.Key("seasonEvents");
+		W.BeginArray();
+		for (size_t E = 0; E < SeasonEvs.size() && E < C.seasonEvents.list.size(); ++E)
+		{
+			const SeasonEvState& X = SeasonEvs[E];
+			if (X.no < 0)
+			{
+				continue;
+			}
+			W.BeginObject();
+			W.Key("id");
+			W.String(C.seasonEvents.list[E].id);
+			W.Key("no");
+			W.Int(X.no);
+			W.Key("castle");
+			W.Int(X.castle);
+			W.Key("points");
+			W.Int(X.points);
+			W.Key("ms");
+			W.Int(static_cast<int64_t>(X.mask));
+			W.Key("rank");
+			W.Bool(X.rank);
+			W.EndObject();
+		}
+		W.EndArray();
+	}
 	// Alliance help (optional): asks of timers still running as [kind, id, at, start, end, total, got, max, next, helper,
 	// cut], helps got as [at, kind, id, member, cut], the members' asks helped and the helps given on a day.
 	W.Key("help");
@@ -11280,6 +11625,29 @@ bool Kingdom::Load(const std::string& Text, std::string& OutError)
 		ConqTokAt = QJ->GetInt64("tokAt", 0);
 		ConqAt = std::max(-1, std::min(static_cast<int>(Q.map.size()) - 1, QJ->GetInt("at", -1)));
 	}
+	// Season events (saves before them have earned no points in one); kinds no longer in the content are dropped.
+	SeasonEvs.clear();
+	if (const JsonValue* SJ = J.Find("seasonEvents"); SJ && SJ->IsArray() && SeasonEventCount() > 0)
+	{
+		SeasonEvs.resize(C.seasonEvents.list.size());
+		for (size_t I = 0; I < SJ->Size(); ++I)
+		{
+			const JsonValue& X = (*SJ)[I];
+			const std::string Id = X.GetString("id");
+			for (size_t E = 0; E < C.seasonEvents.list.size(); ++E)
+			{
+				if (C.seasonEvents.list[E].id == Id && X.GetInt64("no", -1) >= 0)
+				{
+					SeasonEvState& St = SeasonEvs[E];
+					St.no = X.GetInt64("no", -1);
+					St.castle = std::max(1, std::min(100, X.GetInt("castle", 1)));
+					St.points = std::max<int64_t>(0, X.GetInt64("points", 0));
+					St.mask = static_cast<uint32_t>(X.GetInt64("ms", 0)) & SeasonFullMask(C.seasonEvents.list[E]);
+					St.rank = X.GetBool("rank", false);
+				}
+			}
+		}
+	}
 	// Alliance help (saves before it have asked for nothing).
 	ResetHelp();
 	if (const JsonValue* HelpJ = J.Find("help"); HelpJ && C.allianceHelp.on)
@@ -11839,6 +12207,20 @@ uint64_t Kingdom::Hash() const
 		W.I32(ConqTok);
 		W.I64(ConqTokAt);
 		W.I32(ConqAt);
+	}
+	// The same for the season events.
+	for (size_t E = 0; E < SeasonEvs.size(); ++E)
+	{
+		const SeasonEvState& X = SeasonEvs[E];
+		if (X.no >= 0)
+		{
+			W.U32(static_cast<uint32_t>(E));
+			W.I64(X.no);
+			W.I32(X.castle);
+			W.I64(X.points);
+			W.U32(X.mask);
+			W.U32(X.rank ? 1u : 0u);
+		}
 	}
 	// Only once the line has started, so that hashes of kingdoms from before it stay the same.
 	if (GoalAt != 0 || GoalEvents != 0)

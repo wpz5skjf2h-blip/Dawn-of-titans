@@ -644,6 +644,52 @@ struct ConquestRules
 	const ConquestKindDef& Kind(ConquestKind K) const { return kinds[static_cast<size_t>(K)]; }
 };
 
+/** What earns points in a season event: the nominal time of what the player starts or trains. */
+enum class SeasonAct : uint8_t
+{
+	Build, // constructions and upgrades of buildings and lands, when started
+	Research, // troop and spell research, when started
+	Drill, // troop research only (Armoury), when started
+	Train, // squads leaving the Barracks (their training time)
+	Count
+};
+
+/** A season event (master prompt 13.2: Kingdom Rush, Training Grounds): a week of every season in which the player's
+ *  work earns points against a bracket of computer lords. */
+struct SeasonEventDef
+{
+	std::string id;
+	std::string name;
+	int week = 0; // the week of the season it takes (0 the first)
+	std::array<int64_t, static_cast<size_t>(SeasonAct::Count)> points{}; // points a minute of each act
+	std::vector<std::pair<int, int64_t>> par; // (from Castle level, an engaged lord's points in the event), ascending
+	std::vector<std::pair<int, EventReward>> milestones; // (percent of par, pay), ascending
+	std::vector<std::pair<int, EventReward>> ranks; // (down to this place, pay), ascending
+};
+
+/** Season events (kingdom.json "seasonEvents"). */
+struct SeasonEventRules
+{
+	int castle = 3; // Castle level points count from
+	int weeks = 4; // a season (counted as the Warpath, from a Monday)
+	int days = 7; // each event runs from Monday 00:00 UTC for this many days
+	int bracket = 50; // the player and this many lords less one
+	std::vector<SeasonEventDef> list;
+	/** The par of event E for a Castle level (0 without). */
+	int64_t Par(int E, int Castle) const
+	{
+		int64_t Out = 0;
+		if (E >= 0 && E < static_cast<int>(list.size()))
+		{
+			for (const auto& P : list[static_cast<size_t>(E)].par)
+			{
+				Out = Castle >= P.first ? P.second : Out;
+			}
+		}
+		return Out;
+	}
+};
+
 /** Army loadouts (kingdom.json "loadouts"): how many a kingdom keeps (0: none). */
 struct LoadoutRules
 {
@@ -1036,6 +1082,7 @@ struct KingdomContent
 	RaidBossRules raidBoss;
 	AllianceWarRules allianceWar;
 	ConquestRules conquest;
+	SeasonEventRules seasonEvents;
 	AllianceHelpRules allianceHelp;
 	LoadoutRules loadouts;
 	DivineRules divine;

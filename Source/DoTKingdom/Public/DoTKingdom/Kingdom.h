@@ -1274,6 +1274,41 @@ public:
 	/** The tile the pending Conquest attack is on (-1: none). */
 	int ConquestBattleTile() const { return Pending == ConquestPending ? ConqAt : -1; }
 
+	// --- Season events (master prompt 13.2: Kingdom Rush, Training Grounds) ---
+	// Each takes a week of every season from Castle 3. The nominal time of the constructions and research the player
+	// starts, and of the squads leaving the Barracks, earns points; milestones are shares of a par set by the Castle
+	// level at the event's first point, and the place among computer lords pays after the week. What is left unclaimed
+	// is paid when the next event of the kind begins.
+	int SeasonEventCount() const { return static_cast<int>(C.seasonEvents.list.size()); }
+	/** The event of kind E that runs now or ran last (-1 before the first). */
+	int64_t SeasonEventNo(int E) const;
+	int64_t SeasonEventStart(int E, int64_t No) const;
+	int64_t SeasonEventEnd(int E, int64_t No) const;
+	/** Event E runs now (whatever the Castle). */
+	bool SeasonEventOn(int E) const;
+	/** The event the player's points of kind E belong to (-1: none yet). */
+	int64_t SeasonEventMine(int E) const;
+	/** The player's points in that event (0 without one). */
+	int64_t SeasonEventPoints(int E) const;
+	/** The par of that event (of the Castle now before the first point). */
+	int64_t SeasonEventPar(int E) const;
+	/** The points milestone I of event E asks for. */
+	int64_t SeasonEventGoal(int E, int I) const;
+	/** A computer lord's points in the player's event of kind E (or the current one) at Time. */
+	int64_t SeasonLordPoints(int E, int Lord) const;
+	/** The player's place in the bracket (the player before the lords it ties). */
+	int SeasonEventPlace(int E) const;
+	/** The rank reward of a place (index into ranks; -1: none). */
+	int SeasonRankReward(int E, int Place) const;
+	bool SeasonMilestoneClaimed(int E, int I) const;
+	bool SeasonRankClaimed(int E) const;
+	/** BadId, NotReady (too few points), Nothing (claimed), InventoryFull. */
+	Error ClaimSeasonMilestone(int E, int I, Reward* Out);
+	/** BadId, NotReady (the event is on), Nothing (claimed, no points or no reward for the place), InventoryFull. */
+	Error ClaimSeasonRank(int E, Reward* Out);
+	/** A squad's training time at its level, without relics (what season events count). */
+	int64_t BaseTrainSec(int Troop) const;
+
 	// --- Alliance help (master prompt 12.4) ---
 	// The player asks the alliance to help with a running timer; computer members answer one by one, and each help takes
 	// a share of the timer's whole time off (at least a minimum). A timer gets a few helps (more with the Alliance Camp),
@@ -1588,6 +1623,13 @@ private:
 	void SimConquest(const ConqSnap& S, int64_t Start, int64_t Until, const std::vector<ConqHit>& Hits, ConquestInfo& Out) const;
 	int ConqTokens(int64_t* NextIn) const;
 	void ResetConquest();
+	/** Season events: points for an act of Sec nominal seconds at At; the state of kind E for event No (made, paying
+	 *  what the one before left, when it is another's); what is left unclaimed paid. */
+	void NoteSeason(SeasonAct Act, int64_t Sec, int64_t At);
+	void RollSeasonEvents();
+	void OpenSeasonEvent(int E, int64_t No);
+	void PaySeasonLeft(int E);
+	int64_t SeasonNoAt(int E, int64_t At) const;
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -1794,6 +1836,17 @@ private:
 		ConquestInfo info;
 	};
 	mutable ConqCache ConqMemo;
+	// Season events, by kind: the event the points belong to, the Castle level its par was set at, the points, the
+	// milestones paid (bits) and the rank reward paid
+	struct SeasonEvState
+	{
+		int64_t no = -1;
+		int castle = 0;
+		int64_t points = 0;
+		uint32_t mask = 0;
+		bool rank = false;
+	};
+	std::vector<SeasonEvState> SeasonEvs;
 	// Alliance help: the player's asks (the raw list: finished timers are dropped when time moves on), the helps got
 	// lately, the members' asks helped (by no) and the helps given on a day
 	std::vector<HelpAsk> AskList;

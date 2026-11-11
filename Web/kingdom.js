@@ -234,6 +234,8 @@ class KingdomBridge {
 	}
 	conqFinish(stars) { return JSON.parse(this.str(this.M._dk_conq_finish(stars))); }
 	conqChest() { return JSON.parse(this.str(this.M._dk_conq_chest())); }
+	seasonMs(e, i) { return JSON.parse(this.str(this.M._dk_season_ms(e, i))); }
+	seasonRank(e) { return JSON.parse(this.str(this.M._dk_season_rank(e))); }
 	helpAsk(kind, id) { return this.M._dk_help_ask(kind, id); }
 	helpGive() { return JSON.parse(this.str(this.M._dk_help_give())); }
 	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
@@ -2109,6 +2111,7 @@ function refresh(force) {
 	if (prev) announceBoss(prev, K.st);
 	if (prev) announceWar(prev, K.st);
 	if (prev) announceConq(prev, K.st);
+	if (prev) announceSev(prev, K.st);
 	if (prev) announceHelp(prev, K.st);
 	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
@@ -2289,10 +2292,11 @@ function updateHud() {
 	if (!qb.hidden) {
 		const claimed = qs.list.filter((q) => q.claimed).length;
 		qb.querySelector('span').textContent = claimed + '/' + qs.list.length;
-		qb.classList.toggle('ready', questsReady(st) + wpReady(st) > 0);
+		qb.classList.toggle('ready', questsReady(st) + wpReady(st) + sevReady(st) > 0);
 		const wk = st.week && st.week.list.length ? ', заданий недели ' + st.week.list.filter((q) => q.claimed).length + ' из ' + st.week.list.length : '';
 		const wpt = wpOn(st) ? ', Путь войны: уровень ' + st.wp.tier : '';
-		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + wk + wpt + (questsReady(st) + wpReady(st) ? ', есть награда' : '');
+		const sevt = sevOn(st) ? st.sev.filter((v) => v.on).map((v) => ', ' + sevDef(st.sev.indexOf(v)).name + ': ' + fmt(sevMine(st, st.sev.indexOf(v)) ? v.pts : 0) + ' очков').join('') : '';
+		qb.title = 'Ежедневные задания: получено ' + claimed + ' из ' + qs.list.length + wk + wpt + sevt + (questsReady(st) + wpReady(st) + sevReady(st) ? ', есть награда' : '');
 	}
 	$('kAttackSub').textContent = st.res[3] + ' ' + plural(st.res[3], 'камень', 'камня', 'камней');
 	const trialN = trialReady(st);
@@ -2621,6 +2625,9 @@ function onAct(e) {
 	case 'wp-skip': gemAction('wp-skip', +el.dataset.gems, buyWarpathTier); break;
 	case 'wp-more': K.wpAll = !K.wpAll; refreshSheet(true); break;
 	case 'quest-tab': K.questTab = el.dataset.tab; refreshSheet(true); break;
+	case 'sev-ms': claimSev('ms', +el.dataset.id, +el.dataset.i); break;
+	case 'sev-rank': claimSev('rank', +el.dataset.id); break;
+	case 'sev-show': K.sevShow = +el.dataset.id; refreshSheet(true); break;
 	case 'goals': openGoals(); break;
 	case 'profile': openProfile(); break;
 	case 'profile-castle': showCastle(); break;
@@ -3229,7 +3236,7 @@ function openUpgrade(id) {
 		const html = sheetTitle(buildingIcon(b.def), esc(d.name)) + '<p>Уровень ' + b.lv + ' → ' + (b.lv + 1) + ' из ' + d.levels.length + '</p>' +
 			(rows.length ? '<div class="cmp">' + rows.join('') + '</div>' : '') +
 			(unlocks.length ? '<h3>Откроет</h3><div class="unlocks">' + unlocks.map((u) => '<span>' + (u.def >= 0 ? mini('building.' + K.defs[u.def].id) : '') + esc(u.text) + '</span>').join('') + '</div>' : '') +
-			'<div class="costline"><span>Стоимость</span>' + costHtml(ck.cost, st.res) + '<span>Время</span><b>' + (ck.t > 0 ? fmtDur(ck.t) : 'сразу') + '</b></div>' +
+			'<div class="costline"><span>Стоимость</span>' + costHtml(ck.cost, st.res) + '<span>Время</span><b>' + (ck.t > 0 ? fmtDur(ck.t) : 'сразу') + '</b></div>' + sevPointsLine(st, ['build'], ck.t) +
 			(ck.err !== E.None ? '<p class="note">' + esc(errText(ck.err, ck)) + (ck.err === E.NotEnough && ck.g > 0 ? '. Как в оригинале, недостающее можно купить за самоцветы.' : '') + '</p>' : '') +
 			srcNote(nx) + '<div class="actions">' + main + closeBtn + '</div>';
 		return { key: ['up', id, ck.err, ck.g, armedU, st.res[0] >= ck.cost[0], st.res[1] >= ck.cost[1]].join('|'), html };
@@ -3259,7 +3266,7 @@ function openLandUpgrade(id) {
 		else main = '<button class="btn" disabled>' + esc(errText(ck.err, ck, 'land')) + '</button>';
 		const html = sheetTitle(landIcon(L.type, L.lv), esc(ty.name)) + '<p>Уровень ' + L.lv + ' → ' + (L.lv + 1) + '. Улучшение занимает строителя, а земля всё это время добывает.</p>' +
 			'<div class="cmp">' + rows.join('') + '</div>' +
-			'<div class="costline"><span>Стоимость</span>' + costHtml(ck.cost, st.res) + '<span>Время</span><b>' + fmtDur(ck.t) + '</b></div>' +
+			'<div class="costline"><span>Стоимость</span>' + costHtml(ck.cost, st.res) + '<span>Время</span><b>' + fmtDur(ck.t) + '</b></div>' + sevPointsLine(st, ['build'], ck.t) +
 			(ck.err !== E.None ? '<p class="note">' + esc(errText(ck.err, ck, 'land')) + (ck.err === E.NotEnough && ck.g > 0 ? '. Недостающее золото можно купить за самоцветы.' : '') + '</p>' : '') +
 			'<p class="fine">В оригинале захваченные земли улучшали, чтобы они больше давали; цен гайды не называют, поэтому цена и время здесь наша оценка. ' +
 			'Земля растёт до верхнего уровня земель, которые Замок открывает на карте мира (сейчас ' + st.landMaxLv + ').</p>' +
@@ -5775,14 +5782,171 @@ function announceQuests(prev, st) {
 		});
 	}
 }
+// ---------------------------------------------------------------------------------------------
+// Season events (master prompt 13.2: Kingdom Rush, Training Grounds)
+// ---------------------------------------------------------------------------------------------
+const SEV_ICON = { rush: 'ui.build', drill: 'building.barracks' };
+const SEV_ACTS = { build: 'стройки и улучшения зданий и земель', research: 'исследования войск и заклинаний', drill: 'исследования войск в Оружейной', train: 'обучение отрядов в Казармах' };
+const sevOn = (st) => !!(K.rules.seasonEvents && st.sev && st.sev.length);
+const sevDef = (e) => K.rules.seasonEvents.list[e];
+/** The player's points belong to the event that runs now or ran last. */
+const sevMine = (st, e) => st.sev[e].mine === st.sev[e].no && st.sev[e].no >= 0;
+const sevGoal = (st, e, i) => Math.max(1, Math.floor((st.sev[e].par * sevDef(e).milestones[i].pct) / 100));
+const sevRankPick = (e, place) => sevDef(e).ranks.findIndex((r) => place >= 1 && place <= r.place);
+const sevRankReady = (st, e) => { const v = st.sev[e]; return sevMine(st, e) && !v.on && !v.rk && v.pts > 0 && sevRankPick(e, v.place) >= 0; };
+/** Gold and food of a season event's reward are times the Castle level. */
+const sevPay = (r, castle) => eventPay(Object.assign({}, r, { gold: (r.gold || 0) * Math.max(1, castle), food: (r.food || 0) * Math.max(1, castle) }));
+/** What a minute of each act earns, as words. */
+function sevRules(e) {
+	const d = sevDef(e);
+	return Object.keys(SEV_ACTS).filter((k) => d.points[k] > 0).filter((k) => !(k === 'drill' && d.points.research > 0))
+		.map((k) => SEV_ACTS[k] + ' — ' + d.points[k] + ' ' + plural(d.points[k], 'очко', 'очка', 'очков') + ' за минуту' + (k === 'train' ? ' обучения' : '')).join('; ');
+}
+/** Milestones ready to claim and the rank reward. */
+function sevReady(st) {
+	if (!sevOn(st) || st.castle < K.rules.seasonEvents.castle) return 0;
+	let n = 0;
+	st.sev.forEach((v, e) => {
+		if (!sevMine(st, e)) return;
+		sevDef(e).milestones.forEach((m, i) => { if (!((v.ms >> i) & 1) && v.pts >= sevGoal(st, e, i)) n++; });
+		if (sevRankReady(st, e)) n++;
+	});
+	return n;
+}
+/** The bracket: the lords by points with the kingdom before the lords it ties. */
+function sevBoard(st, e) {
+	const v = st.sev[e];
+	const mine = sevMine(st, e) ? v.pts : 0;
+	const rows = v.lords.map((s, i) => ({ s, name: trialLordName(i + 7 * (e + 1)) })).sort((a, b) => b.s - a.s);
+	const at = rows.findIndex((r) => r.s <= mine);
+	rows.splice(at < 0 ? rows.length : at, 0, { s: mine, name: 'Вы', me: true });
+	return rows;
+}
+/** The event shown first: one that runs, else one with a reward waiting, else the one that comes next. */
+function sevFocus(st) {
+	const on = st.sev.findIndex((v) => v.on);
+	if (on >= 0) return on;
+	const ready = st.sev.findIndex((v, e) => sevMine(st, e) && (sevRankReady(st, e) || sevDef(e).milestones.some((m, i) => !((v.ms >> i) & 1) && v.pts >= sevGoal(st, e, i))));
+	if (ready >= 0) return ready;
+	let best = 0;
+	st.sev.forEach((v, e) => { if (v.next < st.sev[best].next) best = e; });
+	return best;
+}
+function sevBlock(st, e) {
+	const R = K.rules.seasonEvents;
+	const d = sevDef(e);
+	const v = st.sev[e];
+	const locked = st.castle < R.castle;
+	const mine = sevMine(st, e);
+	const pts = mine ? v.pts : 0;
+	const over = !v.on && mine;
+	const timer = v.on ? v.end - nowF() : v.next - nowF();
+	const status = '<div class="costline"><span>' + (v.on ? 'До конца события' : 'Следующее через') + '</span><b data-live="sev' + e + '">' + fmtDur(Math.max(0, timer)) + '</b>' +
+		(v.on || over ? '<span>' + (pts > 0 ? 'место ' + v.place + ' из ' + R.bracket : 'очков пока нет') + '</span>' : '') + '</div>';
+	let html = '<h3>' + esc(d.name) + '</h3><p>Очки дают ' + esc(sevRules(e)) + '. Считается время, которое стоит у работы, без ускорений и реликвий.</p>' + status;
+	if (locked) return html + '<p class="fine">Очки считаются с Замка ' + R.castle + '.</p>';
+	if (!v.on && !mine) return html + '<p class="fine">Событие идёт ' + R.days + ' ' + plural(R.days, 'день', 'дня', 'дней') + ' с понедельника 00:00 UTC.</p>';
+	html += '<div class="costline"><span>Очки' + (over ? ' за прошлое событие' : '') + '</span><b>' + fmt(pts) + '</b><span>норма ' + fmt(v.par) + '</span></div>';
+	html += d.milestones.map((m, i) => {
+		const goal = sevGoal(st, e, i);
+		const got = mine && (v.ms >> i) & 1;
+		const can = mine && !got && pts >= goal;
+		const btn = got ? '<button class="btn" disabled>Получено</button>'
+			: '<button class="btn' + (can ? ' primary' : '') + '" data-act="sev-ms" data-id="' + e + '" data-i="' + i + '"' + (can ? '' : ' disabled') + '>' + (can ? 'Забрать' : fmt(pts) + ' / ' + fmt(goal)) + '</button>';
+		return '<div class="landCard' + (got ? ' won' : '') + '">' + icoHtml('ui.chest', (can || got ? 'gold' : 'shards') + ' land') + '<div class="info"><b>' + fmt(goal) + ' очков</b><span>' + sevPay(m, st.castle) + '</span>' +
+			'<div class="progress thin"><i style="width:' + Math.min(100, Math.round((100 * pts) / goal)) + '%"></i></div></div><div class="row">' + btn + '</div></div>';
+	}).join('');
+	const pick = pts > 0 ? sevRankPick(e, v.place) : -1;
+	const ranks = d.ranks.map((r, i) => {
+		const from = i ? d.ranks[i - 1].place + 1 : 1;
+		const me = i === pick;
+		return '<span class="pl' + (me ? ' me' : '') + '">' + (from === r.place ? from : from + '–' + r.place) + '</span><span class="nm' + (me ? ' me' : '') + '">' + (me ? 'вы здесь' : '') + '</span>' +
+			'<span class="v' + (me ? ' me' : '') + '">' + sevPay(r, st.castle) + '</span>';
+	}).join('');
+	const rankBtn = v.rk ? '<button class="btn" disabled>Награда за место получена</button>'
+		: sevRankReady(st, e) ? '<button class="btn primary" data-act="sev-rank" data-id="' + e + '">Забрать награду за ' + v.place + '-е место</button>'
+			: over ? '<button class="btn" disabled>' + (pts > 0 ? 'За это место награды нет' : 'Вы не набрали очков') + '</button>'
+				: '<button class="btn" disabled>Награда за место — после конца события</button>';
+	const board = sevBoard(st, e);
+	const me = board.findIndex((r) => r.me);
+	let prev = -1;
+	const lines = board.map((r, n) => [r, n]).filter(([, n]) => n < 5 || Math.abs(n - me) <= 1).map(([r, n]) => {
+		const gap = n > prev + 1 ? '<span class="sep"></span>' : '';
+		prev = n;
+		return gap + '<span class="pl' + (r.me ? ' me' : '') + '">' + (n + 1) + '</span><span class="nm' + (r.me ? ' me' : '') + '">' + esc(r.name) + '</span>' +
+			'<span class="v' + (r.me ? ' me' : '') + '">' + (r.s > 0 ? fmt(r.s) : r.me ? '—' : 'пока ничего') + '</span>';
+	}).join('');
+	return html + '<h3>Награды за место</h3><div class="league ranks">' + ranks + '</div><div class="actions">' + rankBtn + '</div>' +
+		'<h3>Таблица</h3><div class="league">' + lines + '</div>';
+}
+/** A line on what starting this would bring in the season events that run (act: build, research, drill, train). */
+function sevPointsLine(st, acts, sec) {
+	if (!sevOn(st) || st.castle < K.rules.seasonEvents.castle || !(sec > 0)) return '';
+	const parts = st.sev.map((v, e) => {
+		if (!v.on) return '';
+		const d = sevDef(e);
+		const n = acts.reduce((a, k) => a + Math.floor(((d.points[k] || 0) * sec) / 60), 0);
+		return n > 0 ? '«' + d.name + '» +' + fmt(n) + ' ' + plural(n, 'очко', 'очка', 'очков') : '';
+	}).filter(Boolean);
+	return parts.length ? '<p class="fine">Очки события: ' + parts.join(', ') + '</p>' : '';
+}
+function sevSheet(st, tabs) {
+	const R = K.rules.seasonEvents;
+	const f = sevFocus(st);
+	const show = K.sevShow !== undefined && K.sevShow >= 0 && K.sevShow < st.sev.length ? K.sevShow : f;
+	const others = st.sev.map((v, e) => e).filter((e) => e !== show).map((e) => {
+		const v = st.sev[e];
+		const n = sevMine(st, e) ? sevDef(e).milestones.filter((m, i) => !((v.ms >> i) & 1) && v.pts >= sevGoal(st, e, i)).length + (sevRankReady(st, e) ? 1 : 0) : 0;
+		return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml(SEV_ICON[sevDef(e).id] || 'ui.quest', 'shards land') + '<div class="info"><b>' + esc(sevDef(e).name) + '</b>' +
+			'<span>' + (v.on ? 'идёт ещё ' + fmtDur(v.end - nowF()) : 'через ' + fmtDur(v.next - nowF())) + ' · ' + esc(sevRules(e)) + '</span></div>' +
+			'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="sev-show" data-id="' + e + '">' + (n ? 'Награды · ' + n : 'Подробнее') + '</button></div></div>';
+	}).join('');
+	const html = sheetTitle(icoHtml(SEV_ICON[sevDef(show).id] || 'ui.quest', 'bld'), 'События сезона') + tabs +
+		'<p class="fine">Раз в сезон из ' + R.weeks + ' недель (как Путь войны) каждое событие идёт неделю с понедельника 00:00 UTC. Очки приносят ваши стройки, исследования и обучение; ' +
+		'норма — очки усердного лорда вашего уровня Замка (её ставит первое очко события). Рубежи наград — доли нормы, место в таблице из ' + R.bracket + ' лордов платит после недели. ' +
+		'Золото и еда наград умножаются на уровень Замка; несобранное приходит само, когда начинается следующее событие того же рода.</p>' +
+		sevBlock(st, show) + (others ? '<h3>Другие события</h3>' + others : '') +
+		'<p class="fine">Пока нет сервера, соперники — лорды компьютера. Награды ложатся и сверх склада.</p>' +
+		'<div class="actions">' + closeBtn + '</div>';
+	const key = ['sev', show, st.castle, st.sev.map((v) => [v.no, v.on, v.mine, v.pts, v.par, v.place, v.ms, v.rk, v.lords.join()].join(':')).join(';')].join('|');
+	return { key, html, live: (el) => { st.sev.forEach((v, e) => live(el, 'sev' + e, fmtDur(Math.max(0, (K.st.sev[e].on ? K.st.sev[e].end : K.st.sev[e].next) - nowF())))); } };
+}
+/** Toasts: an event begins while the game is on, a milestone is reached, the week ends with a place to reward. */
+function announceSev(prev, st) {
+	if (!sevOn(st) || !prev.sev || prev.sev.length !== st.sev.length || st.castle < K.rules.seasonEvents.castle) return;
+	st.sev.forEach((v, e) => {
+		const p = prev.sev[e];
+		const d = sevDef(e);
+		if (!p.on && v.on) { toast('Началось событие «' + d.name + '»: очки дают ' + sevRules(e) + '. Подробности в заданиях', 'gold'); return; }
+		if (p.no !== v.no || !sevMine(st, e)) return;
+		const before = p.mine === p.no ? p.pts : 0;
+		const i = d.milestones.findIndex((m, j) => before < sevGoal(st, e, j) && v.pts >= sevGoal(st, e, j));
+		if (i >= 0) toast('«' + d.name + '»: ' + fmt(v.pts) + ' ' + plural(v.pts, 'очко', 'очка', 'очков') + ', награда за рубеж ждёт в заданиях', 'gold');
+		else if (!sevRankReady(prev, e) && sevRankReady(st, e)) toast('«' + d.name + '» закончилось: ваше место ' + v.place + ', заберите награду в заданиях', 'gold');
+	});
+}
+function claimSev(kind, e, i) {
+	const d = sevDef(e);
+	const r = kind === 'rank' ? K.bridge.seasonRank(e) : K.bridge.seasonMs(e, i);
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Пока рано' : r.err === E.Nothing ? 'Награда уже получена' : r.err === E.InventoryFull ? 'Нет места для реликвии' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	toast('«' + d.name + '», награда ' + (kind === 'rank' ? 'за место' : 'за рубеж') + ': ' + wpGot(r).join(', '), 'gold');
+	persist();
+	refresh(true);
+}
 function openQuests(tab) {
 	if (!K.rules.dailyQuests) return;
 	const hasWeek = !!(K.rules.weeklyQuests && K.st.week && K.st.week.list.length);
 	const hasWp = wpOn(K.st);
+	const hasSev = sevOn(K.st);
 	const dayN = questsReady(K.st, 'day');
 	if (typeof tab === 'string') K.questTab = tab;
-	else K.questTab = !dayN && hasWeek && questsReady(K.st, 'week') > 0 ? 'week' : !dayN && hasWp && wpReady(K.st) > 0 ? 'wp' : 'day';
-	if ((K.questTab === 'week' && !hasWeek) || (K.questTab === 'wp' && !hasWp)) K.questTab = 'day';
+	else K.questTab = !dayN && hasWeek && questsReady(K.st, 'week') > 0 ? 'week' : !dayN && hasWp && wpReady(K.st) > 0 ? 'wp' : !dayN && hasSev && sevReady(K.st) > 0 ? 'sev' : 'day';
+	if ((K.questTab === 'week' && !hasWeek) || (K.questTab === 'wp' && !hasWp) || (K.questTab === 'sev' && !hasSev)) K.questTab = 'day';
+	K.sevShow = undefined;
 	cancelPlace();
 	select(null);
 	openSheet(() => {
@@ -5791,10 +5955,13 @@ function openQuests(tab) {
 		const nDay = questsReady(st, 'day');
 		const nWeek = questsReady(st, 'week');
 		const nWp = wpReady(st);
-		const tabs = hasWeek || hasWp ? '<div class="shopTabs"><button class="' + (kind === 'day' ? 'on' : '') + '" data-act="quest-tab" data-tab="day">Сегодня' + (nDay ? ' · ' + nDay : '') + '</button>' +
+		const nSev = sevReady(st);
+		const tabs = hasWeek || hasWp || hasSev ? '<div class="shopTabs"><button class="' + (kind === 'day' ? 'on' : '') + '" data-act="quest-tab" data-tab="day">Сегодня' + (nDay ? ' · ' + nDay : '') + '</button>' +
 			(hasWeek ? '<button class="' + (kind === 'week' ? 'on' : '') + '" data-act="quest-tab" data-tab="week">Неделя' + (nWeek ? ' · ' + nWeek : '') + '</button>' : '') +
-			(hasWp ? '<button class="' + (kind === 'wp' ? 'on' : '') + '" data-act="quest-tab" data-tab="wp">Путь войны' + (nWp ? ' · ' + nWp : '') + '</button>' : '') + '</div>' : '';
+			(hasWp ? '<button class="' + (kind === 'wp' ? 'on' : '') + '" data-act="quest-tab" data-tab="wp">Путь войны' + (nWp ? ' · ' + nWp : '') + '</button>' : '') +
+			(hasSev ? '<button class="' + (kind === 'sev' ? 'on' : '') + '" data-act="quest-tab" data-tab="sev">События' + (nSev ? ' · ' + nSev : '') + '</button>' : '') + '</div>' : '';
 		if (kind === 'wp') return wpSheet(st, tabs);
+		if (kind === 'sev') return sevSheet(st, tabs);
 		const week = kind === 'week';
 		const qs = questBoard(st, kind);
 		const rules = questRules(kind);

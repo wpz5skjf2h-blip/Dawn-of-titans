@@ -1961,6 +1961,79 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 			return false;
 		}
 	}
+	if (const JsonValue* Sj = Rules.Find("seasonEvents"))
+	{
+		SeasonEventRules& S = Out.seasonEvents;
+		S.castle = std::max(1, Sj->GetInt("castle", S.castle));
+		S.weeks = std::max(1, std::min(52, Sj->GetInt("weeks", S.weeks)));
+		S.days = std::max(1, std::min(7, Sj->GetInt("days", S.days)));
+		S.bracket = std::max(2, std::min(200, Sj->GetInt("bracket", S.bracket)));
+		static const char* const Acts[] = {"build", "research", "drill", "train"};
+		static_assert(sizeof(Acts) / sizeof(Acts[0]) == static_cast<size_t>(SeasonAct::Count), "an act name each");
+		bool bOk = true;
+		if (const JsonValue* L = Sj->Find("list"))
+		{
+			for (size_t I = 0; I < L->Size() && I < 8; ++I)
+			{
+				const JsonValue& J = (*L)[I];
+				SeasonEventDef D;
+				D.id = J.GetString("id");
+				D.name = J.GetString("name", D.id);
+				D.week = J.GetInt("week", 0);
+				bool bAny = false;
+				if (const JsonValue* Pj = J.Find("points"))
+				{
+					for (size_t A = 0; A < D.points.size(); ++A)
+					{
+						D.points[A] = std::max<int64_t>(0, std::min<int64_t>(1000, Pj->GetInt64(Acts[A], 0)));
+						bAny = bAny || D.points[A] > 0;
+					}
+				}
+				if (const JsonValue* Par = J.Find("par"))
+				{
+					for (size_t K = 0; K < Par->Size(); ++K)
+					{
+						const JsonValue& P = (*Par)[K];
+						const int From = P.IsArray() && P.Size() == 2 ? P[0].AsInt(0) : 0;
+						const int64_t V = P.IsArray() && P.Size() == 2 ? P[1].AsInt64(0) : 0;
+						bOk = bOk && From >= 1 && V > 0 && (D.par.empty() || From > D.par.back().first);
+						D.par.emplace_back(From, V);
+					}
+				}
+				if (const JsonValue* Ms = J.Find("milestones"))
+				{
+					for (size_t K = 0; K < Ms->Size() && K < 32; ++K)
+					{
+						EventReward R;
+						ReadEventReward(&(*Ms)[K], R);
+						const int Pct = (*Ms)[K].GetInt("pct", 0);
+						bOk = bOk && Pct > 0 && (D.milestones.empty() || Pct > D.milestones.back().first);
+						D.milestones.emplace_back(Pct, R);
+					}
+				}
+				if (const JsonValue* Rk = J.Find("ranks"))
+				{
+					for (size_t K = 0; K < Rk->Size(); ++K)
+					{
+						EventReward R;
+						ReadEventReward(&(*Rk)[K], R);
+						const int Place = (*Rk)[K].GetInt("place", 0);
+						bOk = bOk && Place >= 1 && Place <= S.bracket && (D.ranks.empty() || Place > D.ranks.back().first);
+						D.ranks.emplace_back(Place, R);
+					}
+				}
+				bOk = bOk && !D.id.empty() && D.week >= 0 && D.week < S.weeks && bAny && !D.par.empty() && D.par.front().first == 1;
+				S.list.push_back(D);
+			}
+		}
+		if (!bOk)
+		{
+			Error = "kingdom/kingdom.json: each season event needs an id, its week within the season, points for an act, a "
+				"par from Castle 1 up, milestones by rising percent and ranks by rising place within the bracket";
+			S = SeasonEventRules();
+			return false;
+		}
+	}
 	if (const JsonValue* Lj = Rules.Find("loadouts"))
 	{
 		Out.loadouts.max = std::max(0, std::min(20, Lj->GetInt("max", 0)));

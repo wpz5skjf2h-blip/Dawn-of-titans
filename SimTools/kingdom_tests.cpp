@@ -5706,6 +5706,180 @@ void TestAssault()
 	KD_CHECK(O.AssaultEvent() == 728 && !O.AssaultStarted() && O.CheckAssault().error == Error::None);
 }
 
+void TestSeasonEvents()
+{
+	const KingdomContent& Ct = Content();
+	const SeasonEventRules& S = Ct.seasonEvents;
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	const auto Pt = [](const SeasonEventDef& D, SeasonAct A) { return D.points[static_cast<size_t>(A)]; };
+	// Master prompt 13.2: Kingdom Rush (construction and research time) and Training Grounds (troops trained and drill
+	// research), each once a Season. Ours: weeks 1 and 4, from Castle 3, a bracket of 50.
+	KD_CHECK(S.castle == 3 && S.weeks == 4 && S.days == 7 && S.bracket == 50 && S.list.size() == 2);
+	KD_CHECK(S.list[0].id == "rush" && S.list[0].week == 0 && S.list[1].id == "drill" && S.list[1].week == 3);
+	KD_CHECK(Pt(S.list[0], SeasonAct::Build) == 1 && Pt(S.list[0], SeasonAct::Research) == 1 && Pt(S.list[0], SeasonAct::Train) == 0 && Pt(S.list[0], SeasonAct::Drill) == 0);
+	KD_CHECK(Pt(S.list[1], SeasonAct::Train) == 10 && Pt(S.list[1], SeasonAct::Drill) == 1 && Pt(S.list[1], SeasonAct::Build) == 0 && Pt(S.list[1], SeasonAct::Research) == 0);
+	KD_CHECK(S.Par(0, 1) == 2000 && S.Par(0, 8) == 12000 && S.Par(0, 9) == 12000 && S.Par(0, 25) == 32000 && S.Par(1, 7) == 6000 && S.Par(2, 5) == 0);
+	KD_CHECK(S.list[0].milestones.size() == 5 && S.list[0].milestones[3].first == 100 && S.list[0].ranks.front().first == 1 && S.list[0].ranks.back().first == 50);
+
+	// T0 is a Thursday of week 2910 (the season's third, the Conquest's): the Training Grounds come in week 2911, the
+	// next Kingdom Rush in 2912, as the Warpath's seasons.
+	Kingdom K(Ct);
+	K.NewGame(T0, 81);
+	const int64_t Drill0 = (2911 * 7 - 3) * Day;
+	const int64_t Rush0 = (2912 * 7 - 3) * Day;
+	KD_CHECK(K.SeasonEventCount() == 2 && !K.SeasonEventOn(0) && !K.SeasonEventOn(1) && K.WarpathSeason() == 727);
+	KD_CHECK(K.SeasonEventNo(0) == 727 && K.SeasonEventStart(0, 728) == Rush0 && K.SeasonEventNo(1) == 726 && K.SeasonEventStart(1, 727) == Drill0);
+	KD_CHECK(K.SeasonEventEnd(0, 728) == Rush0 + 7 * Day && K.SeasonEventMine(0) == -1 && K.SeasonEventPoints(0) == 0);
+	const uint64_t H0 = K.Hash();
+	const std::string Plain = K.Save();
+	KD_CHECK(Plain.find("seasonEvents") == std::string::npos);
+
+	// A Castle 5 kingdom with gold and an Armoury. Out of the events nothing counts.
+	std::string Error;
+	std::string Base = Replace(Replace(Plain, "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":5"), "\"gold\":2500", "\"gold\":900000");
+	Base = Replace(WithBuilding(Base, "armoury", 1, 2), "\"food\":2500", "\"food\":900000");
+	Kingdom L(Ct);
+	KD_CHECK(L.Load(Base, Error) && L.CastleLevel() == 5);
+	const int32_t Mine = FindId(L, "gold_mine");
+	KD_CHECK(L.Upgrade(Mine, false) == Error::None && L.SeasonEventMine(0) == -1 && L.SeasonEventMine(1) == -1);
+	L.Advance(Drill0 + Hour);
+
+	// The Training Grounds: squads count as they leave the Barracks, ten points a minute of training; a cancelled one
+	// never does. Troop research counts a point a minute as it starts; buildings do not.
+	const int Militia = Troop("troop.militia");
+	KD_CHECK(L.SeasonEventOn(1) && !L.SeasonEventOn(0) && L.SeasonEventNo(1) == 727 && L.SeasonEventPar(1) == S.Par(1, 5));
+	KD_CHECK(L.Train(Militia) == Error::None && L.Train(Militia) == Error::None && L.Train(Militia) == Error::None);
+	KD_CHECK(L.CancelTrain(2) == Error::None && L.SeasonEventMine(1) == -1);
+	L.Advance(L.Now() + 10 * 60);
+	const int64_t Sq = 10 * L.BaseTrainSec(Militia) / 60;
+	KD_CHECK(Sq == 10 && L.SeasonEventMine(1) == 727 && L.SeasonEventPoints(1) == 2 * Sq && L.SeasonEventPoints(0) == 0);
+	const Check Res = L.CheckTroopUpgrade(Militia);
+	KD_CHECK(Res.error == Error::None && L.UpgradeTroop(Militia, false) == Error::None && L.SeasonEventPoints(1) == 2 * Sq + Res.timeSec / 60);
+	const int64_t Drilled = L.SeasonEventPoints(1);
+	KD_CHECK(L.Upgrade(FindId(L, "farm"), false) == Error::None && L.SeasonEventPoints(1) == Drilled);
+	// Skipped training counts too.
+	KD_CHECK(L.Train(Militia) == Error::None && L.SkipTraining() == Error::None && L.SeasonEventPoints(1) == Drilled + Sq);
+
+	// The lords: none ahead at the start, they grow through the week, a share of them never play.
+	const int64_t Par1 = L.SeasonEventPar(1);
+	int Idle = 0;
+	int64_t Top = 0;
+	{
+		Kingdom M(Ct);
+		KD_CHECK(M.Load(L.Save(), Error));
+		std::vector<int64_t> Mid;
+		for (int Lr = 0; Lr < S.bracket - 1; ++Lr)
+		{
+			Mid.push_back(M.SeasonLordPoints(1, Lr));
+		}
+		M.Advance(Drill0 + 7 * Day - 1);
+		for (int Lr = 0; Lr < S.bracket - 1; ++Lr)
+		{
+			const int64_t Fin = M.SeasonLordPoints(1, Lr);
+			KD_CHECK(Fin >= Mid[static_cast<size_t>(Lr)] && Fin <= Par1 * 26 / 10);
+			Idle += Fin == 0 ? 1 : 0;
+			Top = std::max(Top, Fin);
+		}
+		KD_CHECK(Idle >= 1 && Idle <= 15 && Top > Par1 && M.SeasonEventPlace(1) > 1 + Idle / 2);
+	}
+	KD_CHECK(L.SeasonEventPlace(1) >= 1 && L.SeasonEventPlace(1) <= S.bracket);
+
+	// Milestones are shares of the par: too few points is NotReady; a claim pays once (gold and food times the Castle).
+	KD_CHECK(L.SeasonEventGoal(1, 0) == Par1 / 10 && L.ClaimSeasonMilestone(1, 0, nullptr) == (Drilled + Sq >= Par1 / 10 ? Error::None : Error::NotReady));
+	KD_CHECK(L.ClaimSeasonMilestone(1, 9, nullptr) == Error::BadId && L.ClaimSeasonMilestone(2, 0, nullptr) == Error::BadId);
+	std::string Saved = L.Save();
+	const std::string Pts = "\"points\":" + std::to_string(L.SeasonEventPoints(1));
+	KD_CHECK(Saved.find("\"seasonEvents\":[{\"id\":\"drill\",\"no\":727,\"castle\":5,") != std::string::npos && Saved.find(Pts) != std::string::npos);
+	Kingdom P(Ct);
+	KD_CHECK(P.Load(Replace(Saved, Pts, "\"points\":" + std::to_string(Par1 * 3)), Error) && P.SeasonEventPoints(1) == Par1 * 3);
+	// The par stays the first point's, whatever the Castle since.
+	Kingdom Q(Ct);
+	KD_CHECK(Q.Load(Replace(P.Save(), "\"def\":\"castle\",\"level\":5", "\"def\":\"castle\",\"level\":12"), Error) && Q.CastleLevel() == 12 && Q.SeasonEventPar(1) == Par1);
+	const int64_t G0 = P.Amount(Res::Gems);
+	Reward R;
+	KD_CHECK(P.ClaimSeasonMilestone(1, 3, &R) == Error::None && R.res[GemsI] == 25 && P.Amount(Res::Gems) == G0 + 25 && P.SeasonMilestoneClaimed(1, 3));
+	KD_CHECK(R.relics.size() == 1 && P.ClaimSeasonMilestone(1, 3, nullptr) == Error::Nothing);
+	KD_CHECK(P.ClaimSeasonRank(1, nullptr) == Error::NotReady && P.SeasonEventPlace(1) == 1);
+	// Saving keeps it all.
+	Kingdom P2(Ct);
+	KD_CHECK(P2.Load(P.Save(), Error) && P2.Hash() == P.Hash() && P2.Save() == P.Save() && P2.SeasonMilestoneClaimed(1, 3) && !P2.SeasonMilestoneClaimed(1, 2));
+	// A save of a kingdom without points has no section and the hash of before; an unknown kind is dropped.
+	Kingdom N(Ct);
+	KD_CHECK(N.Load(Plain, Error) && N.Hash() == H0 && N.Save() == Plain);
+	Kingdom U(Ct);
+	KD_CHECK(U.Load(Replace(Saved, "\"id\":\"drill\"", "\"id\":\"nope\""), Error) && U.SeasonEventMine(1) == -1 && U.Save().find("seasonEvents") == std::string::npos);
+
+	// After the week: first place pays its reward once; the lords stand still.
+	P.Advance(Drill0 + 7 * Day + Hour);
+	KD_CHECK(!P.SeasonEventOn(1) && P.SeasonEventNo(1) == 727 && P.SeasonEventPoints(1) == Par1 * 3 && P.SeasonEventPlace(1) == 1);
+	const int64_t G1 = P.Amount(Res::Gems);
+	KD_CHECK(P.ClaimSeasonRank(1, &R) == Error::None && R.res[GemsI] == 120 && R.silk == 60 && P.Amount(Res::Gems) == G1 + 120 && P.ClaimSeasonRank(1, nullptr) == Error::Nothing);
+	// Points after the week do not count.
+	KD_CHECK(P.Train(Militia) == Error::None);
+	P.Advance(P.Now() + Hour);
+	KD_CHECK(P.SeasonEventPoints(1) == Par1 * 3);
+
+	// The Kingdom Rush: constructions and research a point a minute as they start (lands too); squads do not count.
+	P.Advance(Rush0 + Hour);
+	KD_CHECK(P.SeasonEventOn(0) && P.SeasonEventNo(0) == 728 && P.SeasonEventMine(0) == -1 && P.SeasonEventPar(0) == S.Par(0, 5));
+	const BuildingDef& Vault = Ct.buildings[static_cast<size_t>(Def("gold_vault"))];
+	const int32_t VaultId = FindId(P, "gold_vault");
+	const int VaultLv = [&]() { for (const Building& B : P.Buildings()) { if (B.id == VaultId) { return B.level; } } return 0; }();
+	KD_CHECK(P.Upgrade(VaultId, false) == Error::None && P.SeasonEventPoints(0) == Vault.levels[static_cast<size_t>(VaultLv)].timeSec / 60);
+	KD_CHECK(P.SeasonEventMine(0) == 728 && P.SeasonEventPoints(1) == Par1 * 3);
+
+	// What is left unclaimed is paid when the next event of its kind begins: the Training Grounds' milestones reached.
+	Kingdom W(Ct);
+	KD_CHECK(W.Load(Replace(Saved, Pts, "\"points\":" + std::to_string(Par1 * 3)), Error));
+	W.Advance(Drill0 + 7 * Day + Hour);
+	const int64_t G2 = W.Amount(Res::Gems);
+	W.Advance(Drill0 + 28 * Day + Hour);
+	int64_t Left = 120; // first place
+	for (const auto& M2 : S.list[1].milestones)
+	{
+		Left += M2.second.res[GemsI];
+	}
+	KD_CHECK(W.SeasonEventNo(1) == 728 && W.SeasonEventMine(1) == 727 && W.SeasonEventPoints(1) == 0 && W.Amount(Res::Gems) == G2 + Left);
+	KD_CHECK(W.ClaimSeasonMilestone(1, 0, nullptr) == Error::NotReady && W.ClaimSeasonRank(1, nullptr) == Error::NotReady);
+	// Points in the new event replace the old state.
+	KD_CHECK(W.Train(Militia) == Error::None);
+	W.Advance(W.Now() + 10 * 60);
+	KD_CHECK(W.SeasonEventMine(1) == 728 && W.SeasonEventPoints(1) == Sq && !W.SeasonMilestoneClaimed(1, 0));
+
+	// Below Castle 3 nothing counts.
+	Kingdom Low(Ct);
+	KD_CHECK(Low.Load(Plain, Error));
+	Low.Advance(Drill0 + Hour);
+	KD_CHECK(Low.Train(Militia) == Error::None);
+	Low.Advance(Low.Now() + 10 * 60);
+	KD_CHECK(Low.SeasonEventOn(1) && Low.SeasonEventMine(1) == -1 && Low.SeasonEventPoints(1) == 0);
+
+	// Balance: the bracket at the end of the week, the place a share of the par gets (averaged over seeds).
+	int Places[4] = {0, 0, 0, 0};
+	const int Seeds = 40;
+	for (int Sd = 0; Sd < Seeds; ++Sd)
+	{
+		Kingdom B(Ct);
+		KD_CHECK(B.Load(Replace(Saved, "\"seed\":81", "\"seed\":" + std::to_string(500 + Sd)), Error));
+		B.Advance(Drill0 + 7 * Day + Hour);
+		const int64_t Par = B.SeasonEventPar(1);
+		const int Pct[4] = {50, 100, 150, 200};
+		for (int I = 0; I < 4; ++I)
+		{
+			int Place = 1;
+			for (int Lr = 0; Lr < S.bracket - 1; ++Lr)
+			{
+				Place += B.SeasonLordPoints(1, Lr) > Par * Pct[I] / 100 ? 1 : 0;
+			}
+			Places[I] += Place;
+		}
+	}
+	std::printf("  season events: par %lld at Castle 5; places at 50%%/100%%/150%%/200%% of the par: %.1f / %.1f / %.1f / %.1f\n", static_cast<long long>(Par1),
+		Places[0] / static_cast<double>(Seeds), Places[1] / static_cast<double>(Seeds), Places[2] / static_cast<double>(Seeds), Places[3] / static_cast<double>(Seeds));
+	KD_CHECK(Places[1] / Seeds >= 12 && Places[1] / Seeds <= 25 && Places[3] / Seeds <= 6);
+}
+
 int main()
 {
 	struct
@@ -5745,7 +5919,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners}, {"AllianceTech", TestAllianceTech}, {"Conquest", TestConquest},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners}, {"AllianceTech", TestAllianceTech}, {"Conquest", TestConquest}, {"SeasonEvents", TestSeasonEvents},
 	};
 	for (const auto& T : Tests)
 	{
