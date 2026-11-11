@@ -5,6 +5,7 @@
 #include "DoTSim/Json.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace dot
 {
@@ -1842,6 +1843,121 @@ bool LoadKingdomContent(IContentSource& Source, KingdomContent& Out, std::string
 		{
 			Error = "kingdom/kingdom.json: the alliance war needs 1 to 32 tiers, leagueTier within them, a chest for each league, "
 				"six starPct numbers and a prep day and battle days within a week";
+			return false;
+		}
+	}
+	if (const JsonValue* Qj = Rules.Find("conquest"))
+	{
+		ConquestRules& Q = Out.conquest;
+		Q.castle = std::max(1, Qj->GetInt("castle", Q.castle));
+		Q.weeks = std::max(1, std::min(52, Qj->GetInt("weeks", Q.weeks)));
+		Q.week = Qj->GetInt("week", Q.week);
+		Q.days = Qj->GetInt("days", Q.days);
+		Q.tokens = std::max(1, std::min(50, Qj->GetInt("tokens", Q.tokens)));
+		Q.tokenSec = std::max<int64_t>(60, Qj->GetInt64("tokenSec", Q.tokenSec));
+		Q.truceSec = std::max<int64_t>(0, Qj->GetInt64("truceSec", Q.truceSec));
+		Q.starControl = std::max(1, std::min(100, Qj->GetInt("starControl", Q.starControl)));
+		Q.marchPct = std::max(0, std::min(100, Qj->GetInt("marchPct", 0)));
+		Q.tierPct = std::max(0, std::min(100, Qj->GetInt("tierPct", Q.tierPct)));
+		bool bOk = Q.week >= 0 && Q.week < Q.weeks && Q.days >= 1 && Q.days <= 7;
+		if (const JsonValue* Sp = Qj->Find("starPct"))
+		{
+			for (size_t I = 0; I < Sp->Size(); ++I)
+			{
+				Q.starPct.push_back(std::max(0, std::min(100, (*Sp)[I].AsInt(0))));
+			}
+		}
+		bOk = bOk && Q.starPct.size() == Out.alliances.leagues.size();
+		static const char* const KindNames[] = {"home", "plains", "fort", "shrine", "sanctum"};
+		if (const JsonValue* Kj = Qj->Find("tiles"))
+		{
+			for (size_t K = 0; K < Q.kinds.size(); ++K)
+			{
+				const JsonValue* D = Kj->Find(KindNames[K]);
+				bOk = bOk && D;
+				if (!D)
+				{
+					continue;
+				}
+				ConquestKindDef& Def = Q.kinds[K];
+				Def.pts = std::max<int64_t>(0, D->GetInt64("pts", 0));
+				Def.control = std::max(0, D->GetInt("control", 0));
+				Def.tier = std::max(-10, std::min(10, D->GetInt("tier", 0)));
+				Def.fort = std::max(0, std::min(200, D->GetInt("fort", 0)));
+				Def.atkPct = std::max(0, std::min(100, D->GetInt("atkPct", 0)));
+				bOk = bOk && (K == static_cast<size_t>(ConquestKind::Home) || Def.control > 0);
+			}
+		}
+		else
+		{
+			bOk = false;
+		}
+		// The map: ring by ring from the centre, each walked from its corner towards -q,+r and on around.
+		if (const JsonValue* Rj = Qj->Find("rings"))
+		{
+			static const int Dir[6][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 0}, {-1, 1}, {0, 1}};
+			for (size_t Ring = 0; bOk && Ring < Rj->Size(); ++Ring)
+			{
+				const std::string Kinds = (*Rj)[Ring].AsString();
+				const int R = static_cast<int>(Ring);
+				bOk = static_cast<int>(Kinds.size()) == (R == 0 ? 1 : 6 * R);
+				int Q0 = -R;
+				int R0 = R;
+				for (size_t I = 0; bOk && I < Kinds.size(); ++I)
+				{
+					ConquestHex H;
+					const char Ch = Kinds[I];
+					H.kind = Ch == 'H' ? ConquestKind::Home : Ch == 'P' ? ConquestKind::Plains : Ch == 'F' ? ConquestKind::Fort : Ch == 'S' ? ConquestKind::Shrine : ConquestKind::Sanctum;
+					bOk = std::string("HPFSC").find(Ch) != std::string::npos;
+					H.q = Q0;
+					H.r = R0;
+					if (H.kind == ConquestKind::Home)
+					{
+						Q.homes.push_back(static_cast<int>(Q.map.size()));
+					}
+					if (H.kind == ConquestKind::Sanctum)
+					{
+						bOk = bOk && Q.sanctum < 0;
+						Q.sanctum = static_cast<int>(Q.map.size());
+					}
+					Q.map.push_back(H);
+					// The next tile of the ring: R steps along each of the six directions.
+					if (R > 0)
+					{
+						const int Side = static_cast<int>(I) / R;
+						Q0 += Dir[Side][0];
+						R0 += Dir[Side][1];
+					}
+				}
+			}
+		}
+		for (size_t I = 0; bOk && I < Q.map.size(); ++I)
+		{
+			for (size_t J = 0; J < Q.map.size(); ++J)
+			{
+				const int Dq = Q.map[J].q - Q.map[I].q;
+				const int Dr = Q.map[J].r - Q.map[I].r;
+				if (I != J && std::abs(Dq) <= 1 && std::abs(Dr) <= 1 && std::abs(Dq + Dr) <= 1)
+				{
+					Q.map[I].adj.push_back(static_cast<int>(J));
+				}
+			}
+		}
+		if (const JsonValue* Chests = Qj->Find("chests"))
+		{
+			for (size_t I = 0; I < Chests->Size(); ++I)
+			{
+				EventReward R;
+				ReadEventReward(&(*Chests)[I], R);
+				Q.chests.push_back(R);
+			}
+		}
+		if (!bOk || Q.map.size() > 127 || Q.homes.size() < 2 || Q.homes.size() > 8 || Q.chests.size() != Q.homes.size())
+		{
+			Error = "kingdom/kingdom.json: the conquest needs its week within its weeks, 1 to 7 days, starPct by league, every "
+				"tile kind with Control, rings of 1, 6, 12... tiles of H, P, F, S and C (one sanctum at most), 2 to 8 fortresses "
+				"and a chest for each place";
+			Q = ConquestRules();
 			return false;
 		}
 	}

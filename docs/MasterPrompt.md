@@ -1622,6 +1622,13 @@ Sigils, Ability Tomes, Starlight Shards (weekly limit), gear chests, Banner Silk
 - **March Tokens:** 1 per 2 h, maximum 6. Attack a tile adjacent to your territory: you fight one of the tile's garrison defenses (AI-controlled). Each star reduces the tile's Control by 10; at 0 the tile is captured. A captured tile cannot be attacked for 1 h (truce).
 - **Ranking** by Conquest Points. Rewards: Conquest Marks (shop: skins, Starlight Shards, Aether Cores) and trophy banners on the alliance profile.
 
+> **Implemented now (Conquest):** the third week of every four (counted as the Warpath, from Monday 00:00 UTC, 7 days),
+> from Keep (Castle) 8. The player's alliance and the seven computer alliances nearest its league share the 61-tile map:
+> 43 plains, 6 forts (+10% garrison health), 3 shrines (+5% attack for the holder's squads), the sanctum (+20%) and 8
+> fortresses. A tile's garrison is an Alliance War base of the league's tier and the kind's. Computer alliances (the
+> player's computer members too) march every hour; tokens, Control, truce and points as above. The chest of the
+> alliance's place pays at once; Conquest Marks, their shop and trophy banners are left out (docs/M0_Notes.md §6я6).
+
 ### 12.12 Alliance Season (4 weeks)
 Season Points come from Alliance War results, Raid Boss kills (by tier), Conquest placement and members' event scores. Leaderboard by divisions; end-of-season rewards for all members.
 

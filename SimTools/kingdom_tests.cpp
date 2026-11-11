@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <vector>
@@ -4976,6 +4977,335 @@ void TestAllianceTech()
 	}
 }
 
+/** A kingdom at Castle 8 with VP for any alliance (Conquest opens at Castle 8). */
+Kingdom ConqKingdom(uint64_t Seed)
+{
+	Kingdom K = WithVp(Seed, 8000);
+	Kingdom L(Content());
+	std::string Error;
+	KD_CHECK(L.Load(Replace(K.Save(), "\"def\":\"castle\",\"level\":1", "\"def\":\"castle\",\"level\":8"), Error) && L.CastleLevel() == 8);
+	return L;
+}
+
+/** A tile the player's alliance can attack now (-1: none), the lowest Control left first. */
+int ConqTarget(const Kingdom& K)
+{
+	const ConquestInfo I = K.Conquest();
+	int Best = -1;
+	for (int T = 0; T < static_cast<int>(I.tiles.size()); ++T)
+	{
+		if (K.CheckConquest(T).error == Error::None && (Best < 0 || I.tiles[static_cast<size_t>(T)].control < I.tiles[static_cast<size_t>(Best)].control))
+		{
+			Best = T;
+		}
+	}
+	return Best;
+}
+
+/** The points an hour of a map: what each slot holds, the sanctum's neighbours twice for its holder. */
+std::vector<int64_t> ConqHourPoints(const ConquestRules& Q, const ConquestInfo& I)
+{
+	std::vector<int64_t> Pts(I.points.size(), 0);
+	const int Holy = I.tiles[static_cast<size_t>(Q.sanctum)].owner;
+	for (size_t T = 0; T < I.tiles.size(); ++T)
+	{
+		const int Owner = I.tiles[T].owner;
+		if (Owner >= 0)
+		{
+			const std::vector<int>& Adj = Q.map[static_cast<size_t>(Q.sanctum)].adj;
+			const bool bNext = std::find(Adj.begin(), Adj.end(), static_cast<int>(T)) != Adj.end();
+			Pts[static_cast<size_t>(Owner)] += Q.Kind(Q.map[T].kind).pts * (bNext && Owner == Holy ? 2 : 1);
+		}
+	}
+	return Pts;
+}
+
+void TestConquest()
+{
+	const KingdomContent& Ct = Content();
+	const ConquestRules& Q = Ct.conquest;
+	const size_t GoldI = static_cast<size_t>(ResIndex(Res::Gold));
+	const size_t GemsI = static_cast<size_t>(ResIndex(Res::Gems));
+	const int64_t Day = 86400;
+	// Master prompt 12.11: 7 days, 8 alliances on a 61-tile map of radius 4 from fortresses on its edge, a March Token
+	// every 2 h (6 at most), 10 Control a star, a 1 h truce, the Titan Sanctum in the centre. Ours: the third week of
+	// every four, from Castle 8.
+	KD_CHECK(Q.On() && Q.castle == 8 && Q.weeks == 4 && Q.week == 2 && Q.days == 7 && Q.tokens == 6 && Q.tokenSec == 2 * Hour && Q.truceSec == Hour);
+	KD_CHECK(Q.starControl == 10 && Q.marchPct == 6 && Q.starPct.size() == Ct.alliances.leagues.size() && Q.tierPct == 10);
+	KD_CHECK(Q.map.size() == 61 && Q.Slots() == 8 && Q.sanctum == 0 && Q.chests.size() == 8);
+	int Kinds[5] = {0, 0, 0, 0, 0};
+	for (size_t T = 0; T < Q.map.size(); ++T)
+	{
+		const ConquestHex& H = Q.map[T];
+		++Kinds[static_cast<size_t>(H.kind)];
+		const int Dist = (std::abs(H.q) + std::abs(H.r) + std::abs(H.q + H.r)) / 2;
+		KD_CHECK(H.adj.size() >= 3 && H.adj.size() <= 6 && (H.kind != ConquestKind::Home || Dist == 4) && Dist <= 4 && (Dist < 4 || H.adj.size() <= 4));
+		for (size_t U = 0; U < T; ++U)
+		{
+			KD_CHECK(Q.map[U].q != H.q || Q.map[U].r != H.r);
+		}
+		for (const int A : H.adj)
+		{
+			const std::vector<int>& Back = Q.map[static_cast<size_t>(A)].adj;
+			KD_CHECK(std::find(Back.begin(), Back.end(), static_cast<int>(T)) != Back.end());
+		}
+	}
+	KD_CHECK(Kinds[0] == 8 && Kinds[1] == 43 && Kinds[2] == 6 && Kinds[3] == 3 && Kinds[4] == 1 && Q.map[0].adj.size() == 6);
+	KD_CHECK(Q.Kind(ConquestKind::Plains).pts == 1 && Q.Kind(ConquestKind::Fort).pts == 3 && Q.Kind(ConquestKind::Sanctum).pts == 10);
+	KD_CHECK(Q.Kind(ConquestKind::Shrine).atkPct == 5 && Q.Kind(ConquestKind::Home).control == 0 && Q.Kind(ConquestKind::Plains).control == 30);
+	for (size_t P = 1; P < Q.chests.size(); ++P)
+	{
+		KD_CHECK(Q.chests[P].res[GemsI] < Q.chests[P - 1].res[GemsI] && Q.chests[P].honor < Q.chests[P - 1].honor && Q.chests[P].silk > 0);
+	}
+
+	// T0 is the Thursday of a Conquest week (it began on Monday). Outside an alliance there is no map.
+	const int64_t Start = (T0 / Day - 3) * Day;
+	KD_CHECK(((T0 / Day + 3) / 7) % 4 == 2);
+	Kingdom N(Ct);
+	N.NewGame(T0, 201);
+	const ConquestInfo I0 = N.Conquest();
+	KD_CHECK(!I0.on && I0.phase == 1 && I0.startAt == Start && I0.endAt == Start + 7 * Day && I0.nextAt == Start + 28 * Day && I0.tokens == 6 && I0.tokenIn == 0);
+	KD_CHECK(I0.alliances.empty() && I0.tiles.empty() && N.CheckConquest(-1).error == Error::NoAlliance && N.CheckConquest(61).error == Error::BadId);
+	KD_CHECK(N.StartConquest(-1, {}, 0, {}) == Error::BadId && N.StartConquest(1, {}, 0, {}) == Error::NoAlliance && N.FinishConquest(3, nullptr) == Error::NoAttack);
+	KD_CHECK(N.ClaimConquestChest(nullptr) == Error::NotReady && !N.ConquestChestClaimed() && N.ConquestBattleTile() == -1);
+	// Below Castle 8 the alliance takes tiles without the player.
+	Kingdom Low = WarKingdom(201);
+	const int LowA = HelpAlliance(Low, 10);
+	KD_CHECK(LowA >= 0 && Low.JoinAlliance(LowA) == Error::None && Low.Conquest().on && Low.CheckConquest(-1).error == Error::Locked && Low.CheckConquest(-1).castle == 8);
+
+	// In an alliance: the nearest seven by league, every fortress held from the start, three days of marches already.
+	Kingdom Base = ConqKingdom(202);
+	const int A = HelpAlliance(Base, 15);
+	std::string Error;
+	Kingdom K(Ct);
+	KD_CHECK(A >= 0 && K.Load(Base.Save(), Error) && K.JoinAlliance(A) == Error::None);
+	const ConquestInfo I1 = K.Conquest();
+	KD_CHECK(I1.on && I1.no == I0.no && I1.alliances.size() == 8 && I1.alliances[0] == A && I1.league == K.Alliance(A).tier && I1.tiles.size() == 61);
+	KD_CHECK(I1.points.size() == 8 && I1.place.size() == 8 && I1.attacks == 0 && I1.stars == 0 && I1.taken == 0 && I1.tokens == 6);
+	std::vector<int> Places = I1.place;
+	std::sort(Places.begin(), Places.end());
+	int Owned = 0;
+	int64_t Sum = 0;
+	for (int S = 0; S < 8; ++S)
+	{
+		const int Id = I1.alliances[static_cast<size_t>(S)];
+		KD_CHECK(Places[static_cast<size_t>(S)] == S + 1 && Id >= 0 && Id < K.AllianceCount() && std::count(I1.alliances.begin(), I1.alliances.end(), Id) == 1);
+		KD_CHECK(std::abs(K.Alliance(Id).tier - I1.league) <= 1 && I1.tiles[static_cast<size_t>(Q.homes[static_cast<size_t>(S)])].owner == S);
+		Sum += I1.points[static_cast<size_t>(S)];
+	}
+	for (const ConquestTile& T : I1.tiles)
+	{
+		Owned += T.owner >= 0 ? 1 : 0;
+		KD_CHECK((T.control > 0 || (T.owner >= 0 && T.control == 0)) && T.owner >= -1 && T.owner < 8);
+	}
+	KD_CHECK(Owned > 20 && Sum > 300);
+	KD_CHECK(K.CheckConquest(-1).error == Error::None && K.CheckConquest(Q.homes[1]).error == Error::Nothing && K.CheckConquest(Q.homes[0]).error == Error::Nothing);
+	// Only tiles next to the alliance's land can be attacked.
+	int Far = -1;
+	for (int T = 0; T < 61 && Far < 0; ++T)
+	{
+		bool bNext = false;
+		for (const int Adj : Q.map[static_cast<size_t>(T)].adj)
+		{
+			bNext = bNext || I1.tiles[static_cast<size_t>(Adj)].owner == 0;
+		}
+		Far = !bNext && I1.tiles[static_cast<size_t>(T)].owner != 0 && Q.map[static_cast<size_t>(T)].kind != ConquestKind::Home ? T : -1;
+	}
+	KD_CHECK(Far >= 0 && K.CheckConquest(Far).error == Error::NotAllowed && K.StartConquest(Far, {}, 0, {}) == Error::NotAllowed);
+	// The map is the same however it is looked at: one step or many, and on another client.
+	{
+		Kingdom X(Ct);
+		Kingdom Y(Ct);
+		KD_CHECK(X.Load(K.Save(), Error) && Y.Load(K.Save(), Error));
+		for (int H = 1; H <= 10; ++H)
+		{
+			X.Advance(T0 + H * Hour);
+		}
+		Y.Advance(T0 + 10 * Hour);
+		const ConquestInfo Xi = X.Conquest();
+		const ConquestInfo Yi = Y.Conquest();
+		KD_CHECK(X.Hash() == Y.Hash() && Xi.points == Yi.points && Xi.points != I1.points);
+		bool bSame = true;
+		for (size_t T = 0; T < 61; ++T)
+		{
+			bSame = bSame && Xi.tiles[T].owner == Yi.tiles[T].owner && Xi.tiles[T].control == Yi.tiles[T].control && Xi.tiles[T].truceUntil == Yi.tiles[T].truceUntil;
+		}
+		KD_CHECK(bSame);
+		// Each full hour pays what is held at it.
+		const int64_t Tick = Start + (T0 + 10 * Hour - Start) / Hour * Hour;
+		Kingdom Z(Ct);
+		KD_CHECK(Z.Load(K.Save(), Error));
+		Z.Advance(Tick + 1);
+		const ConquestInfo Zi = Z.Conquest();
+		Z.Advance(Tick + Hour + 1);
+		const ConquestInfo Zj = Z.Conquest();
+		const std::vector<int64_t> Pay = ConqHourPoints(Q, Zj);
+		for (size_t S = 0; S < 8; ++S)
+		{
+			KD_CHECK(Zj.points[S] == Zi.points[S] + Pay[S]);
+		}
+		// A tile just taken by a computer alliance has its truce.
+		int Truce = 0;
+		for (const ConquestTile& T : Zj.tiles)
+		{
+			Truce += T.truceUntil == Tick + 2 * Hour ? 1 : 0;
+			KD_CHECK(T.truceUntil <= Tick + 2 * Hour);
+		}
+		KD_CHECK(Truce > 0);
+	}
+
+	// An attack: a March Token goes, no stones; nothing is lost; the stars take Control (30 for a plains tile).
+	const int Militia = Troop("troop.militia");
+	const int64_t Army = K.ArmyCount(Militia);
+	const int64_t Stones = K.Amount(Res::Stones);
+	const int Target = ConqTarget(K);
+	KD_CHECK(Target >= 0 && Army >= 1);
+	const int Control = I1.tiles[static_cast<size_t>(Target)].control;
+	const int Owner = I1.tiles[static_cast<size_t>(Target)].owner;
+	KD_CHECK(K.StartConquest(Target, {Militia}, 0, {}) == Error::None && K.PendingConquest() && K.PendingSite() == -1 && K.PendingMission() == -1 && !K.PendingWar());
+	KD_CHECK(K.ConquestBattleTile() == Target && K.Amount(Res::Stones) == Stones && K.Conquest().tokens == 5 && K.Conquest().tokenIn == 2 * Hour);
+	KD_CHECK(K.StartConquest(Target, {}, 0, {}) == Error::Busy && K.FinishWar(3, nullptr) == Error::NoAttack && K.ClaimConquestChest(nullptr) == Error::NotReady);
+	Kingdom M(Ct);
+	KD_CHECK(M.Load(K.Save(), Error) && M.Hash() == K.Hash() && M.Save() == K.Save() && M.PendingConquest() && M.ConquestBattleTile() == Target);
+	Reward R;
+	KD_CHECK(K.FinishConquest(2, &R) == Error::None && !K.PendingConquest() && K.ConquestBattleTile() == -1 && R.squadsBack == 1 && R.squadsLost == 0 && R.titanXp == 0);
+	KD_CHECK(K.ArmyCount(Militia) == Army && K.FinishConquest(3, nullptr) == Error::NoAttack);
+	const ConquestInfo I2 = K.Conquest();
+	const ConquestTile& Hit = I2.tiles[static_cast<size_t>(Target)];
+	const int Full = Q.Kind(Q.map[static_cast<size_t>(Target)].kind).control;
+	KD_CHECK(I2.attacks == 1 && I2.stars == 2);
+	KD_CHECK(Control > 20 ? Hit.owner == Owner && Hit.control == Control - 20 && I2.taken == 0 : Hit.owner == 0 && Hit.control == Full && Hit.truceUntil == T0 + Hour && I2.taken == 1);
+	// Three stars more on it, then it is the alliance's (with the whole of its Control back) and its truce starts.
+	while (K.Conquest().tiles[static_cast<size_t>(Target)].owner != 0)
+	{
+		KD_CHECK(K.StartConquest(Target, {}, 0, {}) == Error::None && K.FinishConquest(3, nullptr) == Error::None);
+	}
+	const ConquestInfo I3 = K.Conquest();
+	KD_CHECK(I3.taken == 1 && I3.tiles[static_cast<size_t>(Target)].control == Full && I3.tiles[static_cast<size_t>(Target)].truceUntil == T0 + Hour);
+	KD_CHECK(K.CheckConquest(Target).error == Error::Nothing && I3.stars == 2 + 3 * (I3.attacks - 1) && I3.attacks >= 1);
+	int Used = I3.attacks;
+	while (K.Conquest().tokens > 0)
+	{
+		const int T = ConqTarget(K);
+		KD_CHECK(T >= 0 && K.StartConquest(T, {}, 0, {}) == Error::None && K.FinishConquest(0, nullptr) == Error::None);
+		++Used;
+	}
+	KD_CHECK(Used == 6 && K.CheckConquest(-1).error == Error::LimitReached && K.CheckConquest(-1).timeSec == 2 * Hour && K.StartConquest(ConqTarget(K) < 0 ? 1 : 1, {}, 0, {}) == Error::LimitReached);
+	// A token every 2 h, from the first one spent.
+	K.Advance(T0 + 2 * Hour - 1);
+	KD_CHECK(K.Conquest().tokens == 0 && K.Conquest().tokenIn == 1);
+	K.Advance(T0 + 5 * Hour);
+	KD_CHECK(K.Conquest().tokens == 2 && K.Conquest().tokenIn == Hour);
+	const int T2 = ConqTarget(K);
+	KD_CHECK(T2 >= 0 && K.StartConquest(T2, {}, 0, {}) == Error::None && K.FinishConquest(1, nullptr) == Error::None);
+	KD_CHECK(K.Conquest().tokens == 1 && K.Conquest().tokenIn == Hour && K.Conquest().attacks == 7);
+	Kingdom K2(Ct);
+	KD_CHECK(K2.Load(K.Save(), Error) && K2.Hash() == K.Hash() && K2.Conquest().points == K.Conquest().points && K2.Conquest().stars == K.Conquest().stars);
+
+	// A member who leaves keeps the tokens spent; the map of another alliance has none of the attacks; back home they are there.
+	{
+		Kingdom L(Ct);
+		KD_CHECK(L.Load(K.Save(), Error) && L.LeaveAlliance() == Error::None && !L.Conquest().on && L.Conquest().tokens == 1);
+		int B = -1;
+		for (int X = 0; X < L.AllianceCount() && B < 0; ++X)
+		{
+			B = X != A && L.CheckJoin(X).error == Error::None ? X : -1;
+		}
+		KD_CHECK(B >= 0 && L.JoinAlliance(B) == Error::None);
+		const ConquestInfo Li = L.Conquest();
+		KD_CHECK(Li.on && !Li.alliances.empty() && Li.alliances[0] == B && Li.attacks == 0 && Li.tokens == 1);
+		KD_CHECK(L.LeaveAlliance() == Error::None && L.JoinAlliance(A) == Error::None);
+		KD_CHECK(L.Conquest().attacks == 7 && L.Conquest().points == K.Conquest().points);
+	}
+
+	// After the week: the map stands, the chest of the place (gold and food times the Castle) until the next Conquest.
+	K.Advance(Start + 7 * Day + Hour);
+	const ConquestInfo I4 = K.Conquest();
+	KD_CHECK(I4.on && I4.phase == 2 && I4.attacks == 7 && K.CheckConquest(-1).error == Error::NotReady && K.CheckConquest(-1).timeSec == Start + 28 * Day - (Start + 7 * Day + Hour));
+	Kingdom After(Ct);
+	KD_CHECK(After.Load(K.Save(), Error));
+	After.Advance(Start + 9 * Day);
+	KD_CHECK(After.Conquest().points == I4.points);
+	const EventReward& Want = Q.chests[static_cast<size_t>(I4.place[0] - 1)];
+	const int64_t Gems = K.Amount(Res::Gems);
+	const int64_t Hon = K.Honor();
+	const int64_t Silk = K.Silk();
+	const int64_t Div = K.DivineGems();
+	Reward Got;
+	KD_CHECK(K.ClaimConquestChest(&Got) == Error::None && K.ConquestChestClaimed() && K.ClaimConquestChest(nullptr) == Error::Nothing);
+	KD_CHECK(Got.res[GemsI] == Want.res[GemsI] && K.Amount(Res::Gems) == Gems + Want.res[GemsI] && Got.res[GoldI] == Want.res[GoldI] * 8);
+	KD_CHECK(Got.honor == Want.honor && K.Honor() == Hon + Want.honor && Got.silk == Want.silk && K.Silk() == Silk + Want.silk && K.DivineGems() == Div + Want.divine);
+	KD_CHECK(static_cast<int>(Got.relics.size()) == (Want.relic > 0 ? 1 : 0));
+	Kingdom K3(Ct);
+	KD_CHECK(K3.Load(K.Save(), Error) && K3.Hash() == K.Hash() && K3.ConquestChestClaimed());
+	// A member who did not attack gets none.
+	{
+		Kingdom Idle(Ct);
+		KD_CHECK(Idle.Load(Base.Save(), Error) && Idle.JoinAlliance(A) == Error::None);
+		Idle.Advance(Start + 7 * Day + Hour);
+		KD_CHECK(!Idle.Conquest().on && Idle.Conquest().phase == 2 && Idle.ClaimConquestChest(nullptr) == Error::NotAllowed);
+	}
+	// Four weeks on, the next Conquest: the tokens and the chest come back.
+	K.Advance(Start + 28 * Day + Hour);
+	const ConquestInfo I5 = K.Conquest();
+	KD_CHECK(I5.no == I4.no + 1 && I5.phase == 1 && I5.on && I5.tokens == 6 && I5.attacks == 0 && I5.stars == 0 && !K.ConquestChestClaimed());
+	KD_CHECK(K.ClaimConquestChest(nullptr) == Error::NotReady && I5.startAt == Start + 28 * Day);
+
+	// Over many alliances the week is a race: the sanctum changes hands, places vary, and attacks help.
+	int Weeks = 0;
+	int Holy = 0;
+	int Better = 0;
+	int Top = 0;
+	int64_t Spread = 0;
+	int PlaceAlone = 0;
+	int PlaceHelped = 0;
+	for (uint64_t S = 0; S < 4; ++S)
+	{
+		Kingdom B0 = ConqKingdom(210 + S);
+		for (int Al = 0; Al < B0.AllianceCount(); Al += 5)
+		{
+			Kingdom X(Ct);
+			KD_CHECK(X.Load(B0.Save(), Error));
+			if (X.JoinAlliance(Al) != Error::None)
+			{
+				continue;
+			}
+			Kingdom Y(Ct);
+			KD_CHECK(Y.Load(X.Save(), Error));
+			// The last second of the week (after it only those who attacked see the map).
+			X.Advance(Start + 7 * Day - 1);
+			const ConquestInfo Xi = X.Conquest();
+			KD_CHECK(Xi.on && Xi.tiles.size() == 61 && Xi.place.size() == 8);
+			if (!Xi.on || Xi.place.size() != 8)
+			{
+				continue;
+			}
+			++Weeks;
+			Holy += Xi.tiles[0].owner >= 0 ? 1 : 0;
+			Top += Xi.place.empty() ? 0 : Xi.place[0] == 1 ? 1 : 0;
+			Spread += *std::max_element(Xi.points.begin(), Xi.points.end()) - *std::min_element(Xi.points.begin(), Xi.points.end());
+			// The player spends every token for the rest of the week on 3-star attacks.
+			for (int64_t At = T0; At < Start + 7 * Day; At += 2 * Hour)
+			{
+				Y.Advance(At);
+				const int T = ConqTarget(Y);
+				if (T >= 0)
+				{
+					KD_CHECK(Y.StartConquest(T, {}, 0, {}) == Error::None && Y.FinishConquest(3, nullptr) == Error::None);
+				}
+			}
+			Y.Advance(Start + 7 * Day - 1);
+			Better += Y.Conquest().on && Y.Conquest().points[0] > Xi.points[0] ? 1 : 0;
+			PlaceAlone += Xi.place[0];
+			PlaceHelped += Y.Conquest().on ? Y.Conquest().place[0] : 8;
+		}
+	}
+	std::printf("  conquests: %d, the sanctum held at the end in %d, first place %d alone, points spread %lld on average; better with attacks %d,"
+		" place %.1f alone and %.1f with attacks\n", Weeks, Holy, Top, static_cast<long long>(Weeks > 0 ? Spread / Weeks : 0), Better,
+		Weeks > 0 ? static_cast<double>(PlaceAlone) / Weeks : 0.0, Weeks > 0 ? static_cast<double>(PlaceHelped) / Weeks : 0.0);
+	KD_CHECK(Weeks >= 20 && Holy * 2 >= Weeks && Top * 2 <= Weeks && Better * 10 >= Weeks * 8 && PlaceHelped < PlaceAlone);
+}
+
 void TestRaidBoss()
 {
 	const KingdomContent& Ct = Content();
@@ -5415,7 +5745,7 @@ int main()
 		{"DailyQuests", TestDailyQuests},
 		{"TitanSkills", TestTitanSkills},
 		{"Raids", TestRaids},
-		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners}, {"AllianceTech", TestAllianceTech},
+		{"Rivals", TestRivals}, {"QueueRefunds", TestQueueRefunds}, {"Goals", TestGoals}, {"Achievements", TestAchievements}, {"Calendars", TestCalendars}, {"WeeklyQuests", TestWeeklyQuests}, {"TitanTrials", TestTitanTrials}, {"Warpath", TestWarpath}, {"Assault", TestAssault}, {"KingdomPower", TestKingdomPower}, {"Scouting", TestScouting}, {"Marshal", TestMarshal}, {"RaidBoss", TestRaidBoss}, {"DailyTrials", TestDailyTrials}, {"AllianceWar", TestAllianceWar}, {"AllianceHelp", TestAllianceHelp}, {"Honor", TestHonor}, {"Banners", TestBanners}, {"AllianceTech", TestAllianceTech}, {"Conquest", TestConquest},
 	};
 	for (const auto& T : Tests)
 	{

@@ -229,6 +229,11 @@ class KingdomBridge {
 	}
 	warFinish(stars) { return JSON.parse(this.str(this.M._dk_war_finish(stars))); }
 	warChest() { return JSON.parse(this.str(this.M._dk_war_chest())); }
+	conqStart(tile, squads, titan, spells) {
+		return this.M.ccall('dk_conq_start', 'number', ['number', 'string', 'number', 'string'], [tile, (squads || []).join(','), titan || 0, (spells || []).join(',')]);
+	}
+	conqFinish(stars) { return JSON.parse(this.str(this.M._dk_conq_finish(stars))); }
+	conqChest() { return JSON.parse(this.str(this.M._dk_conq_chest())); }
 	helpAsk(kind, id) { return this.M._dk_help_ask(kind, id); }
 	helpGive() { return JSON.parse(this.str(this.M._dk_help_give())); }
 	wpClaim(t) { return JSON.parse(this.str(this.M._dk_wp_claim(t))); }
@@ -2103,6 +2108,7 @@ function refresh(force) {
 	if (prev) announceAssault(prev, K.st);
 	if (prev) announceBoss(prev, K.st);
 	if (prev) announceWar(prev, K.st);
+	if (prev) announceConq(prev, K.st);
 	if (prev) announceHelp(prev, K.st);
 	announceWarpath(prev, K.st);
 	if (prev) announceGoal(prev, K.st);
@@ -2294,10 +2300,12 @@ function updateHud() {
 	const bossN = bossReady(st);
 	const dailyN = dailyReady(st);
 	const warN = warReady(st);
-	$('kAttack').classList.toggle('ready', trialN + asN + bossN + dailyN + warN > 0);
+	const conqN = conqReady(st);
+	$('kAttack').classList.toggle('ready', trialN + asN + bossN + dailyN + warN + conqN > 0);
 	$('kAttack').title = trialN > 0 ? 'Атака. Испытание титанов: ' + (trialOpen(st) && st.trial.left > 0 ? 'есть бои' : 'есть награда') : asN > 0 ? 'Атака. Идёт Штурм'
 		: bossN > 0 ? 'Атака. Рейдовый босс: ' + (st.boss.ck.err === E.None ? 'есть бои' : 'сундук альянса') : dailyN > 0 ? 'Атака. Ежедневные испытания: есть попытки'
-		: warN > 0 ? 'Атака. Война альянсов: ' + (st.war.ck.err === E.None ? 'есть атаки' : 'сундук войны') : 'Атака';
+		: warN > 0 ? 'Атака. Война альянсов: ' + (st.war.ck.err === E.None ? 'есть атаки' : 'сундук войны')
+		: conqN > 0 ? 'Атака. Завоевание: ' + (st.conq.ck.err === E.None ? 'есть жетоны похода' : 'сундук') : 'Атака';
 	$('kArmySub').textContent = st.army.total + ' / ' + st.army.cap + ' · ' + st.titans.length + ' ' + plural(st.titans.length, 'титан', 'титана', 'титанов');
 	updateGoal();
 }
@@ -2554,6 +2562,10 @@ function onAct(e) {
 	case 'war': openWar(); break;
 	case 'war-go': startWar(id); break;
 	case 'war-chest': claimWarChest(); break;
+	case 'conquest': openConquest(); break;
+	case 'conq-tile': selectConq(id); break;
+	case 'conq-go': startConq(id); break;
+	case 'conq-chest': claimConqChest(); break;
 	case 'help': openHelp(); break;
 	case 'help-ask': askHelp(+el.dataset.kind, id); break;
 	case 'help-ask-all': askHelpAll(); break;
@@ -4766,6 +4778,328 @@ function warEnd(ctx, stars, retreat) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Conquest (master prompt 12.11): a week of every four the alliance and seven others of its league take the tiles of a
+// hex map from their fortresses for points. The land battle code fights a tile's garrison as a pseudo land
+// { id, lv, conq: { tile, tier } } with the Alliance War's armies, titans and fields.
+// ---------------------------------------------------------------------------------------------
+const CONQ_ID = 990000;
+const conqRules = () => K.rules.conquest;
+const conqOn = (st) => !!(conqRules() && st.conq && warRules());
+const CONQ_KINDS = ['home', 'plains', 'fort', 'shrine', 'sanctum'];
+const CONQ_KIND_RU = ['Крепость', 'Равнина', 'Форт', 'Святилище', 'Санктум титанов'];
+/** The alliances' colours by slot: slot 0 is the player's. */
+const CONQ_COLORS = ['#f2c14e', '#e0645a', '#4f8fe0', '#a487ea', '#46b5a6', '#ec8a3c', '#8fbf3f', '#d0569f'];
+/** The map as the kingdom lays it: ring by ring from the centre, each from its corner (-R, R) on around. */
+function conqMap() {
+	const R = conqRules();
+	if (K.conqMap && K.conqMap.rules === R) return K.conqMap.tiles;
+	const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+	const tiles = [];
+	R.rings.forEach((kinds, ring) => {
+		let q = -ring;
+		let r = ring;
+		for (let i = 0; i < kinds.length; i++) {
+			tiles.push({ kind: 'HPFSC'.indexOf(kinds[i]), q, r, adj: [] });
+			if (ring > 0) {
+				const d = dirs[Math.floor(i / ring)];
+				q += d[0];
+				r += d[1];
+			}
+		}
+	});
+	for (const a of tiles) for (let j = 0; j < tiles.length; j++) {
+		const b = tiles[j];
+		const dq = b.q - a.q;
+		const dr = b.r - a.r;
+		if (a !== b && Math.abs(dq) <= 1 && Math.abs(dr) <= 1 && Math.abs(dq + dr) <= 1) a.adj.push(j);
+	}
+	K.conqMap = { rules: R, tiles };
+	return tiles;
+}
+const conqKindDef = (kind) => conqRules().tiles[CONQ_KINDS[kind]] || {};
+const conqTileName = (t) => CONQ_KIND_RU[conqMap()[t].kind] + ' №' + (t + 1);
+/** A tile's garrison tier: the league's war tier and the kind's, within the war's tiers. */
+function conqTier(st, t) {
+	const W = warRules();
+	const mid = W.leagueTier[Math.max(0, Math.min(st.conq.league, W.leagueTier.length - 1))];
+	return Math.max(1, Math.min(W.tiers.length, mid + (conqKindDef(conqMap()[t].kind).tier || 0)));
+}
+const conqPick = (st, t, n, salt) => (((st.conq.no * 7 + t * 13 + salt * 5) % n) + n) % n;
+const conqTarget = (st, t) => ({ id: CONQ_ID + t * 1000 + (((st.conq.no % 1000) + 1000) % 1000), lv: warLevel(conqTier(st, t)), conq: { tile: t, tier: conqTier(st, t) } });
+function conqField(st, t) {
+	const W = warRules();
+	return siteField({ name: conqTileName(t), map: W.maps[conqPick(st, t, W.maps.length, 1)] });
+}
+function conqTitan(st, t) {
+	const W = warRules();
+	const td = warTierDef(conqTier(st, t));
+	const pool = W.titans[Math.max(1, Math.min(td.titanStars, W.titans.length)) - 1] || [];
+	const def = pool.length ? K.army.titans.find((x) => x.id === pool[conqPick(st, t, pool.length, 2)]) : null;
+	return def ? { def, level: Math.min(td.titanLevel, 10 + 10 * def.stars), stars: def.stars } : null;
+}
+function conqEnemy(st, t) {
+	const W = warRules();
+	const b = K.rules.battles[warLevel(conqTier(st, t)) - 1];
+	const army = W.armies[conqPick(st, t, W.armies.length, 0)];
+	return Array.from({ length: b.squads.length }, (_, k) => army[k % army.length]);
+}
+/** The garrison's bonus: its tier's and the walls' (forts and the sanctum: more health). */
+function conqBonus(st, t) {
+	const b = warTierDef(conqTier(st, t)).bonus || 0;
+	return { atkPct: b, hpPct: b + (conqKindDef(conqMap()[t].kind).fort || 0) };
+}
+function conqEnemyText(st, t) {
+	const et = conqTitan(st, t);
+	const en = conqEnemy(st, t);
+	const bonus = conqBonus(st, t);
+	const parts = [];
+	if (et) parts.push(et.def.name + ' ур. ' + et.level + ' ' + '★'.repeat(et.stars));
+	if (en.length) {
+		const kinds = en.filter((x, k) => en.indexOf(x) === k).map((x) => TROOP_RU[x] || x);
+		parts.push(en.length + ' ' + plural(en.length, 'отряд', 'отряда', 'отрядов') + ' (' + kinds.join(', ') + ')' +
+			(bonus.atkPct === bonus.hpPct ? (bonus.hpPct ? ', здоровья и урона +' + bonus.hpPct + '%' : '') : (bonus.atkPct ? ', урона +' + bonus.atkPct + '%' : '') + (bonus.hpPct ? ', здоровья +' + bonus.hpPct + '%' : '')));
+	}
+	return parts.join('; ') || 'никого';
+}
+/** Whether the player's alliance can attack a tile now (the kingdom's rule): next to its land, not its own, no truce. */
+function conqCan(st, t) {
+	const c = st.conq;
+	const x = c.tiles[t];
+	if (!c.on || c.ck.err !== E.None || st.conq.at >= 0 || !x || x[0] === 0 || conqMap()[t].kind === 0 || x[2] > nowF()) return false;
+	return conqMap()[t].adj.some((j) => c.tiles[j] && c.tiles[j][0] === 0);
+}
+const conqChestReady = (st) => conqOn(st) && st.conq.on && st.conq.ph === 2 && !st.conq.chest && st.conq.at < 0 && st.conq.attacks > 0;
+/** Attacks to make (March Tokens), and the chest. */
+function conqReady(st) {
+	if (!conqOn(st) || st.ally.my < 0) return 0;
+	return (st.conq.ck.err === E.None ? st.conq.tok : 0) + (conqChestReady(st) ? 1 : 0);
+}
+function conqKey(st) {
+	const c = st.conq;
+	return conqOn(st) ? [c.no, c.ph, c.on, c.ck.err, c.tok, c.attacks, c.stars, c.taken, c.chest, c.at, c.atk, c.league, st.ally.my, st.castle,
+		c.al.map((a) => a[0] + ':' + a[3] + ':' + a[4]).join(), c.tiles.map((x) => x[0] + ':' + x[1] + ':' + (x[2] > nowF() ? 1 : 0)).join()].join('|') : '';
+}
+/** The chest of a place (gold and food times the Castle). */
+function conqChestPay(st, place) {
+	const R = conqRules();
+	const ch = R.chests[Math.max(0, Math.min(place, R.chests.length) - 1)] || {};
+	const pay = Object.assign({}, ch);
+	pay.gold = (ch.gold || 0) * st.castle;
+	pay.food = (ch.food || 0) * st.castle;
+	return eventPay(pay);
+}
+/** When the phase on screen ends: the Conquest's end, or the next one's start. */
+const conqPhaseEnd = (c) => (c.ph === 1 ? c.end : c.ph === 0 ? c.start : c.next);
+function conqCard(st) {
+	if (!conqOn(st)) return '';
+	const c = st.conq;
+	const R = conqRules();
+	const n = conqReady(st);
+	const me = c.on && c.al.length ? c.al[0] : null;
+	const sub = st.ally.my < 0 ? 'для участников альянса'
+		: c.ph !== 1 ? (me && c.ph === 2 ? me[4] + '-е место из ' + c.al.length + (conqChestReady(st) ? ', сундук ждёт' : '') + ' · ' : '') + 'следующее через ' + fmtDur(Math.max(0, conqPhaseEnd(c) - nowF()))
+			: (me ? me[4] + '-е место · ' + fmt(me[3]) + ' очк.' : 'идёт') + (st.castle < R.castle ? ' · атаки с Замка ' + R.castle : ' · жетонов ' + c.tok);
+	return '<div class="landCard' + (n ? ' ready' : '') + '">' + icoHtml('ui.attack', (st.ally.my < 0 || c.ph !== 1 || st.castle < R.castle ? 'shards' : 'gold') + ' land') + '<div class="info"><b>Завоевание</b><span>' + esc(sub) + '</span></div>' +
+		'<div class="row"><button class="btn' + (n ? ' primary' : '') + '" data-act="conquest">' + (n ? 'Открыть · ' + n : 'Открыть') + '</button></div></div>';
+}
+function conqErrText(code, ck) {
+	switch (code) {
+	case E.NoAlliance: return 'Завоевание — для участников альянса';
+	case E.Locked: return 'Атаки в Завоевании — с Замка ' + conqRules().castle;
+	case E.NotReady: return ck && ck.t ? (K.st.conq.ph === 1 ? 'Перемирие ещё ' : 'Завоевание начнётся через ') + fmtDur(ck.t) : 'Завоевание сейчас не идёт';
+	case E.LimitReached: return 'Жетоны похода кончились' + (ck && ck.t ? ': следующий через ' + fmtDur(ck.t) : '');
+	case E.Nothing: return 'Эта клетка уже ваша';
+	case E.NotAllowed: return 'Атаковать можно только клетки рядом с землями альянса';
+	case E.Busy: return 'Сначала закончите бой';
+	default: return errText(code, ck);
+	}
+}
+const conqStarPoly = (r) => Array.from({ length: 10 }, (_, i) => { const a = -Math.PI / 2 + (i * Math.PI) / 5; const d = i % 2 ? r * 0.45 : r; return (d * Math.cos(a)).toFixed(1) + ',' + (d * Math.sin(a)).toFixed(1); }).join(' ');
+/** The hex map: each tile in its holder's colour, the ones to attack outlined, the chosen one ringed. */
+function conqMapSvg(st, sel) {
+	const c = st.conq;
+	const map = conqMap();
+	const s = 18;
+	const k3 = Math.sqrt(3);
+	const hex = (sz) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 6 + (i * Math.PI) / 3; return (sz * Math.cos(a)).toFixed(1) + ',' + (sz * Math.sin(a)).toFixed(1); }).join(' ');
+	const outer = hex(s * 0.97);
+	const inner = hex(s * 0.74);
+	const W = 9 * k3 * s + 4;
+	const H = 14 * s + 4;
+	let out = '<svg class="cqmap" viewBox="' + (-W / 2).toFixed(1) + ' ' + (-H / 2).toFixed(1) + ' ' + W.toFixed(1) + ' ' + H.toFixed(1) + '" role="group" aria-label="Карта Завоевания">';
+	map.forEach((h, t) => {
+		const x = s * k3 * (h.q + h.r / 2);
+		const y = s * 1.5 * h.r;
+		const tile = c.tiles[t] || [-1, 0, 0];
+		const owner = tile[0];
+		const fill = owner >= 0 ? CONQ_COLORS[owner % CONQ_COLORS.length] : '#3a414b';
+		const cls = (owner === 0 ? ' own' : '') + (conqCan(st, t) ? ' can' : '') + (t === sel ? ' sel' : '') + (tile[2] > nowF() ? ' truce' : '') + (owner < 0 ? ' free' : '');
+		let glyph = '';
+		if (h.kind === 0) glyph = '<path class="gl" d="M-5,6 V-6 M-5,-6 L6,-3 L-5,0"/>';
+		else if (h.kind === 2) glyph = '<path class="gl" d="M-5,5 V-2 H-3 V-5 H-1 V-2 H1 V-5 H3 V-2 H5 V5 Z"/>';
+		else if (h.kind === 3) glyph = '<path class="gl" d="M0,-6 L4,0 L0,6 L-4,0 Z"/>';
+		else if (h.kind === 4) glyph = '<polygon class="gl" points="' + conqStarPoly(8) + '"/>';
+		out += '<g class="cqt' + cls + '" data-act="conq-tile" data-id="' + t + '" transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')"><title>' + esc(conqTileName(t)) + '</title>' +
+			'<polygon class="hx" points="' + outer + '" fill="' + fill + '"/>' + (owner >= 0 && h.kind !== 0 ? '<polygon class="in" points="' + inner + '"/>' : '') + glyph + '</g>';
+	});
+	return out + '</svg>';
+}
+/** What a tile is, who holds it, its Control, points and effect, and the attack. */
+function conqTileHtml(st, t) {
+	const c = st.conq;
+	const R = conqRules();
+	const h = conqMap()[t];
+	const x = c.tiles[t] || [-1, 0, 0];
+	const kd = conqKindDef(h.kind);
+	const full = kd.control || 0;
+	const holder = x[0] >= 0 && c.al[x[0]] ? c.al[x[0]] : null;
+	const holderHtml = holder ? '<span class="cqdot" style="--cq:' + CONQ_COLORS[x[0] % CONQ_COLORS.length] + '"></span>' + (x[0] === 0 ? 'ваш альянс' : '«' + esc(holder[1]) + '»') : 'ничья';
+	const sanctum = conqMap().findIndex((y) => y.kind === 4);
+	const nearHoly = sanctum >= 0 && conqMap()[sanctum].adj.includes(t);
+	const eff = h.kind === 0 ? 'Крепость альянса: отсюда он идёт в поход, её нельзя взять.'
+		: (kd.pts ? '+' + kd.pts + ' ' + plural(kd.pts, 'очко', 'очка', 'очков') + ' в час' + (nearHoly ? ' (вдвое больше хозяину Санктума)' : '') + '. ' : '') +
+		(kd.atkPct ? 'Отряды альянса-хозяина бьют в Завоевании на ' + kd.atkPct + '% сильнее. ' : '') +
+		(h.kind === 4 ? 'Удваивает хозяину очки соседних клеток. ' : '') + (kd.fort ? 'Стены: здоровье гарнизона +' + kd.fort + '%.' : '');
+	let why = '';
+	const can = conqCan(st, t);
+	if (!can) {
+		why = h.kind === 0 ? '' : x[0] === 0 ? 'Клетка вашего альянса.' : st.conq.at >= 0 ? 'Сначала закончите бой.'
+			: c.ck.err !== E.None ? conqErrText(c.ck.err, c.ck) + '.' : x[2] > nowF() ? 'Перемирие: клетку только что взяли.'
+				: 'Не граничит с землями альянса: сначала возьмите соседнюю.';
+	}
+	const stars = Math.ceil(x[1] / Math.max(1, R.starControl));
+	return '<div class="cqinfo"><div class="costline"><span><b>' + esc(conqTileName(t)) + '</b></span><span>' + holderHtml + '</span></div>' +
+		(h.kind !== 0 ? '<div class="costline"><span>Контроль</span><b>' + x[1] + ' из ' + full + '</b><span>' + (x[0] === 0 ? 'держит ваш альянс' : 'взять: ещё ' + stars + ' ★') + '</span></div>' +
+			'<div class="progress thin"><i style="width:' + Math.round((100 * x[1]) / Math.max(1, full)) + '%"></i></div>' : '') +
+		(x[2] > nowF() ? '<div class="costline"><span>Перемирие ещё</span><b data-live="cqtruce">' + fmtDur(x[2] - nowF()) + '</b></div>' : '') +
+		'<p class="fine">' + eff + (h.kind !== 0 ? ' Гарнизон: ур. ' + warLevel(conqTier(st, t)) + '.' : '') + '</p>' +
+		(h.kind !== 0 && x[0] !== 0 ? '<div class="actions"><button class="btn primary" data-act="conq-go" data-id="' + t + '"' + (can ? '' : ' disabled') + '>Атаковать · жетон</button></div>' + (why ? '<p class="fine">' + esc(why) + '</p>' : '') : '') +
+		'</div>';
+}
+function openConquest() {
+	if (!conqOn(K.st)) return;
+	cancelPlace();
+	select(null);
+	openSheet(() => {
+		const st = K.st;
+		const R = conqRules();
+		const c = st.conq;
+		const inAlly = st.ally.my >= 0;
+		const intro = '<p class="fine">Раз в ' + R.weeks + ' недели, с понедельника 00:00 UTC на ' + R.days + ' ' + plural(R.days, 'день', 'дня', 'дней') + ', ваш альянс и ещё ' + (conqMap().filter((h) => h.kind === 0).length - 1) +
+			' альянсов вашей лиги делят карту из ' + conqMap().length + ' клеток. Каждый идёт от своей крепости на краю: атаковать можно клетку рядом с землями альянса. ' +
+			'Каждая звезда снимает ' + R.starControl + ' контроля, при нуле клетка переходит к вам и на ' + Math.round(R.truceSec / 3600) + ' ч встаёт перемирие. ' +
+			'Каждый час клетки приносят очки: равнина 1, святилище 1 и +' + conqKindDef(3).atkPct + '% к атаке отрядов, форт 3, Санктум в центре 10 и удваивает соседние. ' +
+			'Атака стоит жетон похода: жетон приходит раз в ' + Math.round(R.tokenSec / 3600) + ' ч, держится до ' + R.tokens + '. Камни портала не нужны, никто не гибнет, заклинания не тратятся.</p>';
+		let body;
+		if (!inAlly) {
+			body = '<p>Завоевание — для участников альянса. Вступите в альянс или основайте свой.</p><div class="actions"><button class="btn primary" data-act="alliance">Альянсы</button></div>';
+		} else if (!c.on) {
+			body = '<div class="costline"><span>' + (c.ph === 0 ? 'Первое Завоевание через' : 'Следующее Завоевание через') + '</span><b data-live="conq">' + fmtDur(Math.max(0, conqPhaseEnd(c) - nowF())) + '</b></div>' +
+				(c.ph === 2 ? '<p class="fine">Это Завоевание окончено. Итоги и сундук — у тех, кто в нём атаковал за этот альянс.</p>' : '');
+		} else {
+			const map = conqMap();
+			let sel = K.conqSel >= 0 && K.conqSel < map.length ? K.conqSel : -1;
+			if (sel < 0) {
+				let best = -1;
+				map.forEach((h, t) => { if (conqCan(st, t) && (best < 0 || c.tiles[t][1] < c.tiles[best][1])) best = t; });
+				sel = best >= 0 ? best : Math.max(0, map.findIndex((h, t) => h.kind === 0 && c.tiles[t][0] === 0));
+			}
+			const locked = st.castle < R.castle;
+			const timer = '<div class="costline"><span>' + (c.ph === 1 ? 'Завоевание идёт ещё' : 'Окончено, следующее через') + '</span><b data-live="conq">' + fmtDur(Math.max(0, conqPhaseEnd(c) - nowF())) + '</b></div>';
+			const tokens = c.ph === 1 ? '<div class="costline"><span>Жетоны похода</span><b>' + (locked ? 'с Замка ' + R.castle : c.tok + ' из ' + R.tokens) + '</b><span data-live="cqtok">' +
+				(!locked && c.tok < R.tokens ? 'следующий через ' + fmtDur(c.tokIn) : '') + '</span></div>' : '';
+			const mine = '<div class="costline"><span>Ваши атаки</span><b>' + c.attacks + '</b><span>' + (c.attacks ? c.stars + ' ★, ' + plural(c.taken, 'взята', 'взяты', 'взято') + ' ' + c.taken + ' ' + plural(c.taken, 'клетка', 'клетки', 'клеток') : 'вы ещё не атаковали') + '</span></div>' +
+				(c.atk ? '<p class="fine">Святилища альянса: ваши отряды бьют в Завоевании на ' + c.atk + '% сильнее.</p>' : '');
+			const held = c.al.map(() => 0);
+			c.tiles.forEach((x) => { if (x[0] >= 0 && x[0] < held.length) held[x[0]]++; });
+			const order = c.al.map((a, i) => i).sort((a, b) => c.al[a][4] - c.al[b][4]);
+			const rank = order.map((i) => {
+				const a = c.al[i];
+				return '<span class="pl' + (i === 0 ? ' me' : '') + '">' + a[4] + '</span><span class="nm' + (i === 0 ? ' me' : '') + '"><span class="cqdot" style="--cq:' + CONQ_COLORS[i % CONQ_COLORS.length] + '"></span>' +
+					esc(a[1]) + '<small>[' + esc(a[2]) + '] · ' + held[i] + ' ' + plural(held[i], 'клетка', 'клетки', 'клеток') + '</small></span><span class="v' + (i === 0 ? ' me' : '') + '">' + fmt(a[3]) + '</span>';
+			}).join('');
+			const place = c.al[0][4];
+			const chestBtn = c.chest ? '<button class="btn" disabled>Сундук открыт</button>'
+				: conqChestReady(st) ? '<button class="btn primary" data-act="conq-chest">Открыть сундук · ' + place + '-е место</button>'
+					: '<button class="btn" disabled>' + (c.ph < 2 ? 'Сундук — после Завоевания' : 'Сундук — тем, кто атаковал') + '</button>';
+			// The first place's chest, the alliance's own and the last one's.
+			const shown = [...new Set([1, place, c.al.length])].sort((x, y) => x - y);
+			const chest = '<h3>Сундук Завоевания</h3><div class="cmp">' + shown.map((n) => '<span class="k' + (n === place ? ' on' : '') + '">' + n + '-е место' + (n === place ? ' (ваше)' : '') + '</span><span class="v">' + conqChestPay(st, n) + '</span><span class="n"></span>').join('') + '</div>' +
+				'<p class="fine">Сундук — по месту альянса в конце недели: чем выше место, тем богаче. Его открывает каждый, кто атаковал, до следующего Завоевания.</p><div class="actions">' + chestBtn + '</div>';
+			body = timer + tokens + mine + (locked ? '<p class="fine">Атаки в Завоевании открываются с Замка ' + R.castle + '. Альянс воюет и без вас.</p>' : '') +
+				'<div class="cqwrap">' + conqMapSvg(st, sel) + '</div>' +
+				'<p class="fine cqlegend"><span class="cqk own"></span>ваш альянс <span class="cqk can"></span>можно атаковать <span class="cqk truce"></span>перемирие · флаг — крепость, башня — форт, ромб — святилище, звезда — Санктум</p>' +
+				conqTileHtml(st, sel) +
+				'<h3>Альянсы: очки Завоевания</h3><div class="league">' + rank + '</div>' + chest;
+			K.conqShown = sel;
+		}
+		const html = sheetTitle(icoHtml('ui.attack', 'gold land'), 'Завоевание') + (c.on ? '' : intro) + body + (c.on ? intro : '') +
+			'<p class="fine">Пока нет сервера, остальные участники и альянсы — компьютер: каждый час альянсы ходят на клетку у своих земель, что даёт больше всего при меньшем контроле. Награды ложатся и сверх склада.</p>' +
+			'<div class="actions"><button class="btn" data-act="world">Карта мира</button>' + (inAlly ? '<button class="btn" data-act="alliance">Альянс</button>' : '') + closeBtn + '</div>';
+		return { key: ['conq', conqKey(st), inAlly, K.conqSel, st.conq.at].join('|'), html, live: (el) => {
+			const cc = K.st.conq;
+			live(el, 'conq', fmtDur(Math.max(0, conqPhaseEnd(cc) - nowF())));
+			if (cc.tok < conqRules().tokens) live(el, 'cqtok', 'следующий через ' + fmtDur(Math.max(0, cc.tokIn - (nowF() - K.lastStateSec))));
+			const x = cc.tiles[K.conqShown];
+			if (x && x[2] > nowF()) live(el, 'cqtruce', fmtDur(x[2] - nowF()));
+		} };
+	});
+}
+/** A toast when a Conquest begins while the game is on, and when it ends. */
+function announceConq(prev, st) {
+	if (!conqOn(st) || !prev.conq || st.ally.my < 0 || prev.conq.no !== st.conq.no) return;
+	if (prev.conq.ph !== 1 && st.conq.ph === 1) toast('Началось Завоевание: у вас ' + st.conq.tok + ' ' + plural(st.conq.tok, 'жетон', 'жетона', 'жетонов') + ' похода', 'gold');
+	else if (prev.conq.ph === 1 && st.conq.ph === 2 && st.conq.on) toast('Завоевание окончено: ваш альянс на ' + st.conq.al[0][4] + '-м месте' + (conqChestReady(st) ? '. Откройте сундук' : ''), 'gold');
+}
+function selectConq(t) {
+	K.conqSel = t;
+	refresh(true);
+}
+function startConq(t) {
+	const st = K.st;
+	if (!conqOn(st)) return;
+	if (!conqCan(st, t)) {
+		const x = st.conq.tiles[t];
+		toast(conqErrText(st.conq.ck.err !== E.None ? st.conq.ck.err : !x || conqMap()[t].kind === 0 || x[0] === 0 ? E.Nothing : x[2] > nowF() ? E.NotReady : E.NotAllowed,
+			st.conq.ck.err !== E.None ? st.conq.ck : x ? { t: Math.max(1, Math.ceil(x[2] - nowF())) } : null), 'bad');
+		return;
+	}
+	K.conqSel = t;
+	openPrepare(0, false, -1, null, false, false, false, false, null, { conq: t });
+}
+function claimConqChest() {
+	const r = K.bridge.conqChest();
+	if (r.err !== E.None) {
+		toast(r.err === E.NotReady ? 'Сундук откроется после Завоевания' : r.err === E.Nothing ? 'Сундук уже открыт' : r.err === E.NotAllowed ? 'Сундук — тем, кто атаковал в этом Завоевании' : r.err === E.InventoryFull ? 'Нет места для реликвии' : errText(r.err), 'bad');
+		refresh(true);
+		return;
+	}
+	const parts = rewardParts(r);
+	const st = K.bridge.state();
+	for (const x of (r.relics || []).map((rid) => st.relics.find((y) => y.id === rid)).filter(Boolean)) parts.push((/^реликвия/i.test(relicName(x)) ? '' : 'реликвия ') + relicName(x) + ' ' + '★'.repeat(x.r));
+	toast('Сундук Завоевания: ' + parts.join(', '), 'gold');
+	persist();
+	refresh(true);
+}
+function conqEnd(ctx, stars, retreat) {
+	const t = ctx.conq.tile;
+	const before = K.st.conq.tiles[t] ? K.st.conq.tiles[t].slice() : null;
+	const got = retreat ? 0 : stars;
+	const r = K.bridge.conqFinish(got);
+	persist();
+	refresh(true);
+	if (r.err !== E.None) return;
+	const now = K.st.conq.tiles[t];
+	const name = '«' + conqTileName(t) + '»';
+	if (got <= 0) toast((retreat ? 'Отступление' : 'Поражение') + ' у клетки ' + name + ': жетон потрачен', 'bad');
+	else if (now && now[0] === 0 && before && before[0] !== 0) toast('Клетка ' + name + ' взята ' + '★'.repeat(got) + '! Теперь она вашего альянса, перемирие ' + Math.round(conqRules().truceSec / 3600) + ' ч', 'gold');
+	else if (now && before && now[0] === before[0]) toast('Клетка ' + name + ': ' + '★'.repeat(got) + ', контроль ' + before[1] + ' → ' + now[1], 'gold');
+	else toast('Клетка ' + name + ': ' + '★'.repeat(got) + ', но пока шёл бой, её заняли другие', 'bad');
+	K.conqSel = t;
+	openConquest();
+}
+
+// ---------------------------------------------------------------------------------------------
 // Alliance help (master prompt 12.4): allies take time off the player's constructions, land upgrades, research and
 // titans' rest one help at a time, and the player helps theirs for a little gold and food.
 // ---------------------------------------------------------------------------------------------
@@ -6213,7 +6547,7 @@ function worldKey(st) {
 	return [st.res[3], st.cap[3], st.castle, st.lands.map((l) => l.id + ':' + l.lv + ':' + (l.st > 0)).join(), st.world.map((w) => w.id + ':' + w.lv).join(), st.landCap,
 		isArmed('refill'), isArmed('slot'), (st.sites || []).map((x, i) => x.ck.err + ':' + x.gems + ':' + isArmed('site-reset:' + i)).join(),
 		(st.rivals || []).map((r) => r.castle + ':' + r.lands + ':' + r.back).join(), (st.rivalLands || []).map((w) => w.id + ':' + w.lv + ':' + (w.shield > nowF())).join(),
-		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st), warKey(st), spireKey(st)].join('|');
+		st.trial ? [st.trial.i, st.trial.ck.err, st.trial.left, st.trial.best, st.trial.rank, st.trial.ms, st.trial.rk].join(':') : '', bossKey(st), dailyKey(st), warKey(st), conqKey(st), spireKey(st)].join('|');
 }
 
 function openWorld() {
@@ -6225,7 +6559,7 @@ function openWorld() {
 		const html = sheetTitle(icoHtml('ui.attack', 'bld troops'), 'Земли') +
 			'<p>Мир расколот, и его осколки парят вокруг королевства. Набег приносит то, что даёт земля, захват даёт постоянный доход: земля пристаёт к вашему острову. Атака тратит камни портала: набег 3, захват 6.</p>' +
 			'<p class="fine">Как в оригинале: золотые и фермерские земли дают золото и еду; лес, озеро и гора — очки победы для сезона (с Замка 3); руины — осколки для возвышения титанов (с Замка 5). Каждая победа тоже приносит очки победы.</p>' +
-			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + spireCard(st) + practiceCard() +
+			stonesLine(st) + '<div class="actions"><button class="btn" data-act="world">На карте мира</button></div>' + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + conqCard(st) + spireCard(st) + practiceCard() +
 			'<h3>Ничьи земли</h3>' + st.world.map((w) => worldCard(st, w)).join('') +
 			(K.rules.rivals && (st.rivals || []).length ? '<h3>Земли соседних лордов</h3><p class="fine">' + RIVAL_NOTE + '</p>' +
 				st.rivals.map((r, i) => lordCard(st, i) + (st.rivalLands || []).filter((w) => w.own === i).map((w) => worldCard(st, w)).join('')).join('') : '') +
@@ -6364,7 +6698,7 @@ function openWorldMap() {
 			'<div class="mapLegend"><span><i style="border-color:var(--own)"></i>ваши земли ' + st.lands.length + ' / ' + st.landCap + '</span><span><i style="border-color:rgba(239,231,214,0.85)"></i>ничьи</span>' +
 			'<span><i class="multi"></i>земли лордов</span><span><i class="dia"></i>монументы и арены</span><span><i class="sh"></i>под щитом</span></div>' +
 			(chips ? '<div class="lordChips">' + chips + '</div>' : '') +
-			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + spireCard(st) +
+			(card || '<p class="fine">Нажмите на остров: свою землю, ничью, землю соседнего лорда, монумент или арену. Цифра на острове — его уровень.</p>') + dailyCard(st) + trialCard(st) + assaultCard(st) + bossCard(st) + warCard(st) + conqCard(st) + spireCard(st) +
 			'<div class="actions"><button class="btn" data-act="world-list">Списком</button><button class="btn" data-act="practice">Тренировка</button>' + closeBtn + '</div>';
 		return { key: 'map|' + sel + '|' + worldKey(st), html, live: liveWorld };
 	});
@@ -6544,6 +6878,7 @@ function enemyTitan(w) {
 	if (w.boss >= 0) return bossTitan(w);
 	if (w.daily) return dailyTitan(w.daily.trial, w.daily.tier, K.st);
 	if (w.war) return warTitan(K.st, w.war.base);
+	if (w.conq) return conqTitan(K.st, w.conq.tile);
 	if (w.practice && w.noTitan) return null;
 	// A lord's titan guards every one of its lands.
 	if (w.own >= 0) return { def: K.army.titans[w.tdef], level: w.tlv };
@@ -6568,12 +6903,13 @@ function landScenario(w, prep) {
 	const bd = w.boss >= 0 ? bossDef(w.boss) : null;
 	const dd = w.daily ? dailyDef(w.daily.trial) : null;
 	const wb = w.war ? w.war.base : -1;
+	const cqt = w.conq ? w.conq.tile : -1;
 	const spf = w.spire > 0 ? w.spire : 0;
 	// A Titan Spire floor and a Heroic mission change the battle the same way.
 	const spk = spf ? spireKnobs(spf) : md ? missionKnobs(w.mission.a, w.mission.m) : null;
-	const ty = spf ? spireField(spf) : wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
-	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && !spf && w.own >= 0 ? lordOf(w.own) : null;
-	sc.name = spf ? 'Башня титанов, этаж ' + spf : md && w.mission.m >= HEROIC ? md.name + ' (героическая)' : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
+	const ty = spf ? spireField(spf) : cqt >= 0 ? conqField(K.st, cqt) : wb >= 0 ? warField(K.st, wb) : dd ? dailyField(dd) : bd ? bossField(bd) : asd ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : site ? siteField(site) : landType(w.type);
+	const lord = !md && !site && !td && !asd && !bd && !dd && wb < 0 && cqt < 0 && !spf && w.own >= 0 ? lordOf(w.own) : null;
+	sc.name = spf ? 'Башня титанов, этаж ' + spf : cqt >= 0 ? 'Завоевание: ' + conqTileName(cqt) : md && w.mission.m >= HEROIC ? md.name + ' (героическая)' : wb >= 0 ? 'Война альянсов: база ' + (wb + 1) + ' «' + warBase(K.st, wb)[0] + '»' : dd ? 'Ежедневное испытание: ' + dd.name + ', уровень ' + w.daily.tier : bd ? 'Рейдовый босс: ' + bd.name + ', сложность ' + w.tier : asd ? 'Штурм, этап ' + (w.assault + 1) + ' из ' + asRules().stages.length + ': ' + ty.field : w.practice ? 'Тренировка: ' + (ty.field || 'Долина Хайвейл') + ', уровень ' + w.lv : td ? 'Испытание титанов: ' + td.name : md ? md.name : site ? site.name : (lord ? lord.realm + ': ' : '') + ty.name + ', уровень ' + w.lv;
 	if (ty.map) sc.map = ty.map; // forest, lake, mountain and ruins lands have battlefields of their own
 	sc.seed = (Math.imul(w.id, 2654435761) >>> 0) % 2147483647;
 	// The player's army: melee in front, archers behind, one squad per slot.
@@ -6595,7 +6931,9 @@ function landScenario(w, prep) {
 		// The player's own squads carry their troop's War Banner (the allies' do not).
 		// In Alliance War battles they also have the alliance's war tech.
 		const bp = i < prep.squads.length ? (bannersOn(K.st) ? K.st.banners.list[t].pct : 0) + (wb >= 0 && techOn(K.st) ? K.st.tech.war : 0) : 0;
-		if (bp > 0) sq.bonus = { hpPct: bp, atkPct: bp };
+		// In Conquest the alliance's shrines add to their attack.
+		const ca = i < prep.squads.length && cqt >= 0 ? K.st.conq.atk || 0 : 0;
+		if (bp > 0 || ca > 0) sq.bonus = { hpPct: bp, atkPct: bp + ca };
 		return sq;
 	});
 	// The Assault's boons, on top of the titan's relics and skills.
@@ -6616,13 +6954,13 @@ function landScenario(w, prep) {
 	att.spells = prep.spells.map((i) => K.army.spells[i].id);
 	att.spellCharges = prep.spells.map((i) => sp.stock[i]);
 	att.spellLevels = prep.spells.map((i) => sp.lv[i]);
-	def.name = spf ? 'Стражи башни' : wb >= 0 ? 'Застава «' + warBase(K.st, wb)[0] + '»' : dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
+	def.name = spf ? 'Стражи башни' : cqt >= 0 ? 'Гарнизон: ' + conqTileName(cqt) : wb >= 0 ? 'Застава «' + warBase(K.st, wb)[0] + '»' : dd ? 'Войско испытания' : bd ? bd.name : asd ? 'Гарнизон крепости' : w.practice ? 'Тренировочное войско' : td ? 'Войско испытания' : md ? 'Войско Пустоты' : site ? (site.kind === 'arena' ? 'Бойцы арены' : 'Стражи монумента') : lord ? 'Войско: ' + lord.name : 'Защитники земли';
 	def.ai = (spk && spk.ai) || (dd && dd.ai) || (td && td.ai) || (md && md.ai) || (site && site.ai) || b.ai;
 	// Defenders differ by land type (the original since 1.8; which troops is ours). A mission brings its own army.
 	const swap = ty.swap || {};
 	// A trial's enemy repeats its troops over the battle level's squads.
 	// An Assault stage adds its garrison behind the level's army.
-	const enemy = spf ? spireEnemy(spf) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? missionEnemy(w.mission.a, w.mission.m) : b.squads;
+	const enemy = spf ? spireEnemy(spf) : cqt >= 0 ? conqEnemy(K.st, cqt) : wb >= 0 ? warEnemy(K.st, wb) : dd ? dailyEnemy(w.daily.trial, w.daily.tier) : bd ? bossEnemy(w) : asd ? assaultEnemy(w.assault, w.lv) : td ? b.squads.map((x, i) => td.enemy[i % td.enemy.length]) : md ? missionEnemy(w.mission.a, w.mission.m) : b.squads;
 	const garrisonX = [90, 150, 120, 60, 180];
 	def.squads = enemy.map((t0, i) => {
 		const troop = swap[t0] || t0;
@@ -6634,6 +6972,11 @@ function landScenario(w, prep) {
 	if (asd && asd.fort) def.troopBonus = { atkPct: 0, hpPct: asd.fort };
 	// A war base's high tiers make its squads stronger.
 	if (wb >= 0 && warTierDef(w.war.tier).bonus) def.troopBonus = { atkPct: warTierDef(w.war.tier).bonus, hpPct: warTierDef(w.war.tier).bonus };
+	// A Conquest garrison: its tier's bonus, and walls for forts and the sanctum.
+	if (cqt >= 0) {
+		const cb = conqBonus(K.st, cqt);
+		if (cb.atkPct || cb.hpPct) def.troopBonus = cb;
+	}
 	// A Daily Trial's high tiers make its squads stronger; walls give them more health.
 	if (dd) {
 		const bonus = (dailyTierDef(w.daily.tier).bonus || 0) + (dd.power || 0);
@@ -6657,6 +7000,7 @@ function landScenario(w, prep) {
 	}
 	// An Alliance War attack has its own length.
 	if (wb >= 0 && warRules().battleSec) sc.timerSec = warRules().battleSec;
+	if (cqt >= 0 && conqRules().battleSec) sc.timerSec = conqRules().battleSec;
 	// A Daily Trial's titan may have more health, and a trial its own length.
 	if (dd) {
 		if (def.titan && dd.hpPct) def.titan.bonus = { hpPct: dd.hpPct };
@@ -6690,7 +7034,8 @@ function launchAttack() {
 	const daily = p && p.daily;
 	const war = p && p.war;
 	const spire = p && p.spire;
-	let w = spire ? spireTarget(spire) : war ? warTarget(K.st, war.base) : daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
+	const conq = war && war.conq >= 0 ? war.conq : -1;
+	let w = spire ? spireTarget(spire) : conq >= 0 ? conqTarget(K.st, conq) : war ? warTarget(K.st, war.base) : daily ? dailyTarget(daily.trial, daily.tier) : boss ? bossTarget(K.st) : assault ? assaultTarget(K.st) : practice ? practiceTarget(K.st) : trial ? trialTarget(K.st) : ms ? missionTarget(ms.a, ms.m) : site ? siteTarget(p.site) : p && worldLand(p.wid);
 	if (!w) return;
 	const squads = [];
 	p.counts.forEach((n, t) => { for (let i = 0; i < n; i++) squads.push(t); });
@@ -6702,9 +7047,9 @@ function launchAttack() {
 	if (assault) {
 		if (!asRun) code = K.bridge.asStart(squads, p.titan);
 		if (code === E.None) code = K.bridge.asStage(spells);
-	} else code = practice ? E.None : spire ? K.bridge.spireStart(squads, p.titan, spells) : war ? K.bridge.warStart(war.base, squads, p.titan, spells) : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
+	} else code = practice ? E.None : spire ? K.bridge.spireStart(squads, p.titan, spells) : conq >= 0 ? K.bridge.conqStart(conq, squads, p.titan, spells) : war ? K.bridge.warStart(war.base, squads, p.titan, spells) : daily ? K.bridge.dailyStart(daily.trial, daily.tier, squads, p.titan, spells) : boss ? K.bridge.bossStart(squads, p.titan, spells) : trial ? K.bridge.trialStart(squads, p.titan, spells) : ms ? K.bridge.missionStart(ms.a, ms.m, squads, p.titan, spells, p.reinf)
 		: site ? K.bridge.siteStart(p.site, squads, p.titan, spells, p.reinf) : K.bridge.attackStart(p.wid, p.capture, squads, p.titan, spells, p.reinf);
-	if (code !== E.None) { toast(spire ? spireErrText(code) : war ? warErrText(code) : daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
+	if (code !== E.None) { toast(spire ? spireErrText(code) : conq >= 0 ? conqErrText(code) : war ? warErrText(code) : daily ? dailyErrText(code) : errText(code), 'bad'); refresh(true); return; }
 	if (!practice) persist();
 	// The allies' squads the kingdom sent along (troop, level), after the player's own.
 	const reinf = practice || assault || boss || daily || war || spire ? [] : K.bridge.state().ally.pend;
@@ -6728,6 +7073,7 @@ function launchAttack() {
 		: trial ? { kind: 'land', trial: true, level: w.lv, squads: squads.length, charges }
 		: boss ? { kind: 'land', boss: true, level: w.lv, squads: squads.length, charges }
 		: daily ? { kind: 'land', daily: { trial: daily.trial, tier: daily.tier }, level: w.lv, squads: squads.length, charges }
+		: conq >= 0 ? { kind: 'land', conq: { tile: conq }, level: w.lv, squads: squads.length, charges }
 		: war ? { kind: 'land', war: { base: war.base }, level: w.lv, squads: squads.length, charges }
 		: spire ? { kind: 'land', spire, level: w.lv, squads: squads.length, charges }
 		: ms ? { kind: 'land', mission: ms, level: w.lv, squads: squads.length, charges }
@@ -6788,6 +7134,10 @@ function onBattleEnd(ctx, stars, retreat) {
 	}
 	if (ctx && ctx.kind === 'land' && ctx.daily) {
 		dailyEnd(ctx, stars, retreat);
+		return;
+	}
+	if (ctx && ctx.kind === 'land' && ctx.conq) {
+		conqEnd(ctx, stars, retreat);
 		return;
 	}
 	if (ctx && ctx.kind === 'land' && ctx.war) {
@@ -7864,8 +8214,10 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const bs = p.boss;
 		const dl = p.daily;
 		const wr = p.war;
+		// A Conquest attack goes as a war one with its tile.
+		const cq = wr && wr.conq >= 0 ? wr.conq : -1;
 		const sf = p.spire;
-		const w = sf ? spireTarget(sf) : wr ? warTarget(st, wr.base) : dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
+		const w = sf ? spireTarget(sf) : cq >= 0 ? conqTarget(st, cq) : wr ? warTarget(st, wr.base) : dl ? dailyTarget(dl.trial, dl.tier) : bs ? bossTarget(st) : as ? assaultTarget(st) : pr ? practiceTarget(st) : td ? trialTarget(st) : md ? missionTarget(p.mission.a, p.mission.m) : sd ? siteTarget(p.site) : worldLand(p.wid);
 		if (!w) return null;
 		const aa = st.army;
 		const used = p.counts.reduce((x, y) => x + y, 0);
@@ -7879,7 +8231,7 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 		const rows = K.army.troops.map((tr, t) => '<div class="troopRow">' + troopIcon(t) + '<div class="info"><b>' + esc(tr.name) + ' · ур. ' + aa.lv[t] + '</b><span>' + (okTroop(t) ? 'в лагере ' + aa.n[t] : 'не по правилу испытания') + '</span></div>' +
 			'<div class="stepper"><button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="-1"' + (p.counts[t] > 0 ? '' : ' disabled') + '>−</button><b>' + p.counts[t] + '</b>' +
 			'<button class="btn" data-act="prep-sq" data-id="' + t + '" data-d="1"' + (p.counts[t] < aa.n[t] && used < aa.slots && okTroop(t) ? '' : ' disabled') + '>+</button></div></div>');
-		const ty = sf ? spireField(sf) : wr ? warField(st, wr.base) : dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
+		const ty = sf ? spireField(sf) : cq >= 0 ? conqField(st, cq) : wr ? warField(st, wr.base) : dd ? dailyField(dd) : bs ? bossField(bossDef(w.boss)) : as ? asField(w.assault) : td ? trialField(td) : md ? siteField(md) : sd ? siteField(sd) : landType(w.type);
 		const et = enemyTitan(w);
 		const cost = td || pr || as || bs || dd || wr || sf ? 0 : md ? K.rules.campaigns.stones : sd ? K.rules.sites.stones : p.capture ? 6 : 3;
 		const sp = st.spells;
@@ -7895,12 +8247,14 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 			(asFixed ? 'Поражение или отступление тратит попытку (осталось ' + st.assault.tries + '), войско остаётся каким было.' : 'Войско штурма — копия отрядов лагеря: лагерь их не теряет, а потери штурма переходят с этапа на этап.') + '</p>' : '';
 		const armyHtml = asFixed ? '<h3>Войско штурма</h3>' + asArmyHtml(st)
 			: prepLoadoutsHtml(st, p, used) + '<h3>Титан</h3><div class="opts">' + titanOpts.join('') + '</div>' + '<h3>Отряды: ' + used + ' из ' + aa.slots + '</h3>' + rows.join('') + reinfHtml;
-		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md, w.lv) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? (p.mission.m >= HEROIC ? 'Героическая миссия' : 'Миссия') : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
+		const html = sheetTitle(sf ? icoHtml('mission.spire', 'gold land') : cq >= 0 ? icoHtml('ui.attack', 'gold land') : wr ? icoHtml('ui.alliance', 'gold land') : dd ? dailyIcon(dl.trial) : bs ? icoHtml('mission.boss', 'gold land') : as ? icoHtml('mission.siege', 'gold land') : td ? icoHtml('mission.elite', 'gold land') : md ? missionIcon(md, w.lv) : sd ? siteIcon(p.site) : landIcon(w.type, w.lv), (sf ? 'Башня титанов, этаж ' + sf : cq >= 0 ? 'Завоевание: ' + esc(conqTileName(cq)) + ', ур. ' + w.lv : wr ? 'Война: база ' + (wr.base + 1) + ' «' + esc(warBase(st, wr.base)[0]) + '», ур. ' + w.lv : dd ? esc(dd.name) + ', уровень ' + dl.tier : bs ? 'Рейдовый босс: ' + esc(ty.name) + ', сложность ' + w.tier : (as ? 'Штурм, этап ' + (w.assault + 1) : pr ? 'Тренировка' : td ? 'Испытание' : md ? (p.mission.m >= HEROIC ? 'Героическая миссия' : 'Миссия') : sd ? 'Бой' : p.capture ? 'Захват' : 'Набег') + ': ' + esc(pr || as ? ty.field || 'Долина Хайвейл' : ty.name) + ', ур. ' + w.lv)) +
 			(md ? missionBrief(md) : '') + (!md && !sd && !td && !dd && !wr && w.own >= 0 ? '<p>Земля лорда: ' + esc(lordOf(w.own).name) + ' (' + esc(lordOf(w.own).realm) + '), её стережёт титан лорда.</p>' : '') +
 			(td ? '<p>' + esc(trialRuleText(td)) + '</p>' : '') +
-			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : md ? missionEnemyText(p.mission.a, p.mission.m) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
+			'<p>Противник: ' + esc(sf ? spireEnemyText(sf) : cq >= 0 ? conqEnemyText(st, cq) : wr ? warEnemyText(st, wr.base) : dd ? dailyEnemyText(dl.trial, dl.tier, st) : bs ? bossEnemyText(w) : as ? assaultEnemyText(st, w.assault) : td ? trialEnemyText(td, w.lv) : md ? missionEnemyText(p.mission.a, p.mission.m) : enemyText(w.lv, et, (md || sd || {}).ai, md && md.squads.length)) + '.' + (ty.field ? ' Поле боя: ' + esc(ty.field) + (ty.fieldNote ? ', ' + esc(ty.fieldNote) : '') + '.' : '') + '</p>' +
 			asNote + (sf ? '<p class="fine">Награда за этаж: ' + eventPay(spirePay(sf, st)) + (sf > st.spire.fixed ? ' (верхние этажи платят каждую неделю)' : ' (один раз)') + '. Попыток сколько угодно, камни портала не нужны.' +
 				(spireMods(sf).length ? ' Усиления врага: ' + spireMods(sf).map((m) => esc(m.name.toLowerCase()) + ' — ' + esc(m.text)).join('; ') + '.' : '') + '</p>'
+				: cq >= 0 ? '<p class="fine">Жетонов похода: ' + st.conq.tok + ' из ' + conqRules().tokens + '. Жетон тратится при начале боя, даже если отступить. У клетки ' + (st.conq.tiles[cq] ? st.conq.tiles[cq][1] : 0) +
+					' контроля, каждая звезда снимает ' + conqRules().starControl + '; при нуле клетка переходит к альянсу.' + (st.conq.atk ? ' Святилища альянса: атака ваших отрядов +' + st.conq.atk + '%.' : '') + ' Бой длится ' + Math.round(conqRules().battleSec / 60) + ' мин.</p>'
 				: wr ? '<p class="fine">Атак осталось: ' + st.war.left + ' из ' + warRules().attacks + '. Атака засчитывается при начале боя, даже если отступить. С этой базы уже взято ' +
 				warBase(st, wr.base)[2] + ' ' + plural(warBase(st, wr.base)[2], 'звезда', 'звезды', 'звёзд') + ': в счёт альянса идут только новые сверх них, а в ваш сундук — все звёзды атаки. Бой длится ' + Math.round(warRules().battleSec / 60) + ' мин.</p>'
 				: dd ? '<p class="fine">Попыток сегодня: ' + st.daily.list[dl.trial].left + '. Попытка засчитывается при начале боя, даже если отступить. Победа на любые звёзды: ' + dailyPayText(dl.trial, dl.tier) +
@@ -7911,12 +8265,12 @@ function openPrepare(wid, capture, site, mission, trial, practice, assault, boss
 				: md ? '<p class="fine">' + missionRewardText(p.mission.a, p.mission.m) + '</p>' : sd ? '<p class="fine">Победа: ' + siteReward(sd) + '. После боя место закрыто на сутки.</p>' : '') +
 			armyHtml +
 			'<h3>Заклинания: ' + p.spells.length + ' из ' + sp.kinds + '</h3>' +
-			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd || wr || sf ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : wr ? 'на войне' : sf ? 'в башне' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
+			(spellOpts.length ? '<div class="opts">' + spellOpts.join('') + '</div><p class="fine">' + (as ? 'Берутся все заряды выбранных заклинаний; в штурме они не тратятся.' : td || bs || dd || wr || sf ? 'Берутся все заряды выбранных заклинаний; ' + (bs ? 'в бою с боссом' : cq >= 0 ? 'в Завоевании' : wr ? 'на войне' : sf ? 'в башне' : 'в испытании') + ' они не тратятся.' : 'Берутся все заряды выбранных заклинаний; потраченные уходят из запаса.') + '</p>'
 				: '<p class="fine">Заклинаний в запасе нет: их создаёт Кузня заклинаний (Замок 5).</p>') +
-			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr || sf ? (wr ? 'На войне альянсов' : sf ? 'В башне' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
+			'<p class="fine">' + (as ? 'Отряд, в котором остался хоть один боец, идёт дальше; титан выходит в каждый бой целым и не устаёт, опыта в штурме нет.' : pr ? 'Тренировка: никто не гибнет и не устаёт, заклинания не тратятся, наград и опыта нет.' : td || bs || dd || wr || sf ? (cq >= 0 ? 'В Завоевании' : wr ? 'На войне альянсов' : sf ? 'В башне' : 'В ' + (bs ? 'бою с боссом' : 'испытании')) + ' никто не гибнет: все отряды и титан вернутся.' : aa.surv >= 100 ? 'Лазарета нет: каждый раненый отряд погибнет.' : 'Вернутся отряды, сохранившие не меньше ' + aa.surv + '% бойцов.') + '</p>' +
 			scoutHtml(st, p, w, arrived, td) +
-			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr || sf ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (sf ? 'spire' : wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
-		return { key: ['prep', pr, as, bs, sf, wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join(), loKey(st), p.preset].join('|'), html };
+			'<div class="actions"><button class="btn primary" data-act="prep-go"' + ((used || p.titan || asFixed) && (!needTitan || p.titan) ? '' : ' disabled') + '>' + (as ? (asFixed ? 'В бой · этап ' + (w.assault + 1) : 'Начать штурм · без камней') : td || pr || bs || dd || wr || sf ? 'В бой · без камней' : 'В бой · ' + cost + ' ' + iconSvg('stones')) + '</button><button class="btn" data-act="' + (sf ? 'spire' : cq >= 0 ? 'conquest' : wr ? 'war' : dd ? 'daily-trial" data-id="' + dl.trial : bs ? 'boss' : as ? 'assault' : pr ? 'practice' : td ? 'trials' : md ? 'campaign" data-id="' + p.mission.a : 'world') + '">Назад</button></div>';
+		return { key: ['prep', pr, as, bs, sf, cq >= 0 ? ['q', cq, st.conq.tok, st.conq.atk, (st.conq.tiles[cq] || []).join(':')].join(':') : wr ? [wr.base, st.war.left, warBase(st, wr.base)[2]].join(':') : '', dl ? dl.trial + ':' + dl.tier + ':' + st.daily.list[dl.trial].left : '', bs ? [st.boss.left, bossPhase(st.boss), st.boss.tier].join(':') : '', as ? [st.assault.stage, st.assault.tries, st.assault.squads.join(';')].join(':') : '', p.titan, p.counts.join(), p.spells.join(), aa.n.join(), sp.stock.join(), st.titans.map((t) => t.id + ':' + (t.rec > nowF()) + ':' + t.pw).join(), p.reinf, arrived.length, aa.lv.join(), aa.lvCap.join(), sp.lv.join(), loKey(st), p.preset].join('|'), html };
 	});
 }
 
@@ -8017,7 +8371,8 @@ function battleKey(x, st) {
 	if (x.trial) return 't' + st.trial.i;
 	if (x.boss) return 'b' + st.boss.no;
 	if (x.daily) return 'd' + x.daily.trial + '.' + x.daily.tier;
-	if (x.war) return 'v' + st.war.no + '.' + x.war.base;
+	if (x.conq) return 'q' + st.conq.no + '.' + x.conq.tile;
+	if (x.war) return x.war.conq >= 0 ? 'q' + st.conq.no + '.' + x.war.conq : 'v' + st.war.no + '.' + x.war.base;
 	if (x.spire) return 'z' + x.spire;
 	if (x.mission) return 'm' + x.mission.a + '.' + x.mission.m;
 	if (x.site >= 0) return 's' + x.site;
@@ -8367,12 +8722,12 @@ function allianceMine(st, data) {
 		(myZone === 'up' ? '<p class="fine">Сейчас альянс в зоне повышения.</p>' : myZone === 'down' ? '<p class="note">Сейчас альянс в зоне понижения.</p>' : '') +
 		'<p>Сезон кончится через <b data-live="left"></b>. За это место каждый получит ' + payHtml(pay) + '. ' + crystalNote(pay) + '</p>' +
 		(late ? '<p class="note">Вы в альянсе меньше ' + A.memberHours + ' ч до конца сезона: в этот раз награду даст личная лига, награда альянса — со следующего сезона.</p>' : '') +
-		helpCard(st) + honorCard(st) + techCard(st) + bossCard(st) + warCard(st) +
+		helpCard(st) + honorCard(st) + techCard(st) + bossCard(st) + warCard(st) + conqCard(st) +
 		'<div class="seg">' + views.map(([id, t]) => '<button class="' + (view === id ? 'on' : '') + '" data-act="ally-view" data-tab="' + id + '">' + t + '</button>').join('') + '</div>' +
 		body +
 		'<div class="actions"><button class="btn' + (leaveArmed ? ' danger' : '') + '" data-act="ally-leave">' + (leaveArmed ? (al.own ? 'Точно распустить?' : 'Точно выйти?') : al.own ? 'Распустить альянс' : 'Выйти из альянса') + '</button>' + closeBtn + '</div>';
 	return {
-		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), helpKey(st), honorKey(st), techKey(st)].join('|'), html,
+		key: ['ally', al.my, al.tier, al.place, al.members, view, key, leaveArmed, late, myZone, st.res[5], bossKey(st), warKey(st), conqKey(st), helpKey(st), honorKey(st), techKey(st)].join('|'), html,
 		live(el) {
 			const d = K.allyData || data;
 			live(el, 'left', fmtDur(Math.max(0, K.st.season.end - nowF())));
@@ -8537,6 +8892,10 @@ function init(app) {
 			// An Alliance War attack: the attack is spent, no star counts.
 			K.bridge.warFinish(0);
 			setTimeout(() => toast('Прерванная атака на войне засчитана без звёзд', 'bad'), 600);
+		} else if (st.conq && st.conq.at >= 0) {
+			// A Conquest attack: the March Token is spent, no star counts.
+			K.bridge.conqFinish(0);
+			setTimeout(() => toast('Прерванная атака в Завоевании засчитана без звёзд', 'bad'), 600);
 		} else if (st.pendingBoss) {
 			// A boss battle: the attempt is spent, no damage counts.
 			K.bridge.bossFinish(0, 0);

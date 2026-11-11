@@ -1458,6 +1458,32 @@ EMSCRIPTEN_KEEPALIVE const char* dk_state()
 		}
 		O.Raw("},");
 	}
+	// Conquest: the event (no), its phase (0 before the first, 1 on, 2 over), its days and the next one's start, what
+	// attacking now would say, March Tokens and the next one's time, the attacks, stars and tiles taken of the player's
+	// attacks, the chest opened, the tile of a pending attack; with a map (on) the league, the shrines' attack bonus, the
+	// alliances by slot as [index, name, tag, points, place] and the tiles as [owner slot or -1, Control, truce end].
+	{
+		const dot::kingdom::ConquestInfo Q = Km->Conquest();
+		O.Key("conq").Raw("{").Key("no").Int(Q.no).Comma().Key("ph").Int(Q.phase).Comma().Key("start").Int(Q.startAt).Comma();
+		O.Key("end").Int(Q.endAt).Comma().Key("next").Int(Q.nextAt).Comma().Key("on").Int(Q.on ? 1 : 0).Comma().Key("ck");
+		WriteCheck(O, Km->CheckConquest(-1));
+		O.Comma().Key("tok").Int(Q.tokens).Comma().Key("tokIn").Int(Q.tokenIn).Comma().Key("attacks").Int(Q.attacks).Comma();
+		O.Key("stars").Int(Q.stars).Comma().Key("taken").Int(Q.taken).Comma().Key("chest").Int(Km->ConquestChestClaimed() ? 1 : 0).Comma();
+		O.Key("at").Int(Km->ConquestBattleTile()).Comma().Key("league").Int(Q.league).Comma().Key("atk").Int(Q.atkPct).Comma().Key("al").Raw("[");
+		for (size_t I = 0; I < Q.alliances.size(); ++I)
+		{
+			const dot::kingdom::AllianceInfo A = Km->Alliance(Q.alliances[I]);
+			O.Raw(I ? ",[" : "[").Int(Q.alliances[I]).Comma().Str(A.name).Comma().Str(A.tag).Comma();
+			O.Int(I < Q.points.size() ? Q.points[I] : 0).Comma().Int(I < Q.place.size() ? Q.place[I] : 0).Raw("]");
+		}
+		O.Raw("],").Key("tiles").Raw("[");
+		for (size_t I = 0; I < Q.tiles.size(); ++I)
+		{
+			const dot::kingdom::ConquestTile& T = Q.tiles[I];
+			O.Raw(I ? ",[" : "[").Int(T.owner).Comma().Int(T.control).Comma().Int(T.truceUntil).Raw("]");
+		}
+		O.Raw("]},");
+	}
 	// Alliance help: helps a timer could get now, the asks of running timers as [kind, id, at, end, total, got, max, next,
 	// cut], every running timer as [kind, id, end, what asking would say], the helps got lately as [at, kind, id, member,
 	// cut], the members' open asks as [no, member, kind, at, until, helped], helps given today and what giving would say.
@@ -2171,6 +2197,27 @@ EMSCRIPTEN_KEEPALIVE const char* dk_war_chest()
 {
 	dot::kingdom::Reward R;
 	const dot::kingdom::Error E = K() ? K()->ClaimWarChest(&R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+/** A Conquest attack on a tile of the map: squads and spells as for dk_attack_start (no allies go). */
+EMSCRIPTEN_KEEPALIVE int dk_conq_start(int Tile, const char* Squads, int TitanId, const char* Spells)
+{
+	return K() ? static_cast<int>(K()->StartConquest(Tile, ParseInts(Squads), TitanId, ParseInts(Spells))) : -1;
+}
+
+/** Ends a Conquest attack with its stars. */
+EMSCRIPTEN_KEEPALIVE const char* dk_conq_finish(int Stars)
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->FinishConquest(Stars, &R) : dot::kingdom::Error::BadId;
+	return RewardJson(E, R);
+}
+
+EMSCRIPTEN_KEEPALIVE const char* dk_conq_chest()
+{
+	dot::kingdom::Reward R;
+	const dot::kingdom::Error E = K() ? K()->ClaimConquestChest(&R) : dot::kingdom::Error::BadId;
 	return RewardJson(E, R);
 }
 

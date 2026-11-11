@@ -524,6 +524,26 @@ ul.goalNext li .cost { white-space: nowrap; }
 .warBases .me { color: var(--valor); font-weight: 700; }
 .warBases .wby { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; text-align: right; }
 .btn.slim { height: 34px; padding: 0 12px; font-size: 13px; }
+/* Conquest (kingdom.js openConquest): the hex map in the holders' colours (slot 0 the player's), the tiles to attack
+   outlined, the chosen one ringed; a dot of each alliance's colour (--cq) in the ranking. */
+.cqwrap { width: 100%; max-width: 420px; margin: 4px auto 0; }
+#kSheetPanel .cqwrap svg.cqmap { display: block; width: 100%; height: auto; }
+.cqmap .cqt { cursor: pointer; }
+.cqmap .cqt .hx { stroke: rgba(10, 14, 18, 0.85); stroke-width: 1.2; opacity: 0.9; }
+.cqmap .cqt.free .hx { opacity: 1; }
+.cqmap .cqt .in { fill: rgba(10, 14, 18, 0.18); stroke: none; }
+.cqmap .cqt .gl { fill: rgba(255, 255, 255, 0.85); stroke: rgba(10, 14, 18, 0.7); stroke-width: 1; stroke-linejoin: round; }
+.cqmap .cqt.free .gl { fill: rgba(239, 231, 214, 0.55); }
+.cqmap .cqt.truce .hx { opacity: 0.55; }
+.cqmap .cqt.can .hx { stroke: #fff; stroke-width: 1.6; stroke-dasharray: 3 2; }
+.cqmap .cqt.sel .hx { stroke: #fff3c4; stroke-width: 3; stroke-dasharray: none; opacity: 1; }
+.cqmap .cqt:focus-visible .hx { stroke: #fff; stroke-width: 3; }
+.cqlegend { text-align: center; }
+.cqk { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: -1px; background: #3a414b; }
+.cqk.own { background: #f2c14e; } .cqk.can { border: 1.5px dashed #fff; } .cqk.truce { opacity: 0.45; background: #a8a091; }
+.cqdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--cq); margin-right: 6px; vertical-align: 0; flex: 0 0 auto; }
+.cqinfo { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.cqinfo .costline:first-child span:last-child { text-align: right; }
 .wst { color: var(--valor); letter-spacing: -1px; white-space: nowrap; } .wst i { font-style: normal; opacity: 0.25; }
 .wscore { color: var(--valor); white-space: nowrap; }
 .league.ranks { grid-template-columns: 64px 1fr auto; }

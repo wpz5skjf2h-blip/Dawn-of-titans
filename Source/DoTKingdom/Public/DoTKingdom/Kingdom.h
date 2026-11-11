@@ -308,6 +308,36 @@ struct WarInfo
 	int myStars = 0; // the stars of the player's attacks, each counted in full
 };
 
+/** A tile of the Conquest map as it stands: who holds it (an alliance slot, -1 nobody), its Control left and its truce. */
+struct ConquestTile
+{
+	int owner = -1;
+	int control = 0;
+	int64_t truceUntil = 0;
+};
+
+/** A Conquest as it stands at Time (master prompt 12.11). */
+struct ConquestInfo
+{
+	int64_t no = 0; // the Conquest: the last one that began by Time (or the one before the first)
+	int phase = 0; // 0 not begun yet, 1 on, 2 over (until the next one)
+	int64_t startAt = 0;
+	int64_t endAt = 0;
+	int64_t nextAt = 0; // the next one's start
+	bool on = false; // the player's alliance has a map (the fields below are filled)
+	int league = 0;
+	std::vector<int> alliances; // by slot: slot 0 is the player's alliance
+	std::vector<int64_t> points; // by slot
+	std::vector<int> place; // by slot, from 1
+	std::vector<ConquestTile> tiles; // as the content's map
+	int atkPct = 0; // the shrines the player's alliance holds: % more attack in Conquest battles
+	int tokens = 0; // March Tokens now
+	int64_t tokenIn = 0; // seconds to the next one (0 at the most)
+	int attacks = 0; // the player's attacks in this Conquest (in this alliance)
+	int stars = 0;
+	int taken = 0; // tiles the player's attacks took
+};
+
 /** What a timer the alliance helps with is (master prompt 12.4). */
 enum class HelpKind : uint8_t
 {
@@ -753,12 +783,14 @@ public:
 	static constexpr int32_t WarPending = -(MissionBase - 5);
 	/** The pending battle id of a Titan Spire floor. */
 	static constexpr int32_t SpirePending = -(MissionBase - 6);
+	/** The pending battle id of a Conquest attack. */
+	static constexpr int32_t ConquestPending = -(MissionBase - 7);
 	/** The pending battle's site (-1 when the pending battle is on a world land, a mission, a trial, an Assault stage, a
-	 *  Raid Boss battle, a Daily Trial, an Alliance War attack, a Titan Spire floor or there is none). */
+	 *  Raid Boss battle, a Daily Trial, an Alliance War attack, a Titan Spire floor, a Conquest attack or there is none). */
 	int PendingSite() const
 	{
 		return Pending < 0 && Pending != TrialPending && Pending != AssaultPending && Pending != BossPending && Pending != DailyPending
-			&& Pending != WarPending && Pending != SpirePending && -Pending < MissionBase ? -Pending - 1 : -1;
+			&& Pending != WarPending && Pending != SpirePending && Pending != ConquestPending && -Pending < MissionBase ? -Pending - 1 : -1;
 	}
 	bool PendingTrial() const { return Pending == TrialPending; }
 	bool PendingAssault() const { return Pending == AssaultPending; }
@@ -766,6 +798,7 @@ public:
 	bool PendingDaily() const { return Pending == DailyPending; }
 	bool PendingWar() const { return Pending == WarPending; }
 	bool PendingSpire() const { return Pending == SpirePending; }
+	bool PendingConquest() const { return Pending == ConquestPending; }
 
 	// --- Campaigns of the Adventurers' Guild ---
 	// Acts of missions fought in order (the master prompt's campaign; the original opens campaigns in the Adventurers'
@@ -1217,6 +1250,30 @@ public:
 	/** The base the pending war attack is on (-1: none). */
 	int WarBattleBase() const { return Pending == WarPending ? WarAt : -1; }
 
+	// --- Conquest (master prompt 12.11) ---
+	// A week of every few: the player's alliance and the nearest ones by league take tiles of a hex map, each from its
+	// fortress. A tile next to an alliance's land can be attacked; each star takes Control and at none the tile is the
+	// attacker's, with a truce. Held tiles give points every hour; the sanctum doubles its neighbours for its holder;
+	// shrines strengthen their holder's squads. Computer alliances (and the player's computer members) march every hour;
+	// the player spends a March Token an attack. After the week everyone who attacked opens the chest of the place.
+	/** The Conquest as it stands for the player's alliance (without one only its days). */
+	ConquestInfo Conquest() const;
+	/** BadId (no Conquest in the content, or Tile out of the map), NoAlliance, Locked (Castle too low: castle), NotReady
+	 *  (no Conquest on: it comes in timeSec), LimitReached (no March Token: the next in timeSec), Nothing (the tile is the
+	 *  alliance's or a fortress), NotAllowed (not next to the alliance's land), NotReady (a truce: timeSec). Tile -1 checks
+	 *  the rest. */
+	Check CheckConquest(int Tile) const;
+	/** Starts an attack on a tile with this army (as StartWar; a March Token goes); the battle runs elsewhere. */
+	Error StartConquest(int Tile, const std::vector<int>& Squads, int32_t TitanId, const std::vector<int>& Spells);
+	/** Applies a Conquest attack: everyone comes back, no spell is spent; the stars take the tile's Control. */
+	Error FinishConquest(int Stars, Reward* Out);
+	/** Opens the Conquest chest: NotReady (not over, or a Conquest battle is on), NotAllowed (the player did not attack in
+	 *  this Conquest in this alliance), Nothing (opened), InventoryFull. */
+	Error ClaimConquestChest(Reward* Out);
+	bool ConquestChestClaimed() const;
+	/** The tile the pending Conquest attack is on (-1: none). */
+	int ConquestBattleTile() const { return Pending == ConquestPending ? ConqAt : -1; }
+
 	// --- Alliance help (master prompt 12.4) ---
 	// The player asks the alliance to help with a running timer; computer members answer one by one, and each help takes
 	// a share of the timer's whole time off (at least a minimum). A timer gets a few helps (more with the Alliance Camp),
@@ -1502,6 +1559,35 @@ private:
 	void ResetWar();
 	/** Weeks since the Monday before the epoch, for Time. */
 	int64_t WeekOf() const { return (std::max<int64_t>(0, Time) / 86400 + 3) / 7; }
+	/** Conquest: the alliances of an event (slot 0 the player's, with its key), the league and each slot's computer
+	 *  members. */
+	struct ConqSnap
+	{
+		int64_t key = -1;
+		int league = 0;
+		std::vector<int> ids;
+		std::vector<int> members;
+	};
+	struct ConqHit
+	{
+		int64_t at = 0;
+		int tile = 0;
+		int stars = 0;
+	};
+	bool ConquestContent() const { return C.conquest.On(); }
+	/** The first day of a Conquest, and the last Conquest that began by Time. */
+	int64_t ConqStartDay(int64_t No) const { return (No * C.conquest.weeks + C.conquest.week) * 7 - 3; }
+	int64_t ConqNoNow() const;
+	/** The alliances of the player's alliance now (key -1: none). */
+	ConqSnap ConqSnapNow() const;
+	/** The saved alliances when they are this Conquest's and the alliance's, else the alliance as it is now. */
+	ConqSnap ConqSnapOf() const;
+	bool ConqMine() const;
+	/** The map from the start to Until with the computer marches and the player's attacks (hits); fills tiles, points
+	 *  and the player's stars and tiles taken. */
+	void SimConquest(const ConqSnap& S, int64_t Start, int64_t Until, const std::vector<ConqHit>& Hits, ConquestInfo& Out) const;
+	int ConqTokens(int64_t* NextIn) const;
+	void ResetConquest();
 	// Raids (KingdomRaids.cpp)
 	void ResetRaids(int64_t Now);
 	void RunRaid(int64_t At);
@@ -1691,6 +1777,23 @@ private:
 	int64_t WarUsedNo = -1;
 	int WarUsed = 0;
 	int WarAt = -1;
+	// Conquest: the event and the alliances it was rolled for, the player's attacks, the chest, the March Tokens (the
+	// event they count in, how many at TokAt), the pending attack's tile; a cache of the last map worked out
+	int64_t ConqNo = -1;
+	ConqSnap ConqSaved;
+	std::vector<ConqHit> ConqHits;
+	bool bConqChest = false;
+	int64_t ConqTokNo = -1;
+	int ConqTok = 0;
+	int64_t ConqTokAt = 0;
+	int ConqAt = -1;
+	struct ConqCache
+	{
+		uint64_t key = 0;
+		bool valid = false;
+		ConquestInfo info;
+	};
+	mutable ConqCache ConqMemo;
 	// Alliance help: the player's asks (the raw list: finished timers are dropped when time moves on), the helps got
 	// lately, the members' asks helped (by no) and the helps given on a day
 	std::vector<HelpAsk> AskList;
