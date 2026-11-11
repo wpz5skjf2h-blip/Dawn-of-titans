@@ -5,6 +5,7 @@
 #include "DoTSim/Json.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace dot
 {
